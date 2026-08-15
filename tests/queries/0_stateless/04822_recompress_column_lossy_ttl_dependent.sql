@@ -30,6 +30,24 @@ SELECT 'rows ttl after remove ttl', count(), sum(key) FROM t_recompress_lossy_ro
 
 DROP TABLE t_recompress_lossy_rows_ttl;
 
+-- A `DELETE WHERE` TTL reads the lossy column only in its filter: rejected.
+DROP TABLE IF EXISTS t_recompress_lossy_rows_where_ttl;
+CREATE TABLE t_recompress_lossy_rows_where_ttl
+(
+    key UInt64,
+    d DateTime,
+    val Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))
+)
+ENGINE = MergeTree ORDER BY key
+TTL d + INTERVAL 100 YEAR DELETE WHERE val > 0
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_recompress_lossy_rows_where_ttl (key, d, val) SELECT number, now(), sin(number / 100.) * 50 + 100 FROM numbers(1000);
+
+ALTER TABLE t_recompress_lossy_rows_where_ttl RECOMPRESS COLUMN val; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE t_recompress_lossy_rows_where_ttl;
+
 -- A table recompression TTL reads the lossy column: rejected.
 DROP TABLE IF EXISTS t_recompress_lossy_recompress_ttl;
 CREATE TABLE t_recompress_lossy_recompress_ttl

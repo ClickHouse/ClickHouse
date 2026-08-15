@@ -78,6 +78,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -6110,6 +6111,35 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
         {
             auto expression_query = expressions_to_analyze.back()->clone();
             expressions_to_analyze.pop_back();
+
+            /// Keep explicitly requested enumerable subcolumns as identifiers. `TreeRewriter`
+            /// otherwise sees `getSubcolumn(arr, 'size0')` as a dependency on the full `arr`
+            /// column, losing the fact that only a structural stream is read. The generic
+            /// replacement below remains necessary for dynamic subcolumns, which cannot be
+            /// represented in `analysis_columns`.
+            auto replace_get_subcolumn_with_identifier = [&](ASTPtr & ast, const auto & self) -> void
+            {
+                if (const auto * function = ast->as<ASTFunction>(); function && function->name == "getSubcolumn" && function->arguments
+                    && function->arguments->children.size() == 2)
+                {
+                    const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+                    const auto * literal = function->arguments->children[1]->as<ASTLiteral>();
+                    if (identifier && literal && literal->value.getType() == Field::Types::String)
+                    {
+                        const auto & subcolumn_name = literal->value.safeGet<String>();
+                        if (const auto * source_column = all_columns_with_helpers.tryGetByName(identifier->getColumnName());
+                            source_column && source_column->type->hasSubcolumn(subcolumn_name))
+                        {
+                            ast = make_intrusive<ASTIdentifier>(identifier->getColumnName() + "." + subcolumn_name);
+                            return;
+                        }
+                    }
+                }
+
+                for (auto & child : ast->children)
+                    self(child, self);
+            };
+            replace_get_subcolumn_with_identifier(expression_query, replace_get_subcolumn_with_identifier);
             replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, analysis_columns);
             auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, analysis_columns);
             for (const auto & required_column : syntax_result->requiredSourceColumns())
@@ -6166,7 +6196,11 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
     /// values as they were before the recompression.
     auto check_ttl_dependency = [&](const TTLDescription & ttl_description, const String & ttl_kind, const String & removal_hint)
     {
-        if (depends_on_recompressed_column(ttl_description.expression_columns.getNames()))
+        auto ttl_dependency_columns = ttl_description.expression_columns.getNames();
+        const auto & where_dependency_columns = ttl_description.where_expression_columns.getNames();
+        ttl_dependency_columns.insert(ttl_dependency_columns.end(), where_dependency_columns.begin(), where_dependency_columns.end());
+
+        if (depends_on_recompressed_column(ttl_dependency_columns))
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the {} `{}` reads this column, "
                 "and the TTL bounds stored in the parts are not recalculated by the recompression, so "
