@@ -44,6 +44,45 @@ ASTPtr makeNull()
     return makeLiteral(Field());
 }
 
+/// Mongo format strings are not ClickHouse's MySQL format strings. Translate the supported,
+/// unambiguous subset and reject the rest instead of producing a query with different semantics.
+ASTPtr translateMongoDateFormat(const rapidjson::Value & value, std::string_view operator_name)
+{
+    if (!value.IsString())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'format' of '{}' must be a string literal", operator_name);
+
+    const auto input = stringView(value);
+    std::string output;
+    output.reserve(input.size());
+    for (size_t pos = 0; pos < input.size(); ++pos)
+    {
+        if (input[pos] != '%')
+        {
+            output += input[pos];
+            continue;
+        }
+        if (++pos == input.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'format' of '{}' ends with '%'", operator_name);
+
+        switch (input[pos])
+        {
+            case '%': output += "%%"; break;
+            case 'Y': output += "%Y"; break;
+            case 'm': output += "%m"; break;
+            case 'd': output += "%d"; break;
+            case 'H': output += "%H"; break;
+            case 'M': output += "%i"; break;
+            case 'S': output += "%s"; break;
+            case 'L': output += "%f"; break;
+            case 'z': output += "%z"; break;
+            default:
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED, "The Mongo date format token '%{}' of '{}' is not supported", input[pos], operator_name);
+        }
+    }
+    return makeLiteral(Field(std::move(output)));
+}
+
 ASTPtr makeFunction(const std::string & name, std::vector<ASTPtr> arguments)
 {
     auto function = makeASTFunction(name);
@@ -71,8 +110,7 @@ std::vector<ASTPtr> parseArguments(const rapidjson::Value & value)
 void requireArgumentCount(std::string_view operator_name, const std::vector<ASTPtr> & arguments, size_t expected)
 {
     if (arguments.size() != expected)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "'{}' takes {} arguments, got {}", operator_name, expected, arguments.size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' takes {} arguments, got {}", operator_name, expected, arguments.size());
 }
 
 /// Operators that map onto a ClickHouse function of the same arity, argument for argument.
@@ -236,23 +274,17 @@ ASTPtr makeToDecimal(ASTPtr argument)
             case Field::Types::Null:
             case Field::Types::Bool:
             case Field::Types::Int64:
-            case Field::Types::UInt64:
-                scale = 0;
-                break;
-            case Field::Types::String:
-                scale = decimalScaleOfNumberDecimal(literal->value.safeGet<String>());
-                break;
+            case Field::Types::UInt64: scale = 0; break;
+            case Field::Types::String: scale = decimalScaleOfNumberDecimal(literal->value.safeGet<String>()); break;
             case Field::Types::Float64:
                 /// The shortest decimal text that reads back as the same double, which is what
                 /// Mongo preserves when it converts a double to a decimal.
                 scale = decimalScaleOfNumberDecimal(applyVisitor(FieldVisitorToString(), literal->value));
                 break;
-            default:
-                break;
+            default: break;
         }
         if (!scale)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The argument of '$toDecimal' cannot be represented exactly by a Decimal128");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$toDecimal' cannot be represented exactly by a Decimal128");
         return makeASTFunction("toDecimal128", std::move(argument), makeLiteral(Field(UInt64(*scale))));
     }
 
@@ -262,9 +294,7 @@ ASTPtr makeToDecimal(ASTPtr argument)
         return argument;
 
     auto is_exact = makeASTFunction(
-        "match",
-        makeASTFunction("toTypeName", argument),
-        makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
+        "match", makeASTFunction("toTypeName", argument), makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
     auto guard = makeASTFunction(
         "throwIf",
         makeASTFunction("not", std::move(is_exact)),
@@ -283,9 +313,7 @@ ASTPtr makeToDecimal(ASTPtr argument)
 ASTPtr makeToDate(ASTPtr argument)
 {
     const auto parsed = [](ASTPtr arg)
-    {
-        return makeASTFunction("toDateTime64", std::move(arg), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
-    };
+    { return makeASTFunction("toDateTime64", std::move(arg), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC")))); };
 
     if (const auto * literal = argument->as<ASTLiteral>())
     {
@@ -297,8 +325,7 @@ ASTPtr makeToDate(ASTPtr argument)
                 /// A fractional count of milliseconds truncates, as a BSON double does.
                 return makeASTFunction(
                     "fromUnixTimestamp64Milli", makeASTFunction("toInt64", std::move(argument)), makeLiteral(Field(String("UTC"))));
-            default:
-                return parsed(std::move(argument));
+            default: return parsed(std::move(argument));
         }
     }
 
@@ -311,8 +338,8 @@ ASTPtr makeToDate(ASTPtr argument)
         "fromUnixTimestamp64Milli",
         makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
         makeLiteral(Field(String("UTC"))));
-    auto is_a_number = makeASTFunction(
-        "match", makeASTFunction("toTypeName", argument->clone()), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
+    auto is_a_number
+        = makeASTFunction("match", makeASTFunction("toTypeName", argument->clone()), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
@@ -351,12 +378,9 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
           * of the argument: the type name is a constant, and a non-array argument fails when
           * the query is analyzed.
           */
-        auto is_array = makeASTFunction(
-            "startsWith", makeASTFunction("toTypeName", arguments[0]), makeLiteral(Field(String("Array"))));
+        auto is_array = makeASTFunction("startsWith", makeASTFunction("toTypeName", arguments[0]), makeLiteral(Field(String("Array"))));
         auto guard = makeASTFunction(
-            "throwIf",
-            makeASTFunction("not", std::move(is_array)),
-            makeLiteral(Field(String("The argument of '$size' must be an array"))));
+            "throwIf", makeASTFunction("not", std::move(is_array)), makeLiteral(Field(String("The argument of '$size' must be an array"))));
         return makeASTFunction("plus", makeASTFunction("length", arguments[0]->clone()), std::move(guard));
     }
 
@@ -389,8 +413,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         /// Mongo indexes an array from zero and ClickHouse from one; a negative index counts from
         /// the end in both, and there `-1` already means the same element.
         const auto * index = arguments[1]->as<ASTLiteral>();
-        const bool counts_from_the_end
-            = index && index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0;
+        const bool counts_from_the_end = index && index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0;
         if (!counts_from_the_end)
             arguments[1] = makeASTFunction("plus", arguments[1], makeLiteral(Field(UInt64(1))));
         return makeASTFunction("arrayElement", arguments[0], arguments[1]);
@@ -582,8 +605,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         auto variable = parseVariableName(argument, "this");
         auto body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
-        auto mapped = makeASTFunction(
-            name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
+        auto mapped = makeASTFunction(name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
         if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
             return makeASTFunction(
                 "arraySlice", std::move(mapped), makeLiteral(Field(UInt64(1))), parseMongoAggregateExpression(limit_it->value));
@@ -593,7 +615,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$dateToString")
     {
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        auto format = parseMongoAggregateExpression(requireMember(argument, "format", name));
+        auto format = translateMongoDateFormat(requireMember(argument, "format", name), name);
         if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
             return makeASTFunction("formatDateTime", date, format, parseMongoAggregateExpression(timezone_it->value));
         return makeASTFunction("formatDateTime", date, format);
@@ -603,7 +625,8 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto text = parseMongoAggregateExpression(requireMember(argument, "dateString", name));
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
-            return makeASTFunction("parseDateTime", text, parseMongoAggregateExpression(format_it->value));
+            return makeASTFunction(
+                "parseDateTime64", text, translateMongoDateFormat(format_it->value, name), makeLiteral(Field(String("UTC"))));
         return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
     }
 
@@ -654,8 +677,8 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
             /// document being processed, the pruning decision of `$redact`, the current cluster
             /// time. A user variable, which only `$map` and `$filter` can bind, names the lambda
             /// parameter of the same name.
-            static const std::unordered_set<std::string_view> system_variables = {
-                "ROOT", "CURRENT", "REMOVE", "DESCEND", "PRUNE", "KEEP", "CLUSTER_TIME", "SEARCH_META", "USER_ROLES"};
+            static const std::unordered_set<std::string_view> system_variables
+                = {"ROOT", "CURRENT", "REMOVE", "DESCEND", "PRUNE", "KEEP", "CLUSTER_TIME", "SEARCH_META", "USER_ROLES"};
             if (variable.empty() || system_variables.contains(variable))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation system variable '{}' is not supported", text);
             return make_intrusive<ASTIdentifier>(String(variable));
@@ -864,7 +887,8 @@ void expandMongoProjectedField(const std::string & name, const rapidjson::Value 
                  makeASTFunction(
                      "if",
                      matched->clone(),
-                     makeASTFunction("minus", makeASTFunction("position", input->clone(), whole_match->clone()), makeLiteral(Field(UInt64(1)))),
+                     makeASTFunction(
+                         "minus", makeASTFunction("position", input->clone(), whole_match->clone()), makeLiteral(Field(UInt64(1)))),
                      makeNull())});
             result.push_back(
                 {name + ".captures",

@@ -52,6 +52,50 @@ bool pipelineReadsOtherCollections(const rapidjson::Value & pipeline)
     return false;
 }
 
+/// A query-wide rewrite is correct only when every source collection has the same physical shape.
+/// Reject heterogeneous `$unionWith` sources rather than rewriting a branch through the other
+/// collection's `json` column.
+void checkUnionCollectionShapes(
+    const rapidjson::Value & pipeline, const CollectionShape & shape, const String & database, std::shared_ptr<QueryExecutor> executor)
+{
+    if (!pipeline.IsArray())
+        return;
+
+    for (const auto & stage : pipeline.GetArray())
+    {
+        if (!stage.IsObject())
+            continue;
+        auto union_it = stage.FindMember("$unionWith");
+        if (union_it == stage.MemberEnd())
+            continue;
+
+        String union_collection;
+        const rapidjson::Value * nested_pipeline = nullptr;
+        if (union_it->value.IsString())
+            union_collection = {union_it->value.GetString(), union_it->value.GetStringLength()};
+        else if (union_it->value.IsObject())
+        {
+            auto collection_it = union_it->value.FindMember("coll");
+            if (collection_it != union_it->value.MemberEnd() && collection_it->value.IsString())
+                union_collection = {collection_it->value.GetString(), collection_it->value.GetStringLength()};
+            if (auto pipeline_it = union_it->value.FindMember("pipeline"); pipeline_it != union_it->value.MemberEnd())
+                nested_pipeline = &pipeline_it->value;
+        }
+
+        if (!union_collection.empty())
+        {
+            CollectionRef union_ref{database, union_collection};
+            const auto union_shape = getCollectionShape(union_ref, executor);
+            if (union_shape.stores_documents != shape.stores_documents)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "An 'aggregate' with '$unionWith' collections of different storage shapes is not supported");
+        }
+        if (nested_pipeline)
+            checkUnionCollectionShapes(*nested_pipeline, shape, database, executor);
+    }
+}
+
 }
 
 std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
@@ -75,20 +119,27 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     /// be `db`.
     auto mongo_dialect_query = fmt::format("db.{}.aggregate({})", collection.collection, serialized_pipeline);
 
-    auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+    const auto max_query_size = mongo_dialect_query.size();
+    auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
         parser,
         mongo_dialect_query.data(),
         mongo_dialect_query.data() + mongo_dialect_query.size(),
         "",
-        10000,
+        max_query_size,
         10000,
         10000,
         collection.database);
 
     /// A collection of documents addresses its fields as the paths of the document column, and a
     /// pipeline that ends without building documents of its own answers with the stored ones.
-    adaptQueryToCollectionShape(ast, collection, executor, /* reads_whole_documents = */ true);
+    const auto shape = getCollectionShape(collection, executor);
+    checkUnionCollectionShapes(pipeline_it->value, shape, collection.database, executor);
+    if (shape.stores_documents)
+    {
+        Mongo::rewriteFieldsAsDocumentPaths(ast);
+        Mongo::selectDocumentsOfCollection(ast);
+    }
 
     String sql_query;
     {

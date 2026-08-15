@@ -119,8 +119,7 @@ ASTPtr tryParseMongoConstant(const rapidjson::Value & value)
         if (!scale)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The value '{}' of '$numberDecimal' cannot be represented exactly by a Decimal128", text);
-        return makeASTFunction(
-            "CAST", makeLiteral(Field(String(text))), makeLiteral(Field(String(fmt::format("Decimal128({})", *scale)))));
+        return makeASTFunction("CAST", makeLiteral(Field(String(text))), makeLiteral(Field(String(fmt::format("Decimal128({})", *scale)))));
     }
     if (wrapper == "$oid")
     {
@@ -208,13 +207,9 @@ std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::st
             case 'i': [[fallthrough]];
             case 'm': [[fallthrough]];
             case 's': [[fallthrough]];
-            case 'x':
-                flags.push_back(option);
-                break;
-            case 'u':
-                break;
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported regular expression option '{}'", option);
+            case 'x': flags.push_back(option); break;
+            case 'u': break;
+            default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported regular expression option '{}'", option);
         }
     }
 
@@ -272,10 +267,17 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         /// as a local time - and the context that parses it is the session for an insert and the
         /// server for a mutation, which would make the two write different instants.
         std::optional<Int64> milliseconds;
+        if (member.value.IsString())
+        {
+            rapidjson::Value value;
+            value.CopyFrom(member.value, allocator);
+            return {"DateTime64(3, 'UTC')", std::move(value)};
+        }
         if (member.value.IsInt64())
             milliseconds = member.value.GetInt64();
-        else if (member.value.IsObject() && member.value.MemberCount() == 1
-                 && stringView(member.value.MemberBegin()->name) == "$numberLong" && member.value.MemberBegin()->value.IsString())
+        else if (
+            member.value.IsObject() && member.value.MemberCount() == 1 && stringView(member.value.MemberBegin()->name) == "$numberLong"
+            && member.value.MemberBegin()->value.IsString())
         {
             Int64 parsed = 0;
             auto text = stringView(member.value.MemberBegin()->value);
@@ -294,10 +296,7 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
     }
 
     throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "The BSON type '{}'{} is not supported by an insert",
-        name,
-        describeMongoField(field_name));
+        ErrorCodes::NOT_IMPLEMENTED, "The BSON type '{}'{} is not supported by an insert", name, describeMongoField(field_name));
 }
 
 rapidjson::Value convertMongoExtendedJSONWrappersDeep(
