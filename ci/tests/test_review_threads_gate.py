@@ -115,6 +115,9 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert "FORCE_ALL_LABEL" not in rerun_workflow
     assert "api_with_retries" in rerun_workflow
     assert "|| true" not in rerun_workflow
+    assert 'pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")' in rerun_workflow
+    assert "unresolved=$(api_with_retries graphql --paginate" in rerun_workflow
+    assert 'runs=$(api_with_retries "repos/$GH_REPO/actions/runs?' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
 
 

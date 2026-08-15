@@ -67,17 +67,15 @@ def check_review_threads():
         print("WARNING: unresolved review threads, merge not allowed")
         return False
 
-    # Post a success status only to clear a previously posted failure, so PRs
-    # the gate never limited do not grow an extra status line.
-    statuses = GH.get_commit_statuses()
-    previous = (statuses or {}).get(REVIEW_THREADS_STATUS_NAME)
-    if previous and previous.state != "success":
-        GH.post_commit_status(
-            name=REVIEW_THREADS_STATUS_NAME,
-            status=Result.Status.OK,
-            description=description,
-            url=info.get_report_url(),
-        )
+    # Always record the unblocked verdict. A read of the existing statuses can
+    # fail transiently; conditionally posting based on that read could leave a
+    # stale failure from a previous limited run and spuriously re-run CI.
+    GH.post_commit_status(
+        name=REVIEW_THREADS_STATUS_NAME,
+        status=Result.Status.OK,
+        description=description,
+        url=info.get_report_url(),
+    )
     return True
 
 

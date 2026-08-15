@@ -93,7 +93,7 @@ jobs:
           fi
 
           # --- Current PR state ---
-          pr_data=$(gh api "repos/$GH_REPO/pulls/$pr")
+          pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")
           state=$(echo "$pr_data" | jq -r '.state')
           head_sha=$(echo "$pr_data" | jq -r '.head.sha')
           override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
@@ -110,7 +110,7 @@ jobs:
           # --- Live unresolved review thread count ---
           owner="${GH_REPO%%/*}"
           name="${GH_REPO##*/}"
-          unresolved=$(gh api graphql --paginate \
+          unresolved=$(api_with_retries graphql --paginate \
             -f query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
               repository(owner: $owner, name: $name) {
                 pullRequest(number: $pr) {
@@ -149,7 +149,7 @@ jobs:
           fi
 
           # --- Re-run the last completed PR workflow run for this head ---
-          runs=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
             --jq '[.workflow_runs[] | select(.name == "PR")]')
           active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
           if [ "$active" -gt 0 ]; then
