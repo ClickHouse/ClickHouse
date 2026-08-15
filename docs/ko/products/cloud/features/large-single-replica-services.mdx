@@ -1,0 +1,47 @@
+---
+sidebarTitle: '대규모 단일 레플리카 서비스'
+sidebar_label: '대규모 단일 레플리카 서비스'
+sidebar_position: 8
+slug: /cloud/features/large-single-replica-services
+title: '대규모 단일 레플리카 서비스'
+description: 'ClickHouse Cloud의 대규모 단일 레플리카 서비스의 가용성 및 스케일링을 알아봅니다'
+keywords: ['단일 레플리카', '수직 스케일링', '자동 스케일링', 'Scale 티어', 'Enterprise 티어']
+doc_type: 'guide'
+---
+
+대규모 단일 레플리카 서비스를 사용하면 Scale 및 Enterprise 티어에서 제공하는 구성 가능한 컴퓨트 리소스를 활용하여 단일 컴퓨트 레플리카로 ClickHouse Cloud 서비스를 실행할 수 있습니다. 크기가 고정된 Basic 티어 서비스와 달리, 이러한 서비스의 스케일링 방식은 티어 및 하드웨어 프로필에 따라 달라집니다.
+
+<div id="availability">
+  ## 가용성
+</div>
+
+대규모 단일 레플리카 서비스는 Scale 및 Enterprise 티어에서 사용할 수 있습니다. Basic 티어 서비스도 단일 레플리카를 사용하지만, 총 메모리가 `8 GiB` 또는 `12 GiB`로 고정되어 있으며 수직 및 수평 스케일링을 지원하지 않습니다.
+
+Scale 및 Enterprise 티어에서는 지원팀에 문의하지 않고 레플리카가 1개인 프라이머리 또는 세컨더리 서비스를 생성할 수 있습니다. [웨어하우스](/ko/products/cloud/features/infrastructure/warehouses)의 서비스는 각각 독립적으로 스케일링됩니다.
+
+<div id="when-to-use-a-single-replica-service">
+  ## 단일 레플리카 서비스를 사용해야 하는 경우
+</div>
+
+대규모 단일 레플리카 서비스는 Basic 티어 서비스보다 더 많은 CPU 또는 메모리가 필요하지만 컴퓨트 이중화가 필요하지 않은 워크로드의 컴퓨트 비용을 줄일 수 있습니다. 또한 개발, 테스트, 배치 처리 및 기타 중요하지 않은 워크로드에 유용할 수 있습니다.
+
+<Warning>
+  단일 레플리카 서비스는 가용성이 낮으므로 고가용성이 필요한 프로덕션 워크로드에는 권장되지 않습니다. 고가용성을 위해서는 최소 2개의 레플리카를 사용하십시오.
+</Warning>
+
+<div id="scaling">
+  ## 스케일링
+</div>
+
+수직 스케일링 동작은 티어와 하드웨어 프로필에 따라 달라집니다.
+
+* 표준 `1:4` 프로필을 사용하는 Scale 티어 및 Enterprise 티어 서비스는 [수직 자동 스케일링](/ko/products/cloud/features/autoscaling/vertical)을 지원합니다. Cloud Console에서 최소 및 최대 CPU와 메모리 리소스를 구성할 수 있습니다.
+* 사용자 지정 프로필을 사용하는 Enterprise 티어 서비스는 Cloud Console에서 수직 자동 스케일링 또는 수동 수직 스케일링을 지원하지 않습니다. 수직 크기 조정이 필요하면 지원팀에 문의하십시오.
+
+Scale 및 Enterprise 티어 서비스는 [수평 스케일링](/ko/products/cloud/features/autoscaling/horizontal)을 지원하므로 여러 레플리카로 스케일 아웃한 후 다시 1개의 레플리카로 스케일 인할 수 있습니다.
+
+<div id="service-limits">
+  ## 서비스 한도
+</div>
+
+Basic 티어의 데이터베이스 `100`개 및 테이블 `500`개 한도는 해당 티어의 단일 레플리카 서비스에만 적용됩니다. Scale 및 Enterprise 티어의 단일 레플리카 서비스에는 표준 서비스 가드레일이 적용됩니다. 자세한 내용은 [사용량 한도](/ko/products/cloud/guides/best-practices/usagelimits)를 참조하십시오.
