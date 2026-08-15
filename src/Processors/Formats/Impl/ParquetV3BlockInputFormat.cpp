@@ -194,6 +194,19 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
         reader->cancel();
 }
 
+void ParquetV3BlockInputFormat::resetReadBuffer()
+{
+    {
+        /// Background tasks read through a non-owning pointer to the buffers the base class is
+        /// about to release, so they have to be stopped first. `reader` stays alive:
+        /// getMatchedBuckets() reads row group metadata after the source is exhausted.
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->shutdownTasks();
+    }
+    IInputFormat::resetReadBuffer();
+}
+
 void ParquetV3BlockInputFormat::resetParser()
 {
     {
@@ -587,9 +600,16 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
+                "enable_json_parsing={};max_parser_depth={};"
+                "local_time_as_utc={};allow_geoparquet_parser={};skip_columns_with_unsupported_types={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.schema_inference_make_json_columns_nullable,
+                settings.parquet.enable_json_parsing,
+                settings.max_parser_depth,
+                settings.parquet.local_time_as_utc,
+                settings.parquet.allow_geoparquet_parser,
+                settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
         });
 }
 

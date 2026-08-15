@@ -3,19 +3,20 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Core/NamesAndTypes.h>
 #include <base/types.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
+
+class IMergeTreeDataPart;
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 class MergeTreeIndexGranularity;
 struct MergeTreePartInfo;
@@ -76,9 +77,34 @@ public:
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 
+    /// Look up a (sub)column present in the part, if any.
+    virtual std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const = 0;
+
     virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
 
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
+
+    /// Name of the parent part when this is a projection part, empty otherwise.
+    /// Used by the read pool/select processor to build a qualified part name.
+    virtual String getParentPartName() const = 0;
+
+    /// Per-column on-disk sizes, used for read-task sizing and the block size predictor.
+    /// A borrowed part (stateless worker) has no size information: the scalar getters return zero
+    /// (size predictor falls back to a default estimate) and `getColumnSizes` returns null. The map is
+    /// returned by shared pointer, not by value, so hot callers (e.g. the per-block dataflow-statistics
+    /// callback) reuse the part's cached map instead of copying it on every block.
+    virtual ColumnSize getColumnSize(const String & column_name) const = 0;
+    virtual std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const = 0;
+    virtual ColumnSize getSubcolumnSize(const String & subcolumn_name) const = 0;
+
+    /// MergeTree settings governing how the part is read.
+    virtual MergeTreeSettingsPtr getStorageSettings() const = 0;
+
+    /// The underlying concrete data part, or nullptr for a borrowed part (stateless worker).
+    /// Only for the few coordinator-only features (patches, projections, index-read-tasks)
+    /// that are never exercised on the stateless-worker read path. Hot-path/both-paths code
+    /// must use the abstraction accessors above, not this.
+    virtual std::shared_ptr<const IMergeTreeDataPart> getDataPart() const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
 
@@ -101,16 +127,6 @@ public:
     virtual void reportBroken() = 0;
 
     virtual size_t getRowCount() const = 0;
-
-    virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
-    }
-
-    virtual const RangesInDataPartReadHints & getReadHints() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
-    }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;
