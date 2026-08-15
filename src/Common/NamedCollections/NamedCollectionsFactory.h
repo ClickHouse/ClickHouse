@@ -84,6 +84,10 @@ public:
     void createFromSQL(const ASTCreateNamedCollectionQuery & query);
 
     void removeFromSQL(const ASTDropNamedCollectionQuery & query);
+    /// Removes the collection only when no active or detached dependency was registered while the
+    /// factory mutex was held. This serializes the final drop check with named-collection lookup
+    /// and dependency registration during CREATE and ATTACH.
+    bool removeFromSQLIfNoDependencies(const ASTDropNamedCollectionQuery & query);
 
     void updateFromSQL(const ASTAlterNamedCollectionQuery & query);
 
@@ -94,6 +98,7 @@ public:
     void shutdown();
 
     void addDependency(const String & collection_name, const StorageID & table_id);
+    NamedCollectionPtr getAndAddDependency(const String & collection_name, bool throw_unknown_collection, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
     /// Removes one exact entry: the collection and the whole `StorageID` (database, table, UUID) must
     /// match. The stale-entry cleanup of `DROP NAMED COLLECTION` uses it because the proof of staleness

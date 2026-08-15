@@ -179,7 +179,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     context->checkAccess(AccessType::NAMED_COLLECTION, *collection_name);
 
     NamedCollectionPtr collection;
-    if (throw_unknown_collection)
+    if (dependent_table_id)
+        collection = NamedCollectionFactory::instance().getAndAddDependency(*collection_name, throw_unknown_collection, *dependent_table_id);
+    else if (throw_unknown_collection)
         collection = NamedCollectionFactory::instance().get(*collection_name);
     else
         collection = NamedCollectionFactory::instance().tryGet(*collection_name);
@@ -194,8 +196,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     if (asts.size() == 1)
     {
-        if (dependent_table_id)
-            NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
         return collection_copy;
     }
 
@@ -230,9 +230,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         collection_copy->markQueryOverridden(key);
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
-
-    if (dependent_table_id)
-        NamedCollectionFactory::instance().addDependency(*collection_name, *dependent_table_id);
 
     return collection_copy;
 }

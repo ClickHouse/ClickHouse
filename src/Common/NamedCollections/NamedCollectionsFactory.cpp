@@ -328,6 +328,32 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     remove(query.collection_name, lock);
 }
 
+bool NamedCollectionFactory::removeFromSQLIfNoDependencies(const ASTDropNamedCollectionQuery & query)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    const auto detached_it = detached_dependencies.lower_bound(std::make_tuple(query.collection_name, String{}, String{}));
+    if (dependencies.get<Collection>().find(query.collection_name) != dependencies.get<Collection>().end()
+        || detached_it != detached_dependencies.end() && std::get<0>(*detached_it) == query.collection_name)
+        return false;
+
+    if (!exists(query.collection_name, lock))
+    {
+        if (query.if_exists)
+            return true;
+
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+            "Cannot remove collection `{}`, because it doesn't exist",
+            query.collection_name);
+    }
+
+    metadata_storage->remove(query.collection_name);
+    remove(query.collection_name, lock);
+    return true;
+}
+
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)
 {
     std::lock_guard lock(mutex);
@@ -447,6 +473,33 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
     /// registered while the engine arguments are resolved, and the `ATTACH` can still fail after that,
     /// leaving the table detached. The entry is removed only when the table is dropped, detached
     /// permanently, or renamed.
+}
+
+NamedCollectionPtr NamedCollectionFactory::getAndAddDependency(
+    const String & collection_name,
+    bool throw_unknown_collection,
+    const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    auto collection = tryGet(collection_name, lock);
+    if (!collection)
+    {
+        if (throw_unknown_collection)
+            throw Exception(ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST, "There is no named collection `{}`", collection_name);
+        return nullptr;
+    }
+
+    auto & dependencies_by_collection = dependencies.get<Collection>();
+    auto range = dependencies_by_collection.equal_range(collection_name);
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
+            && it->table_id.uuid == table_id.uuid)
+            return collection;
+    }
+
+    dependencies.emplace(collection_name, table_id);
+    return collection;
 }
 
 void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
