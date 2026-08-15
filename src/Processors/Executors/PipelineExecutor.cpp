@@ -776,6 +776,10 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
                 /// `catch` propagates `MEMORY_LIMIT_EXCEEDED` through the pipeline
                 /// (calling `finish()` so consumers unblock).
                 SpeculativeMemoryReservation speculative_memory_reservation;
+                SCOPE_EXIT({
+                    if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                        CurrentThread::flushUntrackedMemory();
+                });
 
                 executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
             }
@@ -821,6 +825,10 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
             /// thread only waits. A throw lands in the surrounding `catch`, which cancels the
             /// pipeline and rethrows to the caller.
             SpeculativeMemoryReservation speculative_memory_reservation;
+            SCOPE_EXIT({
+                if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+                    CurrentThread::flushUntrackedMemory();
+            });
 
             executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
         }
