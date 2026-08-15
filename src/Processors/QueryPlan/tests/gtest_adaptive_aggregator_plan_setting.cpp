@@ -8,6 +8,15 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+namespace DB
+{
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+}
+}
+
 using namespace DB;
 
 /// `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` may go on the wire only towards a peer
