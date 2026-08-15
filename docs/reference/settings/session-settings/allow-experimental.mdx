@@ -35,6 +35,14 @@ Enable experimental AI functions (e.g. `aiGenerateContent`). These functions mak
 
 Allow the analyzer.
 
+## allow_experimental_binary_fuse_filter_index {#allow_experimental_binary_fuse_filter_index}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+If set to true, allow defining skip indexes of type `binary_fuse_filter`. The on-disk format is experimental.
+
 ## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 
 <ExperimentalBadge/>
@@ -52,6 +60,14 @@ Allow to clean up old data files during Iceberg compaction.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+
+## allow_experimental_cuckoo_filter_index {#allow_experimental_cuckoo_filter_index}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+If set to true, allow defining skip indexes of type `cuckoo_filter`. The on-disk format is new; enable only after you accept the operational risk.
 
 ## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
 
