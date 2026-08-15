@@ -62,19 +62,25 @@ bool isRemovedWindowViewQuery(const String & query)
 {
     Lexer lexer(query.data(), query.data() + query.size());
 
-    auto next_keyword = [&lexer](std::string_view keyword)
+    auto next_significant_token = [&lexer]
     {
         Token token = lexer.nextToken();
         while (!token.isSignificant())
             token = lexer.nextToken();
 
+        return token;
+    };
+
+    auto is_keyword = [](const Token & token, std::string_view keyword)
+    {
         return token.type == TokenType::BareWord
             && equalsCaseInsensitive(std::string_view(token.begin, token.size()), keyword);
     };
 
-    return (next_keyword("CREATE") || next_keyword("ATTACH"))
-        && next_keyword("WINDOW")
-        && next_keyword("VIEW");
+    const Token first_token = next_significant_token();
+    return (is_keyword(first_token, "CREATE") || is_keyword(first_token, "ATTACH"))
+        && is_keyword(next_significant_token(), "WINDOW")
+        && is_keyword(next_significant_token(), "VIEW");
 }
 
 }
