@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Core/Field.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -21,6 +23,28 @@ namespace ErrorCodes
 
 namespace
 {
+
+template <typename Value>
+Value convertInterpolatedResult(Float64 result)
+{
+    if constexpr (is_decimal<Value>)
+    {
+        using NativeType = typename Value::NativeType;
+
+        /// Interpolation is performed in Float64. Values near the Int64 upper bound can round to
+        /// 2^63 exactly, which is outside the representable range and makes the conversion undefined.
+        if (result >= static_cast<Float64>(std::numeric_limits<NativeType>::max()))
+            return Value(std::numeric_limits<NativeType>::max());
+        if (result <= static_cast<Float64>(std::numeric_limits<NativeType>::lowest()))
+            return Value(std::numeric_limits<NativeType>::lowest());
+
+        return Value(static_cast<NativeType>(result));
+    }
+    else
+    {
+        return static_cast<Value>(result);
+    }
+}
 
 /** Quantile calculation with "reservoir sample" algorithm.
   * It collects pseudorandom subset of limited size from a stream of values,
@@ -68,10 +92,7 @@ struct QuantileReservoirSampler
         if (data.empty())
             return {};
 
-        if constexpr (is_decimal<Value>)
-            return Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(level)));
-        else
-            return static_cast<Value>(data.quantileInterpolated(level));
+        return convertInterpolatedResult<Value>(data.quantileInterpolated(level));
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -88,10 +109,7 @@ struct QuantileReservoirSampler
             }
             else
             {
-                if constexpr (is_decimal<Value>)
-                    result[indices[i]] = Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(levels[indices[i]])));
-                else
-                    result[indices[i]] = Value(data.quantileInterpolated(levels[indices[i]]));
+                result[indices[i]] = convertInterpolatedResult<Value>(data.quantileInterpolated(levels[indices[i]]));
             }
         }
     }
