@@ -141,24 +141,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Increment the reference count of a data blob shared between metadata files.
-    virtual void incrementBlobRefCount(const std::string & /* blob */)
-    {
-        throwNotImplemented();
-    }
-
-    /// Decrement the reference count of a data blob; at zero the blob becomes eligible for removal.
-    virtual void decrementBlobRefCount(const std::string & /* blob */)
-    {
-        throwNotImplemented();
-    }
-
-    /// Register a data blob for background removal, atomically with the commit.
-    virtual void submitBlobForRemoval(const std::string & /* remote_path */)
-    {
-        throwNotImplemented();
-    }
-
     virtual ~IMetadataTransaction() = default;
 
 protected:
@@ -190,10 +172,6 @@ public:
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
-
-    /// Whether small file content can be stored inside the metadata itself, with no backing blob
-    /// (see `WriteSettings::inline_file_max_bytes`).
-    virtual bool supportsInlineData() const { return false; }
 
     /// Returns true if underlying blob ids generator uses random.
     virtual bool areBlobPathsRandom() const = 0;
@@ -316,7 +294,6 @@ public:
     {
         return nullptr;
     }
-
     virtual bool isTransactional() const
     {
         return false;

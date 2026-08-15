@@ -45,10 +45,6 @@ public:
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    /// A shallow copy of this disk with a fresh writable in-memory metadata storage;
-    /// everything else is shared, no background threads are started.
-    DiskObjectStoragePtr wrapWithMemoryMetadata();
-
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     bool supportZeroCopyReplication() const override
@@ -256,9 +252,6 @@ public:
 #endif
 
 private:
-
-    /// Shallow-copy constructor for `wrapWithMemoryMetadata`.
-    DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_);
 
     /// Create actual disk object storage transaction for operations
     /// execution.

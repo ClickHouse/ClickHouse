@@ -28,10 +28,7 @@ public:
     std::string getZooKeeperPath() const override;
 
     bool supportsEmptyFilesWithoutBlobs() const override;
-    bool supportsInlineData() const override;
-    bool appliesOperationsEagerly() const override;
     bool areBlobPathsRandom() const override;
-    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -134,10 +131,6 @@ public:
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
     void truncateFile(const std::string & path, size_t size) override;
-
-    void incrementBlobRefCount(const std::string & blob) override;
-    void decrementBlobRefCount(const std::string & blob) override;
-    void submitBlobForRemoval(const std::string & remote_path) override;
 
 private:
     const MetadataTransactionPtr underlying;
