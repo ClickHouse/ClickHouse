@@ -164,7 +164,7 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
     /// `inflate` requires a non-empty output buffer even for an empty member. Keep a one-byte
     /// scratch buffer in that case: filling it proves that the page expands to more bytes than
     /// declared, while leaving it untouched still lets `inflate` validate the gzip trailer.
-    unsigned char empty_out;
+    unsigned char empty_out{};
     auto * const zlib_out_begin = uncompressed_size == 0 ? &empty_out : out_begin;
     auto * const zlib_out_end = uncompressed_size == 0 ? &empty_out + 1 : out_end;
     zstr.next_in = reinterpret_cast<unsigned char *>(const_cast<char *>(data));
