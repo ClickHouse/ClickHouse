@@ -1135,8 +1135,9 @@ than compression.
 An explicitly set `optimize_row_order = 0` takes precedence: such a table is
 never row-order optimized, regardless of this setting.
 
-As with `optimize_row_order`, the optimization applies to ordinary `MergeTree`
-tables only. Specialized engines of the family, e.g. `ReplacingMergeTree`,
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
 `CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
 and keep the order of the inserted rows.
 )", 0) \
