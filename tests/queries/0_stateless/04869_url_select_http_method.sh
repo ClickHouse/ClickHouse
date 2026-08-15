@@ -170,9 +170,9 @@ $CLICKHOUSE_CLIENT $SETTINGS_OPT $CACHE_OPT -q "SELECT * FROM url('${CACHE_URL}'
 $CLICKHOUSE_CLIENT -q "SELECT countDistinct(source), countIf(source LIKE 'POST:%') FROM system.schema_inference_cache WHERE storage = 'URL' AND source LIKE '%${TAG_CACHEKEY}%'"
 
 # 15. urlCluster carries the method to the cluster paths: the initiator's schema inference and
-#     the worker's read both go out as POST. The row count depends on task distribution, so only
-#     the wire method is asserted (below).
-$CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELECT sum(x) FROM urlCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_URL}&query=SELECT+10+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CLUSTER}', 'TSVWithNamesAndTypes', http_method='POST')" > /dev/null
+#     the worker's read both go out as POST (asserted per tag below). How many shards fetch a
+#     single URL depends on task distribution, so assert only that rows arrived.
+$CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELECT count() > 0 FROM urlCluster('test_shard_localhost', '${CLICKHOUSE_URL}&query=SELECT+10+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CLUSTER}', 'TSVWithNamesAndTypes', http_method='POST')" 2>&1 | tail -1
 
 # Verify the methods that were actually used, per tag.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
