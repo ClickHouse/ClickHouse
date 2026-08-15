@@ -31,6 +31,58 @@ if [ "$#" -gt 0 ]; then TRACK_AUTHORS=("$@"); fi
 ME=$(gh api user --jq .login)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+# The per-PR helpers below are separate scripts run by xargs, so they locate the
+# shared retry wrapper through the environment rather than a relative path.
+export GOOD_PRS_WORK="$WORK"
+
+# ---- retry wrapper shared by both per-PR helpers ----------------------------
+# A full report makes roughly two GraphQL calls per PR - several hundred per run -
+# so hitting at least one transient GitHub failure is close to certain: the API
+# regularly answers 502/503/504, and a wide fan-out can trip the secondary rate
+# limit. Aborting on the first one throws away all the quota already spent, so
+# those are retried with exponential backoff, and a primary rate-limit rejection
+# waits for the hourly window to roll over instead.
+#
+# This does not weaken the fail-loud design: errors that will never fix
+# themselves (auth, unknown PR, bad flag) still fail on the first attempt, and a
+# transient error that outlives every attempt is still fatal. A row is never
+# silently dropped either way.
+cat > "$WORK/ghretry.sh" <<'SH'
+GH_RETRIES=${GH_RETRIES:-5}
+GH_RETRY_DELAY=${GH_RETRY_DELAY:-2}
+
+# gh_retry <errfile> <cmd...>
+# On success sets GH_OUT to the command's stdout and returns 0. On failure returns
+# non-zero, leaving the last attempt's stderr in <errfile> for the caller to report.
+gh_retry() {
+  local errfile="$1"; shift
+  local attempt=1 delay="$GH_RETRY_DELAY" reset now wait_s
+  while :; do
+    if GH_OUT=$("$@" 2>"$errfile"); then return 0; fi
+    if [ "$attempt" -ge "$GH_RETRIES" ]; then return 1; fi
+    if grep -qiE 'secondary rate limit|submitted too quickly' "$errfile"; then
+      sleep "$delay"; delay=$(( delay * 2 + 1 ))
+    elif grep -qiE 'rate limit' "$errfile"; then
+      # Primary hourly limit: retrying before the window resets can only fail
+      # again, so wait it out. The rate_limit endpoint is itself unmetered, and
+      # the wait is capped so a run always terminates.
+      reset=$(gh api rate_limit --jq .resources.graphql.reset 2>/dev/null) || reset=""
+      case "$reset" in (*[!0-9]*|"") reset=0 ;; esac
+      now=$(date +%s)
+      wait_s=$(( reset - now + 5 ))
+      if [ "$wait_s" -lt "$GH_RETRY_DELAY" ]; then wait_s="$GH_RETRY_DELAY"; fi
+      if [ "$wait_s" -gt 900 ]; then wait_s=900; fi
+      echo "good-prs: GraphQL rate limit reached, waiting ${wait_s}s for the window to reset (attempt $attempt/$GH_RETRIES)" >&2
+      sleep "$wait_s"
+    elif grep -qiE 'HTTP (408|429|5[0-9][0-9])|Service Unavailable|Bad Gateway|Gateway Time-?out|couldn.t respond|timed out|connection reset|unexpected EOF|TLS handshake' "$errfile"; then
+      sleep "$delay"; delay=$(( delay * 2 ))
+    else
+      return 1   # permanent error: no point burning attempts on it
+    fi
+    attempt=$(( attempt + 1 ))
+  done
+}
+SH
 
 # ---- helper invoked per-PR by xargs: classify the checks --------------------
 # Output: "<num>\t<sync-label>\t<#other-non-green>" where <sync-label> is one of
@@ -46,14 +98,17 @@ trap 'rm -rf "$WORK"' EXIT
 # whenever it could read the checks (even if some are failing or pending). A
 # non-zero exit therefore means either "no checks reported" (a legitimate empty
 # result) or a real API / auth / rate-limit error. We treat the former as NO_CHECKS
-# and abort the whole run on the latter, rather than silently dropping the row.
+# and abort the whole run on the latter (once gh_retry has exhausted its attempts),
+# rather than silently dropping the row.
 cat > "$WORK/classify.sh" <<'SH'
 #!/usr/bin/env bash
 set -uo pipefail
+. "$GOOD_PRS_WORK/ghretry.sh"
 n="$1"
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
-if json=$(gh pr checks "$n" --repo "$REPO" --json name,state,bucket 2>"$err"); then
+if gh_retry "$err" gh pr checks "$n" --repo "$REPO" --json name,state,bucket; then
+  json="$GH_OUT"
   if [ -z "$json" ] || [ "$json" = "[]" ]; then
     printf '%s\tNO_CHECKS\t99\n' "$n"; exit 0
   fi
@@ -86,12 +141,13 @@ chmod +x "$WORK/classify.sh"
 cat > "$WORK/approval.sh" <<'SH'
 #!/usr/bin/env bash
 set -uo pipefail
+. "$GOOD_PRS_WORK/ghretry.sh"
 n="$1"
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
-if res=$(gh pr view "$n" --repo "$REPO" --json state,reviews \
-  --jq '[.state, ([.reviews[].state] | any(. == "APPROVED"))] | @tsv' 2>"$err"); then
-  printf '%s\t%s\n' "$n" "$res"
+if gh_retry "$err" gh pr view "$n" --repo "$REPO" --json state,reviews \
+  --jq '[.state, ([.reviews[].state] | any(. == "APPROVED"))] | @tsv'; then
+  printf '%s\t%s\n' "$n" "$GH_OUT"
 else
   echo "good-prs: 'gh pr view $n' failed: $(tr '\n' ' ' <"$err")" >&2
   exit 255
