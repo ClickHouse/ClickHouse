@@ -27,7 +27,7 @@ Deploy the connector when ClickHouse monitors or supports ClickHouse clusters ru
 
 - All access paths originate from inside your boundary, with no inbound connectivity.
 - Support access is time-boxed, enabled by you, and revocable by you at any moment.
-- Everything ClickHouse reads is read-only: ClickHouse table access always, plus workload metadata and logs on Kubernetes during a session you enabled. Every support-session command is recorded in an audit log you own.
+- Everything ClickHouse reads is read-only: ClickHouse table access always, plus workload metadata and logs during a session you enabled, on deployments provisioned with Kubernetes access. Every support-session command is recorded in an audit log you own.
 
 ## How it works {#how-it-works}
 
