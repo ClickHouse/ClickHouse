@@ -78,11 +78,9 @@ SELECT dictGet('${db}.dict_polp', 'v', toUInt64(9));
 echo '--- 2b. the definer settings constraints bound what the dictionary definition can set'
 # A READONLY constraint on the definer must survive the dictionary's own SETTINGS, the same way it
 # survives a view's triggering query (04545_definer_settings_readonly_constraint).
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -m -q "
 CREATE USER ${constrained} IDENTIFIED BY 'constrained_password'
 SETTINGS max_memory_usage_for_user = 123456789 READONLY;
-"
-${CLICKHOUSE_CLIENT} -m -q "
 GRANT SELECT ON ${db}.src TO ${constrained};
 CREATE DICTIONARY ${db}.dict_constrained (k UInt64, v String)
 PRIMARY KEY k
@@ -92,10 +90,8 @@ LIFETIME(0)
 SETTINGS(max_memory_usage_for_user = 987654321)
 DEFINER = ${constrained} SQL SECURITY DEFINER;
 SELECT 'constrained setting wins:', dictGet('${db}.dict_constrained', 'v', toUInt64(1)) = '123456789';
-"
-# Control: with no constraint on the definer the dictionary's own SETTINGS is applied, so the arm
-# above pins the constraint rather than the dictionary SETTINGS being ignored altogether.
-${CLICKHOUSE_CLIENT} -m -q "
+-- Control: with no constraint on the definer the dictionary's own SETTINGS is applied, so the arm
+-- above pins the constraint rather than the dictionary SETTINGS being ignored altogether.
 GRANT SELECT ON ${db}.src TO ${owner};
 CREATE DICTIONARY ${db}.dict_unconstrained (k UInt64, v String)
 PRIMARY KEY k
@@ -153,13 +149,16 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'loads after attach', dictGet('${db}.dict_define
 echo '--- 5b. a short ATTACH cannot carry the clause, because it has no definition to apply it to'
 # The clause is accepted by the parser in this position, so it reaches the interpreter with no
 # dictionary definition attached; it is refused with the message that covers every dropped clause.
+attach_clauses=$(
 for clause in "SQL SECURITY DEFINER" "DEFINER = ${owner} SQL SECURITY DEFINER" "SQL SECURITY NONE"
 do
-    ${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+    cat <<SQLTEXT
     ATTACH DICTIONARY ${db}.dict_attach_clause ${clause};
     SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_attach_clause';
-    " 2>&1 | grep -o -E "ATTACH applies the table definition from stored metadata|^persisted:.*"
+SQLTEXT
 done
+)
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "${attach_clauses}" 2>&1 | grep -o -E "ATTACH applies the table definition from stored metadata|^persisted:.*"
 # The server has to survive all of it: the reference above is also produced by a dead server, whose
 # client errors would not match any of the greps.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server is alive', 1"
@@ -193,10 +192,8 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT 'definer load identity is the definer', dictGet('${db}.dict_who', 'v', toUInt64(1)) = '${owner}';
-"
-# Control: with no clause the same source keeps loading as the user named in SOURCE, which defaults
-# to 'default'. This is the identity a wrongly-accepted NONE would have been indistinguishable from.
-${CLICKHOUSE_CLIENT} -m -q "
+-- Control: with no clause the same source keeps loading as the user named in SOURCE, which defaults
+-- to 'default'. This is the identity a wrongly-accepted NONE would have been indistinguishable from.
 CREATE DICTIONARY ${db}.dict_who_plain (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' QUERY 'SELECT 1 AS k, currentUser() AS v'))
@@ -206,13 +203,14 @@ SELECT 'no clause load identity is the source user', dictGet('${db}.dict_who_pla
 "
 
 echo '--- 7. a source that cannot honour a definer is rejected by the CREATE itself, and nothing is persisted'
+rejected_sources=$(
 for source in \
     "MYSQL(HOST 'mysql_host' PORT 3306 USER 'u' PASSWORD 'p' DB 'd' TABLE 't')" \
     "HTTP(URL 'http://localhost:1/data' FORMAT 'CSV')" \
     "CLICKHOUSE(HOST 'remote.invalid.example' PORT 9000 DB '${db}' TABLE 'src')" \
     "NULL()"
 do
-    ${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+    cat <<SQLTEXT
     CREATE DICTIONARY ${db}.dict_rejected (k UInt64, v String)
     PRIMARY KEY k
     SOURCE(${source})
@@ -227,8 +225,10 @@ do
     LIFETIME(0)
     SQL SECURITY NONE;
     SELECT 'none persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_rejected_none';
-    " 2>&1 | grep -o -E "DEFINER is only supported for a dictionary with a local CLICKHOUSE source|SQL SECURITY NONE can't be specified for DICTIONARY|^(none )?persisted:.*"
+SQLTEXT
 done
+)
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "${rejected_sources}" 2>&1 | grep -o -E "DEFINER is only supported for a dictionary with a local CLICKHOUSE source|SQL SECURITY NONE can't be specified for DICTIONARY|^(none )?persisted:.*"
 
 echo '--- 7a. a function-valued source parameter is evaluated before locality is decided'
 # `PORT tcpPort()` is the documented way to name this server, and a source parameter is only turned
