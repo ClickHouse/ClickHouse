@@ -354,8 +354,8 @@ class AggregateFunctionFractionPrometheusHistogram final
     Float64 upper;
 
 public:
-    AggregateFunctionFractionPrometheusHistogram(const DataTypes & argument_types, const Array & params)
-        : Base(argument_types, params, std::make_shared<DataTypeFloat64>())
+    AggregateFunctionFractionPrometheusHistogram(const DataTypes & argument_types_, const Array & params)
+        : Base(argument_types_, params, std::make_shared<DataTypeFloat64>())
     {
         if (params.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two parameters", getName());
