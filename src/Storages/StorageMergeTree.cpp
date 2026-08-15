@@ -622,6 +622,10 @@ void StorageMergeTree::alter(
             /// Lock declared outside the try so it stays held through the catch handler;
             /// a `lock_guard` would be destroyed during unwinding and leak a race window
             /// where another thread observes `new_metadata` without the pending mutation.
+            /// Pause before taking the mutex so a concurrent rollback can finish its
+            /// unsuccessful lookup before this registration starts.
+            if (prepared)
+                FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
             std::unique_lock background_lock(currently_processing_in_background_mutex);
             bool mutation_registered = false;
             try
@@ -636,9 +640,24 @@ void StorageMergeTree::alter(
                 /// observe `new_metadata` without the matching rename mutation.
                 if (prepared)
                 {
+                    /// `prepareMutationEntry` adds the mutation to the transaction before
+                    /// it is registered in `current_mutations_by_version`.
                     mutation_version = prepared->version;
+                    String mutation_id = prepared->mutation_id;
                     addPreparedMutationEntry(std::move(*prepared));
                     mutation_registered = true;
+
+                    /// A rollback which started while the entry was unregistered could not
+                    /// remove it via `killMutation`. Detect that case while still holding
+                    /// the mutex: throwing enters the rollback below, which removes the
+                    /// entry and restores the durable metadata before either can be observed
+                    /// without the other. A rollback starting afterwards finds the entry
+                    /// and removes it normally via `killMutation`.
+                    auto txn = local_context->getCurrentTransaction();
+                    if (txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+                        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+                                        "Transaction {} was rolled back while rename mutation {} was being registered",
+                                        txn->tid, mutation_id);
                 }
 
                 fiu_do_on(FailPoints::mt_alter_throw_after_mutation_registered,

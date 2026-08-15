@@ -1,4 +1,7 @@
 invalid_transaction_errors 1
 mutations_left 0
 sum_after_kill 0
+metadata_invalid_transaction_errors 1
+metadata_mutations_left 0
+column_after_metadata_kill value
 sum_after_mutation 700
