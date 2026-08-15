@@ -150,11 +150,30 @@ def main():
     parser.add_argument("--findings", required=True, help="findings.json from sqlancer_failures.py")
     parser.add_argument("--job-name", required=True, help="job name, i.e. the CI DB check_name")
     parser.add_argument("--info", default="", help="one-line run summary for the message footer")
+    parser.add_argument(
+        "--extra-failure",
+        default="",
+        help="fingerprint of a failure found outside the oracles (a sanitizer report or a "
+        "<Fatal> server message); must be the report row name so it matches CI DB history",
+    )
+    parser.add_argument("--extra-failure-message", default="", help="first line of that failure")
     parser.add_argument("--dry-run", action="store_true", help="print the message instead of posting it")
     args = parser.parse_args()
 
     findings = json.loads(open(args.findings, encoding="utf-8").read())
     failures = findings.get("failures") or []
+    if args.extra_failure:
+        # A sanitizer report or a `<Fatal>` message is a finding with no oracle
+        # reproducer behind it, so it never reaches findings.json - and it is
+        # exactly what the sanitizer build exists to catch. Feed it in so it takes
+        # part in the new-vs-known diff like any other failure.
+        failures = failures + [
+            {
+                "fingerprint": args.extra_failure,
+                "count": 1,
+                "message_shapes": [args.extra_failure_message] if args.extra_failure_message else [],
+            }
+        ]
     if not failures:
         print("No findings - nothing to notify about")
         return

@@ -471,9 +471,16 @@ fi
 # shellcheck source=./scripts/sqlancer_server_errors.sh
 . "$REPO_DIR/ci/jobs/scripts/sqlancer_server_errors.sh"
 SERVER_ERROR_REPORT="$FAILURES_PATH/server-fatal.log"
+SERVER_ERROR_FINGERPRINT=""
 if server_error_line="$(scan_server_errors \
         "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err" "$SERVER_ERROR_REPORT")"; then
-    add_test_result "Sanitizer assert or Fatal messages in server logs" FAIL "$server_error_line" "$SERVER_ERROR_REPORT"
+    # Name the row after the *shape* of the report (addresses, pids and sizes
+    # stripped) rather than "sanitizer report": that name is the CI DB test name
+    # and the alert fingerprint, so two different sanitizer bugs must not collapse
+    # into one - and the same one must not re-alert every night.
+    SERVER_ERROR_FINGERPRINT="Sanitizer/Fatal: $(printf '%s' "$server_error_line" \
+        | sed -e 's/0x[0-9a-fA-F]*/ADDR/g' -e 's/[0-9][0-9]*/N/g' | cut -c1-160)"
+    add_test_result "$SERVER_ERROR_FINGERPRINT" FAIL "$server_error_line" "$SERVER_ERROR_REPORT"
     echo " - server log finding: $server_error_line"
 fi
 
@@ -545,7 +552,9 @@ if [ -f "$FAILURES_PATH/findings.json" ]; then
     python3 "$REPO_DIR/ci/jobs/scripts/sqlancer_notify.py" \
         --findings "$FAILURES_PATH/findings.json" \
         --job-name "$JOB_NAME" \
-        --info "$RESULT_INFO" || echo "WARNING: new-finding notification failed"
+        --info "$RESULT_INFO" \
+        --extra-failure "$SERVER_ERROR_FINGERPRINT" \
+        --extra-failure-message "$server_error_line" || echo "WARNING: new-finding notification failed"
 fi
 
 # ---------------------------------------------------------------------------
