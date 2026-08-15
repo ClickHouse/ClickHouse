@@ -54,7 +54,6 @@ SELECT sum(n) FROM dist_nc_local;
 
 DROP TABLE dist_nc_local;
 DROP TABLE bind_src;
-DROP TABLE dist_cluster_name;
 DROP TABLE dist_nc_unknown_with_db;
 DROP TABLE dist_nc_unknown_with_database;
 DROP NAMED COLLECTION nc_04837_local;

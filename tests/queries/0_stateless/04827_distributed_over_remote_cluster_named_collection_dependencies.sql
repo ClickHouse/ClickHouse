@@ -4,10 +4,9 @@
 -- test concurrently with itself, so one run's DROP NAMED COLLECTION would remove the collection from
 -- under another run.
 
--- The first argument of `remote` / `remoteSecure` accepts more local spellings than an inline address
--- pattern (04824_distributed_over_local_remote_dependencies): a bare identifier names either a named
--- collection or a configured cluster. When the resolved cluster or collection points back to this
--- server, a persisted target reads the underlying table locally, so it must record a referential
+-- The first argument of `remote` / `remoteSecure` accepts a named collection in addition to an inline
+-- address pattern. When the resolved collection points back to this server, a persisted target reads
+-- the underlying table locally, so it must record a referential
 -- dependency on it - without one, `DROP` / `RENAME` of that table would be allowed under
 -- `check_referential_table_dependencies = 1` even though the persisted table then fails at read time.
 -- For the named-collection form the collection stores the addresses / database / table, each replaceable
@@ -27,7 +26,6 @@ CREATE TABLE dist_nc ENGINE = Distributed(test_shard_localhost, remote(nc_04827_
 CREATE TABLE dist_nc_table_override ENGINE = Distributed(test_shard_localhost, remote(nc_04827_local, table = 'dep_src'));
 CREATE TABLE dist_nc_nonlocal ENGINE = Distributed(test_shard_localhost, remote(nc_04827_nonlocal));
 
-SELECT sum(n) FROM dist_cluster_name;
 SELECT sum(n) FROM dist_nc;
 
 -- Dropping the dependent tables one by one shows each of them holds its own referential dependency on

@@ -5,7 +5,7 @@
 -- named collection used by that target must stay alive for the lifetime of the table, including after its
 -- metadata is loaded again. Otherwise a later read would fail after `DROP NAMED COLLECTION`.
 DROP NAMED COLLECTION IF EXISTS nc_04903_distributed_target;
-CREATE NAMED COLLECTION nc_04903_distributed_target AS addresses_expr = '127.0.0.1', database = 'default', table = 'src_04903';
+CREATE NAMED COLLECTION nc_04903_distributed_target AS addresses_expr = '127.0.0.1', database = '', table = 'src_04903';
 CREATE TABLE src_04903 (n UInt64) ENGINE = MergeTree ORDER BY n;
 CREATE TABLE dist_04903 ENGINE = Distributed(test_shard_localhost, remote(nc_04903_distributed_target));
 
