@@ -1853,8 +1853,11 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 
     configuration.http_method = collection.getOrDefault<String>("http_method", collection.getOrDefault<String>("method", ""));
     validateHTTPMethod(configuration.http_method);
-    configuration.http_method_stored_in_collection = !configuration.http_method.empty()
-        && !collection.isQueryOverridden("http_method") && !collection.isQueryOverridden("method");
+    /// `http_method` takes precedence, so the exemption depends on whether the key that actually
+    /// supplied the value was overridden by the query — not on whether either alias was.
+    const String http_method_key = collection.has("http_method") ? "http_method" : "method";
+    configuration.http_method_stored_in_collection
+        = !configuration.http_method.empty() && !collection.isQueryOverridden(http_method_key);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -2752,7 +2755,7 @@ void registerStorageURL(StorageFactory & factory)
                     /* distributed_processing */ false);
             }
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            if (is_fresh_definition)
                 checkExperimentalURLWildcardFromIndexPages(context);
 
             /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`

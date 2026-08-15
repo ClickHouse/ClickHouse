@@ -32,6 +32,7 @@ NC_ENGINE="nc_eng_${CLICKHOUSE_DATABASE}_62352"
 # Fixed UUIDs collide when the flaky check runs this test concurrently; generate per run.
 UUID_ATTACH=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 UUID_ACC=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+UUID_WILD=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 TAG_KVORDER="${CLICKHOUSE_DATABASE}_62352_kvorder"
 TAG_METHODALIAS="${CLICKHOUSE_DATABASE}_62352_methodalias"
 TAG_ALIASCAP="${CLICKHOUSE_DATABASE}_62352_aliascap"
@@ -97,6 +98,9 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM url('file:///nonexistent_62352.csv', 'CSV',
 # A query-time override of a collection is new syntax too — rejected like the inline form
 # (only the value STORED in the collection gets the compatibility exemption above).
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url(${NC_DISP}, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+# Overriding the other alias leaves the stored `http_method` in use (it takes precedence), so the
+# exemption still applies and dispatch proceeds.
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url(${NC_DISP}, method='POST')" 2>&1 | grep -c 'does not support http_method'
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC_DISP}"
 # The engine mirrors the exemption: a fresh CREATE over a collection with a STORED
 # http_method delegates to the scheme backend with the key ignored.
@@ -109,6 +113,7 @@ $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC_ENGINE}"
 # short-syntax ATTACH of stored metadata. (Atomic databases require an explicit UUID for
 # the full-definition form; the guard fires before anything is registered under it.)
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 UUID '${UUID_ATTACH}' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_wild_62352 UUID '${UUID_WILD}' (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 # The delegated engine's TABLE_ENGINE privilege is enforced for full-definition ATTACH too:
 # a user granted URL but not File must not reach the File backend through dispatch.
 acc_user="u_04869_${CLICKHOUSE_DATABASE}"
