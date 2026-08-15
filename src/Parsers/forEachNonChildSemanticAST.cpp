@@ -9,7 +9,10 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/FieldFromAST.h>
@@ -106,6 +109,21 @@ namespace
             /// `children` walks never see. The tree hash folds `names` in, so the walks must
             /// reach it too.
             visit_if(create_user->names);
+        }
+        else if (auto * create_role = node.template as<ASTCreateRoleQuery>())
+        {
+            visit_if(create_role->settings);
+            visit_if(create_role->alter_settings);
+        }
+        else if (auto * settings_profile = node.template as<ASTCreateSettingsProfileQuery>())
+        {
+            visit_if(settings_profile->settings);
+            visit_if(settings_profile->alter_settings);
+            visit_if(settings_profile->to_roles);
+        }
+        else if (auto * quota = node.template as<ASTCreateQuotaQuery>())
+        {
+            visit_if(quota->roles);
         }
         else if (auto * set_query = node.template as<ASTSetQuery>())
         {
