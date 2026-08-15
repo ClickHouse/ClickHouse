@@ -15,7 +15,9 @@ CREATE TABLE t_default_in_tuple
 ENGINE = MergeTree ORDER BY id;
 
 -- The stored type is normalized: no DEFAULT inside the Tuple, a pulled-up column default instead.
-SELECT name, type, default_kind, default_expression
+SELECT name, type,
+    coalesce(nullIf(default_kind, ''), '<none>'),
+    coalesce(nullIf(default_expression, ''), '<none>')
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_default_in_tuple'
 ORDER BY name;
