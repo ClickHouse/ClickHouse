@@ -64,15 +64,19 @@ struct ChildrenSet2
 struct MemtableChildrenSet
 {
     /// Stored in the upper 2 bits of the union (the other union members are pointers, so their
-    /// upper bits are unused).
+    /// upper bits are unused). Mode::Set uses tag bits 00, so `set` holds a plain untagged pointer.
     enum class Mode : uint64_t
     {
-        /// The set is empty.
-        Empty = 0,
+        /// The set is stored as hash set at `*set`.
+        /// Must be 0 so that the pointer is stored unmangled: LSan's reachability scan doesn't
+        /// see through tagged pointers and would report the sets as leaked.
+        /// (`Inline` mode does mangle a pointer inside ChildrenSet2::Entry, but that's a
+        ///  non-owning pointer, so it's ok.)
+        Set = 0,
         /// The set has one element, stored in `entry`.
         Inline = 0x4000000000000000,
-        /// The set is stored as hash set at `*set`.
-        Set = 0x8000000000000000,
+        /// The set is empty.
+        Empty = 0x8000000000000000,
     };
 
     MemtableChildrenSet() = default;
@@ -124,7 +128,7 @@ struct MemtableChildrenSet
     ConstIterator iterate() const;
 
 private:
-    static constexpr uint64_t MODE_MASK = static_cast<uint64_t>(Mode::Inline) | static_cast<uint64_t>(Mode::Set);
+    static constexpr uint64_t MODE_MASK = static_cast<uint64_t>(Mode::Inline) | static_cast<uint64_t>(Mode::Empty);
     static constexpr uint64_t PTR_MASK = ~MODE_MASK;
 
     union
@@ -166,7 +170,8 @@ private:
     void setSet(ChildrenSet2 * s)
     {
         chassert((reinterpret_cast<uint64_t>(s) & MODE_MASK) == 0);
-        mode = static_cast<Mode>(static_cast<uint64_t>(Mode::Set) | reinterpret_cast<uint64_t>(s));
+        /// Mode::Set is 0, so the pointer is stored as is, visible to LSan.
+        set = s;
     }
 
     void destroy()
