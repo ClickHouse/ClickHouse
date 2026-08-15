@@ -109,10 +109,10 @@ sudo clicklink clctl troubleshoot access provision --provider local \
 If certificate signing failed after staging, or the signing endpoint returned `409` because an unexpired certificate already exists, you do not need a new token or a second issuance. Complete the install with the signed materials already on disk:
 
 ```bash
-clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
+sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 ```
 
-On Kubernetes the CLI prints the full form, including `--target helm`, `--target-namespace`, and `--values`; use the printed command as is.
+That is the VM form (root rewrites `/etc/clicklink` and manages the services). On Kubernetes the CLI prints the full form, including `--target helm`, `--target-namespace`, and `--values`; use the printed command as is.
 
 ## Uninstall {#uninstall}
 
@@ -144,4 +144,16 @@ kubectl delete secret clicklink-hmac clicklink-mtls -n "${CONNECTOR_NAMESPACE}"
 kubectl delete secret -n "${CONNECTOR_NAMESPACE}" \
   clicklink-connector-scraper-access-<instance> \
   clicklink-connector-troubleshooter-access-<instance>
+kubectl delete serviceaccount -n "${CONNECTOR_NAMESPACE}" \
+  pcm-scraper-<instance> pcm-troubleshooter-<instance>
+kubectl delete serviceaccount,role,rolebinding -n <clickhouse-namespace> \
+  pcm-scraper pcm-troubleshooter
+```
+
+### ClickHouse users {#uninstall-clickhouse-users}
+
+Uninstalling on either target leaves the provisioned read-only users in place. Drop them as an admin on each instance (append your `--ch-user-suffix` to the names if you set one):
+
+```sql
+DROP USER IF EXISTS pcm_scraper, pcm_troubleshooter;
 ```
