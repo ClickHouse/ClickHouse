@@ -109,6 +109,12 @@ ENGINE = NATS(nats_config_credentials, nats_credentials = 'user JWT and seed'); 
 CREATE TABLE nats_credentials_over_locked_config_file_no_override_by_default (key UInt64)
 ENGINE = NATS(nats_config_locked_credentials, nats_credentials = 'user JWT and seed'); -- { serverError BAD_ARGUMENTS }
 
+-- The `SETTINGS` spelling follows the same new-key policy as the engine-argument spelling,
+-- even though this collection has neither credential key.
+CREATE TABLE nats_credentials_in_settings_over_config_collection_without_credentials_no_override_by_default (key UInt64)
+ENGINE = NATS(nats_config_no_credentials)
+SETTINGS nats_credentials = 'user JWT and seed'; -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE nats_subjects_over_config_collection_no_override_by_default (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_subjects = 'other'); -- { serverError BAD_ARGUMENTS }
 

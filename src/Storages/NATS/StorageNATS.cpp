@@ -939,20 +939,22 @@ void resolveCredentialSource(
     /// without passing through that check, so the permission is enforced here for both spellings. It is
     /// enforced when loading from metadata as well, for the same reason it is enforced there for the
     /// engine-argument spelling: the lock is a policy on a named collection that is still in use, and the
-    /// alternative is to authenticate with credentials the operator forbade. When the collection already
-    /// stores `nats_credentials`, this is a same-key override and uses
-    /// `allow_named_collection_override_by_default`. Replacing `nats_credential_file` uses `true`: passing
-    /// the contents is the only way to supply these credentials from SQL, so the operator states the
-    /// permission with the attribute.
+    /// alternative is to authenticate with credentials the operator forbade. This must be based on key
+    /// existence, not the value: `tryGetNamedCollectionWithOverrides` also refuses a new key when
+    /// `allow_named_collection_override_by_default` is disabled. When the collection already stores
+    /// `nats_credentials`, this is a same-key override and uses `allow_named_collection_override_by_default`.
+    /// Replacing `nats_credential_file` uses `true`: passing the contents is the only way to supply these
+    /// credentials from SQL, so the operator states the permission with the attribute.
     if (credentials_assigned_by_query && named_collection)
     {
-        /// Only one of the two can be non-empty here, so this names the key the operator locked.
-        for (const auto * key : {"nats_credential_file", "nats_credentials"})
-        {
-            const bool default_value = std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default;
-            if (!value_in_collection(key).empty() && !named_collection->isOverridable(key, default_value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-        }
+        /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
+        /// file path, but otherwise they are either a same-key override or a new key.
+        const auto * key = named_collection->has("nats_credentials") || !named_collection->has("nats_credential_file")
+            ? "nats_credentials"
+            : "nats_credential_file";
+        const bool default_value = std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default;
+        if (!named_collection->isOverridable(key, default_value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
     }
 
     /// A path to a credentials file is only accepted from the server configuration file: the server opens
