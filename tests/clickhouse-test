@@ -4314,8 +4314,9 @@ class TestSuite:
         self.cloud_skip_errors_list: List[str] = []
         # Keep this separate from the final test list. A selected-test job may
         # legitimately find a test and subsequently filter it out for its
-        # flavor, but a selector that matches no test at all must fail closed.
-        self.has_explicit_test_match = False
+        # flavor, but every selector must match a test before the benign
+        # filtered-out result is allowed.
+        self.explicit_test_selectors_matched: Set[str] = set()
         # List of tests included in a blacklist.
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
@@ -4470,15 +4471,22 @@ class TestSuite:
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
-            if self.args.test and not any(
-                re.search(pattern, test_name) for pattern in self.args.test
-            ):
+            matching_selectors = (
+                {
+                    pattern
+                    for pattern in self.args.test
+                    if re.search(pattern, test_name)
+                }
+                if self.args.test
+                else set()
+            )
+            if self.args.test and not matching_selectors:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
 
             if self.args.test:
-                self.has_explicit_test_match = True
+                self.explicit_test_selectors_matched.update(matching_selectors)
 
             if not filter_func(test_name):
                 continue
@@ -6030,7 +6038,7 @@ ORDER BY (test_name, callee_offset)
         )
 
     total_tests_run = 0
-    explicit_test_selector_matched = False
+    explicit_test_selectors_matched = set()
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
@@ -6109,7 +6117,9 @@ ORDER BY (test_name, callee_offset)
             if test_suite is None:
                 continue
 
-            explicit_test_selector_matched |= test_suite.has_explicit_test_match
+            explicit_test_selectors_matched.update(
+                test_suite.explicit_test_selectors_matched
+            )
 
             test_suite.skip_list = skip_list
             test_suite.cloud_skip_list = cloud_skip_list
@@ -6223,7 +6233,7 @@ ORDER BY (test_name, callee_offset)
     if total_tests_run == 0:
         if runner_process_killed.is_set() or exit_code.value != 0:
             print("No tests were run.")
-        elif args.test and explicit_test_selector_matched:
+        elif args.test and set(args.test).issubset(explicit_test_selectors_matched):
             print(
                 "No tests were run because every explicitly requested test was filtered out."
             )

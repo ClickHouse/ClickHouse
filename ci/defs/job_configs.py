@@ -684,7 +684,13 @@ class JobConfigs:
     # flavor that needs a large-memory runner for the full suite needs it for a
     # subset as well. If test selection cannot be fetched, the job fails instead
     # of silently running a weaker unbatched fallback configuration.
-    stateless_tests_selected_pr_jobs = common_ft_job_config.parametrize(
+    # The selection is computed from PR-local state (including failed tests
+    # from earlier jobs) that is not part of a repository digest. Reusing a
+    # cached result could therefore skip a different selection; keep these
+    # jobs uncached.
+    selected_ft_job_config = common_ft_job_config.copy()
+    selected_ft_job_config.digest_config = None
+    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
             runs_on=RunnerLabels.AMD_LARGE,

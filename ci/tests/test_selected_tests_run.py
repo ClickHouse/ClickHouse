@@ -132,10 +132,10 @@ def test_unmatched_explicit_selector_is_not_filtered_out(tmp_path):
     suite.args = SimpleNamespace(test=["99999_no_such_test"])
     suite.suite_path = str(tmp_path)
     suite.render_test_template = lambda _env, _path, name: name
-    suite.has_explicit_test_match = False
+    suite.explicit_test_selectors_matched = set()
 
     assert list(suite.get_selected_tests(lambda _name: True)) == []
-    assert not suite.has_explicit_test_match
+    assert not suite.explicit_test_selectors_matched
 
 
 def test_matching_explicit_selector_is_recorded_before_flavor_filter(tmp_path):
@@ -144,10 +144,22 @@ def test_matching_explicit_selector_is_recorded_before_flavor_filter(tmp_path):
     suite.args = SimpleNamespace(test=["00001_existing"])
     suite.suite_path = str(tmp_path)
     suite.render_test_template = lambda _env, _path, name: name
-    suite.has_explicit_test_match = False
+    suite.explicit_test_selectors_matched = set()
 
     assert list(suite.get_selected_tests(lambda _name: False)) == []
-    assert suite.has_explicit_test_match
+    assert suite.explicit_test_selectors_matched == {"00001_existing"}
+
+
+def test_each_explicit_selector_must_match_before_skipping(tmp_path):
+    (tmp_path / "00001_existing.sql").touch()
+    suite = _TestSuite.__new__(_TestSuite)
+    suite.args = SimpleNamespace(test=["00001_existing", "99999_no_such_test"])
+    suite.suite_path = str(tmp_path)
+    suite.render_test_template = lambda _env, _path, name: name
+    suite.explicit_test_selectors_matched = set()
+
+    assert list(suite.get_selected_tests(lambda _name: False)) == []
+    assert suite.explicit_test_selectors_matched == {"00001_existing"}
 
 
 def test_pr_workflow_runs_no_full_suite_sanitizer_functional_tests():
@@ -171,6 +183,12 @@ def test_pr_workflow_runs_no_full_suite_sanitizer_functional_tests():
             marker in name
             for marker in ("selected tests", "flaky check", "targeted", "azure")
         ), f"full-suite sanitizer functional test job in the PR workflow: {name}"
+
+    selected_test_jobs = [
+        job for job in workflow.jobs if "selected tests" in job.name
+    ]
+    assert selected_test_jobs
+    assert all(job.digest_config is None for job in selected_test_jobs)
 
     # Every gating job must exist in the workflow - the trimmed jobs replaced
     # the full-suite ones the gate used to name.
