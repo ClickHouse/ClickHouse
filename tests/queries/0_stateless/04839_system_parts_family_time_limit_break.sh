@@ -144,6 +144,13 @@ function check_break_dropped_discovery()
     "
 }
 
+function disable_slowdown_failpoint()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration" > /dev/null 2>&1 ||:
+}
+
+trap disable_slowdown_failpoint EXIT
+
 # The failpoint must be enabled after the sanity check above, which builds the full result
 # of the wide table and would take minutes with the per-column sleeps.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumeration"
@@ -213,7 +220,7 @@ function timed_dropped_discovery()
     timed_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 } | $CLICKHOUSE_CLIENT
 
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration"
+disable_slowdown_failpoint
 
 $CLICKHOUSE_CLIENT --query "
 SYSTEM FLUSH LOGS query_log;
