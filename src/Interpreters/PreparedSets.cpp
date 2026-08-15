@@ -573,7 +573,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         prepared_sets_cache = nullptr;
 
     /// Completes `plan_to_complete` with a `CreatingSetStep` that builds into a fresh temporary `Set`
-    /// bound to the canonical key, and returns that set. The canonical `set_and_key->set` is never
+    /// bound to the canonical key. The canonical `set_and_key->set` is never
     /// mutated unless the build fully succeeds: with `overflow_mode = 'break'` the pipeline can stop
     /// after `CreatingSetsTransform::consume` has inserted a prefix of rows but before `generate` calls
     /// `Set::finishInsert`, and building into a temporary set keeps those partial rows out of the
@@ -600,14 +600,12 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
 
-        return speculative_set;
     };
 
-    SetPtr speculative_set;
     if (source_preserved)
     {
         /// Non-destructive path.
-        speculative_set = build_into_temporary_set(*plan, prepared_sets_cache);
+        build_into_temporary_set(*plan, prepared_sets_cache);
     }
     else
     {
@@ -671,27 +669,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     if (!run_plan(*plan))
         return nullptr;
-
-    /// The cache is shared with the deferred runtime build, which builds through the canonical
-    /// `set_and_key->set` and never calls `Set::fillSetElements` — e.g. after a speculative build was
-    /// abandoned, the runtime build of the very same part task seeds the entry. A cache hit can therefore
-    /// hand this task a created set with no explicit elements, which every index analysis caller rejects
-    /// (`hasExplicitSetElements`), so the part task would keep the set for execution and silently stop
-    /// pruning. `source` is intact on the non-destructive path, so build the set once more, locally: the
-    /// cache is not consulted this time, as it would hand out that same set again, and not seeded either,
-    /// as its entry is already taken by it.
-    ///
-    /// A set that outgrew `use_index_for_in_with_subqueries_max_values` drops its explicit elements while
-    /// being filled (see `Set::insertFromColumns`); rebuilding it would drop them again, so keep it.
-    if (speculative_set && tmp_set_and_key->set != speculative_set && !tmp_set_and_key->set->hasExplicitSetElements()
-        && !(set_and_key->set->max_elements_to_fill
-             && set_and_key->set->max_elements_to_fill < tmp_set_and_key->set->getTotalRowCount()))
-    {
-        auto local_plan = std::make_unique<QueryPlan>(source->clone());
-        build_into_temporary_set(*local_plan, /*cache=*/ nullptr);
-        if (!run_plan(*local_plan))
-            return nullptr;
-    }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
     /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
