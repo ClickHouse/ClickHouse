@@ -12,7 +12,8 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_04700_early_short_circuit_source (x UInt8)
 syntax_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN SYNTAX
     SELECT 1 OR ((SELECT count(*) FROM t_04700_early_short_circuit_source) > 0)
-    SETTINGS enable_function_early_short_circuit = 1
+    SETTINGS enable_analyzer = 1,
+             enable_function_early_short_circuit = 1
 ")
 
 if grep -qF 't_04700_early_short_circuit_source' <<< "$syntax_output" \
@@ -24,7 +25,8 @@ fi
 
 header_output=$($CLICKHOUSE_CLIENT -q "
     SELECT 1 OR ((SELECT count(*) FROM t_04700_early_short_circuit_source) > 0)
-    SETTINGS enable_function_early_short_circuit = 1
+    SETTINGS enable_analyzer = 1,
+             enable_function_early_short_circuit = 1
     FORMAT TSVWithNames
 ")
 
