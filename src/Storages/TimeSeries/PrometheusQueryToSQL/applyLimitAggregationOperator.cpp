@@ -228,6 +228,15 @@ SQLQueryPiece applyLimitAggregationOperator(
         builder.select_list.push_back(std::move(aggregate_function));
         builder.select_list.back()->setAlias(ColumnNames::SelectedGroups);
 
+        if (produce_sort_key && grouped)
+        {
+            /// Computed over the bucket's full membership, not the selected subset, so the bucket
+            /// order does not depend on k.
+            builder.select_list.push_back(makeASTFunction("min",
+                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))));
+            builder.select_list.back()->setAlias(ColumnNames::BucketSortKey);
+        }
+
         if (operator_node->by || operator_node->without)
         {
             bool metric_name_dropped_from_group = vector_arg.metric_name_dropped;
@@ -264,14 +273,9 @@ SQLQueryPiece applyLimitAggregationOperator(
 
         if (produce_sort_key && grouped)
         {
-            /// Prometheus sorts by value only within each bucket; this per-bucket component (a deterministic
-            /// function of the bucket's membership) keeps each bucket's rows consecutive.
-            builder.select_list.push_back(makeASTFunction("arrayMin",
-                makeASTFunction("arrayMap",
-                    makeASTLambda({"t"}, makeASTFunction("timeSeriesGroupToSamplingKey",
-                        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u)))),
-                    make_intrusive<ASTIdentifier>(ColumnNames::SelectedGroups))));
-            builder.select_list.back()->setAlias(ColumnNames::BucketSortKey);
+            /// Prometheus sorts by value only within each bucket; this per-bucket component keeps
+            /// each bucket's rows consecutive.
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::BucketSortKey));
         }
 
         step2_query = builder.getSelectQuery();
