@@ -2595,7 +2595,7 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
                                 "table. Define the collection on this server, or name the database explicitly with a "
                                 "'database = ...' argument.",
                                 collection_identifier->name(),
-                                identifier_can_only_name_a_collection ? "" : " and not a configured cluster",
+                                identifier_can_only_name_a_collection ? "" : "",
                                 function_name);
             }
 
@@ -2616,8 +2616,8 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         {
             /// remote(nc): the single-argument named-collection form, with the whole target stored in the
             /// collection. There is no override to bind, but an empty database stored in the collection is
-            /// session-dependent all the same. The same spelling also names a configured cluster, so the
-            /// identifier is not necessarily a collection here.
+            /// session-dependent all the same. A configured-cluster interpretation is rejected above because
+            /// it would be ambiguous after the persisted target is reparsed on another node.
             bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ false);
             return;
         }
