@@ -3293,6 +3293,23 @@ TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
     EXPECT_LT(wallabyCompressedSize(values), 1500u);
 }
 
+TEST_F(WallabyTest, CapsFullWidthDecimalRange)
+{
+    /// A sign-crossing outlier makes the uncapped Frame-of-Reference range exactly 64 bits,
+    /// but it must not suppress the capped search. Exiling that one value leaves a 20-bit
+    /// range for the remaining values, much smaller than the RAW or XOR encodings.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i + 1 < values.size(); ++i)
+    {
+        const auto index = static_cast<UInt64>(i);
+        const auto offset = static_cast<Int64>((index * 977 % 1023) * 1024);
+        values[i] = static_cast<Float64>(-(Int64{1} << 62) + offset);
+    }
+    values.back() = static_cast<Float64>(Int64{1} << 62);
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
 TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
 {
     /// A 1-decimal bulk with a 7-decimal minority of 384 values placed only at positions

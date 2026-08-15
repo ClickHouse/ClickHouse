@@ -848,7 +848,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         };
 
         std::optional<Packing> best_packing;
-        if (bits_for_full < Traits::width_bits)
+        if (allow_capping || bits_for_full < Traits::width_bits)
         {
             if (!allow_capping)
             {
@@ -930,7 +930,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
         }
 
-        if (delta_valid && bits_delta_full < Traits::width_bits)
+        if (delta_valid && (allow_capping || bits_delta_full < Traits::width_bits))
         {
             /// Evaluates the delta packing at one width cap exactly: the chain walk yields the
             /// exile set, the adjustment planner covers the surviving positions.
