@@ -10,6 +10,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExpireSnapshotsTypes.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB::Iceberg
 {
@@ -22,7 +23,8 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const String & table_name,
+    SecondaryStorages & secondary_storages);
 
 Pipe executeExpireSnapshots(
     const ASTPtr & args,
@@ -32,7 +34,8 @@ Pipe executeExpireSnapshots(
     const PersistentTableComponents & persistent_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const String & table_name,
+    SecondaryStorages & secondary_storages);
 
 }
 

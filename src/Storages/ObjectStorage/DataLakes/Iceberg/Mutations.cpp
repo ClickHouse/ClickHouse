@@ -351,6 +351,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 static bool writeMetadataFiles(
     DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
+    SecondaryStorages & secondary_storages,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -497,6 +498,7 @@ static bool writeMetadataFiles(
                     path_resolver,
                     metadata,
                     object_storage,
+                    secondary_storages,
                     context,
                     manifest_entries,
                     new_snapshot,
@@ -564,6 +566,7 @@ void mutate(
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
+    SecondaryStorages & secondary_storages,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
@@ -660,6 +663,7 @@ void mutate(
             auto result_delete_files_metadata = writeMetadataFiles(
                 mutation_files->delete_file,
                 object_storage,
+                secondary_storages,
                 context,
                 filename_generator,
                 persistent_table_components.path_resolver,
@@ -682,6 +686,7 @@ void mutate(
                 auto result_data_files_metadata = writeMetadataFiles(
                     *mutation_files->data_file,
                     object_storage,
+                    secondary_storages,
                     context,
                     filename_generator,
                     persistent_table_components.path_resolver,
