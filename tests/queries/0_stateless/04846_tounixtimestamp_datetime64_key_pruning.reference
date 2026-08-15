@@ -50,7 +50,7 @@ DROP TABLE test_wrapped_key_int64;
 
 DROP TABLE IF EXISTS test_wrapped_key_signed;
 CREATE TABLE test_wrapped_key_signed (ts DateTime64(3))
-ENGINE = MergeTree ORDER BY toInt64(ts) SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY toInt128(ts) SETTINGS index_granularity = 1;
 INSERT INTO test_wrapped_key_signed SELECT '1969-06-01 00:00:00.000' FROM numbers(3);
 INSERT INTO test_wrapped_key_signed SELECT '1969-12-31 23:59:59.500' FROM numbers(3);
 INSERT INTO test_wrapped_key_signed SELECT '1970-06-01 00:00:00.999' FROM numbers(3);
@@ -64,7 +64,7 @@ SELECT count() FROM test_wrapped_key_signed WHERE ts > '1969-12-31 23:59:59.400'
 3
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_key_signed WHERE ts >= '1969-12-31 23:59:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 Parts: 1 | Granules: 7
-Condition: (toInt64(ts) in [-60, +Inf))
+Condition: (toInt128(ts) in [\'-60\', +Inf))
 Granules: 7/9
 DROP TABLE test_wrapped_key_signed;
 -- A narrow integer target: a constant beyond the target range must be rejected
@@ -90,20 +90,20 @@ SELECT count() FROM test_wrapped_key_uint8 WHERE ts >= '1969-12-31 23:59:59.500'
 SELECT count() FROM test_wrapped_key_uint8 WHERE ts < '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
 0
 DROP TABLE test_wrapped_key_uint8;
--- The same for the `toUnixTimestamp` key, with rows on both sides of the epoch boundary slice.
+-- The same for a wide unsigned integer key, with rows on both sides of the epoch boundary slice.
 
-DROP TABLE IF EXISTS test_wrapped_key_epoch;
-CREATE TABLE test_wrapped_key_epoch (ts DateTime64(3))
-ENGINE = MergeTree ORDER BY toUnixTimestamp(ts) SETTINGS index_granularity = 1;
-INSERT INTO test_wrapped_key_epoch VALUES ('1969-12-31 23:59:59.500'), ('1970-01-01 00:00:00.500'), ('1970-01-01 00:01:00.000');
-OPTIMIZE TABLE test_wrapped_key_epoch FINAL;
-SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
+DROP TABLE IF EXISTS test_wrapped_key_uint128;
+CREATE TABLE test_wrapped_key_uint128 (ts DateTime64(3))
+ENGINE = MergeTree ORDER BY toUInt128(ts) SETTINGS index_granularity = 1;
+INSERT INTO test_wrapped_key_uint128 VALUES ('1969-12-31 23:59:59.500'), ('1970-01-01 00:00:00.500'), ('1970-01-01 00:01:00.000');
+OPTIMIZE TABLE test_wrapped_key_uint128 FINAL;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
 3
-SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
 1
-SELECT count() FROM test_wrapped_key_epoch WHERE ts < '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts < '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
 2
-DROP TABLE test_wrapped_key_epoch;
+DROP TABLE test_wrapped_key_uint128;
 -- When the key is the raw DateTime64 column and the filter wraps it in toUnixTimestamp,
 -- a part may contain values outside the UInt32 range next to values inside it.
 -- Index analysis applies functions to whole columns of index values, so it must not

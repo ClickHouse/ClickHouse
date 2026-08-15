@@ -1698,7 +1698,7 @@ static bool applyFunctionChainToColumn(
             Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
             WhichDataType which_result(*result_type_inner);
-            if (which_result.isNativeInt())
+            if (which_result.isInt())
             {
                 /// A signed target accommodates negative timestamps, but a narrow one throws
                 /// a `DECIMAL_OVERFLOW` exception outside of its range.
@@ -1708,9 +1708,9 @@ static bool applyFunctionChainToColumn(
                     return false;
                 if (which_result.isInt32() && (seconds < std::numeric_limits<Int32>::min() || seconds > std::numeric_limits<Int32>::max()))
                     return false;
-                /// Int64 fits the whole number of seconds of any DateTime64/Time64.
+                /// Int64 and wider signed targets fit the whole number of seconds of any DateTime64/Time64.
             }
-            else if (which_result.isNativeUInt())
+            else if (which_result.isUInt())
             {
                 /// negative timestamps -> DECIMAL_OVERFLOW for an unsigned target.
                 /// The conversion rejects a value by its whole part, not by the raw tick value
@@ -1724,7 +1724,7 @@ static bool applyFunctionChainToColumn(
                     return false;
                 if (which_result.isUInt32() && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
                     return false;
-                /// UInt64 fits any non-negative number of seconds.
+                /// UInt64 and wider unsigned targets fit any non-negative number of seconds.
             }
             else
             {

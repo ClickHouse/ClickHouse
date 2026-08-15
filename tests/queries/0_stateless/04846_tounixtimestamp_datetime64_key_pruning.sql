@@ -53,7 +53,7 @@ DROP TABLE test_wrapped_key_int64;
 
 DROP TABLE IF EXISTS test_wrapped_key_signed;
 CREATE TABLE test_wrapped_key_signed (ts DateTime64(3))
-ENGINE = MergeTree ORDER BY toInt64(ts) SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY toInt128(ts) SETTINGS index_granularity = 1;
 
 INSERT INTO test_wrapped_key_signed SELECT '1969-06-01 00:00:00.000' FROM numbers(3);
 INSERT INTO test_wrapped_key_signed SELECT '1969-12-31 23:59:59.500' FROM numbers(3);
@@ -94,21 +94,21 @@ SELECT count() FROM test_wrapped_key_uint8 WHERE ts < '1969-12-31 23:59:59.500' 
 
 DROP TABLE test_wrapped_key_uint8;
 
--- The same for the `toUnixTimestamp` key, with rows on both sides of the epoch boundary slice.
+-- The same for a wide unsigned integer key, with rows on both sides of the epoch boundary slice.
 
-DROP TABLE IF EXISTS test_wrapped_key_epoch;
-CREATE TABLE test_wrapped_key_epoch (ts DateTime64(3))
-ENGINE = MergeTree ORDER BY toUnixTimestamp(ts) SETTINGS index_granularity = 1;
+DROP TABLE IF EXISTS test_wrapped_key_uint128;
+CREATE TABLE test_wrapped_key_uint128 (ts DateTime64(3))
+ENGINE = MergeTree ORDER BY toUInt128(ts) SETTINGS index_granularity = 1;
 
-INSERT INTO test_wrapped_key_epoch VALUES ('1969-12-31 23:59:59.500'), ('1970-01-01 00:00:00.500'), ('1970-01-01 00:01:00.000');
+INSERT INTO test_wrapped_key_uint128 VALUES ('1969-12-31 23:59:59.500'), ('1970-01-01 00:00:00.500'), ('1970-01-01 00:01:00.000');
 
-OPTIMIZE TABLE test_wrapped_key_epoch FINAL;
+OPTIMIZE TABLE test_wrapped_key_uint128 FINAL;
 
-SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
-SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
-SELECT count() FROM test_wrapped_key_epoch WHERE ts < '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint128 WHERE ts < '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
 
-DROP TABLE test_wrapped_key_epoch;
+DROP TABLE test_wrapped_key_uint128;
 
 -- When the key is the raw DateTime64 column and the filter wraps it in toUnixTimestamp,
 -- a part may contain values outside the UInt32 range next to values inside it.
