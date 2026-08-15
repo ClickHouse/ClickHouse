@@ -66,8 +66,8 @@ set -euo pipefail
 #                         API cost is estimated from input, cached-input and
 #                         output token usage using the model's published rates.
 #   --triage-model MODEL  Enable two-model mode. MODEL performs the initial PR
-#                         check and handles branch updates or simple mechanical
-#                         conflicts itself. If code changes are needed, it hands
+#                         check and can perform a clean base-branch merge. If a
+#                         conflict or code change is needed, it hands
 #                         a task description to the coding model selected by
 #                         --model. Requires --model.
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
@@ -388,18 +388,18 @@ STATUS_ENABLED=0
 START=0
 ORIG_OUT=""
 
-stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
+stats_init() { printf '0 0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
 
-# stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_cost>
+# stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_triage_cost> <d_coding_cost>
 # Writes atomically (tmp + mv) so the renderer never reads a torn/empty file.
 stats_add()
 {
     { flock 7
-      local cur; cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0')
-      awk -v cur="$cur" -v r="$1" -v s="$2" -v f="$3" -v i="$4" -v o="$5" -v ci="$6" -v co="$7" -v c="$8" \
+      local cur; cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0 0')
+      awk -v cur="$cur" -v r="$1" -v s="$2" -v f="$3" -v i="$4" -v o="$5" -v ci="$6" -v co="$7" -v tc="$8" -v cc="$9" \
         'BEGIN { split(cur, x, " ");
-                 printf "%d %d %d %d %d %d %d %.6f\n",
-                        x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+c }' \
+                 printf "%d %d %d %d %d %d %d %.6f %.6f\n",
+                        x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+tc, x[9]+cc }' \
         > "$STATSFILE.tmp" && mv -f "$STATSFILE.tmp" "$STATSFILE"
     } 7>>"$STATSLOCK"
 }
@@ -733,10 +733,11 @@ TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-bra
 # coding model receives the worktree.
 triage_state_is_safe()
 {
-    local wt="$1" start_head="$2" base_head="$3"
+    local wt="$1" start_head="$2" base_head="$3" config_checksum="$4"
     local head first_parent second_parent extra_parent expected_tree actual_tree
 
     [[ -z "$(git -C "$wt" status --porcelain)" ]] || return 1
+    [[ "$(sha256sum "$(git -C "$wt" rev-parse --git-path config)" | awk '{ print $1 }')" == "$config_checksum" ]] || return 1
     head=$(git -C "$wt" rev-parse HEAD) || return 1
     [[ "$head" == "$start_head" ]] && return 0
 
@@ -758,7 +759,7 @@ prepare_triage_worktree()
 {
     local wt="$1" number="$2"
     local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
-    local remote pushable=0
+    local remote push_url pushable=0 config_path config_checksum config_snapshot
 
     meta=$(gh pr view "$number" --repo "$REPO" \
         --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
@@ -780,15 +781,22 @@ prepare_triage_worktree()
     git -C "$wt" fetch -q "$remote" "$head_ref" || return 1
     git -C "$wt" checkout --detach -q "$remote/$head_ref" || return 1
     git -C "$wt" fetch -q origin "$base_ref" || return 1
+    push_url=$(git -C "$wt" remote get-url --push "$remote") || return 1
+    config_path=$(git -C "$wt" rev-parse --git-path config) || return 1
+    config_checksum=$(sha256sum "$config_path" | awk '{ print $1 }') || return 1
+    config_snapshot="$wt/tmp/continue-all-prs/triage-git-config"
+    mkdir -p "${config_snapshot%/*}" || return 1
+    cp "$config_path" "$config_snapshot" || return 1
 
-    printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$remote" "$pushable"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable" "$config_checksum" "$config_snapshot"
 }
 
 discard_untrusted_triage_changes()
 {
-    local wt="$1" start_head="$2" log="$3"
+    local wt="$1" start_head="$2" config_snapshot="$3" log="$4"
 
     echo "Discarding non-mechanical changes made by the triage model before coding handoff." >> "$log"
+    cp "$config_snapshot" "$(git -C "$wt" rev-parse --git-path config)" >> "$log" || return 1
     git -C "$wt" reset --hard "$start_head" >> "$log"
     git -C "$wt" clean -fd >> "$log"
 }
@@ -816,9 +824,9 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home
-    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_remote triage_pushable triage_hooks_dir
+    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot triage_hooks_dir
     local -a codex_env
-    local u_i u_o u_ci u_co u_cost
+    local u_i u_o u_ci u_co u_cost triage_cost coding_cost
     local -a model_args triage_git_args
     sid=""
     phase="coding"
@@ -827,13 +835,13 @@ run_continue_pr()
     triage_start_head=""
     triage_base_head=""
     triage_head_ref=""
-    triage_push_remote=""
+    triage_push_url=""
     triage_pushable=0
     triage_hooks_dir=""
     if [[ "$phase" == "triage" ]]; then
         local triage_metadata
         triage_metadata=$(prepare_triage_worktree "$wt" "$number") || return 1
-        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_remote triage_pushable <<< "$triage_metadata"
+        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot <<< "$triage_metadata"
         triage_hooks_dir=$(prepare_triage_push_guard "$wt")
     fi
     # Steer the worker to a persistent, ccache-backed build directory in this
@@ -918,7 +926,10 @@ run_continue_pr()
                 jq -r '.result // ""' "$log.json" > "$log.last"
                 usage=$(jq -r '[(.usage.input_tokens//0),(.usage.output_tokens//0),(.usage.cache_creation_input_tokens//0),(.usage.cache_read_input_tokens//0),(.total_cost_usd//0)]|@tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+                triage_cost=0
+                coding_cost=0
+                if [[ "$phase" == "triage" ]]; then triage_cost="${u_cost:-0}"; else coding_cost="${u_cost:-0}"; fi
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "$triage_cost" "$coding_cost"
             else
                 cat "$log.err" 2>/dev/null > "$log.last" || true
             fi
@@ -963,7 +974,10 @@ ${system_prompt}"
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
                 configure_codex_pricing "$active_model"
                 u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
-                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+                triage_cost=0
+                coding_cost=0
+                if [[ "$phase" == "triage" ]]; then triage_cost="${u_cost:-0}"; else coding_cost="${u_cost:-0}"; fi
+                stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "$triage_cost" "$coding_cost"
             fi
             if [[ ! -s "$log.last" ]]; then
                 {
@@ -979,8 +993,8 @@ ${system_prompt}"
         # accidental extra completion marker cannot suppress requested coding.
         if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
             handoff=$(cat "$log.last")
-            if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
-                discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+            if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
+                discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
             fi
             echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
             phase="coding"
@@ -995,7 +1009,7 @@ ${system_prompt}"
         # Codex reports a session ID, resume that session within the existing
         # turn and time limits instead of discarding its completed work.
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
-            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
                 if [[ "$phase" == "triage" && "$triage_pushable" != "1" ]]; then
                     handoff=$(cat "$log.last")
                     echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the PR head is not pushable =====" >> "$log"
@@ -1004,7 +1018,7 @@ ${system_prompt}"
                     sid=""
                     continue
                 fi
-                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_remote" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
+                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
                     handoff=$(cat "$log.last")
                     echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after the validated triage update could not be pushed =====" >> "$log"
                     phase="coding"
@@ -1015,7 +1029,7 @@ ${system_prompt}"
                 break
             fi
             handoff=$(cat "$log.last")
-            discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+            discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
             echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after non-mechanical triage changes =====" >> "$log"
             phase="coding"
             phase_iter=0
@@ -1030,8 +1044,8 @@ ${system_prompt}"
         if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
             if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
                 handoff=$(cat "$log.last")
-                if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
-                    discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+                if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
+                    discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
                 fi
                 echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
                 phase="coding"
@@ -1114,8 +1128,8 @@ process_pr()
 
     # Count the PR as processed ok (clean run) or not (errored/timed out).
     case "$outcome" in
-        FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 ;;
-        *)               stats_add 0 1 0 0 0 0 0 0 ;;
+        FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 0 ;;
+        *)               stats_add 0 1 0 0 0 0 0 0 0 ;;
     esac
     [[ "$outcome" == NEEDS-ATTENTION ]] && na_add "$number"
 
@@ -1345,7 +1359,7 @@ status_start
 ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
-    stats_add 1 0 0 0 0 0 0 0
+    stats_add 1 0 0 0 0 0 0 0 0
     na_reset
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
