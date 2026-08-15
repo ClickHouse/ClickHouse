@@ -64,11 +64,19 @@ def test_gcs_vended_credentials_fall_back_from_delta_kernel(started_cluster):
         settings={"allow_experimental_database_unity_catalog": 1},
     )
 
+    has_delta_kernel = (
+        node.query(
+            "SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_DELTA_KERNEL_RS'"
+        ).strip()
+        == "1"
+    )
+
     result = node.query(
         "SELECT value FROM unity.`namespace.table` ORDER BY value",
         settings={"allow_delta_kernel_rs": 1},
     )
     assert result == "1\n2\n3\n"
-    assert node.contains_in_log(
-        "Using the native Delta Lake metadata reader because Delta Kernel does not support Authorization headers"
-    )
+    if has_delta_kernel:
+        assert node.contains_in_log(
+            "Using the native Delta Lake metadata reader because Delta Kernel does not support Authorization headers"
+        )
