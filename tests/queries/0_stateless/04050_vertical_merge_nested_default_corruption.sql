@@ -450,10 +450,12 @@ SELECT id, `n.a`, `n.b` FROM t_nested_const_default ORDER BY id;
 
 DROP TABLE t_nested_const_default;
 
--- A `Nested` subcolumn whose only live values are in a patch part must not be expired. The base
--- parts predate both `m` and `n.b`; `m` is therefore expired, but the lightweight update supplies
--- live `n.b` values in a patch part. Expiring `n.b` would omit it from the merge read set and lose
--- those values before `AlterConversions::getPatchesForColumns` can request the patch.
+-- A `Nested` subcolumn whose live values are in a patch part must not be expired. The base parts
+-- predate both `m` and `n.b`; `m` is therefore expired, but the lightweight update supplies live
+-- `n.b` values in a patch part. The update also writes the matching `n.a` values because nested
+-- arrays in an update block must have matching sizes. Expiring `n.b` would omit it from the merge
+-- read set and lose those values before `AlterConversions::getPatchesForColumns` can request the
+-- patch.
 SET enable_lightweight_update = 1;
 SET apply_patch_parts = 1;
 
@@ -469,7 +471,8 @@ SETTINGS
     vertical_merge_algorithm_min_bytes_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    enable_block_number_column = 1;
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1;
 
 INSERT INTO t_nested_patch_part VALUES (1, [10,20]);
 INSERT INTO t_nested_patch_part VALUES (2, [30,40]);
@@ -477,7 +480,7 @@ INSERT INTO t_nested_patch_part VALUES (2, [30,40]);
 ALTER TABLE t_nested_patch_part ADD COLUMN m Array(UInt32);
 ALTER TABLE t_nested_patch_part ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
 
-UPDATE t_nested_patch_part SET `n.b` = ['x','y'] WHERE id = 1;
+UPDATE t_nested_patch_part SET `n.a` = `n.a`, `n.b` = ['x','y'] WHERE id = 1;
 
 OPTIMIZE TABLE t_nested_patch_part FINAL;
 
