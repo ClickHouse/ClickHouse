@@ -297,7 +297,8 @@ public:
     bool isDeterministic() const override
     {
         for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
-            if (inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministic())
+            if ((inner_node.type == ActionsDAG::ActionType::FUNCTION && !inner_node.function_base->isDeterministic())
+                || (inner_node.type == ActionsDAG::ActionType::COLUMN && !inner_node.is_deterministic_constant))
                 return false;
         return true;
     }
