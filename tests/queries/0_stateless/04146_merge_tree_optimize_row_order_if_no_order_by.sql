@@ -1,4 +1,5 @@
 SET max_insert_threads = 1;
+SET max_threads = 1;
 
 DROP TABLE IF EXISTS tab_explicit_on;
 DROP TABLE IF EXISTS tab_default;
