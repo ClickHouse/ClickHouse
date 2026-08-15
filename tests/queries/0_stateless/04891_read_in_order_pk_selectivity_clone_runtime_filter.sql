@@ -40,12 +40,12 @@ SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
 SET enable_join_runtime_filters = 1;
 
 SELECT 'result', count() FROM rf_clone_probe RIGHT JOIN rf_clone_build ON rf_clone_probe.a = rf_clone_build.a
-SETTINGS enable_join_runtime_filters_index_analysis = 1, log_comment = '04891_pruning';
+SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1, log_comment = '04891_pruning';
 
 -- Control: the same query without index analysis prunes no granule, so the counters below cannot come from
 -- anything but the runtime-filter reader.
 SELECT 'result', count() FROM rf_clone_probe RIGHT JOIN rf_clone_build ON rf_clone_probe.a = rf_clone_build.a
-SETTINGS enable_join_runtime_filters_index_analysis = 0, log_comment = '04891_no_pruning';
+SETTINGS enable_join_runtime_filters_index_analysis = 0, use_skip_indexes_on_data_read = 1, log_comment = '04891_no_pruning';
 
 SYSTEM FLUSH LOGS query_log;
 
