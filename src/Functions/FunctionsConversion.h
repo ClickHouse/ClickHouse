@@ -4136,26 +4136,23 @@ struct ToNumberMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        if (!type.isValueRepresentedByNumber())
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * inner_type = low_cardinality ? low_cardinality->getDictionaryType().get() : &type;
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
+            inner_type = nullable->getNestedType().get();
+
+        if (!inner_type->isValueRepresentedByNumber())
             return {};
 
         /// If type is same, the conversion is always monotonic.
         /// (Enum has separate case, because it is different data type)
-        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
-            checkAndGetDataType<DataTypeEnum<T>>(&type))
+        if (checkAndGetDataType<DataTypeNumber<T>>(inner_type) ||
+            checkAndGetDataType<DataTypeEnum<T>>(inner_type))
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
         /// Float cases.
 
-        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
-        const IDataType * low_cardinality_dictionary_type = nullptr;
-        if (low_cardinality)
-            low_cardinality_dictionary_type = low_cardinality->getDictionaryType().get();
-
-        WhichDataType which_type(type);
-        WhichDataType which_inner_type = low_cardinality
-            ? WhichDataType(low_cardinality_dictionary_type)
-            : WhichDataType(type);
+        WhichDataType which_inner_type(*inner_type);
 
         /// When converting to Float, the conversion is always monotonic.
         if constexpr (is_floating_point<T>)
@@ -4201,8 +4198,7 @@ struct ToNumberMonotonicity
         if (which_inner_type.isDateTime64())
         {
             /// With zero scale the conversion is an identity mapping of the seconds, so it is strict.
-            const bool is_strict = assert_cast<const DataTypeDateTime64 &>(
-                low_cardinality ? *low_cardinality_dictionary_type : type).getScale() == 0;
+            const bool is_strict = assert_cast<const DataTypeDateTime64 &>(*inner_type).getScale() == 0;
 
             /// A signed target of at least 64 bits fits the whole number of seconds of any DateTime64
             /// (the ticks are Int64), so the conversion is total and monotonic on any range.

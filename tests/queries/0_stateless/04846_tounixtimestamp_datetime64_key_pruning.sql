@@ -33,6 +33,26 @@ SELECT count() FROM test_wrapped_key WHERE ts < '1960-01-01 00:00:00';
 
 DROP TABLE test_wrapped_key;
 
+-- Nullable DateTime64 keys have the same monotonic conversion. NULL values sort last,
+-- so they can be safe false positives for a non-NULL range predicate but must not disable pruning.
+
+DROP TABLE IF EXISTS test_wrapped_nullable_key;
+CREATE TABLE test_wrapped_nullable_key (ts Nullable(DateTime64(3)))
+ENGINE = MergeTree ORDER BY toUnixTimestamp(ts) SETTINGS allow_nullable_key = 1, index_granularity = 1;
+
+INSERT INTO test_wrapped_nullable_key VALUES
+    ('2026-03-01 00:00:00.000'),
+    ('2026-04-15 12:00:00.500'),
+    ('2026-06-01 00:00:00.999'),
+    (NULL);
+
+OPTIMIZE TABLE test_wrapped_nullable_key FINAL;
+
+SELECT count() FROM test_wrapped_nullable_key WHERE ts >= '2026-04-01 00:00:00' SETTINGS force_primary_key = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_nullable_key WHERE ts >= '2026-04-01 00:00:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+
+DROP TABLE test_wrapped_nullable_key;
+
 -- The same must work for other integer conversions of DateTime64, e.g. toInt64.
 
 DROP TABLE IF EXISTS test_wrapped_key_int64;
