@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -149,6 +150,23 @@ StoragePtr tableForRead(const DatabasePtr & database, const String & table_name,
         return table;
 
     return database->getTableForRead(table_name, table, local_context);
+}
+
+/// `ColumnsDescription` registers no subcolumns for an ALIAS column, so a name like `arr.size0`
+/// never resolves through the subcolumn index even though the alias expression can produce it.
+bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
+{
+    for (auto [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * parent = storage_columns.tryGet(String(parent_name));
+        if (!parent || parent->default_desc.kind != ColumnDefaultKind::Alias)
+            continue;
+
+        if (parent->type->tryGetSubcolumnType(subcolumn_name))
+            return true;
+    }
+
+    return false;
 }
 
 }
@@ -1326,6 +1344,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
+        auto storage_columns = storage_snapshot_->metadata->getColumns();
+
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         for (const auto & column_name : required_column_names)
         {
@@ -1333,6 +1353,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 continue;
 
             if (storage_snapshot_->tryGetColumn(get_column_options, column_name))
+                continue;
+
+            /// The child can produce this value, so it must not be replaced by a default.
+            if (isSubcolumnOfAliasColumn(storage_columns, column_name))
                 continue;
 
             auto merge_column = merge_storage_snapshot->tryGetColumn(
@@ -1346,8 +1370,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
         }
 
-        auto storage_columns = storage_snapshot_->metadata->getColumns();
-
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
         if (with_aliases)
         {
@@ -1357,34 +1379,41 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 /// Try to resolve column, including subcolumns (e.g. JSON sub-paths like json.x).
                 auto resolved_pair = storage_snapshot_->tryGetColumn(get_column_options, column);
 
-                /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
-                if (!resolved_pair)
-                    continue;
-
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+
+                /// Such a name resolves through neither lookup above, and the analyzer turns it into
+                /// `getSubcolumn` over the alias expression, so the alias branch handles it.
+                bool is_subcolumn_of_alias = !resolved_pair && !is_alias && isSubcolumnOfAliasColumn(storage_columns, column);
+
+                /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
+                if (!resolved_pair && !is_subcolumn_of_alias)
+                    continue;
 
                 QueryTreeNodePtr column_node;
 
                 // Replace all references to ALIAS columns in the query by expressions.
-                if (is_alias)
+                if (is_alias || is_subcolumn_of_alias)
                 {
                     QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column});
 
                     QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
                     query_analysis_pass.run(fake_node, modified_context);
 
+                    /// An ALIAS column resolves to a ColumnNode carrying its expression, a subcolumn
+                    /// of one to a FunctionNode that owns no expression of its own.
                     auto * resolved_column = fake_node->as<ColumnNode>();
+                    if (is_subcolumn_of_alias ? !fake_node->as<FunctionNode>() : (!resolved_column || !resolved_column->getExpression()))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias column {} is not resolved", column);
+
+                    auto column_type = fake_node->getResultType();
 
                     column_node = fake_node;
                     ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
                     visitor.visit(column_node);
 
-                    if (!resolved_column || !resolved_column->getExpression())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias column is not resolved");
-
                     column_name_to_node.emplace(column, column_node);
-                    aliases.push_back({ .name = column, .type = resolved_column->getResultType(), .expression = column_node->toAST() });
+                    aliases.push_back({ .name = column, .type = column_type, .expression = column_node->toAST() });
                 }
                 else
                 {
