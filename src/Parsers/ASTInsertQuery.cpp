@@ -179,8 +179,14 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
-        if (!infile)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' is only valid together with 'infile' during AST JSON deserialization");
+        /// Mirrors ParserInsertQuery's own invariant: 'compression' is only valid together with
+        /// 'infile', a bare 'format' (no SELECT), or a SELECT that reads via input() -- otherwise
+        /// there is no data stream for it to apply to.
+        bool has_data_stream = infile || (!select && !format.empty()) || (select && selectReadsInlineDataViaInputFunction(select));
+        if (!has_data_stream)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'compression' is only valid together with 'infile', a bare 'format' (no 'select'), "
+                "or a 'select' that reads via input() during AST JSON deserialization");
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
@@ -356,6 +362,13 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
 void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
 {
     tryFindInputFunctionImpl(select, input_function);
+}
+
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & select)
+{
+    ASTPtr input_function;
+    tryFindInputFunctionImpl(select, input_function);
+    return input_function != nullptr;
 }
 
 }

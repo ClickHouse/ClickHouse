@@ -13,6 +13,11 @@ namespace DB
 
 class ReadBuffer;
 
+/// Whether `select` (the SELECT part of an INSERT ... SELECT) reads inline insert data through
+/// the `input` table function. Shared by the parser (to decide whether a clause like COMPRESSION
+/// has a real data stream to apply to) and by ASTInsertQuery's own JSON (de)serialization.
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & select);
+
 /// INSERT query
 class ASTInsertQuery : public IAST
 {

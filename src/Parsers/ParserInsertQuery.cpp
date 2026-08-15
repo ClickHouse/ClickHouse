@@ -25,26 +25,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
-/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
-bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
-        return true;
-    for (const auto & child : ast->children)
-        if (selectReadsInlineDataViaInputFunction(child))
-            return true;
-    return false;
-}
-
-}
-
-
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
@@ -273,10 +253,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT,
-    /// input(), or FROM INFILE. Reject it next to VALUES or a plain SELECT (no input()), where
-    /// there's nothing to decompress.
-    if (compression && !infile && !has_format_clause)
+    /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT
+    /// (no SELECT), input(), or FROM INFILE. Reject it next to VALUES or a plain SELECT (no
+    /// input()), where there's nothing to decompress -- a trailing FORMAT there is just an output
+    /// format (e.g. for EXPLAIN), not a data stream, so has_format_clause alone is not enough.
+    bool has_data_stream = (!select && has_format_clause) || (select && selectReadsInlineDataViaInputFunction(select));
+    if (compression && !infile && !has_data_stream)
         throw Exception(ErrorCodes::SYNTAX_ERROR,
                         "COMPRESSION clause is only supported next to FORMAT (including via input()) "
                         "or FROM INFILE, not with VALUES or a plain SELECT");
