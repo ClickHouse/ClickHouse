@@ -52,6 +52,11 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
 
 void CompressedWriteBuffer::nextImpl()
 {
+    if (expected_out_position && out.position() != expected_out_position)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CompressedWriteBuffer: the position of the output buffer declared exclusive was moved by someone else, "
+            "the block written in place would be corrupted");
+
     if (!offset())
         return;
 
@@ -60,12 +65,6 @@ void CompressedWriteBuffer::nextImpl()
 
     if (expected_out_position)
     {
-        /// Ensure no other writer moved exclusive `out`.
-        if (out.position() != expected_out_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "CompressedWriteBuffer: the position of the output buffer declared exclusive was moved by someone else, "
-                "the block written in place would be corrupted");
-
         char * header_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
 
         UInt32 compressed_size = codec->writeHeader(header_ptr, decompressed_size, decompressed_size);
