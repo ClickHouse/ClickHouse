@@ -172,10 +172,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Filtering requires a threshold ordered like the sorter orders the column. The threshold is a
-    /// bare Field, which holds a Dynamic/Variant payload without its discriminator, while
-    /// ColumnVariant::compareAt ranks by discriminator first. Such a type also makes lessOrEquals
-    /// return Nullable(UInt8) rather than UInt8.
+    /// The threshold is a bare Field, so it can only order types whose Field ordering matches
+    /// ORDER BY.
     /// TODO: lift this once the threshold carries the full sort-key representation.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
