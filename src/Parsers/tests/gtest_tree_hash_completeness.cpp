@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -62,6 +64,21 @@ TEST(TreeHashCompleteness, WithElementJSONRoundTripHashesEqual)
     const std::string no_aliases = "WITH x AS (SELECT 1 AS q) SELECT q FROM x";
     EXPECT_NE(hashOf(query), hashOf(no_aliases));
     EXPECT_EQ(hashOfJSONRoundTrip(no_aliases), hashOf(no_aliases));
+}
+
+TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreSignificant)
+{
+    auto plain = make_intrusive<ASTIdentifier>("x");
+    auto prefer_alias = make_intrusive<ASTIdentifier>("x");
+    prefer_alias->setPreferAliasToColumnName(true);
+    EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), prefer_alias->getTreeHash(/*ignore_aliases=*/ false));
+
+    auto first_parameter = make_intrusive<ASTIdentifier>("x");
+    first_parameter->parametrised_alias = make_intrusive<ASTQueryParameter>("first", "Identifier");
+    auto second_parameter = make_intrusive<ASTIdentifier>("x");
+    second_parameter->parametrised_alias = make_intrusive<ASTQueryParameter>("second", "Identifier");
+    EXPECT_NE(first_parameter->getTreeHash(/*ignore_aliases=*/ false), second_parameter->getTreeHash(/*ignore_aliases=*/ false));
+    EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), first_parameter->getTreeHash(/*ignore_aliases=*/ false));
 }
 
 TEST(TreeHashCompleteness, StreamSettingsAreSignificant)

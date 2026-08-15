@@ -75,6 +75,12 @@ void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
         hash_state.update(alias.size());
         hash_state.update(alias);
     }
+
+    hash_state.update(preferAliasToColumnName());
+    hash_state.update(static_cast<bool>(parametrised_alias));
+    if (parametrised_alias)
+        parametrised_alias->updateTreeHash(hash_state, ignore_aliases);
+
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
