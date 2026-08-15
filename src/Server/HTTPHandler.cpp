@@ -342,14 +342,11 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
-    if (!introspection_handler_name.empty())
+    if (has_server_owned_query)
     {
-        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
-        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
-        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
-        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
-        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
-        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// A predefined handler executes server-owned stored text. Parse it with unlimited depth and backtracks
+        /// (`0` disables the limit), so it stays invokable when request settings lower `max_parser_depth` or
+        /// `max_parser_backtracks`.
         /// The client controls only the typed query parameters, never the query text, and could raise
         /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
         /// still guards against stack overflow via `checkStackSize`.
@@ -515,13 +512,11 @@ void HTTPHandler::processQuery(
     const auto & query = getQuery(request, params, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    /// The same reasoning as for the parser limits above: the query text of a SQL-defined handler is the
-    /// server's own stored output, so `max_query_size` must not be able to cut it short - neither its default
-    /// value (a handler longer than that is creatable and reloadable, both of which parse without a size limit,
-    /// but would fail on every request) nor a value the request supplies. Raise it to fit the text instead of
-    /// disabling it: `executeQuery` also uses `max_query_size` to decide how much of the request stream to read
-    /// ahead in search of the query text, where `0` would make it read a single byte.
-    if (!introspection_handler_name.empty() && settings[Setting::max_query_size] <= query.size())
+    /// The same reasoning as for the parser limits above: server-owned stored text must not be cut short by the
+    /// default `max_query_size` or by a request setting. Raise the limit to fit the text instead of disabling it:
+    /// `executeQuery` also uses `max_query_size` to decide how much of the request stream to read ahead in search
+    /// of the query text, where `0` would make it read a single byte.
+    if (has_server_owned_query && settings[Setting::max_query_size] <= query.size())
         context->setSetting("max_query_size", Field(query.size() + 1));
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -1114,6 +1109,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
 {
+    setHasServerOwnedQuery();
 }
 
 bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)

@@ -244,6 +244,20 @@ def test_predefined_query_handler():
         assert res_settings.status_code == 200
         assert b"5\n" == res_settings.content
 
+        # A configuration-defined predefined handler executes server-owned query text. Request settings must not
+        # lower the limits needed to parse that text.
+        for setting, value in (
+            ("max_parser_depth", "1"),
+            ("max_parser_backtracks", "1"),
+            ("max_query_size", "10"),
+        ):
+            response = cluster.instance.http_request(
+                f"test_predefined_handler_request_parser_limits?{setting}={value}",
+                method="GET",
+            )
+            assert response.status_code == 200, response.content
+            assert response.content == b"1\n"
+
         assert (
             cluster.instance.http_request("test_predefined_handler_auth_with_password")
             .content.strip()
