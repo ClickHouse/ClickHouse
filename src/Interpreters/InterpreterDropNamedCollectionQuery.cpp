@@ -8,6 +8,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Storages/IStorage.h>
 
 #include <algorithm>
 
