@@ -46,10 +46,7 @@ def get_unresolved_review_threads_count(pr=None, repo=None) -> int:
 
 def review_threads_gate_bypassed(labels) -> bool:
     """Whether a label bypasses the unresolved-review-threads gate."""
-    return any(
-        label in labels
-        for label in (Labels.IGNORE_UNRESOLVED_THREADS, Labels.CI_FORCE_ALL)
-    )
+    return Labels.IGNORE_UNRESOLVED_THREADS in labels
 
 
 def should_limit_pipeline(unresolved_count, bypassed) -> bool:

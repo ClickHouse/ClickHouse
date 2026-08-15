@@ -93,15 +93,15 @@ def test_should_limit_pipeline():
     assert not should_limit_pipeline(0, True)
 
 
-def test_ci_force_all_bypasses_the_gate():
-    assert review_threads_gate_bypassed([Labels.CI_FORCE_ALL])
+def test_only_dedicated_label_bypasses_the_gate():
+    assert not review_threads_gate_bypassed([Labels.CI_FORCE_ALL])
     assert review_threads_gate_bypassed([Labels.IGNORE_UNRESOLVED_THREADS])
     assert not review_threads_gate_bypassed([])
-    assert not should_limit_pipeline(1, review_threads_gate_bypassed([Labels.CI_FORCE_ALL]))
-    assert not merge_gate_verdict(False, 1, True)[0]
+    assert should_limit_pipeline(1, review_threads_gate_bypassed([Labels.CI_FORCE_ALL]))
+    assert merge_gate_verdict(False, 1, False)[0]
 
 
-def test_review_threads_workflows_preserve_ci_force_all_and_infra_retry_behavior():
+def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     repository_root = Path(__file__).resolve().parents[2]
     rerun_workflow = (
         repository_root / ".github/workflows/rerun_on_review_threads.yml"
@@ -110,8 +110,8 @@ def test_review_threads_workflows_preserve_ci_force_all_and_infra_retry_behavior
         repository_root / ".github/workflows/retry_infra_failures.yml"
     ).read_text()
 
-    assert "FORCE_ALL_LABEL: ci-force-all" in rerun_workflow
-    assert '[ "$force_all" != "true" ]' in rerun_workflow
+    assert "OVERRIDE_LABEL: ignore-unresolved-threads" in rerun_workflow
+    assert "FORCE_ALL_LABEL" not in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
 
 
@@ -154,6 +154,13 @@ def test_limited_pipeline_keeps_builds_and_preliminary_jobs(fake_info):
     ):
         skip, reason = filter_job.should_skip_job(job_name)
         assert not skip, f"{job_name}: {reason}"
+
+
+@pytest.mark.parametrize("label", [Labels.CI_BUILD, Labels.DO_NOT_TEST])
+def test_limited_pipeline_keeps_code_review_with_other_filter_labels(fake_info, label):
+    fake_info.pr_labels.append(label)
+    skip, reason = filter_job.should_skip_job(JobNames.CODE_REVIEW)
+    assert not skip, reason
 
 
 def test_limited_pipeline_skips_build_profile_diff(fake_info):

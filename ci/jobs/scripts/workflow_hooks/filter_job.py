@@ -236,10 +236,11 @@ def should_skip_job(job_name):
     # review_threads.py pre-hook; when it is missing (e.g. the GitHub API was
     # unavailable), nothing is skipped.
     unresolved_threads = _info_cache.get_kv_data(KV_UNRESOLVED_COUNT) or 0
+    limited_by_review_threads = should_limit_pipeline(
+        unresolved_threads, bool(_info_cache.get_kv_data(KV_OVERRIDE))
+    )
     if (
-        should_limit_pipeline(
-            unresolved_threads, bool(_info_cache.get_kv_data(KV_OVERRIDE))
-        )
+        limited_by_review_threads
         and job_name not in REVIEW_THREADS_BUILD_JOBS
         and job_name not in PRELIMINARY_JOBS
         and job_name != JobNames.CODE_REVIEW
@@ -253,6 +254,12 @@ def should_skip_job(job_name):
                 f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."
             )
         return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"
+
+    # The limited pipeline depends on `Code Review` running: it re-checks the
+    # pushed code and can resolve bot-owned addressed threads. Keep it running
+    # even if a later label filter would otherwise skip it.
+    if limited_by_review_threads and job_name == JobNames.CODE_REVIEW:
+        return False, ""
 
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
         return True, "Skipped, only documentation changed"
