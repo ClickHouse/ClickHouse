@@ -3,6 +3,8 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TrivialGroupByLimit.h>
+#include <Analyzer/Utils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -19,16 +21,20 @@ namespace Setting
 void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto * query = query_tree_node->as<QueryNode>();
-    if (!query)
+    if (!query || !query->hasGroupBy() || !query->hasLimit() || query->hasHaving() || query->hasOrderBy() || query->hasWindow()
+        || query->hasQualify() || query->hasLimitBy() || query->isDistinct() || query->isGroupByWithTotals()
+        || query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets()
+        || hasAggregateFunctionNodes(query->getProjectionNode()))
         return;
 
-    /// With aggregate functions in the projection, the settings-based rewrite would be unsound:
-    /// `max_rows_to_group_by` with `group_by_overflow_mode = 'any'` is enforced per aggregation
-    /// stream, so a key kept by one stream and rejected by another loses the other stream's rows
-    /// and comes out of the merge with an undercounted aggregate value. That case is handled by
-    /// the planner instead (see `addAggregationStep`), which enables the shared kept-keys cutoff
-    /// in the `Aggregator` for local single-stage aggregation, keeping the values exact.
-    if (hasAggregateFunctionNodes(query->getProjectionNode()))
+    /// Window functions and `arrayJoin` in the projection consume the aggregated rows after
+    /// GROUP BY, so the produced groups are not simply cut by LIMIT and keeping only the first
+    /// `LIMIT + OFFSET` groups changes the result:
+    /// - a window function is evaluated over all groups (`count() OVER ()` counts them);
+    /// - `arrayJoin` can expand or drop rows, so `LIMIT + OFFSET` groups may produce fewer
+    ///   rows than the LIMIT while more groups exist.
+    /// `DISTINCT` and `QUALIFY` (checked above) collapse and filter the groups in the same way.
+    if (hasWindowFunctionNodes(query->getProjectionNode()) || hasFunctionNode(query->getProjectionNode(), "arrayJoin"))
         return;
 
     const Settings & settings = context->getSettingsRef();

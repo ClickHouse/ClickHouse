@@ -4883,7 +4883,7 @@ Possible values:
    - 1 — Optimization enabled.
 )", 0) \
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
-Enables or disables the optimization of a trivial query `SELECT ... FROM table GROUP BY key_expr LIMIT n` (with no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses and no `GROUP BY` modifiers) by capping the aggregation at `n + offset` distinct keys: it stops accepting new keys once enough groups are produced.
+Enables or disables the optimization of a trivial query `SELECT ... FROM table GROUP BY key_expr LIMIT n` (with no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses and no `GROUP BY` modifiers) by capping the aggregation at `n + offset` distinct keys.
 
 With no aggregate functions in the projection, the cap is applied by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries). With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
 
