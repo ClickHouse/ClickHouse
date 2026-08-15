@@ -5265,6 +5265,10 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     if (merge_method == AggregatedDataVariants::Type::key_packed_string)
         merge_method = AggregatedDataVariants::Type::key_string_hash64;
 
+    /// `LowCardinality` numeric methods intentionally keep their fast CRC32-backed maps here. We
+    /// expect their merged cardinality to remain low enough that it does not warrant re-serializing
+    /// every `UInt128`/`UInt256` key and using a heavier full-width hash for external aggregation.
+
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
     /// Temporary data for aggregation.
@@ -5274,6 +5278,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
     result.aggregator = this;
 
     result.init(merge_method);
+    LOG_TRACE(log, "External aggregation merge method: {}", result.getMethodName());
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 

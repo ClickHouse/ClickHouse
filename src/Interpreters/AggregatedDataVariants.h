@@ -183,11 +183,15 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false>>> low_cardinality_key16;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64Key>>> low_cardinality_key32;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key>>> low_cardinality_key64;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt128, AggregatedDataWithNullableUInt128Key>>> low_cardinality_key128;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt256, AggregatedDataWithNullableUInt256Key>>> low_cardinality_key256;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<AggregatedDataWithNullableStringKey>>> low_cardinality_key_string;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<AggregatedDataWithNullableStringKey>>> low_cardinality_key_fixed_string;
 
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64KeyTwoLevel>>> low_cardinality_key32_two_level;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>>> low_cardinality_key64_two_level;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt128, AggregatedDataWithNullableUInt128KeyTwoLevel>>> low_cardinality_key128_two_level;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt256, AggregatedDataWithNullableUInt256KeyTwoLevel>>> low_cardinality_key256_two_level;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<AggregatedDataWithNullableStringKeyTwoLevel>>> low_cardinality_key_string_two_level;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<AggregatedDataWithNullableStringKeyTwoLevel>>> low_cardinality_key_fixed_string_two_level;
 
@@ -295,12 +299,16 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key16, false) \
         M(low_cardinality_key32, false) \
         M(low_cardinality_key64, false) \
+        M(low_cardinality_key128, false) \
+        M(low_cardinality_key256, false) \
         M(low_cardinality_keys128, false) \
         M(low_cardinality_keys256, false) \
         M(low_cardinality_key_string, false) \
         M(low_cardinality_key_fixed_string, false) \
         M(low_cardinality_key32_two_level, true) \
         M(low_cardinality_key64_two_level, true) \
+        M(low_cardinality_key128_two_level, true) \
+        M(low_cardinality_key256_two_level, true) \
         M(low_cardinality_keys128_two_level, true) \
         M(low_cardinality_keys256_two_level, true) \
         M(low_cardinality_key_string_two_level, true) \
@@ -342,6 +350,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256_void) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
+        M(low_cardinality_key128) \
+        M(low_cardinality_key256) \
         M(low_cardinality_keys128) \
         M(low_cardinality_keys256) \
         M(low_cardinality_key_string) \
@@ -421,6 +431,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256_void_two_level) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
+        M(low_cardinality_key128_two_level) \
+        M(low_cardinality_key256_two_level) \
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
@@ -431,12 +443,16 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key16) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
+        M(low_cardinality_key128) \
+        M(low_cardinality_key256) \
         M(low_cardinality_keys128) \
         M(low_cardinality_keys256) \
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
+        M(low_cardinality_key128_two_level) \
+        M(low_cardinality_key256_two_level) \
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \

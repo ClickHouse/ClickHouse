@@ -164,6 +164,8 @@ using AggregatedDataWithNullableUInt32Key = AggregationDataWithNullKey<Aggregate
 using AggregatedDataWithNullableUInt64Key = AggregationDataWithNullKey<AggregatedDataWithUInt64Key>;
 /// The better-hash counterpart, for the external-aggregation merge (see the `*Hash64` block above).
 using AggregatedDataWithNullableUInt64KeyHash64 = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyHash64>;
+using AggregatedDataWithNullableUInt128Key = AggregationDataWithNullKey<AggregatedDataWithKeys128>;
+using AggregatedDataWithNullableUInt256Key = AggregationDataWithNullKey<AggregatedDataWithKeys256>;
 using AggregatedDataWithNullableStringKey = AggregationDataWithNullKey<AggregatedDataWithStringKey>;
 using AggregatedDataWithNullableShortStringKey = AggregationDataWithNullKey<AggregatedDataWithShortStringKey>;
 
@@ -173,6 +175,12 @@ using AggregatedDataWithNullableUInt32KeyTwoLevel = AggregationDataWithNullKeyTw
                     TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 using AggregatedDataWithNullableUInt64KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>,
+        TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+using AggregatedDataWithNullableUInt128KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
+        TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32,
+        TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+using AggregatedDataWithNullableUInt256KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
+        TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 
 using AggregatedDataWithNullableShortStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<

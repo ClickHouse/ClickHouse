@@ -69,7 +69,7 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   */
 
 /// For the case when there is one numeric key.
-/// UInt8/16/32/64 for any type with corresponding bit width.
+/// `FieldType` is a fixed-width integer type matching the key column.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
 struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
                                  HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>,
