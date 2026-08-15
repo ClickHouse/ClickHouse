@@ -3148,11 +3148,21 @@ bool TCPHandler::rollbackPartialPacket(
         return true;
     };
 
+    if (state.compression == Protocol::Compression::Enable && state.maybe_compressed_out
+        && !rewind(*state.maybe_compressed_out, prev_bytes_written_compressed_out))
+    {
+        /// A flush past the snapshot moved everything written before it out of this buffer, so
+        /// what is still pending belongs to the aborted packet. It has to go: finalize() would
+        /// otherwise compress it onto the stream behind the packet that replaces this one.
+        state.maybe_compressed_out->position() -= state.maybe_compressed_out->offset();
+    }
+
+    /// Only out writes to the socket, the compressed buffer writes through it. So a compressed
+    /// chunk that has left that buffer is still counted in out, and only out can tell whether
+    /// any of this packet is already beyond recall.
     bool restored = true;
-    if (state.compression == Protocol::Compression::Enable && state.maybe_compressed_out)
-        restored = rewind(*state.maybe_compressed_out, prev_bytes_written_compressed_out);
     if (out)
-        restored = rewind(*out, prev_bytes_written_out) && restored;
+        restored = rewind(*out, prev_bytes_written_out);
 
     if (!restored)
         state.cancelOut(out);
