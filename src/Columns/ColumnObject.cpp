@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
@@ -2184,6 +2185,39 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     }
 }
 
+/// A dynamic path's own value can be object-shaped directly, or wrapped in Array/Tuple/Map/Nullable
+/// (e.g. `arr`'s inferred elements are `Array(JSON(...))`, not a bare JSON) -- mirrors
+/// containsJSONObjectType's traversal, but rebuilds the same wrapper shape around `replacement`
+/// instead of just testing for one.
+static DataTypePtr replaceNestedJSONObjectType(const DataTypePtr & shape, const DataTypePtr & replacement)
+{
+    if (typeid_cast<const DataTypeObject *>(shape.get()))
+        return replacement;
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(shape.get()))
+        return std::make_shared<DataTypeArray>(replaceNestedJSONObjectType(array->getNestedType(), replacement));
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(shape.get()))
+        return std::make_shared<DataTypeNullable>(replaceNestedJSONObjectType(nullable->getNestedType(), replacement));
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(shape.get()))
+    {
+        DataTypes elements;
+        elements.reserve(tuple->getElements().size());
+        for (const auto & element : tuple->getElements())
+            elements.push_back(replaceNestedJSONObjectType(element, replacement));
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(shape.get()))
+        return std::make_shared<DataTypeMap>(
+            replaceNestedJSONObjectType(map->getKeyType(), replacement), replaceNestedJSONObjectType(map->getValueType(), replacement));
+
+    return shape;
+}
+
 void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & type)
 {
     IColumn * current = &column;
@@ -2219,6 +2253,35 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
         {
             if (auto it = object_column->getTypedPaths().find(path); it != object_column->getTypedPaths().end())
                 setSharedDataPathMatcherRecursively(*it->second, nested_type);
+        }
+
+        /// A value dynamically inferred as its own nested JSON object (see
+        /// ObjectJSONNode::getDynamicNodeForPath in JSONExtractTree.cpp) lives under a dynamic path
+        /// as an Object-typed Dynamic variant, with its own derived matcher/prefix -- it has no
+        /// entry in typed_paths, so the loop above never reaches it. A policy-only rewrite would
+        /// otherwise leave it on the matcher/prefix it had when first materialized. Push the update
+        /// into any dynamic path currently holding one, deriving its type the same way it was
+        /// first derived.
+        for (const auto & [path, column_dynamic] : object_column->getDynamicPathsPtrs())
+        {
+            const auto & variant_info = column_dynamic->getVariantInfo();
+            const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            for (const auto & variant_type : variants)
+            {
+                /// The object may be direct (a dynamic path whose value is itself always
+                /// object-shaped) or wrapped, e.g. `arr`'s inconsistent-shape elements infer as
+                /// Array(JSON(...)), not a bare JSON.
+                if (!containsJSONObjectType(*variant_type))
+                    continue;
+
+                auto discriminator_it = variant_info.variant_name_to_discriminator.find(variant_type->getName());
+                if (discriminator_it == variant_info.variant_name_to_discriminator.end())
+                    continue;
+
+                setSharedDataPathMatcherRecursively(
+                    column_dynamic->getVariantColumn().getVariantByGlobalDiscriminator(discriminator_it->second),
+                    replaceNestedJSONObjectType(variant_type, object_type->getTypeOfNestedObjects(path + ".")));
+            }
         }
         return;
     }
