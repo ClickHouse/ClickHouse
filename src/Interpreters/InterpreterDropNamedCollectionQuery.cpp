@@ -9,6 +9,8 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -70,6 +72,29 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 {
                     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
                     if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                    {
+                        dependent_names.push_back(dep.getFullTableName());
+                        continue;
+                    }
+
+                    /// A failed CREATE of an Atomic table can leave an entry with the old UUID. Before
+                    /// this guard was acquired, another CREATE of the same table name may have completed
+                    /// with a new UUID and a dependency on this collection. The old StorageID cannot find
+                    /// that table, so check the current dependencies by name before pruning the stale one.
+                    /// The DDLGuard keeps a new CREATE of this name from registering between this check and
+                    /// the removal below.
+                    const auto updated_dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
+                    const auto same_name_live_dependency = std::any_of(
+                        updated_dependents.begin(),
+                        updated_dependents.end(),
+                        [&](const auto & candidate)
+                        {
+                            return candidate.database_name == dep.database_name
+                                && candidate.table_name == dep.table_name
+                                && candidate.uuid != dep.uuid
+                                && DatabaseCatalog::instance().isTableExist(candidate, current_context);
+                        });
+                    if (same_name_live_dependency)
                     {
                         dependent_names.push_back(dep.getFullTableName());
                         continue;
