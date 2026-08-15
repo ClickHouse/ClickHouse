@@ -68,7 +68,7 @@ public:
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
-    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id = nullptr);
+    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id = nullptr, String * used_named_collection_name = nullptr);
 
 private:
     const Configuration config;
