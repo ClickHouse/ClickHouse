@@ -25,7 +25,7 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 Chart versions are the release tags without the leading `v` (chart `0.9.0` corresponds to tag `v0.9.0`). The published chart already points at the public container image, so plain installs and upgrades need no image values; to inspect chart defaults, run `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
 
-Alternatively, download and verify the newer CLI and re-run `init`; re-runs converge on the desired state (see [re-runs and recovery](#re-runs-and-recovery)).
+An install from a direct chart reference (`oci://`, a URL, or a local archive or directory) has no repository to resolve against: rerun `helm upgrade clicklink-connector <same-chart-reference>` at the new version instead. Re-running `init` with a newer CLI also converges, but `init` always needs one of its entry points: `--handoff` if you kept the bundle, or a fresh enrollment token with `--force` after the documented cleanup; the `helm upgrade` above is the routine path (see [re-runs and recovery](#re-runs-and-recovery)).
 
 ### Linux VM {#upgrades-linux-vm}
 

@@ -66,8 +66,9 @@
 
   <!-- Operators reach the session gateway -->
   <line x1="310" y1="550" x2="494" y2="550" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
-  <text x="400" y="533" text-anchor="middle" font-size="12" font-weight="500" fill="#7d7d7d">HTTPS</text>
-  <text x="400" y="570" text-anchor="middle" font-size="11" fill="#7d7d7d">identity token</text>
+  <text x="400" y="533" text-anchor="middle" font-size="12" font-weight="500" fill="#7d7d7d">identity token</text>
+  <text x="400" y="568" text-anchor="middle" font-size="10" fill="#7d7d7d">pinned TLS on VM</text>
+  <text x="400" y="582" text-anchor="middle" font-size="10" fill="#7d7d7d">port-forward on K8s</text>
 
   <!-- ===== Connector API endpoint ===== -->
   <rect x="1030" y="240" width="220" height="190" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>

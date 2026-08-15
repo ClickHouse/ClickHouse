@@ -105,7 +105,7 @@ Each entry under `instances.<name>` describes one ClickHouse native-protocol tar
 | `troubleshooter.gateway.handler_timeout` | unset | Server-side request timeout. |
 | `troubleshooter.gateway.jwks_uri` | `""` | JWKS endpoint for a non-Google identity provider; empty uses Google's. |
 | `troubleshooter.gateway.issuer` | `""` | Issuer claim to pin when `jwks_uri` is set. |
-| `troubleshooter.gateway.tls.enabled` | `false` | Serve the gateway over TLS. Enable on a VM so the bearer API is not served in cleartext. |
+| `troubleshooter.gateway.tls.enabled` | `false` (`init` writes `true` on a VM when support sessions are enabled) | Serve the gateway over TLS with the self-signed certificate the daemon mints when none exists; operators pin its fingerprint. |
 | `troubleshooter.gateway.tls.cert_file` | `/var/lib/clicklink/gateway/tls/server.crt` | Gateway serving certificate. |
 | `troubleshooter.gateway.tls.key_file` | `/var/lib/clicklink/gateway/tls/server.key` | Gateway serving key. |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` prefills the host) | SANs for the self-signed certificate the daemon mints itself when none exists; entries that parse as IP addresses become IP SANs. |
