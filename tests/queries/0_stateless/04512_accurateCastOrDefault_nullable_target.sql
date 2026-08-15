@@ -16,3 +16,8 @@ SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)');
 -- A NULL input is a successful cast to a Nullable target, not a failure that
 -- should be replaced with an explicit default.
 SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
+
+-- Dynamic and Variant encode NULL with a discriminator rather than a physical
+-- null map, but it is still a successful cast to a Nullable target.
+SELECT accurateCastOrDefault(CAST(NULL, 'Dynamic'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
+SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));

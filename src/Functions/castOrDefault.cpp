@@ -11,7 +11,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 
 #include <Interpreters/Context.h>
 
@@ -34,6 +36,20 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
+/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
+/// null discriminator instead of a separate null map.
+static ColumnPtr getSourceNullMap(const IColumn & source_column)
+{
+    if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
+        return source_nullable->getNullMapColumnPtr();
+    if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
+        return source_dynamic->getVariantColumn().createNullMap();
+    if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
+        return source_variant->createNullMap();
+    return nullptr;
 }
 
 class FunctionCastOrDefault final : public IFunction
@@ -161,8 +177,10 @@ public:
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
-        const auto * source_nullable = checkAndGetColumn<ColumnNullable>(non_const_column_to_cast.get());
-        const auto * source_null_map_data = source_nullable ? &source_nullable->getNullMapData() : nullptr;
+        auto source_null_map_column = getSourceNullMap(*non_const_column_to_cast);
+        const auto * source_null_map_data = source_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
+            : nullptr;
         size_t null_map_data_size = null_map_data.size();
         const auto & nested_column = cast_result_nullable.getNestedColumn();
         auto result = return_type->createColumn();
