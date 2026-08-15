@@ -133,11 +133,14 @@ def test_both_consumers_read_the_flag_with_the_same_predicate():
 
 
 def test_the_output_site_delegates_to_the_helper():
-    """The `pipeline_status` writer must not re-implement the predicate.
+    """The emitted `pipeline_status` must be the helper's return value.
 
     Every other test here calls `Runner._pipeline_status` directly, so a call
     site that computed its own status would leave them all green while GitHub
-    went back to seeing `failure` for a non-blocking `ERROR`.
+    went back to seeing `failure` for a non-blocking `ERROR`. The predicate is
+    only observable through the line that writes this output, so pin the whole
+    hop: the helper is called, its result is what gets written, and no verdict
+    is hardcoded anywhere in between.
     """
     import inspect
 
@@ -146,6 +149,16 @@ def test_the_output_site_delegates_to_the_helper():
     assert "is_failure()" not in source, (
         "the output site must not re-derive the status - call _pipeline_status"
     )
+    assert 'f"pipeline_status={pipeline_status}"' in source, (
+        "the emitted value must be the helper's result, not a literal"
+    )
+    for literal in (
+        '"pipeline_status=failure"',
+        '"pipeline_status=success"',
+        'pipeline_status = "failure"',
+        'pipeline_status = "success"',
+    ):
+        assert literal not in source, f"hardcoded pipeline verdict: {literal}"
 
 
 def test_the_merge_gate_never_reads_the_non_blocking_flag():
