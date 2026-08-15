@@ -186,7 +186,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
-        && !sort_column.type->hasDynamicStructure()
+        && !hasRuntimeTypedType(sort_column.type)
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix

@@ -48,6 +48,24 @@ INSERT INTO d_map SELECT number, map('k', toNullable(number + 100)) FROM numbers
 INSERT INTO d_map SELECT number, map('k', toNullable(number + 100)) FROM numbers(1000, 1000);
 INSERT INTO d_map SELECT number, if(number % 100 = 0, map('k', NULL), map('k', toNullable(number + 100))) FROM numbers(2000, 1000);
 
+-- Map and LowCardinality each traverse their children with their own forEachChild, so a float
+-- reached only through one of them needs its own arm; the nullable fixtures above exercise null
+-- detection instead.
+CREATE TABLE d_mapf (id UInt64, v Map(String, Float64)) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_mapf;
+INSERT INTO d_mapf SELECT number, map('k', toFloat64(number + 100)) FROM numbers(0, 1000);
+INSERT INTO d_mapf SELECT number, map('k', toFloat64(number + 100)) FROM numbers(1000, 1000);
+INSERT INTO d_mapf SELECT number, if(number % 100 = 0, map('k', nan), map('k', toFloat64(number + 100))) FROM numbers(2000, 1000);
+
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE d_lcf (id UInt64, v Array(LowCardinality(Float64))) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_lcf;
+INSERT INTO d_lcf SELECT number, [toLowCardinality(toFloat64(number + 100))] FROM numbers(0, 1000);
+INSERT INTO d_lcf SELECT number, [toLowCardinality(toFloat64(number + 100))] FROM numbers(1000, 1000);
+INSERT INTO d_lcf SELECT number, if(number % 100 = 0, [toLowCardinality(nan)], [toLowCardinality(toFloat64(number + 100))]) FROM numbers(2000, 1000);
+
 CREATE TABLE d_lc (id UInt64, v Array(LowCardinality(Nullable(String)))) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
 SYSTEM STOP MERGES d_lc;
@@ -129,6 +147,18 @@ SYSTEM STOP MERGES d_stord;
 INSERT INTO d_stord SELECT number, tuple(toUInt64(0)) FROM numbers(0, 1000);
 INSERT INTO d_stord SELECT number + 1000, tuple(toUInt64(100)) FROM numbers(0, 1000);
 INSERT INTO d_stord SELECT number + 2000, tuple(toUInt64(1000)) FROM numbers(0, 1000);
+
+-- A Variant of purely static alternatives is still runtime-typed: the discriminator decides the
+-- order and the Field does not carry it. Alternatives are sorted by name, so UInt64 takes the
+-- lower discriminator and every UInt64 precedes every UInt8; the ASC extremum is the UInt64 in the
+-- last part, while the threshold published from the first part is a numerically smaller UInt8.
+SET allow_suspicious_variant_types = 1;
+CREATE TABLE d_vsta (id UInt64, v Tuple(Variant(UInt64, UInt8))) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_vsta;
+INSERT INTO d_vsta SELECT number, tuple(toUInt8(3)::Variant(UInt64, UInt8)) FROM numbers(0, 1000);
+INSERT INTO d_vsta SELECT number + 1000, tuple(toUInt8(4)::Variant(UInt64, UInt8)) FROM numbers(0, 1000);
+INSERT INTO d_vsta SELECT number + 2000, tuple(toUInt64(900)::Variant(UInt64, UInt8)) FROM numbers(0, 1000);
 
 -- ==================== SPARSE fixtures ====================
 
@@ -289,6 +319,10 @@ SELECT 'arrf ANF ON ', v FROM d_af ORDER BY v ASC NULLS FIRST LIMIT 1;
 SELECT 'arrf ANF OFF', v FROM d_af ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'tupf ANF ON ', v FROM d_tf ORDER BY v ASC NULLS FIRST LIMIT 1;
 SELECT 'tupf ANF OFF', v FROM d_tf ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'mapf ANF ON ', v FROM d_mapf ORDER BY v ASC NULLS FIRST LIMIT 1;
+SELECT 'mapf ANF OFF', v FROM d_mapf ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'lcf ANF ON ', v FROM d_lcf ORDER BY v ASC NULLS FIRST LIMIT 1;
+SELECT 'lcf ANF OFF', v FROM d_lcf ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'json ANF ON ', v FROM d_json ORDER BY v ASC NULLS FIRST LIMIT 1;
 SELECT 'json ANF OFF', v FROM d_json ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'jsub ANF ON ', v.f FROM d_json ORDER BY v.f ASC NULLS FIRST LIMIT 1;
@@ -317,6 +351,10 @@ SELECT 'dyord ASC ON ', v, id FROM d_dyord ORDER BY v ASC, id DESC LIMIT 2;
 SELECT 'dyord ASC OFF', v, id FROM d_dyord ORDER BY v ASC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'ctl stord DESC ON ', v, id FROM d_stord ORDER BY v DESC, id DESC LIMIT 2;
 SELECT 'ctl stord DESC OFF', v, id FROM d_stord ORDER BY v DESC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'vsta ASC ON ', v, id FROM d_vsta ORDER BY v ASC, id DESC LIMIT 2;
+SELECT 'vsta ASC OFF', v, id FROM d_vsta ORDER BY v ASC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'vsta DESC ON ', v, id FROM d_vsta ORDER BY v DESC, id DESC LIMIT 2;
+SELECT 'vsta DESC OFF', v, id FROM d_vsta ORDER BY v DESC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
 -- ==================== skip-index granule ranking ====================
 -- MinMaxGranuleItem::operator< ranks granules with a raw Field comparison, so this half is lost
@@ -376,6 +414,7 @@ SELECT 'pres tup', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM s_tf ORDE
 -- the guard is rejecting on the fixture shape instead of on the type.
 SELECT 'pres tdyn', count() FROM (EXPLAIN actions = 1 SELECT v FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres dyord', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_dyord ORDER BY v DESC, id DESC LIMIT 2) WHERE explain LIKE '%__topKFilter%';
+SELECT 'pres vsta', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_vsta ORDER BY v ASC, id DESC LIMIT 2) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres stord', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_stord ORDER BY v DESC, id DESC LIMIT 2) WHERE explain LIKE '%__topKFilter%';
 -- A dotted sort column reaches the filter only through the alias branch that resolves it to the
 -- storage column name; an unresolved name returns before any filter is installed. The type tested

@@ -18,4 +18,9 @@ bool hasTypeThatCanContainNulls(const DataTypePtr & type);
 /// runtime.
 bool hasTypeThatCanContainFloat(const DataTypePtr & type);
 
+/// Whether Object/JSON, Variant or Dynamic appears anywhere in the type, including nested inside
+/// Array/Tuple/Map/Nullable/LowCardinality. These hold values whose type is only known at runtime,
+/// so a Field carrying one loses the discriminator that their compareAt ranks by.
+bool hasRuntimeTypedType(const DataTypePtr & type);
+
 }

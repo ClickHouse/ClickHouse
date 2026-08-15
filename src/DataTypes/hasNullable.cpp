@@ -55,11 +55,16 @@ bool hasTypeThatCanContainNulls(const DataTypePtr & type)
 namespace
 {
 
-bool isFloatOrRuntimeTyped(const IDataType & type)
+bool isRuntimeTyped(const IDataType & type)
 {
     WhichDataType which(type);
     /// Object/JSON, Variant and Dynamic hold types the static type does not expose.
-    return which.isFloat() || which.isObject() || which.isVariant() || which.isDynamic();
+    return which.isObject() || which.isVariant() || which.isDynamic();
+}
+
+bool isFloatOrRuntimeTyped(const IDataType & type)
+{
+    return WhichDataType(type).isFloat() || isRuntimeTyped(type);
 }
 
 }
@@ -74,6 +79,19 @@ bool hasTypeThatCanContainFloat(const DataTypePtr & type)
     type->forEachChild([&found](const IDataType & child)
     {
         found = found || isFloatOrRuntimeTyped(child);
+    });
+    return found;
+}
+
+bool hasRuntimeTypedType(const DataTypePtr & type)
+{
+    if (isRuntimeTyped(*type))
+        return true;
+
+    bool found = false;
+    type->forEachChild([&found](const IDataType & child)
+    {
+        found = found || isRuntimeTyped(child);
     });
     return found;
 }

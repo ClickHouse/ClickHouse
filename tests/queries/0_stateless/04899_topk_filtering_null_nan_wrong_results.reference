@@ -56,6 +56,10 @@ arrf ANF ON 	[nan]
 arrf ANF OFF	[nan]
 tupf ANF ON 	(nan,0)
 tupf ANF OFF	(nan,0)
+mapf ANF ON 	{'k':nan}
+mapf ANF OFF	{'k':nan}
+lcf ANF ON 	[nan]
+lcf ANF OFF	[nan]
 json ANF ON 	{"f":null}
 json ANF OFF	{"f":null}
 jsub ANF ON 	nan
@@ -92,6 +96,14 @@ ctl stord DESC ON 	(1000)	2999
 ctl stord DESC ON 	(1000)	2998
 ctl stord DESC OFF	(1000)	2999
 ctl stord DESC OFF	(1000)	2998
+vsta ASC ON 	(900)	2999
+vsta ASC ON 	(900)	2998
+vsta ASC OFF	(900)	2999
+vsta ASC OFF	(900)	2998
+vsta DESC ON 	(4)	1999
+vsta DESC ON 	(4)	1998
+vsta DESC OFF	(4)	1999
+vsta DESC OFF	(4)	1998
 skip1 ON 	nan
 skip1 OFF	nan
 skip0 ON 	nan
@@ -163,6 +175,7 @@ pres f64	1
 pres tup	1
 pres tdyn	0
 pres dyord	0
+pres vsta	0
 pres stord	1
 pres jsub	1
 pres jroot	0
