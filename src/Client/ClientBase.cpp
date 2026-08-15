@@ -2963,9 +2963,6 @@ void ClientBase::processParsedSingleQuery(
 #if USE_CLIENT_AI
                 if (ai_running_query && change.name == "dialect")
                     ai_running_query_changed_dialect = true;
-
-                if (ai_agent && change.name == "readonly")
-                    ai_agent->setQueryLogAccess(client_context->getSettingsRef()[Setting::readonly] != 1);
 #endif
             }
 
@@ -2974,6 +2971,26 @@ void ClientBase::processParsedSingleQuery(
                 ai_running_query_changed_dialect = true;
 #endif
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+#if USE_CLIENT_AI
+            const auto changes_setting = [&](std::string_view name)
+            {
+                return std::any_of(changes.begin(), changes.end(), [&](const auto & change) { return change.name == name; })
+                    || std::find(set_query->default_settings.begin(), set_query->default_settings.end(), name) != set_query->default_settings.end();
+            };
+
+            /// Profiles are applied by the server but deliberately not reproduced in the client
+            /// context. They can change `readonly`, so do not offer a tool or attach a marker
+            /// whose availability the client cannot prove. An explicit `readonly` update is
+            /// modeled locally and makes the capability known again.
+            if (changes_setting("profile"))
+                ai_query_log_access_enabled = false;
+            else if (changes_setting("readonly"))
+                ai_query_log_access_enabled = client_context->getSettingsRef()[Setting::readonly] != 1;
+
+            if (ai_agent)
+                ai_agent->setQueryLogAccess(ai_query_log_access_enabled);
+#endif
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -3888,7 +3905,7 @@ void ClientBase::initAIAgent()
         return ask("Run this query? [Y/n] ", *std_in, *std_out, /*default_yes=*/ true);
     };
     hooks.check_syntax = [this](const String & query) { return checkAIQuerySyntax(query); };
-    hooks.can_read_query_log = [this] { return client_context->getSettingsRef()[Setting::readonly] != 1; };
+    hooks.can_read_query_log = [this] { return ai_query_log_access_enabled; };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -3920,7 +3937,8 @@ void ClientBase::initAIAgent()
 
     /// A `readonly` session cannot apply the `log_comment` marker to internal queries, so do not
     /// offer `read_query_log` until a confirmed `SET readonly = 0` makes it safe again.
-    ai_config.enable_query_log_access = client_context->getSettingsRef()[Setting::readonly] != 1;
+    ai_query_log_access_enabled = client_context->getSettingsRef()[Setting::readonly] != 1;
+    ai_config.enable_query_log_access = ai_query_log_access_enabled;
     ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
 
@@ -4292,7 +4310,7 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// tool filters them out, like the in-memory recent-query context does. A session with
     /// `readonly = 1` allows no setting change at all, and the tag is not worth failing these
     /// queries for: the agent stays usable there, only without the marker.
-    if (from_ai_agent && client_context->getSettingsRef()[Setting::readonly] != 1)
+    if (from_ai_agent && ai_query_log_access_enabled)
     {
         if (!settings_to_send)
             settings_to_send.emplace();

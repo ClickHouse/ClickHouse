@@ -571,6 +571,9 @@ protected:
 #if USE_CLIENT_AI
     /// The AI agent behind the interactive `?` command
     std::unique_ptr<AIAgent> ai_agent;
+    /// Whether agent queries can be reliably marked in the query log. A `SET profile` is not
+    /// modeled in the client context, so it disables this capability until `readonly` is set.
+    bool ai_query_log_access_enabled = true;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage
