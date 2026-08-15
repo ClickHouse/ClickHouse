@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+mkdir -p "$CUR_DIR/tmp"
+test_dir=$(mktemp -d "$CUR_DIR/tmp/04840_XXXXXX")
+trap 'rm -r "$test_dir"' EXIT
+
+check_merge_order()
+{
+    local config_file=$1
+    local merge_dir=$2
+
+    tee "$test_dir/$config_file" >/dev/null <<'EOF'
+<clickhouse>
+    <order>main</order>
+</clickhouse>
+EOF
+
+    mkdir "$test_dir/$merge_dir"
+
+    # Create the files in the opposite order from the expected merge order.
+    tee "$test_dir/$merge_dir/2-last.xml" >/dev/null <<'EOF'
+<clickhouse>
+    <order replace="1">2</order>
+</clickhouse>
+EOF
+
+    tee "$test_dir/$merge_dir/10-first.xml" >/dev/null <<'EOF'
+<clickhouse>
+    <order replace="1">10</order>
+</clickhouse>
+EOF
+
+    "$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/$config_file" --key order
+}
+
+check_merge_order config.xml config.d
+check_merge_order users.xml users.d
