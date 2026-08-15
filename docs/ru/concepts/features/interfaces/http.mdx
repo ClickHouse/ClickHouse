@@ -22,7 +22,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Обзор
 </div>
 
-HTTP-интерфейс позволяет использовать ClickHouse на любой платформе из любого языка программирования в формате REST API. HTTP-интерфейс более ограничен, чем native interface, но обеспечивает лучшую поддержку языков программирования.
+HTTP-интерфейс позволяет использовать ClickHouse на любой платформе из любого языка программирования в формате REST API. HTTP-интерфейс более ограничен, чем нативный интерфейс, но обеспечивает лучшую поддержку языков программирования.
 
 По умолчанию `clickhouse-server` прослушивает следующие порты:
 
@@ -36,9 +36,9 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; — это значение по умолчанию, заданное в [`http_server_default_response`](/ru/reference/settings/server-settings/settings#http_server_default_response); при необходимости его можно изменить.
+&quot;Ok.&quot; — это значение по умолчанию, заданное в [`http_server_default_response`](/ru/reference/settings/server-settings/settings/http#http_server_default_response); при необходимости его можно изменить.
 
-См. также: [особенности кодов HTTP-ответов](#http_response_codes_caveats).
+См. также: [нюанс кодов HTTP-ответов](#http_response_codes_caveats).
 
 <div id="web-ui">
   ## Веб-интерфейс
@@ -294,11 +294,11 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
   ## Сжатие
 </div>
 
-Сжатие можно использовать для уменьшения сетевого трафика при передаче больших объёмов данных или для создания дампов, которые сразу записываются в сжатом виде.
+Сжатие можно использовать для уменьшения сетевого трафика при передаче больших объёмов данных или для создания дампов, которые сразу сжимаются.
 
 При передаче данных можно использовать внутренний формат сжатия ClickHouse. Сжатые данные имеют нестандартный формат, и для работы с ними требуется программа `clickhouse-compressor`. Она по умолчанию устанавливается вместе с пакетом `clickhouse-client`.
 
-Чтобы повысить эффективность вставки данных, отключите проверку контрольных сумм на стороне сервера с помощью настройки [`http_native_compression_disable_checksumming_on_decompress`](/ru/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress).
+Чтобы повысить эффективность вставки данных, отключите проверку контрольных сумм на стороне сервера с помощью настройки [`http_native_compression_disable_checksumming_on_decompress`](/ru/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress).
 
 Если указать `compress=1` в URL, сервер будет сжимать отправляемые вам данные. Если указать `decompress=1` в URL, сервер будет распаковывать данные, которые вы передаёте методом `POST`.
 
@@ -317,7 +317,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Чтобы ClickHouse сжимал ответ, добавьте в запрос заголовок `Accept-Encoding: compression_method`.
 
-Уровень сжатия данных для всех методов сжатия можно настроить с помощью параметра [`http_zlib_compression_level`](/ru/reference/settings/session-settings#http_zlib_compression_level).
+Уровень сжатия данных для всех методов сжатия можно настроить с помощью настройки [`http_zlib_compression_level`](/ru/reference/settings/session-settings/http#http_zlib_compression_level).
 
 <Info>
   Некоторые HTTP-клиенты по умолчанию могут распаковывать данные, полученные от сервера (для `gzip` и `deflate`), поэтому вы можете получить уже распакованные данные, даже если правильно используете настройки сжатия.
@@ -450,7 +450,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 Чтобы проверить состояние сеанса, используйте параметр `session_check=1`. В одном сеансе одновременно может выполняться только один запрос.
 
-Информацию о прогрессе выполнения запроса можно получить из заголовков ответа `X-ClickHouse-Progress`. Для этого включите [`send_progress_in_http_headers`](/ru/reference/settings/session-settings#send_progress_in_http_headers).
+Информацию о прогрессе выполнения запроса можно получить из заголовков ответа `X-ClickHouse-Progress`. Для этого включите [`send_progress_in_http_headers`](/ru/reference/settings/session-settings/send#send_progress_in_http_headers).
 
 Ниже приведен пример последовательности заголовков:
 
@@ -476,10 +476,10 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 Существуют следующие необязательные параметры:
 
-| Параметры              | Описание                                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query_id` (optional)  | Можно передать как идентификатор запроса (любая строка). [`replace_running_query`](/ru/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (optional) | Можно передать как ключ квоты (любая строка). [&quot;Квоты&quot;](/ru/concepts/features/configuration/server-config/quotas)                       |
+| Параметры              | Описание                                                                                                                                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (optional)  | Можно передать как идентификатор запроса (любая строка). [`replace_running_query`](/ru/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (optional) | Можно передать как ключ квоты (любая строка). [&quot;Квоты&quot;](/ru/concepts/features/configuration/server-config/quotas)                                             |
 
 HTTP-интерфейс позволяет передавать внешние данные (внешние временные таблицы) для выполнения запросов. Подробнее см. в разделе [&quot;Внешние данные для обработки запросов&quot;](/ru/reference/engines/table-engines/special/external-data).
 
@@ -494,8 +494,8 @@ HTTP-интерфейс позволяет передавать внешние �
 
 Также можно использовать следующие настройки:
 
-* [`http_response_buffer_size`](/ru/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/ru/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/ru/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/ru/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` определяет количество байтов результата, которое нужно буферизовать в памяти сервера. Если тело результата превышает этот порог, буфер записывается в HTTP-канал, а оставшиеся данные отправляются в HTTP-канал напрямую.
 
@@ -567,7 +567,7 @@ Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while 
 
 Это поведение не зависит от используемого формата, будь то `Native`, `TSV` или `JSON`; сообщение об ошибке всегда будет находиться в середине потока ответа.
 
-Вы можете частично решить эту проблему, включив `wait_end_of_query=1` ([Буферизация ответа](#response-buffering)). В этом случае отправка HTTP-заголовка откладывается до тех пор, пока запрос не будет полностью обработан. Однако это не устраняет проблему полностью, поскольку результат по-прежнему должен помещаться в [`http_response_buffer_size`](/ru/reference/settings/session-settings#http_response_buffer_size), а другие настройки, такие как [`send_progress_in_http_headers`](/ru/reference/settings/session-settings#send_progress_in_http_headers), могут помешать задержке заголовка.
+Вы можете частично решить эту проблему, включив `wait_end_of_query=1` ([Буферизация ответа](#response-buffering)). В этом случае отправка HTTP-заголовка откладывается до тех пор, пока запрос не будет полностью обработан. Однако это не устраняет проблему полностью, поскольку результат по-прежнему должен помещаться в [`http_response_buffer_size`](/ru/reference/settings/session-settings/http-response#http_response_buffer_size), а другие настройки, такие как [`send_progress_in_http_headers`](/ru/reference/settings/session-settings/send#send_progress_in_http_headers), могут помешать задержке заголовка.
 
 <Tip>
   Единственный способ перехватить все ошибки — проанализировать HTTP-тело перед тем, как разбирать его в нужном формате.
@@ -823,10 +823,10 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Значение `query` — это предопределённый запрос для `predefined_query_handler`, который ClickHouse выполняет при совпадении с HTTP-запросом; в ответ возвращается результат этого запроса. Это обязательный параметр конфигурации.
 
-В следующем примере задаются значения настроек [`max_threads`](/ru/reference/settings/session-settings#max_threads) и [`max_final_threads`](/ru/reference/settings/session-settings#max_final_threads), после чего выполняется запрос к системной таблице, чтобы проверить, были ли эти настройки успешно установлены.
+В следующем примере задаются значения настроек [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads) и [`max_final_threads`](/ru/reference/settings/session-settings/max#max_final_threads), после чего выполняется запрос к системной таблице, чтобы проверить, были ли эти настройки успешно установлены.
 
 <Note>
-  Чтобы сохранить обработчики `handlers` по умолчанию, такие как` query`, `play`,` ping`, добавьте правило `<defaults/>`.
+  Чтобы сохранить обработчики по умолчанию, такие как `query`, `play`, `ping`, добавьте правило `<defaults/>`.
 </Note>
 
 Например:
@@ -905,7 +905,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 
 ClickHouse извлекает и выполняет значение, соответствующее `query_param_name` в URL HTTP-запроса. Значение `query_param_name` по умолчанию — `/query`. Это необязательный параметр конфигурации. Если в файле конфигурации он не определён, параметр не передаётся.
 
-Чтобы поэкспериментировать с этой функциональностью, в следующем примере задаются значения [`max_threads`](/ru/reference/settings/session-settings#max_threads) и `max_final_threads`, а с помощью `queries` проверяется, были ли эти настройки успешно установлены.
+Чтобы поэкспериментировать с этой функциональностью, в следующем примере задаются значения [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads) и `max_final_threads`, а с помощью `queries` проверяется, были ли эти настройки успешно установлены.
 
 Пример:
 
@@ -1189,7 +1189,7 @@ ClickHouse позволяет настраивать пользовательс�
 
 Во время выполнения запроса по HTTP может возникнуть исключение, когда часть данных уже была отправлена. Обычно в таком случае исключение отправляется клиенту в виде обычного текста.
 Даже если для вывода данных использовался определённый формат, результат может стать недопустимым с точки зрения этого формата.
-Чтобы этого избежать, можно использовать настройку [`http_write_exception_in_output_format`](/ru/reference/settings/session-settings#http_write_exception_in_output_format) (по умолчанию отключена), которая укажет ClickHouse записывать исключение в указанном формате (в настоящее время поддерживаются форматы XML и JSON*).
+Чтобы этого избежать, можно использовать настройку [`http_write_exception_in_output_format`](/ru/reference/settings/session-settings/http#http_write_exception_in_output_format) (по умолчанию отключена), которая укажет ClickHouse записывать исключение в указанном формате (в настоящее время поддерживаются форматы XML и JSON*).
 
 Примеры:
 
