@@ -492,7 +492,7 @@ struct HashMethodKeysFixed
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
-        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
+        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 32)
             return false;
 
         for (auto size : key_sizes)

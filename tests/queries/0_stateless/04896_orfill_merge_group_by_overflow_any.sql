@@ -69,4 +69,14 @@ SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM 
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 
+-- `max_block_size = 1` makes the zero key arrive in the first and third blocks. The second
+-- key exceeds the limit and freezes the table, so the third block has to look the zero key up
+-- through the `no_more_keys` path rather than treating its empty bucket as a new-key rejection.
+SELECT 'overflow any zero fixed key after freeze';
+SELECT k, count()
+FROM (SELECT arrayJoin([toUInt64(0), 1, 0]) AS k)
+GROUP BY k
+ORDER BY k
+SETTINGS max_block_size = 1, max_threads = 1, max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
+
 DROP TABLE t_orfill;
