@@ -555,8 +555,15 @@ private:
             auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
             const auto & view_query = metadata->select.inner_query;
             if (view_query)
+            {
+                /// A stored view has its own lexical scope. Its definition is analyzed in a
+                /// fresh context, so an outer query's CTE names cannot shadow table names in
+                /// the view body while collecting cache dependencies.
+                auto outer_cte_scopes = std::move(cte_scopes);
+                SCOPE_EXIT({ cte_scopes = std::move(outer_cte_scopes); });
                 if (!collectImpl(*view_query, resolved_id.getDatabaseName(), /*in_set_or_table_position=*/ false, inside_scalar_subquery))
                     return false;
+            }
         }
 
         return true;
