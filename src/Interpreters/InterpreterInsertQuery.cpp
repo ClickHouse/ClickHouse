@@ -380,6 +380,38 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
 }
 
 
+static bool insertDeduplicationNeedsSingleStream(const StoragePtr & table, const Settings & settings, bool async_insert, const ContextPtr & context)
+{
+    /// Per-branch source block numbering can make otherwise distinct blocks share a deduplication id.
+    /// This includes strict block limits on a direct deduplicating destination, forwarding storages
+    /// that restamp ids in another context, and dependent views hidden behind a forwarding storage.
+    /// Keep the pipeline single-stream in all those cases before `AddDeduplicationInfoTransform` runs.
+    const bool dedup_enabled_for_insert = isDeduplicationEnabledForInsert(async_insert, settings);
+    const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
+        && dedup_enabled_for_insert;
+    const bool rebuilds_dedup_ids = InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(table);
+    const bool per_branch_dedup_ids = settings[Setting::use_strict_insert_block_limits]
+        || rebuilds_dedup_ids;
+
+    const bool forwarded_dependent_mv_dedup_hazard = dedup_enabled_for_insert
+        && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
+        && ((rebuilds_dedup_ids && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
+            || (settings[Setting::use_strict_insert_block_limits]
+                && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table)));
+
+    const bool forwards_to_separate_context =
+        InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
+    const bool hidden_views_forward_to_separate_context =
+        InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSeparateContext(table, context);
+
+    return !async_insert
+        && ((per_branch_dedup_ids && source_deduplicates)
+            || forwarded_dependent_mv_dedup_hazard
+            || forwards_to_separate_context
+            || hidden_views_forward_to_separate_context);
+}
+
+
 QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
 {
     auto context = getContext();
@@ -475,11 +507,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     /// view graph.
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
         && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
+    const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination,
-        serial_hidden_views ? 1 : max_insert_threads,
+        (dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads,
         context, insert_start_gates);
 
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
@@ -800,90 +833,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // support parallel inserts, so this stays a no-op for the default `max_insert_threads = 0`.
     // Asynchronous inserts have their own batching/flush mechanism, so they keep a single stream.
     //
-    // With `use_strict_insert_block_limits`, the deduplication info (source block number) is stamped
-    // by a per-stream `AddDeduplicationInfoTransform` *after* the fan-out (see below), so each parallel
-    // branch restarts its block numbering from zero. The unified deduplication id folds in that source
-    // block number for any synchronous insert - both for a non-empty `insert_deduplication_token` (the
-    // id is `token` + source block number, independent of the block contents) and for a token-less
-    // insert (the id is the data hash + source block number). Two identical squashed blocks that land
-    // on different branches therefore get identical ids, which `MergeTreeSink` /
-    // `ReplicatedMergeTreeSink` treat as duplicates and skip - silently dropping rows of a single
-    // parallel `INSERT`. Keep such strict inserts single-stream (as before), so the numbering stays
-    // global.
-    //
-    // The same collision arises without strict limits when the destination storage forwards the data
-    // through a nested `INSERT` that stamps the deduplication info from scratch (`Distributed`,
-    // `Buffer`): each parallel branch gets its own sink, whose nested `INSERT` restarts the source
-    // block numbering per branch even though this query stamped it globally in the single-stream head
-    // of the pipeline. An `Alias` is different: its `AliasSink` runs the nested `INSERT` in this
-    // query's context with the chunk's deduplication info intact, and an already-stamped chunk is not
-    // restamped, so the globally stamped numbering survives the hop and the fan-out stays safe
-    // without strict limits - an `Alias` behaves like the table it forwards to.
-    //
-    // This only matters when the destination sink actually deduplicates: the colliding id is consulted
-    // only by a MergeTree-family table with its deduplication window enabled, and only when deduplication
-    // is not disabled by `deduplicate_insert` / `insert_deduplicate`. For a table that never deduplicates
-    // (e.g. a `MergeTree` with `non_replicated_deduplication_window = 0`, a `Memory`/`Null` table, or a
-    // session with deduplication disabled) the collision is harmless, so the fan-out stays safe and
-    // `max_insert_threads` keeps applying.
-    //
-    // The analogous VIEW-level collision for dependent materialized views (a per-branch source block
-    // number folded into the view-level ids under strict limits, or a dependent target that forwards
-    // the write through a nested `INSERT`) is handled inside `InsertDependenciesBuilder`, which keeps
-    // its sink stream size at 1 in that case regardless of the value passed here.
-    const bool dedup_enabled_for_insert = isDeduplicationEnabledForInsert(async_insert, settings);
-    const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
-        && dedup_enabled_for_insert;
-    const bool rebuilds_dedup_ids = InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(table);
-    const bool per_branch_dedup_ids = settings[Setting::use_strict_insert_block_limits]
-        || rebuilds_dedup_ids;
-
-    // A forwarding storage (`Alias`, `Distributed`, `Buffer`) runs a nested `INSERT` per sink branch.
-    // That nested `INSERT` can reach a deduplicating dependent materialized view even when the
-    // forwarded-to table itself never deduplicates (e.g. an `Alias` over a `MergeTree` with
-    // `non_replicated_deduplication_window = 0` whose materialized view targets a deduplicating table).
-    // The dependent-MV chain of the forwarded-to table lives behind the nested `INSERT` and is not
-    // visible to this pipeline (`InsertDependenciesBuilder` only expands the dependencies of the
-    // immediate target), so it must be guarded here. The view-level deduplication ids fold in the
-    // source block number, so they stay distinct across branches as long as the source numbering is
-    // global. Fail closed when the numbering is per-branch and the nested `INSERT` can reach a
-    // dependent view: either the forwarding chain restarts the numbering on its own (`Distributed` /
-    // `Buffer` - also kept single-stream by `forwards_to_separate_context` below), or
-    // `use_strict_insert_block_limits` stamps it per branch after the fan-out and the per-branch
-    // numbers survive the hop into the dependent-view graph hidden behind an `Alias`.
-    const bool forwarded_dependent_mv_dedup_hazard = dedup_enabled_for_insert
-        && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
-        && ((rebuilds_dedup_ids && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
-            || (settings[Setting::use_strict_insert_block_limits]
-                && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table)));
-
-    // A `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
-    // buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this
-    // query's context), and a `Distributed` forwards the write to a remote shard whose table is not cheaply
-    // known here and may itself be (or forward to) such a `Buffer`. In both cases this query's
-    // `deduplicate_insert` / `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views`
-    // settings do not govern the final write. Disabling deduplication for this `INSERT` therefore does not
-    // make the write fan-out safe: the downstream flush can still deduplicate on its destination while each
-    // parallel branch restarts the source block numbering from zero, so identical blocks on different
-    // branches collide and rows are silently dropped. Fail closed and keep such inserts single-stream
-    // regardless of the deduplication settings on this query. (Unlike an `Alias`, whose `AliasSink` runs its
-    // nested `INSERT` in this query's context and so does observe a `deduplicate_insert = disable` here.)
-    const bool forwards_to_separate_context =
-        InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
-
-    /// An `Alias` itself keeps the nested `INSERT` in this query's context, but the dependent-view
-    /// graph of its target - hidden behind the nested `INSERT` each `AliasSink` runs - can contain a
-    /// materialized view whose target is a `Buffer` or a `Distributed`. That hidden separate-context
-    /// sink drops the carried deduplication info (`BufferSink` / `DistributedSink` restamp the source
-    /// block numbering from scratch in another context), so with a fan-out to several `AliasSink`s
-    /// identical blocks from different branches can still collide on the final deduplicating
-    /// destination - even when this query disabled deduplication, because those settings never reach
-    /// the separate-context write. The visible variant of this topology is failed closed inside
-    /// `InsertDependenciesBuilder`; the hidden-behind-an-`Alias` variant must be failed closed here,
-    /// independent of the deduplication settings on this query.
-    const bool hidden_views_forward_to_separate_context =
-        InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSeparateContext(table, context);
-
     // `parallel_view_processing = 0` keeps the pushing to dependent materialized views sequential.
     // For a dependent-view graph visible to `InsertDependenciesBuilder` this is enforced there (the
     // sink stream size stays 1 when views are involved and the setting is disabled) and by the
@@ -896,11 +845,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
         && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
 
-    const bool dedup_single_stream = !async_insert
-        && ((per_branch_dedup_ids && source_deduplicates)
-            || forwarded_dependent_mv_dedup_hazard
-            || forwards_to_separate_context
-            || hidden_views_forward_to_separate_context);
+    const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 
     /// A non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with `insert_quorum_parallel = 0`)
     /// permits a single in-flight quorum part per table: every `ReplicatedMergeTreeSink` checks in
