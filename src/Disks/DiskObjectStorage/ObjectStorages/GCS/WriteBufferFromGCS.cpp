@@ -3,6 +3,7 @@
 #if USE_GOOGLE_CLOUD
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
+#include <Common/CurrentThread.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -120,6 +121,7 @@ void WriteBufferFromGCS::nextImpl()
     if (bytes_to_write == 0)
         return;
 
+    CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
     write_stream->write(working_buffer.begin(), static_cast<std::streamsize>(bytes_to_write));
     total_time_microseconds += watch.elapsedMicroseconds();
@@ -143,6 +145,7 @@ void WriteBufferFromGCS::finalizeImpl()
     /// Flush whatever remains in the working buffer, then close the upload.
     next();
 
+    CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
     write_stream->Close();
     total_time_microseconds += watch.elapsedMicroseconds();
