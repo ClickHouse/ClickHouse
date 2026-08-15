@@ -837,14 +837,14 @@ Using the uncompressed cache (only for tables in the MergeTree family) can signi
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
-    DECLARE(Bool, use_columns_cache, true, R"(
-Whether to use the columns cache. Accepts 0 or 1. By default, 1 (enabled).
+    DECLARE(Bool, use_columns_cache, false, R"(
+Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
 The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and row range.
 
 Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs (`Atomic` and `Replicated`); `MergeTree` tables in `Ordinary` databases have a nil UUID and silently ignore this setting.
 
 The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
-)", BETA) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
 Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 )", BETA) \
