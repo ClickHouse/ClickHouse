@@ -315,7 +315,7 @@ private:
                     /// visible in the listing, but never traverse into it. A successfully resolved symlink
                     /// outside `user_files` is still rejected by `weaklyCanonicalPathStartsWith`.
                     std::error_code canonical_ec;
-                    fs::weakly_canonical(child_path, canonical_ec);
+                    (void)fs::weakly_canonical(child_path, canonical_ec);
 
                     std::error_code symlink_ec;
                     unresolved_symlink_inside_user_files = canonical_ec
