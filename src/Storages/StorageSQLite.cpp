@@ -622,6 +622,13 @@ void registerStorageSQLite(StorageFactory & factory)
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, /* allow_create */ is_create);
 
         ColumnsDescription columns = args.columns;
+        /// An `ATTACH TABLE ... ENGINE = SQLite(...)` without a column list has to infer the schema immediately.
+        /// Unlike the explicit-schema path below, it cannot be attached with an unopened connection: passing a
+        /// null connection to `getTableStructureFromData` would dereference it while preparing the table or query.
+        /// Re-open in throwing mode to surface `PATH_ACCESS_DENIED` for an unavailable file.
+        if (columns.empty() && !sqlite_db)
+            sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ true, /* allow_create */ false);
+
         /// Re-apply the generated-column classification from the remote schema for an explicitly declared
         /// column list (an explicit `CREATE`, an `ATTACH` replaying the stored definition, or a `SHOW CREATE`
         /// round-trip). The auto-inferred case (empty column list) already gets the classification straight
