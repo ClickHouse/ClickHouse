@@ -4,17 +4,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Secondary databases. Suffixed with $CLICKHOUSE_DATABASE so parallel runs of
+# Secondary database. Suffixed with $CLICKHOUSE_DATABASE so parallel runs of
 # this test don't collide on shared global names.
 DB_X="${CLICKHOUSE_DATABASE}_x"
-DB_RENAME_BEFORE="${CLICKHOUSE_DATABASE}_rb"
-DB_RENAME_AFTER="${CLICKHOUSE_DATABASE}_ra"
-DB_RENAME_EXT="${CLICKHOUSE_DATABASE}_rext"
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${DB_X}"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${DB_RENAME_BEFORE}"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${DB_RENAME_AFTER}"
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${DB_RENAME_EXT}"
 
 $CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS 03760_src1;
@@ -122,41 +116,6 @@ DROP TABLE 03760_src2;
 DROP TABLE 03760_src1;
 EOF
 
-# RENAME DATABASE section
-$CLICKHOUSE_CLIENT <<EOF
--- RENAME DATABASE: plain-view dependencies must be migrated to the new database name.
--- Three cases are exercised:
---   (a) single-source plain view: v_simple reads from src1 (same DB, renamed together)
---   (b) multi-source plain view: v_join reads from src1 JOIN src2 (same DB, renamed together)
---   (c) cross-db plain view: v_xdb lives in an external DB and reads from src1 (source DB renamed)
-CREATE DATABASE ${DB_RENAME_BEFORE} ENGINE = Atomic;
-CREATE TABLE ${DB_RENAME_BEFORE}.src1 (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ${DB_RENAME_BEFORE}.src2 (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE VIEW ${DB_RENAME_BEFORE}.v_simple AS SELECT * FROM ${DB_RENAME_BEFORE}.src1;
-CREATE VIEW ${DB_RENAME_BEFORE}.v_join   AS SELECT a.id FROM ${DB_RENAME_BEFORE}.src1 a JOIN ${DB_RENAME_BEFORE}.src2 b ON a.id = b.id;
-
-CREATE DATABASE ${DB_RENAME_EXT} ENGINE = Atomic;
-CREATE VIEW ${DB_RENAME_EXT}.v_xdb AS SELECT * FROM ${DB_RENAME_BEFORE}.src1;
-
--- Before rename: verify all three views appear as dependents.
-SELECT arraySort(arrayMap((x, y) -> concat(x, '.', y), dependencies_database, dependencies_table))
-FROM system.tables WHERE database = '${DB_RENAME_BEFORE}' AND name = 'src1';
-SELECT arraySort(dependencies_table)
-FROM system.tables WHERE database = '${DB_RENAME_BEFORE}' AND name = 'src2';
-
-RENAME DATABASE ${DB_RENAME_BEFORE} TO ${DB_RENAME_AFTER};
-
--- After rename: the same three views must still be reported under the new DB name.
--- v_simple and v_join have been renamed together with their source; v_xdb stays in its own DB.
-SELECT arraySort(arrayMap((x, y) -> concat(x, '.', y), dependencies_database, dependencies_table))
-FROM system.tables WHERE database = '${DB_RENAME_AFTER}' AND name = 'src1';
-SELECT arraySort(dependencies_table)
-FROM system.tables WHERE database = '${DB_RENAME_AFTER}' AND name = 'src2';
-
-DROP DATABASE ${DB_RENAME_AFTER};
-DROP DATABASE ${DB_RENAME_EXT};
-EOF
-
 $CLICKHOUSE_CLIENT <<EOF
 -- DROP source table must remove plain_view_dependencies edges where it appears as source.
 DROP TABLE IF EXISTS 03760_stale_src;
@@ -177,24 +136,6 @@ CREATE TABLE 03760_stale_src (id UInt64) ENGINE = MergeTree ORDER BY id;
 SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_stale_src';
 
 DROP TABLE 03760_stale_src;
-
--- RENAME TABLE (source): plain_view_dependencies outgoing edges must be re-added under the new name.
-DROP TABLE IF EXISTS 03760_rename_src;
-DROP TABLE IF EXISTS 03760_rename_src2;
-DROP VIEW  IF EXISTS 03760_rename_view;
-
-CREATE TABLE 03760_rename_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE VIEW 03760_rename_view AS SELECT * FROM 03760_rename_src;
-
-SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_rename_src';
-
-RENAME TABLE 03760_rename_src TO 03760_rename_src2;
-
--- After rename, 03760_rename_src2 must have the same plain view dependency.
-SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_rename_src2';
-
-DROP VIEW 03760_rename_view;
-DROP TABLE 03760_rename_src2;
 
 -- CREATE OR REPLACE TABLE (source): dependent plain views must survive the implicit EXCHANGE.
 DROP TABLE IF EXISTS 03760_cor_src;

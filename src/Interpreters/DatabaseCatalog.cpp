@@ -824,27 +824,6 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
 
-        /// Update plain_view_dependencies.
-        ///
-        /// Unlike view_dependencies (where one MV has exactly one source), a plain view
-        /// can JOIN multiple sources, and a single source can be read by many plain views,
-        /// so both loops iterate over all edges without any size assertion.
-
-        /// Role 1: old_db.table is a source table for plain views.
-        auto plain_view_deps = plain_view_dependencies.getDependencies(StorageID{old_name, table_name});
-        for (const auto & view_id : plain_view_deps)
-        {
-            plain_view_dependencies.removeDependency(StorageID{old_name, table_name}, view_id, /* remove_isolated_tables= */ true);
-            plain_view_dependencies.addDependency(StorageID{new_name, table_name}, view_id);
-        }
-
-        /// Role 2: old_db.table is itself a plain view; update its identity as a dependency node.
-        auto plain_view_sources = plain_view_dependencies.getDependents(StorageID{old_name, table_name});
-        for (const auto & source_id : plain_view_sources)
-        {
-            plain_view_dependencies.removeDependency(source_id, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-            plain_view_dependencies.addDependency(source_id, StorageID{new_name, table_name});
-        }
     }
 }
 

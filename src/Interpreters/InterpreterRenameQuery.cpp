@@ -173,7 +173,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_view=*/ true);
-            from_plain_view_dependents = database_catalog.takePlainViewDependents(from_table_id);
             from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
@@ -203,8 +202,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             else
             {
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
-                if (!from_plain_view_dependents.empty())
-                    DatabaseCatalog::instance().addDependencies(to_table_id, {}, {}, {}, {}, from_plain_view_dependents);
             }
 
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
