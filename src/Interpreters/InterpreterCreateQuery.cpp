@@ -236,16 +236,12 @@ void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
 /// Rewrites only the slots that can hold a key expression. The engine is deliberately left alone:
 /// it is an `ASTFunction` too, and a SQL UDF may carry an engine's name, so expanding UDFs over the
 /// whole definition would substitute an engine with a function body.
-void normalizeLegacyToTimeInKeyExpressions(ASTCreateQuery & create, const ContextPtr & context)
+void normalizeLegacyToTimeInKeyExpressions(ASTStorage & storage, bool substitute_udfs, const ContextPtr & context)
 {
-    if (!create.storage)
-        return;
-
     std::array<IAST **, 6> key_expressions{
-        &create.storage->partition_by, &create.storage->primary_key, &create.storage->order_by,
-        &create.storage->sample_by, &create.storage->ttl_table, &create.storage->unique_key};
+        &storage.partition_by, &storage.primary_key, &storage.order_by,
+        &storage.sample_by, &storage.ttl_table, &storage.unique_key};
 
-    const bool substitute_udfs = !UserDefinedSQLFunctionFactory::instance().empty();
     for (auto ** slot : key_expressions)
     {
         if (!*slot)
@@ -260,12 +256,26 @@ void normalizeLegacyToTimeInKeyExpressions(ASTCreateQuery & create, const Contex
 
         if (expression.get() != old_ptr)
         {
-            for (auto & child : create.storage->children)
+            for (auto & child : storage.children)
                 if (child.get() == old_ptr)
                     child = expression;
-            create.storage->updatePointerToChild(old_ptr, expression);
+            storage.updatePointerToChild(old_ptr, expression);
         }
     }
+}
+
+void normalizeLegacyToTimeInCreateQuery(ASTCreateQuery & create, const ContextPtr & context)
+{
+    const bool substitute_udfs = !UserDefinedSQLFunctionFactory::instance().empty();
+
+    if (create.storage)
+        normalizeLegacyToTimeInKeyExpressions(*create.storage, substitute_udfs, context);
+
+    /// A materialized view keeps its inner table's definition here rather than in `storage`.
+    if (create.targets)
+        for (auto * inner_engine : create.targets->getInnerEngines())
+            if (inner_engine)
+                normalizeLegacyToTimeInKeyExpressions(*inner_engine, substitute_udfs, context);
 }
 
 }
@@ -3513,7 +3523,7 @@ BlockIO InterpreterCreateQuery::execute()
             /// so a worker there would resolve `toTime` with its own default.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-                normalizeLegacyToTimeInKeyExpressions(create, getContext());
+                normalizeLegacyToTimeInCreateQuery(create, getContext());
 
             return executeQueryOnCluster(create);
         }

@@ -67,6 +67,12 @@ SELECT 'on_cluster_oldest_entry', sorting_key FROM system.tables WHERE database 
 -- The same, with the key expression carried by a SQL UDF body.
 CREATE TABLE t_on_cluster_udf_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY ${UDF}(c0);
 SELECT 'on_cluster_oldest_entry_udf', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_udf_key';
+
+-- A materialized view keeps its inner table's key outside the top-level storage definition.
+CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src (c0 DateTime) ENGINE = MergeTree() ORDER BY tuple();
+CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.t_on_cluster_mv ON CLUSTER test_shard_localhost
+ENGINE = MergeTree() ORDER BY toTime(c0) AS SELECT c0 FROM ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src;
+SELECT 'on_cluster_oldest_entry_mv', extract(create_table_query, 'ORDER BY [^ ]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_mv';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery -q "
@@ -77,5 +83,7 @@ DROP TABLE t_replayed_key;
 DROP TABLE t_ttl_key;
 DROP TABLE t_on_cluster_key;
 DROP TABLE t_on_cluster_udf_key;
+DROP TABLE t_on_cluster_mv;
+DROP TABLE t_on_cluster_mv_src;
 DROP FUNCTION ${UDF};
 "
