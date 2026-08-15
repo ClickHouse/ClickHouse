@@ -4,10 +4,15 @@
 2
 -- an alias in HAVING resolves to the projection
 6
--- rowNumberInBlock is numbered over the filtered rows
+-- rowNumberInBlock is numbered over the unfiltered block, since both conditions merge into one filter
+-- the same predicate matches the row at the unfiltered index
+2
 -- the predicate reaches the storage and prunes
 1
 -- aggregation keeps HAVING in the aggregation branch
 -- a bare column with an aggregate HAVING is still rejected
 -- a window function in HAVING is still rejected
 -- WITH TOTALS without aggregation is still rejected
+-- the predicate is applied on shards too
+3
+3
