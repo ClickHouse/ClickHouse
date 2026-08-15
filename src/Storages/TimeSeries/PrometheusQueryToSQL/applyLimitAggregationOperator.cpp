@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <cmath>
+#include <optional>
 #include <limits>
 #include <unordered_map>
 
@@ -135,14 +136,18 @@ namespace
 
         /// Whether `timeSeriesGroupToSamplingKey(group)` should be passed to the aggregate function to provide deterministic "pseudo-random" sampling for `limitk`.
         bool use_sampling_keys = false;
+
+        /// Descending for `topk`, ascending for `bottomk`, unset for the sampling-based `limitk`,
+        /// whose selection is not value-based and therefore carries no order.
+        std::optional<bool> order_descending;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ false}},
-            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ false}},
-            {"limitk", {"timeSeriesLimitKMasks", /* use_sampling_keys = */ true}},
+            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ false, /* order_descending = */ true}},
+            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ false, /* order_descending = */ false}},
+            {"limitk", {"timeSeriesLimitKMasks", /* use_sampling_keys = */ true, /* order_descending = */ std::nullopt}},
         };
 
         auto it = impl_map.find(operator_name);
@@ -182,6 +187,12 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     auto res = vector_arg;
     res.node = operator_node;
+
+    /// `topk`/`bottomk` order their output by the ranking value, but only when the whole expression is a
+    /// single instant: otherwise the selection (and the value to rank by) differs per time step.
+    const bool grouped = operator_node->by || operator_node->without;
+    const bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time);
+    res.has_sort_order = produce_sort_key;
 
     /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
     /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series
@@ -251,6 +262,18 @@ SQLQueryPiece applyLimitAggregationOperator(
         builder.select_list.push_back(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
         builder.select_list.back()->setAlias(ColumnNames::StepsMask);
 
+        if (produce_sort_key && grouped)
+        {
+            /// Prometheus sorts by value only within each bucket; this per-bucket component (a deterministic
+            /// function of the bucket's membership) keeps each bucket's rows consecutive.
+            builder.select_list.push_back(makeASTFunction("arrayMin",
+                makeASTFunction("arrayMap",
+                    makeASTLambda({"t"}, makeASTFunction("timeSeriesGroupToSamplingKey",
+                        makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(1u)))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::SelectedGroups))));
+            builder.select_list.back()->setAlias(ColumnNames::BucketSortKey);
+        }
+
         step2_query = builder.getSelectQuery();
     }
 
@@ -276,6 +299,29 @@ SQLQueryPiece applyLimitAggregationOperator(
             make_intrusive<ASTIdentifier>(ColumnNames::Values),
             make_intrusive<ASTIdentifier>(ColumnNames::StepsMask)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        if (produce_sort_key)
+        {
+            /// Rank by the series' single value: `topk` negates it so the ascending ORDER BY in finalizeSQL
+            /// yields descending values, and a leading NaN flag pushes NaNs after all numbers.
+            ASTPtr value = makeASTFunction("arrayElement",
+                make_intrusive<ASTIdentifier>(Strings{vector_grid, ColumnNames::Values}),
+                make_intrusive<ASTLiteral>(1u));
+            ASTPtr ranked = *impl_info->order_descending ? makeASTFunction("negate", value->clone()) : value->clone();
+            ASTPtr is_nan_component = makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value)));
+            ASTPtr value_component = makeASTFunction("toFloat64", std::move(ranked));
+
+            ASTPtr sort_key;
+            if (grouped)
+                sort_key = makeASTFunction("array",
+                    makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(ColumnNames::BucketSortKey)),
+                    std::move(is_nan_component), std::move(value_component));
+            else
+                sort_key = makeASTFunction("array", std::move(is_nan_component), std::move(value_component));
+
+            builder.select_list.push_back(std::move(sort_key));
+            builder.select_list.back()->setAlias(ColumnNames::SortKey);
+        }
 
         /// If the grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
         /// here a second time, which is still correct because group ids are the same within one query,

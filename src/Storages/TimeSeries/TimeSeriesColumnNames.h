@@ -45,6 +45,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinCount = "join_count";
     static constexpr const char * SortKey = "sort_key";
+    static constexpr const char * BucketSortKey = "bucket_sort_key";
     static constexpr const char * Values = "values";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
