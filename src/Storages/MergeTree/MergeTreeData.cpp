@@ -6253,18 +6253,20 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 
     /// Lookup indices are in-memory structures rebuilt on demand; they have no materialization
-    /// path. Reject `MATERIALIZE INDEX <lookup_name>` here, in the unconditional validation path,
-    /// so it fails up front even with `validate_mutation_query = 0` (the `MutationsInterpreter`
-    /// check alone is skipped in that mode and the command would be queued as a silent no-op).
+    /// or clearing path. Reject `MATERIALIZE INDEX <lookup_name>` and `CLEAR INDEX <lookup_name>`
+    /// here, in the unconditional validation path, so they fail up front even with
+    /// `validate_mutation_query = 0` (the `MutationsInterpreter` check alone is skipped in that
+    /// mode and the command would be queued as a silent no-op).
     if (const auto lookup_metadata = getInMemoryMetadataPtr(getContext(), false); lookup_metadata->hasLookupIndices())
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::MATERIALIZE_INDEX
+            if ((command.type == MutationCommand::MATERIALIZE_INDEX
+                    || (command.type == MutationCommand::DROP_INDEX && command.clear))
                 && lookup_metadata->getLookupIndices().has(command.index_name))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Index {} is a lookup index. Lookup indices do not support MATERIALIZE INDEX",
+                    "Index {} is a lookup index. Lookup indices do not support MATERIALIZE INDEX or CLEAR INDEX",
                     backQuote(command.index_name));
         }
     }
