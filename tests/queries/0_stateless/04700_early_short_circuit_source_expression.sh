@@ -37,7 +37,8 @@ fi
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
     SELECT 1 OR notEmpty(concat('SEKRIT_KEY_12345', encrypt('aes-128-ecb', 'x', 'SEKRIT_KEY_12345')))
-    SETTINGS enable_function_early_short_circuit = 1,
+    SETTINGS enable_analyzer = 1,
+             enable_function_early_short_circuit = 1,
              format_display_secrets_in_show_and_select = 0
 ")
 
@@ -55,7 +56,8 @@ fi
 non_lazy_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
     SELECT 1 OR ignore(sleep(1))
-    SETTINGS enable_function_early_short_circuit = 1
+    SETTINGS enable_analyzer = 1,
+             enable_function_early_short_circuit = 1
 ")
 
 if grep -qF 'function_name: ignore, function_type: ordinary, result_type:' <<< "$non_lazy_output"; then
