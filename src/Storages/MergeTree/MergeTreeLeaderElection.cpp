@@ -96,10 +96,7 @@ void MergeTreeLeaderElection::stop()
     /// so we serialize the final transition here to avoid a stale `on_leadership_change(true)`
     /// being invoked after `stop` returns.
     std::lock_guard lock(leadership_change_mutex);
-    /// Block user writes first, before clearing `is_leader`, so a concurrent
-    /// `INSERT` observing `is_leader == true` cannot also observe `writes_enabled == true`.
-    writes_enabled.store(false, std::memory_order_release);
-    bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+    bool was_leader = leadership_state.exchange(LeadershipState::Follower, std::memory_order_acq_rel) != LeadershipState::Follower;
     if (was_leader)
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
@@ -125,10 +122,7 @@ void MergeTreeLeaderElection::relinquishLeadership()
 {
     std::lock_guard lock(leadership_change_mutex);
 
-    /// Match the loss ordering in `run` and `stop`: a concurrent write must observe
-    /// writes disabled before it can observe that the lease was relinquished.
-    writes_enabled.store(false, std::memory_order_release);
-    bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+    bool was_leader = leadership_state.exchange(LeadershipState::Follower, std::memory_order_acq_rel) != LeadershipState::Follower;
     if (!was_leader)
         return;
 
@@ -152,7 +146,7 @@ void MergeTreeLeaderElection::relinquishLeadership()
 
 bool MergeTreeLeaderElection::isLeader() const
 {
-    if (!is_leader.load(std::memory_order_acquire))
+    if (leadership_state.load(std::memory_order_acquire) == LeadershipState::Follower)
         return false;
 
     /// Protect against stalled heartbeat thread: if the last successful renewal
@@ -193,11 +187,13 @@ void MergeTreeLeaderElection::assertIsLeader() const
 
 bool MergeTreeLeaderElection::isLeaderAndWritable() const
 {
-    /// Order matters: `is_leader` is the cheaper, more frequently flipped check.
-    /// `writes_enabled` is only true if takeover sync has completed at least once
-    /// since the lease was acquired, so any `INSERT` reaching the second load is
-    /// safe to commit against the current part view.
-    return isLeader() && writes_enabled.load(std::memory_order_acquire);
+    /// Take one state snapshot. A concurrent loss publishes `Follower` with one
+    /// atomic exchange, so the admission gate cannot combine a stale leader bit
+    /// with a stale writable bit from another atomic variable.
+    if (leadership_state.load(std::memory_order_acquire) != LeadershipState::LeaderWritable)
+        return false;
+
+    return isLeader();
 }
 
 void MergeTreeLeaderElection::assertIsLeaderAndWritable() const
@@ -280,7 +276,7 @@ void MergeTreeLeaderElection::run()
                 /// followers never observe it expire) while never enabling writes itself, livelocking
                 /// failover. By not renewing, the lease ages out and another node — or this one, via
                 /// the expiry branch below on a later heartbeat — can claim it and retry takeover.
-                if (is_leader.load(std::memory_order_acquire))
+                if (leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower)
                 {
                     LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
                     was_renewal_attempt = true;
@@ -333,20 +329,19 @@ void MergeTreeLeaderElection::run()
         if (stopped.load(std::memory_order_acquire))
             return;
 
-        /// If we are not (or no longer) the writable leader, disable writes *before* flipping
-        /// `is_leader` below. Otherwise a concurrent `INSERT` could load the old `is_leader == true`,
-        /// then this task flips `is_leader` to false, and the `INSERT` still loads the old
-        /// `writes_enabled == true` and passes `assertIsLeaderAndWritable`. Clearing `writes_enabled`
-        /// first (matching the ordering in `stop` and the catch handler) makes the loss path fail
-        /// closed at the entry gate.
+        /// A loss is published as one atomic transition to `Follower`, so user
+        /// writes cannot observe independent leader and writable values. A lease
+        /// renewal keeps its existing state: demoting a writable leader to
+        /// `LeaderSyncing` on every successful heartbeat would block writes.
+        bool was_leader = leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower;
         if (!became_leader)
-            writes_enabled.store(false, std::memory_order_release);
-
-        bool was_leader = is_leader.exchange(became_leader, std::memory_order_acq_rel);
+            leadership_state.store(LeadershipState::Follower, std::memory_order_release);
+        else if (!was_leader)
+            leadership_state.store(LeadershipState::LeaderSyncing, std::memory_order_release);
 
         if (became_leader && !was_leader)
         {
-            /// New leadership epoch. Incremented before publishing `is_leader`/`writes_enabled`
+            /// New leadership epoch. Incremented before publishing writability
             /// and before the takeover callback, so any write admitted under a previous lease
             /// observes a different epoch at commit time and is rejected (see `leadershipEpoch`).
             leadership_epoch.fetch_add(1, std::memory_order_acq_rel);
@@ -364,8 +359,8 @@ void MergeTreeLeaderElection::run()
                 /// any sync that exceeds `2 * heartbeat_interval` would self-fail and
                 /// drop leadership, livelocking failover with a non-trivial part backlog.
                 ///
-                /// `writes_enabled` is still false at this point, so user `INSERT`s
-                /// observing `is_leader == true` are still rejected by
+                /// The state remains `LeaderSyncing` at this point, so user `INSERT`s
+                /// are still rejected by
                 /// `assertIsLeaderAndWritable`. Only after the callback returns —
                 /// when the part view reflects the previous leader's commits and the
                 /// block-number counter has been advanced past them — do we publish
@@ -373,11 +368,10 @@ void MergeTreeLeaderElection::run()
                 TakeoverSyncScope sync_scope(*this);
                 on_leadership_change(true);
             }
-            writes_enabled.store(true, std::memory_order_release);
+            leadership_state.store(LeadershipState::LeaderWritable, std::memory_order_release);
         }
         else if (!became_leader && was_leader)
         {
-            /// `writes_enabled` was already cleared above, before `is_leader` was flipped to false.
             LOG_INFO(log, "Lost leadership for lease at '{}'", lease_path);
             ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
@@ -385,11 +379,11 @@ void MergeTreeLeaderElection::run()
             if (on_leadership_change)
             {
                 /// Shield the callback, like the `stop` and error paths do. Leadership-change
-                /// callbacks fire only on transitions: `is_leader` is already false here, so a
+                /// callbacks fire only on transitions: the state is already `Follower` here, so a
                 /// later heartbeat would see `was_leader == false` and never retry the follower
                 /// transition — an escaping exception would otherwise permanently skip whatever
-                /// part of it had not run yet. Writes are already fail-closed (`writes_enabled`
-                /// and `is_leader` cleared above), and the storage-side callback orders its own
+                /// part of it had not run yet. Writes are already fail-closed by the state
+                /// transition above, and the storage-side callback orders its own
                 /// steps fail-closed, so logging is the correct handling here.
                 try
                 {
@@ -407,13 +401,9 @@ void MergeTreeLeaderElection::run()
         /// On any error, conservatively assume we are not the leader.
         ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionHeartbeatErrors);
         std::lock_guard lock(leadership_change_mutex);
-        /// Block user writes first, before clearing `is_leader`, mirroring the
-        /// graceful loss path above. This matters if the exception was thrown by
-        /// the takeover-sync callback itself: at that point `is_leader` is true and
-        /// `writes_enabled` may have been set by a previous successful takeover,
-        /// so we must clear both.
-        writes_enabled.store(false, std::memory_order_release);
-        bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+        /// A single state exchange closes the user-write gate, including when the
+        /// exception was raised by a takeover-sync callback.
+        bool was_leader = leadership_state.exchange(LeadershipState::Follower, std::memory_order_acq_rel) != LeadershipState::Follower;
         if (was_leader)
         {
             LOG_WARNING(log, "Lost leadership due to exception for lease at '{}'", lease_path);

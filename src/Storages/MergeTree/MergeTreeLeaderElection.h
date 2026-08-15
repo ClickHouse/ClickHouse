@@ -166,21 +166,21 @@ private:
     UInt64 heartbeat_interval_ms;
     UInt64 session_timeout_ms;
 
-    std::atomic<bool> is_leader{false};
+    enum class LeadershipState : UInt8
+    {
+        Follower,
+        LeaderSyncing,
+        LeaderWritable,
+    };
+
+    /// Published as a single state so that user-write admission cannot combine
+    /// leadership from one instant with writability from another.
+    std::atomic<LeadershipState> leadership_state{LeadershipState::Follower};
     std::atomic<bool> stopped{false};
 
     /// Incremented under `leadership_change_mutex` on every follower -> leader transition.
     /// See `leadershipEpoch`.
     std::atomic<UInt64> leadership_epoch{0};
-
-    /// True after the takeover-sync callback has finished and external user writes
-    /// can be served. Distinct from `is_leader`: `is_leader` is published as soon
-    /// as the lease is acquired, but `writes_enabled` is only flipped after
-    /// `loadNewlyAppearedParts` and the block-number counter advance have completed.
-    /// Gating user writes on this flag (rather than `is_leader` alone) prevents a
-    /// client `INSERT` from allocating a stale block number during the takeover
-    /// window — the data-loss race that the failover stress test exercises.
-    std::atomic<bool> writes_enabled{false};
 
     /// True while the heartbeat task is synchronously executing the takeover-sync
     /// callback (`on_leadership_change(true)`). Set via `TakeoverSyncScope`.
