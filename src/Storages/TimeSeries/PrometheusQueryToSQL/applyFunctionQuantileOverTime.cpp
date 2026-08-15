@@ -17,7 +17,6 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -39,6 +38,9 @@ namespace
 /// It must be registered in AggregateFunctions/TimeSeries (see the "Required shared changes" note in the
 /// task report). The translator layer is written against that contract.
 constexpr std::string_view ch_function_name = "timeSeriesQuantileToGrid";
+/// Per-grid-point-varying phi (e.g. `quantile_over_time(scalar(...), v[5m])` with a time-varying
+/// scalar): phi is a third Array(Float64) argument. See AggregateFunctionTimeseriesQuantileVarying.h.
+constexpr std::string_view ch_function_name_varying = "timeSeriesQuantileVaryingToGrid";
 
 /// `quantile_over_time` always drops the metric name (PromQL: function outputs have no `__name__`).
 constexpr bool drop_metric_name = true;
@@ -77,15 +79,8 @@ void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQue
 }
 
 
-/// Builds a fresh AST expression for the scalar parameter `phi`.
-///
-/// `phi` may be either a compile-time constant (`CONST_SCALAR`, produced by a float literal) or a
-/// single-row scalar subquery (`SINGLE_SCALAR`). A non-constant scalar grid (`SCALAR_GRID`) is not
-/// supported, mirroring the `quantile` aggregation operator (see applyAggregationOperatorQuantile.cpp).
-///
-/// The returned AST is built fresh on every call so that it can be inserted into several places of
-/// the generated SQL tree (the aggregate-function parameter and the edge-case guards) without sharing
-/// AST nodes between parents.
+/// Builds a fresh AST for the constant/single-row `phi` (CONST_SCALAR/SINGLE_SCALAR); built fresh each
+/// call since AST nodes can't be shared between parents. Varying (SCALAR_GRID) phi bypasses this function.
 struct PhiSource
 {
     StoreMethod store_method = StoreMethod::EMPTY;
@@ -116,64 +111,76 @@ ASTPtr makePhiAST(PhiSource & phi_source, ConverterContext & context)
             return makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(phi_source.subquery_name));
         }
 
-        case StoreMethod::SCALAR_GRID:
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "Function 'quantile_over_time' with a non-constant scalar parameter `phi` is not supported");
-        }
-
         default:
         {
-            /// EMPTY / CONST_STRING / VECTOR_GRID / RAW_DATA are rejected by checkArgumentTypes()
-            /// (wrong ResultType) and never reach here.
+            /// EMPTY / CONST_STRING / VECTOR_GRID / RAW_DATA are rejected by checkArgumentTypes() (wrong
+            /// ResultType); SCALAR_GRID is routed to the varying-phi path by the caller before reaching here.
             throwUnexpectedStoreMethod({nullptr, ResultType::SCALAR, phi_source.store_method}, context);
         }
     }
 }
 
 
-/// Wraps the quantile-grid array produced by `timeSeriesQuantileToGrid` so that the Prometheus
-/// edge cases for the `phi` parameter are honored at every grid point:
-///   - phi < 0   -> -Inf
-///   - phi > 1   -> +Inf
-///   - phi = NaN -> NaN
-/// Grid points whose window had no samples are returned as NULL by the aggregate and are left
-/// untouched (the series is absent at that point), which matches Prometheus behaviour.
-///
-/// Generates: arrayMap(x -> if(isNull(x), x,
-///                            if(isNaN(phi), NaN,
-///                               if(less(phi, 0), -Inf,
-///                                  if(greater(phi, 1), +Inf, x)))), <quantile_grid>)
-ASTPtr wrapWithPhiEdgeCases(ASTPtr && quantile_grid, PhiSource & phi_source, ConverterContext & context)
+/// Builds the same if(isNull, ..., if(isNaN(phi), ..., ...)) edge-case body, for a `phi` AST that's
+/// either a constant expression (shared across all grid points) or the "phi" lambda variable (one per point).
+ASTPtr makePhiEdgeCaseBody(const ASTPtr & phi_ast, ASTPtr && nan_ast, ASTPtr && neg_inf_ast, ASTPtr && pos_inf_ast)
 {
     auto make_x = [] { return make_intrusive<ASTIdentifier>("x"); };
-
-    auto nan_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type);
-    auto neg_inf_ast = timeSeriesScalarToAST(-std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
-    auto pos_inf_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
-
-    ASTPtr body = makeASTFunction(
+    return makeASTFunction(
         "if",
         makeASTFunction("isNull", make_x()),
         make_x(), /// NULL passthrough: keeps the nullable type and the "absent series" semantics
         makeASTFunction(
             "if",
-            makeASTFunction("isNaN", makePhiAST(phi_source, context)),
+            makeASTFunction("isNaN", phi_ast->clone()),
             std::move(nan_ast),
             makeASTFunction(
                 "if",
-                makeASTFunction("less", makePhiAST(phi_source, context), make_intrusive<ASTLiteral>(0.0)),
+                makeASTFunction("less", phi_ast->clone(), make_intrusive<ASTLiteral>(0.0)),
                 std::move(neg_inf_ast),
                 makeASTFunction(
                     "if",
-                    makeASTFunction("greater", makePhiAST(phi_source, context), make_intrusive<ASTLiteral>(1.0)),
+                    makeASTFunction("greater", phi_ast->clone(), make_intrusive<ASTLiteral>(1.0)),
                     std::move(pos_inf_ast),
                     make_x()))));
+}
+
+/// Wraps the quantile-grid array so the Prometheus phi edge cases (phi<0 -> -Inf, phi>1 -> +Inf,
+/// phi=NaN -> NaN) are honored per grid point; NULLs (empty window) pass through untouched.
+ASTPtr wrapWithPhiEdgeCases(ASTPtr && quantile_grid, PhiSource & phi_source, ConverterContext & context)
+{
+    auto nan_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type);
+    auto neg_inf_ast = timeSeriesScalarToAST(-std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
+    auto pos_inf_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
+
+    ASTPtr body = makePhiEdgeCaseBody(
+        makePhiAST(phi_source, context), std::move(nan_ast), std::move(neg_inf_ast), std::move(pos_inf_ast));
 
     return makeASTFunction(
         "arrayMap",
         makeASTFunction("lambda", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")), std::move(body)),
         std::move(quantile_grid));
+}
+
+/// Per-grid-point-varying phi sibling of wrapWithPhiEdgeCases: phi comes from `phi_array_ast` (one value
+/// per grid point) instead of a single constant, so the edge cases are checked per point too.
+ASTPtr wrapWithVaryingPhiEdgeCases(ASTPtr && quantile_grid, ASTPtr && phi_array_ast, ConverterContext & context)
+{
+    auto nan_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type);
+    auto neg_inf_ast = timeSeriesScalarToAST(-std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
+    auto pos_inf_ast = timeSeriesScalarToAST(std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
+
+    ASTPtr body = makePhiEdgeCaseBody(
+        make_intrusive<ASTIdentifier>("phi"), std::move(nan_ast), std::move(neg_inf_ast), std::move(pos_inf_ast));
+
+    return makeASTFunction(
+        "arrayMap",
+        makeASTFunction(
+            "lambda",
+            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("phi")),
+            std::move(body)),
+        std::move(quantile_grid),
+        std::move(phi_array_ast));
 }
 
 }
@@ -208,6 +215,16 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    /// A scalar grid is one row with one Array column (see fromFunctionTime.cpp), registered as a scalar
+    /// subquery like SINGLE_SCALAR (no JOIN needed) -- past the empty check so it can't orphan a registration.
+    const bool varying_phi = phi_source.store_method == StoreMethod::SCALAR_GRID;
+    String varying_phi_subquery_name;
+    if (varying_phi)
+    {
+        context.subqueries.emplace_back(context.subqueries.size(), std::move(phi_source.select_query), SQLSubqueryType::SCALAR);
+        varying_phi_subquery_name = context.subqueries.back().name;
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -334,22 +351,32 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness_window, phi)(timestamps, values)
-    ///
-    /// The first four parameters (start, end, step, window) are the same as for the other range
-    /// functions. The fifth parameter, `phi`, is the quantile level in [0, 1] (out-of-range / NaN
-    /// values are handled by the wrapping arrayMap below).
-    ASTPtr quantile_grid = addParametersToAggregateFunction(
-        makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type),
-        makePhiAST(phi_source, context));
-
-    /// Apply the phi edge-case (phi < 0 -> -Inf, phi > 1 -> +Inf, phi = NaN -> NaN) per grid point,
-    /// keeping NULLs for empty windows.
-    builder.select_list.push_back(wrapWithPhiEdgeCases(std::move(quantile_grid), phi_source, context));
+    /// Constant/single-row phi: the aggregate's 5th parameter. Varying phi: a 3rd argument instead,
+    /// one value per grid point; the edge-case wrapping below also becomes per-point.
+    ASTPtr quantile_grid;
+    if (varying_phi)
+    {
+        quantile_grid = addParametersToAggregateFunction(
+            makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values),
+                make_intrusive<ASTIdentifier>(varying_phi_subquery_name)),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type));
+        builder.select_list.push_back(wrapWithVaryingPhiEdgeCases(
+            std::move(quantile_grid), make_intrusive<ASTIdentifier>(varying_phi_subquery_name), context));
+    }
+    else
+    {
+        quantile_grid = addParametersToAggregateFunction(
+            makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type),
+            makePhiAST(phi_source, context));
+        builder.select_list.push_back(wrapWithPhiEdgeCases(std::move(quantile_grid), phi_source, context));
+    }
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)

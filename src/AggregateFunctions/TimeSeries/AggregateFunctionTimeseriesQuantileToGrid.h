@@ -16,6 +16,41 @@
 namespace DB
 {
 
+/// R-7 (quantileExactInclusive) quantile of `values`; shared by the fixed- and varying-`phi` aggregates.
+template <typename ValueType>
+std::optional<ValueType> computeTimeseriesQuantile(VectorWithMemoryTracking<ValueType> && values, Float64 phi)
+{
+    if (values.empty())
+        return std::nullopt;
+
+    const size_t n = values.size();
+    if (n == 1)
+        return values[0];
+
+    std::sort(values.begin(), values.end());
+
+    /// rank = phi * (n - 1), interpolated. Callers wrap the output for out-of-range/NaN phi.
+    Float64 rank = phi * static_cast<Float64>(n - 1);
+    if (std::isnan(rank))
+        return static_cast<ValueType>(std::numeric_limits<Float64>::quiet_NaN());
+    if (rank < 0.0)
+        rank = 0.0;
+    else if (rank > static_cast<Float64>(n - 1))
+        rank = static_cast<Float64>(n - 1);
+
+    const size_t lower = static_cast<size_t>(std::floor(rank));
+    const size_t upper = static_cast<size_t>(std::ceil(rank));
+
+    if (lower == upper)
+        return values[lower];
+
+    const Float64 fraction = rank - static_cast<Float64>(lower);
+    const Float64 result = static_cast<Float64>(values[lower])
+        + fraction * (static_cast<Float64>(values[upper]) - static_cast<Float64>(values[lower]));
+    return static_cast<ValueType>(result);
+}
+
+
 template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 struct AggregateFunctionTimeseriesQuantileToGridTraits
 {
@@ -101,38 +136,10 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
         std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
-            if (combined.values.empty())
-                return std::nullopt;
-
-            const size_t n = combined.values.size();
-            if (n == 1)
-                return combined.values[0];
-
-            /// Copy and sort for quantile computation.
-            VectorWithMemoryTracking<ValueType> sorted_values(combined.values.begin(), combined.values.end());
-            std::sort(sorted_values.begin(), sorted_values.end());
-
-            /// R-7 quantile (quantileExactInclusive): rank = phi * (n - 1), linear interpolation.
-            /// Clamp rank to [0, n-1] for out-of-range phi; the translator wraps the output to handle
-            /// phi < 0 (-Inf), phi > 1 (+Inf), and NaN phi.
-            Float64 rank = phi * static_cast<Float64>(n - 1);
-            if (std::isnan(rank))
-                return static_cast<ValueType>(std::numeric_limits<Float64>::quiet_NaN());
-            if (rank < 0.0)
-                rank = 0.0;
-            else if (rank > static_cast<Float64>(n - 1))
-                rank = static_cast<Float64>(n - 1);
-
-            const size_t lower = static_cast<size_t>(std::floor(rank));
-            const size_t upper = static_cast<size_t>(std::ceil(rank));
-
-            if (lower == upper)
-                return sorted_values[lower];
-
-            const Float64 fraction = rank - static_cast<Float64>(lower);
-            const Float64 result = static_cast<Float64>(sorted_values[lower])
-                + fraction * (static_cast<Float64>(sorted_values[upper]) - static_cast<Float64>(sorted_values[lower]));
-            return static_cast<ValueType>(result);
+            /// computeTimeseriesQuantile sorts in place; combined.values may be shared storage
+            /// (SummaryType semantics), so copy into a private vector before sorting it.
+            VectorWithMemoryTracking<ValueType> values(combined.values.begin(), combined.values.end());
+            return computeTimeseriesQuantile(std::move(values), phi);
         }
     };
 

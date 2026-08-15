@@ -25,11 +25,11 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
 
-/// The name of the ClickHouse aggregate function that implements `predict_linear` on a time grid.
-/// It is the `is_predict = true` variant of the linear-regression aggregate
-/// (see AggregateFunctionTimeseriesLinearRegression.h) and accepts a fifth parameter,
-/// `predict_offset`, in seconds.
+/// Constant/single-row prediction horizon: `predict_offset` is a fixed aggregate-function parameter.
 constexpr std::string_view ch_function_name = "timeSeriesPredictLinearToGrid";
+/// Per-grid-point-varying horizon (e.g. `predict_linear(v[5m], time())`): `predict_offset` is a
+/// third Array(Float64) argument instead. See AggregateFunctionTimeseriesPredictLinearVarying.h.
+constexpr std::string_view ch_function_name_varying = "timeSeriesPredictLinearVaryingToGrid";
 
 /// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`).
 constexpr bool drop_metric_name = true;
@@ -82,35 +82,36 @@ SQLQueryPiece applyFunctionPredictLinear(
     const auto function_name = function_node->function_name;
     checkArgumentTypes(function_name, arguments, context);
 
-    /// The second argument is the prediction horizon `t` in seconds. It is passed to the
-    /// aggregate function as the `predict_offset` parameter. The aggregate registration
-    /// (see AggregateFunctionTimeseriesHelpers.cpp) multiplies this value by the timestamp
-    /// scale multiplier internally, so we pass it as a Float64 expression in seconds.
-    ///
-    /// `t` may be either a compile-time constant (`CONST_SCALAR`, produced by a float literal) or a
-    /// single-row scalar subquery (`SINGLE_SCALAR`, e.g. `scalar(sum(vector(60)))`). A non-constant
-    /// scalar grid (`SCALAR_GRID`) is not supported because the aggregate function's fifth parameter
-    /// must be a single constant-foldable SQL expression, not a per-grid-point array.
+    /// The second argument (`t`, prediction horizon in seconds) may be a constant, a single-row
+    /// scalar subquery, or (e.g. `time()` in a range query) a scalar grid -- one value per grid point.
     auto & scalar_argument = arguments[1];
-    if (scalar_argument.store_method != StoreMethod::CONST_SCALAR && scalar_argument.store_method != StoreMethod::SINGLE_SCALAR)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Function '{}' currently requires a constant or a single-row scalar as the second argument "
-                        "(the prediction horizon), but expression {} is not supported",
-                        function_name, getPromQLText(scalar_argument, context));
-    }
-
     ASTPtr predict_offset_ast;
-    if (scalar_argument.store_method == StoreMethod::CONST_SCALAR)
+    bool varying_predict_offset = false;
+    switch (scalar_argument.store_method)
     {
-        predict_offset_ast = make_intrusive<ASTLiteral>(scalar_argument.scalar_value);
-    }
-    else
-    {
-        context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR);
-        /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
-        /// but StoreMethod::SINGLE_SCALAR always means one row.
-        predict_offset_ast = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
+        case StoreMethod::CONST_SCALAR:
+            predict_offset_ast = make_intrusive<ASTLiteral>(scalar_argument.scalar_value);
+            break;
+
+        case StoreMethod::SINGLE_SCALAR:
+            context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR);
+            /// assumeNotNull(): scalar subqueries make their result nullable, but SINGLE_SCALAR is always one row.
+            predict_offset_ast = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
+            break;
+
+        case StoreMethod::SCALAR_GRID:
+            varying_predict_offset = true;
+            /// A scalar grid is always exactly one row with one Array column (see e.g. fromFunctionTime.cpp),
+            /// so it can be registered and referenced the same way as SINGLE_SCALAR above, no JOIN needed.
+            context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR);
+            predict_offset_ast = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+            break;
+
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Function '{}' currently requires a constant, a single-row scalar, or a scalar grid as the "
+                            "second argument (the prediction horizon), but expression {} is not supported",
+                            function_name, getPromQLText(scalar_argument, context));
     }
 
     auto node_range = context.node_range_getter.get(function_node);
@@ -236,20 +237,27 @@ SQLQueryPiece applyFunctionPredictLinear(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamps, values)
-    ///
-    /// The first four parameters (start, end, step, window) are the same as for the other range
-    /// functions. The fifth parameter, `predict_offset`, is the prediction horizon `t` in seconds,
-    /// passed as `predict_offset_ast` (either a Float64 literal or a reference to a single-row
-    /// scalar subquery). The aggregate registration multiplies it by the timestamp scale multiplier
-    /// to convert it to the internal timestamp units.
-    builder.select_list.push_back(addParametersToAggregateFunction(
-        makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type),
-        std::move(predict_offset_ast)));
+    /// Constant/single-row horizon: predict_offset is the aggregate's 5th parameter.
+    /// Varying horizon: predict_offset is a 3rd argument instead, one value per grid point.
+    if (varying_predict_offset)
+    {
+        builder.select_list.push_back(addParametersToAggregateFunction(
+            makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values), std::move(predict_offset_ast)),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type)));
+    }
+    else
+    {
+        builder.select_list.push_back(addParametersToAggregateFunction(
+            makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
+            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type),
+            std::move(predict_offset_ast)));
+    }
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
