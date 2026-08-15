@@ -531,6 +531,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
+        frame_nested.parent_has_trailing_settings = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent_str;
@@ -557,6 +558,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << name << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
+        frame_nested.parent_has_trailing_settings = false;
         frame_nested.indent += 2;
         arguments->children[0]->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
