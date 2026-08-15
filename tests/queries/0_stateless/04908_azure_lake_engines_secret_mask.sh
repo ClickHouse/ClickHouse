@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the Azure data lake table engines are not in the fast test build.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# IcebergAzure, DeltaLakeAzure and PaimonAzure take the same credential bearing arguments as
+# AzureBlobStorage: an `AccountKey=` inside a connection string, or a positional `account_key`. None
+# of the three was listed in the table engine dispatch of the secret argument finder, so the storage
+# account key stayed verbatim in SHOW CREATE, in system.tables.engine_full and in the logged query
+# text, for every user able to read them.
+#
+# DeltaLakeAzure defers reading the table, so its CREATE succeeds against the unreachable endpoint
+# below and SHOW CREATE can be checked directly. IcebergAzure and PaimonAzure read their metadata
+# while the table is created, so theirs fail against it; the masking happens when the query is
+# formatted for the log, before the failure, so for those two the logged text is what is checked.
+
+KEY="SEKRITACCOUNTKEYSEKRITACCOUNTKEY"
+ENDPOINT="http://127.0.0.1:1/devstoreaccount1"
+CONNECTION_STRING="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=${KEY};BlobEndpoint=${ENDPOINT};"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta_azure_conn"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta_azure_key"
+
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_delta_azure_conn (x UInt8)
+    ENGINE = DeltaLakeAzure('${CONNECTION_STRING}', 'cont', 'p')"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_delta_azure_key (x UInt8)
+    ENGINE = DeltaLakeAzure('${ENDPOINT}', 'cont', 'p', 'devstoreaccount1', '${KEY}')"
+
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_delta_azure_conn"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_delta_azure_key"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT engine_full FROM system.tables
+    WHERE database = currentDatabase() AND name LIKE 't_delta_azure%'
+    ORDER BY name"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_delta_azure_conn"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_delta_azure_key"
+
+# The endpoint is unreachable on purpose; the failure is not what is under test, only the logged text.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_iceberg_azure (x UInt8)
+    ENGINE = IcebergAzure('${CONNECTION_STRING}', 'cont', 'p')" >/dev/null 2>&1
+${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1 --query "
+    CREATE TABLE t_paimon_azure (x UInt8)
+    ENGINE = PaimonAzure('${ENDPOINT}', 'cont', 'p', 'devstoreaccount1', '${KEY}')" >/dev/null 2>&1
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+
+# Every statement this test issued, the two failed CREATEs included, must be logged without the key.
+# count() > 0 keeps an empty row set from passing vacuously.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0, countIf(query LIKE '%${KEY}%')
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND type != 'QueryStart'
+      AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE"

@@ -831,8 +831,11 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findURLSecretArguments();
     }
-    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue"
+             || engine_name == "IcebergAzure" || engine_name == "DeltaLakeAzure" || engine_name == "PaimonAzure")
     {
+        /// The Azure data lake engines take the same leading arguments as `AzureBlobStorage`, so the
+        /// credential sits in the same places: inside the connection string, or as `account_key`.
         findAzureBlobStorageTableEngineSecretArguments();
     }
     else if (engine_name == "Redis")
