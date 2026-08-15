@@ -201,6 +201,39 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     return false;
 }
 
+bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
+{
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        return hasFunctionNotSuitableForEarlyShortCircuit(constant->getSourceExpression(), is_root);
+
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        /// The root is the logical function being folded. It is short-circuit by definition,
+        /// although it deliberately reports false for lazy execution of itself.
+        if (!is_root)
+        {
+            if (auto function_base = function->getFunction())
+            {
+                DataTypesWithConstInfo arguments;
+                const auto & argument_nodes = function->getArguments().getNodes();
+                arguments.reserve(argument_nodes.size());
+
+                for (const auto & argument : argument_nodes)
+                    arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+
+                if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasFunctionNotSuitableForEarlyShortCircuit(child, false))
+            return true;
+
+    return false;
+}
+
 void copySecretMasksByPosition(
     QueryTreeNodePtr resolved_node,
     const QueryTreeNodePtr & source_node,
@@ -891,7 +924,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (type_inference_succeeded
                 && !hasAggregateFunctionNodes(node_for_type_inference)
-                && !hasFunctionNode(node_for_type_inference, "arrayJoin"))
+                && !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference))
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
