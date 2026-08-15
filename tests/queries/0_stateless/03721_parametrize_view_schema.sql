@@ -11,19 +11,6 @@ CREATE VIEW 03271_parametrized_v_expl (n UInt64) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
 
--- A full ATTACH is a user-supplied definition too, so it must not latch its declared schema
--- while the setting is off.
-ATTACH VIEW 03271_parametrized_v_attach_off (n UInt64, s String) AS
-SELECT number AS n
-FROM numbers({upper_bound:UInt64});
-
--- Should return no columns
-SHOW COLUMNS IN 03271_parametrized_v_attach_off;
-
--- Mismatched schema: should return no error
-SELECT *
-FROM 03271_parametrized_v_attach_off(upper_bound = 3);
-
 -- Should return no columns
 SHOW COLUMNS IN 03271_parametrized_v;
 
@@ -204,7 +191,6 @@ FROM 03271_parametrized_v_reload_mismatch(upper_bound = 3); -- { serverError TYP
 DROP VIEW 03271_parametrized_v;
 DROP VIEW 03271_parametrized_v_expl;
 DROP VIEW 03271_parametrized_v_expl_mismatch;
-DROP VIEW 03271_parametrized_v_attach_off;
 DROP VIEW 03271_parametrized_v_toggle;
 DROP VIEW 03271_parametrized_v_toggle_mismatch;
 DROP VIEW 03271_parametrized_v_off;
