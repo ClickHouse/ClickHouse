@@ -503,6 +503,9 @@ public:
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;
 
+    /// Retries a user-tracker reset deferred while a borrowed-scope async callback was still alive.
+    void resetUserTrackersIfUnreferenced(const String & user);
+
     Mutex & getMutex()
     {
         return mutex;

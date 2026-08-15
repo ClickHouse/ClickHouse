@@ -145,11 +145,27 @@ Int64 ThreadGroup::getAsyncCallbackUntrackedMemoryLimit() const
     return async_callback_untracked_memory_limit;
 }
 
+void ThreadGroup::setAsyncCallbackCompletionCallback(std::function<void()> callback)
+{
+    ThreadGroupPtr companion;
+    {
+        std::lock_guard lock(mutex);
+        async_callback_completion_callback = callback;
+        companion = async_callback_group.lock();
+    }
+
+    if (companion)
+        companion->setAsyncCallbackCompletionCallback(std::move(callback));
+}
+
 ThreadGroup::~ThreadGroup()
 {
     /// Only async-callback companions have an accounting chain.
     for (size_t i = 0; i < companion_counted_groups; ++i)
         companion_accounting_chain[i]->live_async_callback_companions.fetch_sub(1);
+
+    if (companion_counted_groups && async_callback_completion_callback)
+        async_callback_completion_callback();
 }
 
 ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowed)
@@ -199,6 +215,16 @@ ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowe
     /// `new` (not `make_shared`): the companion constructor is private.
     ThreadGroupPtr companion(new ThreadGroup(
         borrowed->getSharedData(), std::move(accounting_chain), counted_groups, AsyncCallbackCompanionTag{}));
+
+    for (size_t i = 0; i < counted_groups; ++i)
+    {
+        std::lock_guard lock(companion->companion_accounting_chain[i]->mutex);
+        if (companion->companion_accounting_chain[i]->async_callback_completion_callback)
+        {
+            companion->async_callback_completion_callback = companion->companion_accounting_chain[i]->async_callback_completion_callback;
+            break;
+        }
+    }
 
     std::lock_guard lock(borrowed->mutex);
     if (auto existing = borrowed->async_callback_group.lock())

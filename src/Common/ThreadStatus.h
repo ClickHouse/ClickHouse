@@ -128,6 +128,9 @@ public:
     /// A negative value means this is not a companion group.
     Int64 getAsyncCallbackUntrackedMemoryLimit() const;
 
+    /// Installs a callback invoked when an async-callback companion finishes.
+    void setAsyncCallbackCompletionCallback(std::function<void()> callback);
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
@@ -246,6 +249,9 @@ private:
     /// Captured while the query context is still available. A companion may outlive that context,
     /// but its allocations must retain the query's batching behaviour.
     Int64 async_callback_untracked_memory_limit = -1;
+
+    /// Set for query groups registered in `ProcessList`; companions invoke it when they finish.
+    std::function<void()> async_callback_completion_callback TSA_GUARDED_BY(mutex);
 
     /// Number of live async-callback companions whose accounting chain includes this group.
     std::atomic<size_t> live_async_callback_companions = 0;

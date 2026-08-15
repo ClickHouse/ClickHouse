@@ -307,6 +307,10 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
+            thread_group->setAsyncCallbackCompletionCallback([this, user = client_info.current_user]
+            {
+                resetUserTrackersIfUnreferenced(user);
+            });
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
@@ -1048,6 +1052,13 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
         per_user_infos.emplace(user, user_queries->getInfo(get_profile_events));
 
     return per_user_infos;
+}
+
+void ProcessList::resetUserTrackersIfUnreferenced(const String & user)
+{
+    LockAndBlocker lock(mutex);
+    if (auto it = user_to_queries.find(user); it != user_to_queries.end() && it->second.queries.empty())
+        it->second.resetTrackersIfUnreferenced();
 }
 
 void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)

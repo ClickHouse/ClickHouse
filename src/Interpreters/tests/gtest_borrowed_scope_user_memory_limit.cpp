@@ -121,6 +121,10 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkAfterLastQueryOfUserObeysUserMemoryLi
             << "async allocation from a borrowed scope must still obey `max_memory_usage_for_user` "
                "after the user's last query left the process list";
         pool->wait();
+
+        const auto user_info = process_list.getUserInfo();
+        EXPECT_EQ(user_info.at("borrowed_scope_test_user").peak_memory_usage, 0)
+            << "the user tracker must reset after the last async-callback companion finishes";
     });
     t.join();
 }
