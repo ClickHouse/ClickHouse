@@ -2,8 +2,7 @@
 # Tags: replica, zookeeper
 
 # Test for CREATE TABLE IF NOT EXISTS ... AND INSERT restrictions with ReplicatedMergeTree
-# in a Replicated database. 
-# See: https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/InterpreterCreateQuery.cpp#L1820
+# in a Replicated database.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,5 +24,3 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_al
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_rmt_db"
-
-echo "All tests passed!"
