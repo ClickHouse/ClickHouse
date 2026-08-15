@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
