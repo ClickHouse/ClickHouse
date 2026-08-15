@@ -78,6 +78,14 @@ SELECT k FROM tab WHERE w = 0 ORDER BY k ASC LIMIT 5;
 SELECT '--- Different WHERE must not reuse the PREWHERE granule decisions';
 SELECT k FROM tab WHERE w = 1 ORDER BY k ASC LIMIT 5;
 
+-- A query with an explicit PREWHERE and a separate WHERE must use the exact key shape
+-- written by the PREWHERE path: combine(prewhere_hash, combine(topk_hash, where_hash)).
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT '--- Mixed PREWHERE and WHERE: first run records granule decisions';
+SELECT k FROM tab PREWHERE w = 0 WHERE k >= 0 ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04891_mixed_first';
+SELECT '--- Mixed PREWHERE and WHERE: second run must reuse them';
+SELECT k FROM tab PREWHERE w = 0 WHERE k >= 0 ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04891_mixed_second';
+
 -- `PREWHERE` `TopK` entries are shared by all users. Prime them as an unrestricted user,
 -- then verify a restrictive row policy cannot reuse the cached decisions before it
 -- hides the first chunk: the policy user's smallest visible keys are in later granules.
@@ -122,5 +130,11 @@ FROM
      FROM system.query_log
      WHERE current_database = currentDatabase() AND log_comment = '04891_second' AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1) AS second;
+
+SELECT '--- The mixed PREWHERE and WHERE run hits the query condition cache';
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04891_mixed_second' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab;
