@@ -248,6 +248,11 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     if (reading_step->isReadInOrderRequestedByPlanOptimizer())
         non_final_reading->setReadInOrderRequestedByPlanOptimizer();
 
+    /// The virtual-row conversion is another property installed by `optimizeReadInOrder` on the
+    /// original read. Preserve it so that an inner `JOIN` read-in-order plan keeps the virtual rows
+    /// used by the sorting step to select the next probe stream after filtering.
+    non_final_reading->copyVirtualRowConversions(*reading_step);
+
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
     /// Copy them over, otherwise the filter drops every row.

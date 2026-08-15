@@ -12,3 +12,5 @@ no_prefetching_limit_by_in_order_final
 0	1
 limit_by_in_order_final_correctness
 1
+lazy_final_inner_join_keeps_virtual_rows
+1

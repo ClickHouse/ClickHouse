@@ -353,6 +353,10 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void copyVirtualRowConversions(const ReadFromMergeTree & other)
+    {
+        virtual_row_conversion = other.virtual_row_conversion;
+    }
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
