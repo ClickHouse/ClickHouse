@@ -341,7 +341,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         disk_write_settings);
 }
 
-UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const
+MultipartUploadMemory S3ObjectStorage::getWriteBufferMemory(const WriteSettings & write_settings) const
 {
     /// Every upload buffer WriteBufferFromS3 can hold at once, derived by getMultipartUploadMemory from the
     /// same allocation settings and in-flight limit the writer itself uses - so a strict_upload_part_size
@@ -358,7 +358,7 @@ UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling(const WriteSettings & write_
                getEffectiveMaxInflightParts(
                    request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
                    IObjectStorage::patchSettings(write_settings).s3_allow_parallel_part_upload))
-        .ceiling;
+        ;
 }
 
 

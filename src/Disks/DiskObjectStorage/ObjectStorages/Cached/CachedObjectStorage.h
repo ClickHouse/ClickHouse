@@ -112,9 +112,9 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    UInt64 getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const override
+    MultipartUploadMemory getWriteBufferMemory(const WriteSettings & write_settings) const override
     {
-        return object_storage->getWriteBufferMemoryCeiling(write_settings);
+        return object_storage->getWriteBufferMemory(write_settings);
     }
 
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }

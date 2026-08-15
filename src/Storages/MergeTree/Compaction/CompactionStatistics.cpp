@@ -1019,8 +1019,10 @@ UInt64 estimateNeededMemoryForMerge(
     /// data volume this estimate cannot derive from the source parts is priced at the writer's initial
     /// buffers (see the unknowable-volume pricing below), not at any multipart size.
     UInt64 remote_write_buffer_size = 0;
+    std::optional<MultipartUploadMemory> guessed_s3_write_buffer_memory;
+    std::optional<MultipartUploadMemory> guessed_azure_write_buffer_memory;
     if (remote_write_buffer_memory.has_value())
-        remote_write_buffer_size = remote_write_buffer_memory->ceiling;
+        remote_write_buffer_size = remote_write_buffer_memory->memory.ceiling;
     else if (output_on_remote_disk)
     {
         /// Model both back ends exactly as their writers do (getMultipartUploadMemory over the same
@@ -1041,6 +1043,7 @@ UInt64 estimateNeededMemoryForMerge(
             getEffectiveMaxInflightParts(
                 query_settings[Setting::s3_max_inflight_parts_for_one_file],
                 query_settings[Setting::s3_allow_parallel_part_upload]));
+        guessed_s3_write_buffer_memory = s3_memory;
 
         BufferAllocationPolicy::Settings azure_allocation;
         azure_allocation.strict_size = query_settings[Setting::azure_strict_upload_part_size];
@@ -1052,6 +1055,7 @@ UInt64 estimateNeededMemoryForMerge(
             getEffectiveMaxInflightParts(
                 query_settings[Setting::azure_max_inflight_parts_for_one_file],
                 query_settings[Setting::azure_allow_parallel_part_upload]));
+        guessed_azure_write_buffer_memory = azure_memory;
 
         remote_write_buffer_size = std::max<UInt64>(
             {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, s3_memory.ceiling, azure_memory.ceiling});
@@ -1275,6 +1279,15 @@ UInt64 estimateNeededMemoryForMerge(
         input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
+
+    if (remote_write_buffer_memory.has_value())
+        remote_write_buffer_size = getMultipartUploadMemoryCeilingForWrittenBytes(
+            remote_write_buffer_memory->memory, sum_input_bytes_uncompressed);
+    else if (guessed_s3_write_buffer_memory.has_value())
+        remote_write_buffer_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, sum_input_bytes_uncompressed),
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, sum_input_bytes_uncompressed)});
 
     /// Output side: one writer stream per column substream of the result part. The result part is not
     /// written yet, so its dynamic substreams (JSON, Dynamic) are not known up front and the default
@@ -2143,7 +2156,7 @@ DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const Write
         if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
         {
             const auto object_storage = object_storage_disk->getObjectStorage();
-            return DiskWriteBufferMemory{.ceiling = object_storage->getWriteBufferMemoryCeiling(write_settings)};
+            return DiskWriteBufferMemory{.memory = object_storage->getWriteBufferMemory(write_settings)};
         }
     }
     return {};

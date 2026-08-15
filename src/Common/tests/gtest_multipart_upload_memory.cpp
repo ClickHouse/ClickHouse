@@ -127,6 +127,22 @@ TEST(MultipartUploadMemory, ExponentialPolicyBoundsTheLiveBuffers)
     EXPECT_GE(memory.ceiling, liveBuffersUpperBound(settings, 4, 2000));
 }
 
+TEST(MultipartUploadMemory, ExponentialPolicyCapsTheCeilingAtTheReachableTier)
+{
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 20);
+
+    /// With 500 parts at each tier, 200 GiB reaches 256 MiB parts but cannot yet reach 512 MiB.
+    /// Reserve the 21 concurrently live 256 MiB buffers, not the eventual 5 GiB tier.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 200ULL * 1024 * 1024 * 1024),
+        21 * 256ULL * 1024 * 1024);
+}
+
 TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize)
 {
     BufferAllocationPolicy::Settings settings;

@@ -116,6 +116,8 @@ UInt64 getEffectiveMaxInflightParts(UInt64 max_inflight_parts_for_one_file, bool
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;
+    result.allocation_settings = settings;
+    result.max_inflight_parts = max_inflight_parts_for_one_file;
 
     /// Mirror the two policies of create above. FixedSizeBufferAllocationPolicy hands out buffers of
     /// strict_size, the first one included. ExpBufferAllocationPolicy starts at
@@ -153,5 +155,35 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
     return result;
 }
 
+UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemory & memory, UInt64 bytes_written)
+{
+    if (memory.ceiling == 0 || bytes_written == 0)
+        return memory.ceiling;
+
+    const auto & settings = memory.allocation_settings;
+    UInt64 largest_reachable_buffer = settings.strict_size;
+    if (settings.strict_size == 0)
+    {
+        auto policy = BufferAllocationPolicy::create(settings);
+        UInt64 written = 0;
+        while (true)
+        {
+            policy->nextBuffer();
+            const UInt64 buffer_size = policy->getBufferSize();
+            largest_reachable_buffer = std::max(largest_reachable_buffer, buffer_size);
+            if (written >= bytes_written)
+                break;
+            written += std::min(buffer_size, bytes_written - written);
+            if (written == bytes_written)
+                break;
+        }
+    }
+
+    UInt64 live_buffers = 0;
+    if (__builtin_add_overflow(memory.max_inflight_parts, static_cast<UInt64>(1), &live_buffers)
+        || __builtin_mul_overflow(live_buffers, largest_reachable_buffer, &live_buffers))
+        return MultipartUploadMemory::UNLIMITED;
+    return std::min(memory.ceiling, live_buffers);
 }
 
+}

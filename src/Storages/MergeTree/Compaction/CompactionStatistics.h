@@ -21,11 +21,10 @@ namespace CompactionStatistics
   */
 struct DiskWriteBufferMemory
 {
-    /// The most one stream's buffers can hold at once: the buffer being filled plus all in-flight upload
-    /// parts, or MultipartUploadMemory::UNLIMITED when the disk allows unlimited in-flight parts. This is a
-    /// ceiling only - a writer's buffer starts at the size its caller passes and grows toward it with the
-    /// data written into it, so the estimate caps the output side by the merge's data volume as well.
-    UInt64 ceiling = 0;
+    /// The multipart allocation policy of the destination disk. Its full ceiling includes the buffer being
+    /// filled plus all in-flight upload parts; the estimate narrows it to the largest tier reachable by
+    /// the merge's bounded output volume.
+    MultipartUploadMemory memory;
 };
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.

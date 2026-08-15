@@ -14,6 +14,7 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
+#include <Common/BufferAllocationPolicy.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -414,11 +415,12 @@ public:
     /// the estimate must read them from here rather than from the merge context. Returns 0 when the storage
     /// does not buffer writes in memory in a settings-dependent size (the estimator then falls back to the
     /// global defaults), and MultipartUploadMemory::UNLIMITED when no finite ceiling exists because the
-    /// storage allows unlimited in-flight upload parts.
+    /// storage allows unlimited in-flight upload parts. The returned allocation policy is also used to
+    /// avoid reserving a multipart tier that the estimated output volume cannot reach.
     /// `write_settings` are the settings the writer will be created with: unlike the multipart sizes, whether
     /// part uploads may run in parallel comes from them (see `writeObject`), and a writer without a parallel
     /// upload scheduler cannot keep several detached buffers alive at once (getEffectiveMaxInflightParts).
-    virtual UInt64 getWriteBufferMemoryCeiling(const WriteSettings & /*write_settings*/) const { return 0; }
+    virtual MultipartUploadMemory getWriteBufferMemory(const WriteSettings & /*write_settings*/) const { return {}; }
 
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches

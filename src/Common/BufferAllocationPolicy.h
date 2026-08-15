@@ -56,11 +56,21 @@ struct MultipartUploadMemory
     /// finished future as soon as the task notifies, while the task - and the PartData it holds - is
     /// destroyed only afterwards.
     UInt64 ceiling = 0;
+
+    /// The policy and concurrency limit that produced `ceiling`. They let an admission estimate tighten
+    /// the ceiling to the largest buffer tier reachable by a bounded amount of output data.
+    BufferAllocationPolicy::Settings allocation_settings;
+    UInt64 max_inflight_parts = 0;
 };
 
 /// max_inflight_parts_for_one_file == 0 means unlimited (see TaskTracker::waitTilInflightShrink), which
 /// yields MultipartUploadMemory::UNLIMITED as the ceiling.
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file);
+
+/// Like MultipartUploadMemory::ceiling, but does not charge a buffer tier that cannot be reached after
+/// writing `bytes_written` through one stream. The returned value still includes all simultaneously live
+/// buffers at that reachable tier.
+UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemory & memory, UInt64 bytes_written);
 
 /// The in-flight part limit a multipart writer effectively runs with. `S3ObjectStorage::writeObject` /
 /// `AzureObjectStorage::writeObject` pass a thread-pool scheduler to the writer only when
