@@ -700,8 +700,8 @@ void checkCreationIsAllowed(
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!weaklyCanonicalPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside user files path", table_path);
+    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
 
     if (can_be_directory)
     {
@@ -785,7 +785,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
 
     for (const auto & path : all_paths)
-        checkCreationIsAllowed(context, user_files_path, path, can_be_directory);
+        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
 
     return all_paths;
 }
