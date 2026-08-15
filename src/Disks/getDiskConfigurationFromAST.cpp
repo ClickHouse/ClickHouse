@@ -574,13 +574,14 @@ void validateResolvedS3DiskCredentials(
             );
 }
 
-void validateResolvedGCSDiskCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+void validateResolvedGCSDiskCredentials(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context, const DynamicS3DiskCredentialInfo & info)
 {
     /// Re-check after `include` is resolved, mirroring `validateResolvedS3DiskCredentials`: an `include` can
     /// inject a `gcs` backend with `service_account_key_file` or credential fields past the pre-resolution AST
     /// checks (which only see the keys present in the AST itself). A `system`-database disk is server-internal,
-    /// exempt like the pre-resolution GCS checks. There is no anonymous downgrade for GCS: the pre-resolution
-    /// checks are unconditional (not opt-in-gated), so this check fails closed in every mode too.
+    /// exempt like the pre-resolution GCS checks. An included credential-less GCS backend would use Application
+    /// Default Credentials, so it also needs the same opt-in-gated restriction as the initial AST check.
     if (!info.has_include || info.for_system_database)
         return;
 
@@ -629,6 +630,31 @@ void validateResolvedGCSDiskCredentials(const Poco::Util::AbstractConfiguration 
                 "`access_token`, or `google_adc_*`) from an included configuration, which could resolve "
                 "server-managed auth material. Provide the credentials as literal values in the SQL definition, "
                 "or configure the disk in the server configuration instead.");
+
+        if (!context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
+            continue;
+
+        /// `no_sign_request` is anonymous and therefore safe regardless of its provenance. An explicit native
+        /// credential is safe only on the root and only when the literal SQL AST vouched for every selected
+        /// credential field. A `locations.<name>` child is constructed independently, so credentials on the root
+        /// must never authorize a credential-less child resolved from `include`.
+        const bool no_sign_request = config.getBool(key("no_sign_request"), false);
+        const bool root_has_vouched_service_account_key
+            = is_root && info.ast_has_gcs_service_account_key && !config.getString(key("service_account_key"), "").empty();
+        const bool root_has_vouched_access_token
+            = is_root && info.ast_has_gcs_access_token && !config.getString(key("access_token"), "").empty();
+        const bool root_has_vouched_adc = is_root && info.ast_has_google_adc_client_id && info.ast_has_google_adc_client_secret
+            && info.ast_has_google_adc_refresh_token && !config.getString(key("google_adc_client_id"), "").empty()
+            && !config.getString(key("google_adc_client_secret"), "").empty()
+            && !config.getString(key("google_adc_refresh_token"), "").empty();
+
+        if (!no_sign_request && !root_has_vouched_service_account_key && !root_has_vouched_access_token && !root_has_vouched_adc)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic native GCS disk created from user SQL that uses `include` may not use Application Default "
+                "Credentials, because they can resolve the server's identity. Provide `service_account_key`, "
+                "`access_token`, a complete `google_adc_*` triple, or `no_sign_request` as literal values in the "
+                "SQL definition, or enable `s3_allow_server_credentials_in_user_queries`");
     }
 }
 

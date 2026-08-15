@@ -83,10 +83,11 @@ void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & confi
 
 /// The native GCS analogue of `validateResolvedS3DiskCredentials`: re-apply the GCS credential restrictions
 /// after `include` is resolved, so an `include` cannot inject a `gcs` backend with `service_account_key_file`
-/// (a server-side file read) or server-managed credential fields past the pre-resolution AST checks. Unlike
-/// the S3 path there is no anonymous downgrade: the AST-level GCS checks are unconditional (not opt-in-gated),
-/// so this check throws `ACCESS_DENIED` (fail-closed) in every mode.
-void validateResolvedGCSDiskCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
+/// (a server-side file read), server-managed credential fields, or Application Default Credentials past the
+/// pre-resolution AST checks. The former two checks are unconditional; the ADC check follows
+/// `s3_allow_server_credentials_in_user_queries` and throws `ACCESS_DENIED` (fail-closed) when restricted.
+void validateResolvedGCSDiskCredentials(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context, const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.

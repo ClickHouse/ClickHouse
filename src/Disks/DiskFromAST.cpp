@@ -72,7 +72,7 @@ static std::string getOrCreateCustomDisk(
         /// The GCS analogue of the S3 re-check above: an `include` can likewise inject a `gcs` backend with
         /// `service_account_key_file` (a server-side file read) or server-managed credential fields. Unlike
         /// the S3 path there is no anonymous downgrade -- the check is unconditional and fail-closed.
-        validateResolvedGCSDiskCredentials(*config, s3_disk_info);
+        validateResolvedGCSDiskCredentials(*config, context, s3_disk_info);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
