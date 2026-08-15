@@ -42,11 +42,12 @@ SET compatibility = '26.7';
 SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
 SET compatibility = '26.8';
 SELECT count() FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
-SET compatibility = '';
-
 -- explain_syntax_single_record = 0 as a session setting also restores the one-record-per-line output,
 -- and an explicit value wins over the compatibility-derived default in both directions.
+SET compatibility = '26.8';
 SET explain_syntax_single_record = 0;
 SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+SET compatibility = '26.6';
 SET explain_syntax_single_record = 1;
 SELECT count() FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+SET compatibility = '';
