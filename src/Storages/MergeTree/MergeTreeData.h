@@ -1307,10 +1307,10 @@ public:
     bool supportsBackupPartition() const override { return true; }
 
     /// Moves partition to specified Disk
-    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context, UInt64 admission_epoch);
 
     /// Moves partition to specified Volume
-    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context, UInt64 admission_epoch);
 
     /// Moves partition to specified Table
     void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
@@ -2315,10 +2315,10 @@ private:
     using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
 
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
-    std::future<MovePartsOutcome> movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async);
+    std::future<MovePartsOutcome> movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async, std::optional<UInt64> admission_epoch = {});
 
     /// Move selected parts to corresponding disks
-    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy);
+    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy, std::optional<UInt64> admission_epoch = {});
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTaggerPtr selectPartsForMove();

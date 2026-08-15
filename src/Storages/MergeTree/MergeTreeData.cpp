@@ -8337,7 +8337,7 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name, ContextPtr l
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
 }
 
-void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
+void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context, UInt64 admission_epoch)
 {
     String partition_id;
 
@@ -8383,7 +8383,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         moving_tagger,
         local_context->getReadSettings(),
         local_context->getWriteSettings(),
-        query_settings[Setting::alter_move_to_space_execute_async]);
+        query_settings[Setting::alter_move_to_space_execute_async],
+        admission_epoch);
 
     if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
@@ -8407,7 +8408,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 }
 
 
-void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
+void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context, UInt64 admission_epoch)
 {
     String partition_id;
 
@@ -8466,7 +8467,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         moving_tagger,
         local_context->getReadSettings(),
         local_context->getWriteSettings(),
-        query_settings[Setting::alter_move_to_space_execute_async]);
+        query_settings[Setting::alter_move_to_space_execute_async],
+        admission_epoch);
 
     if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
@@ -8604,14 +8606,15 @@ Pipe MergeTreeData::alterPartition(
                 break;
             case PartitionCommand::MOVE_PARTITION:
             {
+                const UInt64 admission_epoch = currentLeadershipEpoch();
                 switch (*command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context, admission_epoch);
                         break;
 
                     case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context, admission_epoch);
                         break;
 
                     case PartitionCommand::MoveDestinationType::TABLE:
@@ -12015,7 +12018,7 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
+std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async, std::optional<UInt64> admission_epoch)
 {
     auto finish_move_promise = std::make_shared<std::promise<MovePartsOutcome>>();
     auto finish_move_future = finish_move_promise->get_future();
@@ -12023,9 +12026,9 @@ std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMov
     if (async)
     {
         bool is_scheduled = background_moves_assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, finish_move_promise, moving_tagger, read_settings, write_settings] () mutable
+            [this, finish_move_promise, moving_tagger, read_settings, write_settings, admission_epoch] () mutable
             {
-                auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+                auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true, admission_epoch);
 
                 finish_move_promise->set_value(outcome);
 
@@ -12037,7 +12040,7 @@ std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMov
     }
     else
     {
-        auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+        auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true, admission_epoch);
         finish_move_promise->set_value(outcome);
     }
 
@@ -12096,7 +12099,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy)
+MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy, std::optional<UInt64> admission_epoch)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
@@ -12179,7 +12182,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                         /// Recheck if the lock (and keeper session expirity) is OK
                         if (lock->isLocked())
                         {
-                            parts_mover.swapClonedPart(cloned_part);
+                            parts_mover.swapClonedPart(cloned_part, admission_epoch);
                             break; /// Successfully moved
                         }
                         else
@@ -12208,7 +12211,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             else /// Ordinary move as it should be
             {
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
-                parts_mover.swapClonedPart(cloned_part);
+                parts_mover.swapClonedPart(cloned_part, admission_epoch);
             }
             write_part_log({});
         }

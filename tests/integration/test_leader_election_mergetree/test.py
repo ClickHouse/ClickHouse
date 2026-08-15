@@ -2220,6 +2220,45 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
             pass
 
 
+def test_move_partition_to_disk_rejected_on_stale_leadership_epoch(started_cluster):
+    """`MOVE PARTITION TO DISK` must fence its publish to the admission epoch."""
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_move_disk_epoch_fence"
+    uuid = "12345678-abcd-abcd-abcd-12345678ab24"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{uuid}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"ALTER TABLE {table} MOVE PARTITION 1 TO DISK 's3_move'")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        assert node1.query(
+            f"SELECT disk_name FROM system.parts WHERE database = currentDatabase() AND table = '{table}' AND active AND partition = '1'"
+        ).strip() == "s3"
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
 SHARED_UUID_MOVE_SRC = "12345678-abcd-abcd-abcd-12345678ab22"
 SHARED_UUID_MOVE_DEST = "12345678-abcd-abcd-abcd-12345678ab23"
 
