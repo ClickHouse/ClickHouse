@@ -102,6 +102,7 @@ def test_mutation_behind_nested_wrappers_is_flagged(tmp_path):
 
 def test_redirect_into_server_path_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'echo broken > "$path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'echo broken >| "$path/data.bin"\n')
     assert _run(
         tmp_path,
         'echo broken > `${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
@@ -161,6 +162,12 @@ def test_server_root_fetch_is_flagged(tmp_path):
         tmp_path,
         'root=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings'
         " WHERE name = 'path'\")\n"
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
+    assert _run(
+        tmp_path,
+        'root=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings'
+        " WHERE 'path' = name\")\n"
         'rm -f "$root/flags/force_drop_table"\n',
     )
 
