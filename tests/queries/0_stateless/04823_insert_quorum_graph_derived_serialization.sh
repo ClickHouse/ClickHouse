@@ -24,9 +24,11 @@ QUORUM_SETTINGS="$SETTINGS --insert_quorum=2 --insert_quorum_parallel=0 --insert
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_plain"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_a"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_b"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_alias_target"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_replicated_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_viewed"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_source"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_target_a_1"
@@ -64,9 +66,16 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain_viewed"
 # non-parallel quorum inserts through them succeed with parallel_view_processing enabled.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_target_b_1 (x UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04823/quorum_graph_target_b', '1') ORDER BY x"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_target_b_2 (x UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04823/quorum_graph_target_b', '2') ORDER BY x"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_replicated_alias ENGINE = Alias('quorum_graph_target_a_1')"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_source (x UInt32) ENGINE = Null"
-$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW quorum_graph_mv_a TO quorum_graph_target_a_1 AS SELECT x FROM quorum_graph_source"
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW quorum_graph_mv_alias TO quorum_graph_replicated_alias AS SELECT x FROM quorum_graph_source"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW quorum_graph_mv_b TO quorum_graph_target_b_1 AS SELECT x + 100 AS x FROM quorum_graph_source"
+
+# A resolvable `Alias` branch and a direct replicated branch have distinct quorum targets. Keep
+# `parallel_view_processing = 1`: the graph-derived quorum analysis must not classify the alias
+# branch as hidden and serialize the views.
+$CLICKHOUSE_CLIENT $QUORUM_SETTINGS --parallel_view_processing=1 -q \
+    "EXPLAIN PIPELINE INSERT INTO quorum_graph_source SELECT number FROM numbers(4)" | grep -c "AliasSink"
 
 for x in 1 2 3; do
     $CLICKHOUSE_CLIENT $QUORUM_SETTINGS --parallel_view_processing=1 -q \
@@ -78,12 +87,13 @@ $CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x) 
 $CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x) FROM quorum_graph_target_b_1"
 $CLICKHOUSE_CLIENT --select_sequential_consistency=1 -q "SELECT count(), sum(x) FROM quorum_graph_target_b_2"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_mv_a"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_mv_b"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_mv_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_source"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain_alias_target"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_replicated_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_a_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_a_2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_b_1"

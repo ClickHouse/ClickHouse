@@ -209,6 +209,15 @@ public:
     /// It fails closed when a view or its target cannot be resolved.
     bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
 
+    /// Whether a quorum writer reached through `storage` cannot be tied to a concrete target in
+    /// `computeQuorumStreamRequirements`. Unlike other forwarding storages, an `Alias` can be
+    /// resolved locally, so a direct alias to a replicated table is not hidden.
+    bool storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth = 0) const;
+
+    /// Returns the physical target id for a visible forwarding chain, so two `Alias` branches
+    /// resolving to the same replicated table still participate in the same convergence check.
+    StorageIDMaybeEmpty getVisibleQuorumWriteTargetID(const StoragePtr & storage) const;
+
     /// Whether the physical write target behind `storage` is hidden from this builder: the write is
     /// forwarded through a nested `INSERT` (an `Alias`, a `Distributed` shard, a `Buffer` flush, a
     /// `WindowView` inner table), or a `MaterializedView` / proxy target chain cannot be resolved. Two

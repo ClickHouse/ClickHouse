@@ -1170,6 +1170,53 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
 }
 
 
+bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth) const
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// An `Alias` resolves to a local target. A direct target can therefore participate in the
+    /// per-target convergence check; only a target's dependent views remain hidden from this graph.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || dependentViewMayWriteToReplicatedTable(target, depth + 1)
+            || storageHidesQuorumWriteTarget(target, depth + 1);
+    }
+
+    if (dynamic_cast<const StorageDistributed *>(storage.get())
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageWindowView *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
+        return true;
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageHidesQuorumWriteTarget(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageHidesQuorumWriteTarget(proxy->getNested(), depth + 1);
+
+    return false;
+}
+
+
+StorageIDMaybeEmpty InsertDependenciesBuilder::getVisibleQuorumWriteTargetID(const StoragePtr & storage) const
+{
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        return getVisibleQuorumWriteTargetID(alias->tryGetTargetTable());
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+        return getVisibleQuorumWriteTargetID(materialized_view->tryGetTargetTable());
+
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return getVisibleQuorumWriteTargetID(proxy->getNested());
+
+    return storage->getStorageID();
+}
+
+
 bool InsertDependenciesBuilder::storageHidesWriteTarget(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -1226,9 +1273,9 @@ void InsertDependenciesBuilder::computeQuorumStreamRequirements()
             if (!target_storage || storageMayWriteToReplicatedTable(target_storage))
             {
                 ++replicated_writers;
-                if (!target_storage || storageHidesWriteTarget(target_storage))
+                if (!target_storage || storageHidesQuorumWriteTarget(target_storage))
                     any_hidden_writer = true;
-                else if (++replicated_writers_per_target[target_id] >= 2)
+                else if (++replicated_writers_per_target[getVisibleQuorumWriteTargetID(target_storage)] >= 2)
                     converging_replicated_writers = true;
             }
         }
