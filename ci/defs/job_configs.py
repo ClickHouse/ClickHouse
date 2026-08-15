@@ -1646,7 +1646,10 @@ class JobConfigs:
                 "./programs/server/config.d/",
                 "./programs/server/users.xml",
                 "./programs/server/users.d/",
-            ],
+            ]
+            # The examples are extracted from server source registrations and validate server
+            # behavior, so every change that rebuilds the server must run this job too.
+            + build_digest_config.include_paths,
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
