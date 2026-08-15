@@ -34,6 +34,8 @@ public:
     std::string getName() const override { return "FullSortingMergeJoin"; }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
 
     bool isCloneSupported() const override
     {

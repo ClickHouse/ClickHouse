@@ -94,6 +94,8 @@ public:
 
     void initialize(const Block & sample_block) override;
 
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;

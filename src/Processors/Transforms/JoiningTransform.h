@@ -48,7 +48,8 @@ public:
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
-        FinishCounterPtr finish_counter_ = nullptr);
+        FinishCounterPtr finish_counter_ = nullptr,
+        size_t stream_index_ = 0);
 
     ~JoiningTransform() override;
 
@@ -86,6 +87,9 @@ private:
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
+    /// Stable 0-based probe lane index, passed to IJoin::joinBlock so the join can use lock-free per-lane state.
+    size_t stream_index;
+
     Block readExecute(Chunk & chunk);
 };
 
@@ -95,7 +99,7 @@ private:
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_lane_ = 0);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -114,6 +118,9 @@ private:
     bool for_totals = false;
     bool set_totals = false;
     bool post_build_phase = false;
+
+    /// Stable 0-based build lane index, passed to IJoin::addBlockToJoin so the join can bind lock-free per-lane build state.
+    size_t build_lane;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>

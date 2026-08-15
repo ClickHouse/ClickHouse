@@ -40,6 +40,8 @@ public:
     /// preserve the left stream's original order. See issues #109216 and #110662.
     bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
