@@ -887,10 +887,10 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             /// `ColumnPtr` and then calls this function on it, so `use_count() >= 2`). `assumeMutable`
             /// would `chassert(use_count() == 1)` and abort; `IColumn::mutate` clones if shared.
             auto mutable_column = IColumn::mutate(std::move(column));
+            column = std::move(mutable_column);
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
-            column = std::move(mutable_column);
+            typeid_cast<ColumnTuple &>(*column).addSize(delta);
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         }
 
@@ -902,7 +902,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     /// Same `IColumn::mutate` reasoning as above — caller may pass a shared column (e.g. via
     /// `SerializationQBit`).
     auto mutable_column = IColumn::mutate(std::move(column));
-    auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
+    column = std::move(mutable_column);
+    auto & column_tuple = assert_cast<ColumnTuple &>(*column);
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -922,11 +923,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, const_column_tuple.getColumn(i).size(), expected_size);
     }
 
-    typeid_cast<ColumnTuple &>(*mutable_column).addSize(const_column_tuple.getColumn(0).size());
-
-    /// Write back. `IColumn::mutate` may have cloned the input column when it was shared, so the
-    /// caller's `column` reference must be updated to point to the (possibly cloned) `mutable_column`.
-    column = std::move(mutable_column);
+    typeid_cast<ColumnTuple &>(*column).addSize(const_column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const

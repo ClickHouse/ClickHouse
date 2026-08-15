@@ -515,9 +515,11 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// a local `ColumnPtr` and then calls this function on it, so `use_count() >= 2`).
     /// `assumeMutable` would `chassert(use_count() == 1)` and abort; `IColumn::mutate` clones the
     /// shared column instead, so subsequent mutations are safe and don't affect other holders.
-    /// The cloned/unique column is written back to the caller's `column` reference at the end.
+    /// Write the cloned/unique column back before any potentially throwing work, so the caller's
+    /// slot remains valid while deserialization is in progress.
     auto mutable_column = IColumn::mutate(std::move(column));
-    ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
+    column = std::move(mutable_column);
+    ColumnArray & column_array = typeid_cast<ColumnArray &>(*column);
 
     settings.path.push_back(Substream::ArraySizes);
     auto [skipped_nested_rows, nested_limit] = deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(column_array.getOffsetsPtr(), rows_offset, limit, settings, cache);
@@ -552,7 +554,6 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }
 
-    column = std::move(mutable_column);
 }
 
 

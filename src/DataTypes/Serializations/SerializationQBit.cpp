@@ -464,14 +464,15 @@ void SerializationQBit::deserializeBinaryBulkWithMultipleStreams(
     /// Use `IColumn::mutate` rather than `assumeMutable` because the input column may be shared
     /// (e.g. when called recursively via `SerializationDynamic` / `SerializationObjectDynamicPath`).
     /// `IColumn::mutate` clones if shared so subsequent mutations don't affect other holders.
-    /// The cloned/unique column is written back to the caller's `column` reference at the end.
+    /// Write the cloned/unique column back before invoking nested deserialization so exceptions
+    /// cannot leave the caller's slot empty.
     auto mutable_column = IColumn::mutate(std::move(column));
-    auto & column_qbit = assert_cast<ColumnQBit &>(*mutable_column);
+    column = std::move(mutable_column);
+    auto & column_qbit = assert_cast<ColumnQBit &>(*column);
     /// Pass the stored tuple `ColumnPtr` by reference directly so the nested deserialization
     /// can write back into `column_qbit.tuple` if it clones (avoids an extra copy that would
     /// raise `use_count()` and force `IColumn::mutate` in the nested serializer to clone).
     nested->deserializeBinaryBulkWithMultipleStreams(column_qbit.getTuple(), rows_offset, limit, settings, state, cache);
-    column = std::move(mutable_column);
 }
 
 template <typename Word>
