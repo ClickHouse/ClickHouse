@@ -700,9 +700,38 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
-TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond merging the latest base branch and resolving simple, mechanical merge conflicts. If any other code change is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}."
+TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond a clean merge of the latest base branch. If any other code change, including a merge conflict, is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}."
 
-TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete branch updates and simple mechanical merge conflicts yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
+TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-branch merge yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
+
+# The prompt is not a security boundary: a triage model can still edit the
+# worktree. It may leave no changes, or exactly the conflict-free merge that
+# this function prepared for it. Anything else must be discarded before the
+# coding model receives the worktree.
+triage_state_is_safe()
+{
+    local wt="$1" start_head="$2" base_head="$3"
+    local head first_parent second_parent extra_parent expected_tree actual_tree
+
+    [[ -z "$(git -C "$wt" status --porcelain)" ]] || return 1
+    head=$(git -C "$wt" rev-parse HEAD) || return 1
+    [[ "$head" == "$start_head" ]] && return 0
+
+    read -r first_parent second_parent extra_parent < <(git -C "$wt" show -s --format='%P' HEAD)
+    [[ "$first_parent" == "$start_head" && "$second_parent" == "$base_head" && -z "$extra_parent" ]] || return 1
+    expected_tree=$(git -C "$wt" merge-tree --write-tree "$start_head" "$base_head") || return 1
+    actual_tree=$(git -C "$wt" rev-parse "$head^{tree}") || return 1
+    [[ "$actual_tree" == "$expected_tree" ]]
+}
+
+discard_untrusted_triage_changes()
+{
+    local wt="$1" start_head="$2" log="$3"
+
+    echo "Discarding non-mechanical changes made by the triage model before coding handoff." >> "$log"
+    git -C "$wt" reset --hard "$start_head" >> "$log"
+    git -C "$wt" clean -fd >> "$log"
+}
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
@@ -716,13 +745,22 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage
-    local phase active_model system_prompt turn_prompt handoff
+    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head
     local u_i u_o u_ci u_co u_cost
     local -a model_args
     sid=""
     phase="coding"
     [[ -n "$TRIAGE_MODEL" ]] && phase="triage"
     handoff=""
+    triage_start_head=""
+    triage_base_head=""
+    if [[ "$phase" == "triage" ]]; then
+        triage_start_head=$(git -C "$wt" rev-parse HEAD)
+        local base_ref
+        base_ref=$(gh pr view "$number" --repo "$REPO" --json baseRefName --jq .baseRefName)
+        git -C "$wt" fetch -q origin "$base_ref"
+        triage_base_head=$(git -C "$wt" rev-parse "origin/$base_ref")
+    fi
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
@@ -841,6 +879,9 @@ ${system_prompt}"
         # accidental extra completion marker cannot suppress requested coding.
         if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
             handoff=$(cat "$log.last")
+            if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+                discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+            fi
             echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
             phase="coding"
             phase_iter=0
@@ -853,7 +894,18 @@ ${system_prompt}"
         # processes at once (for example, an external resource manager). Once
         # Codex reports a session ID, resume that session within the existing
         # turn and time limits instead of discarding its completed work.
-        grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
+        if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
+            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+                break
+            fi
+            handoff=$(cat "$log.last")
+            discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after non-mechanical triage changes =====" >> "$log"
+            phase="coding"
+            phase_iter=0
+            sid=""
+            continue
+        fi
         # If triage used its continuation allowance without an explicit marker,
         # escalate to the coding model rather than misclassifying the PR as
         # handled. A killed Codex session can also take this handoff path on
@@ -862,6 +914,9 @@ ${system_prompt}"
         if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
             if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
                 handoff=$(cat "$log.last")
+                if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+                    discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
+                fi
                 echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
                 phase="coding"
                 phase_iter=0
