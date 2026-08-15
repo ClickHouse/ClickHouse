@@ -1515,18 +1515,24 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
 
     /// `InterpreterCreateQuery::createTable` validates a view's `SQL SECURITY` clause immediately after
     /// the destination access check and before it reads an `AS src` source or a populating `SELECT`.
-    /// Use a clone because `processSQLSecurityOption` resolves `CURRENT_USER` in the AST.
+    /// It first adds an empty clause when SQL security is mandatory for this view, so mirror that on a
+    /// clone before processing the option. `processSQLSecurityOption` resolves `CURRENT_USER` in the AST.
     /// A rejected definer or an unavailable `SQL SECURITY NONE` privilege must suppress the hook just like
     /// a rejected destination privilege does; otherwise the rejected statement would reattach a source it
     /// never reaches.
-    if (create.sql_security)
+    if (create.supportSQLSecurity()
+        && (create.sql_security || create.refresh_strategy || !context->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
     {
-        ASTPtr sql_security = create.sql_security->clone();
+        ASTPtr create_query = create.clone();
+        auto & create_query_clone = create_query->as<ASTCreateQuery &>();
+
+        if (!create_query_clone.sql_security)
+            create_query_clone.set(create_query_clone.sql_security, make_intrusive<ASTSQLSecurity>());
 
         try
         {
             InterpreterCreateQuery::processSQLSecurityOption(
-                context->getQueryContext(), sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, LoadingStrictnessLevel::CREATE);
+                context->getQueryContext(), create_query_clone.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, LoadingStrictnessLevel::CREATE);
         }
         catch (const Exception &)
         {

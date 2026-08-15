@@ -668,6 +668,34 @@ else
     echo "OK"
 fi
 
+# A refreshable materialized view synthesizes an empty `SQL SECURITY` clause before validating it. The
+# default `SQL SECURITY NONE` then fails for a user without `ALLOW SQL SECURITY NONE`, before the view
+# reads its source; the hook must mirror that synthesized clause and keep the source attached.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_refresh_dst"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_refresh_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${DEST_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${DEST_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${DEST_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --default_materialized_view_sql_security=NONE \
+    --query "CREATE MATERIALIZED VIEW t_reattach_dest_refresh REFRESH EVERY 1 HOUR TO t_reattach_dest_refresh_dst AS SELECT * FROM t_reattach_dest_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_dest_src"; then
+    echo "FAIL (source detached for a default-SQL-security-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_dest_refresh"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_refresh_dst"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
+
 # 3. Taken destination name. `CREATE ... IF NOT EXISTS` over an existing destination is a pure no-op that
 # never runs the `SELECT`, and the plain form fails with `TABLE_ALREADY_EXISTS` before it — in both cases
 # the source must stay attached. The same statement over a free destination name does detach the source.
