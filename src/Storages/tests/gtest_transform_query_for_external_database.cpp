@@ -129,7 +129,8 @@ static void checkOld(
     size_t table_num,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const NameSet & local_only_columns = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -142,7 +143,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -173,7 +174,8 @@ static void checkNewAnalyzer(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const NameSet & local_only_columns = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -197,7 +199,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -209,15 +211,16 @@ static void check(
     const std::string & query,
     const std::string & expected,
     const std::string & expected_new = "",
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const NameSet & local_only_columns = {})
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style);
+        checkOld(state, table_num, query, expected, literal_escaping_style, local_only_columns);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, local_only_columns);
     }
 }
 
@@ -349,6 +352,60 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+}
+
+TEST(TransformQueryForExternalDatabase, ForeignColumnInWhereOr)
+{
+    const State & state = State::instance();
+
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE apply_id = 1 AND (column > 2 OR table2.num = 1)",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
+    check(state, 2, {"column"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE column > 2 OR table2.num = 1",
+          R"(SELECT "column", "apply_id" FROM "test"."table")",
+          R"(SELECT "column" FROM "test"."table")");
+}
+
+TEST(TransformQueryForExternalDatabase, NegationOverPrunedConjunction)
+{
+    const State & state = State::instance();
+
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
+          "WHERE apply_id = 1 AND NOT (column > 2 AND table2.num = 1)",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
+}
+
+TEST(TransformQueryForExternalDatabase, LocalOnlyColumns)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", false);
+
+    check(state, 1, {"column", "apply_id"},
+          "SELECT column FROM table WHERE column = 44 OR apply_id = 2",
+          R"(SELECT "column", "apply_id" FROM "test"."table")",
+          "",
+          LiteralEscapingStyle::Regular,
+          {"column"});
+    check(state, 1, {"column", "apply_id"},
+          "SELECT column FROM table WHERE apply_id = 2 AND NOT (column = 44 AND apply_id = 1)",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 2)",
+          "",
+          LiteralEscapingStyle::Regular,
+          {"column"});
+
+    state.context->setSetting("external_table_strict_query", true);
+    EXPECT_THROW(
+        check(state, 1, {"column", "apply_id"},
+              "SELECT column FROM table WHERE column = 44 OR apply_id = 2", "", "", LiteralEscapingStyle::Regular, {"column"}),
+        Exception);
+    state.context->setSetting("external_table_strict_query", false);
 }
 
 TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)

@@ -527,52 +527,69 @@ bool isCompatible(
     return node->as<ASTIdentifier>();
 }
 
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+struct RemoveUnknownSubexpressionsResult
+{
+    bool keep;
+    bool modified;
+};
 
-void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+
+bool removeUnknownChildren(ASTs & children, const NameSet & known_names)
 {
 
     ASTs new_children;
+    bool modified = false;
     for (auto & child : children)
     {
-        bool leave_child = removeUnknownSubexpressions(child, known_names);
-        if (leave_child)
+        auto result = removeUnknownSubexpressions(child, known_names);
+        modified |= result.modified;
+        if (result.keep)
             new_children.push_back(child);
     }
     children = std::move(new_children);
+    return modified;
 }
 
 /// return `true` if we should leave node in tree
-bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
 {
     if (const auto * ident = node->as<ASTIdentifier>())
-        return known_names.contains(ident->name());
+        return {known_names.contains(ident->name()), !known_names.contains(ident->name())};
 
     if (node->as<ASTLiteral>() != nullptr)
-        return true;
+        return {true, false};
 
     auto * func = node->as<ASTFunction>();
     if (func && (func->name == "and" || func->name == "or"))
     {
-        removeUnknownChildren(func->arguments->children, known_names);
+        bool modified = removeUnknownChildren(func->arguments->children, known_names);
         /// all children removed, current node can be removed too
+        if (func->arguments->children.empty())
+            return {false, true};
+
+        /// Removing a disjunct would narrow the remote filter. Keep the whole disjunction local.
+        if (func->name == "or" && modified)
+            return {false, true};
+
         if (func->arguments->children.size() == 1)
         {
             /// if only one child left, pull it on top level
             node = func->arguments->children[0];
-            return true;
+            return {true, true};
         }
-        return !func->arguments->children.empty();
+        return {true, modified};
     }
 
-    bool leave_child = true;
     for (auto & child : node->children)
     {
-        leave_child = leave_child && removeUnknownSubexpressions(child, known_names);
-        if (!leave_child)
-            break;
+        auto result = removeUnknownSubexpressions(child, known_names);
+        /// A modified child below a non-boolean node, for example `not`, may invert a widened
+        /// predicate into a narrower one. Keep the whole expression local in that case.
+        if (!result.keep || result.modified)
+            return {false, true};
     }
-    return leave_child;
+    return {true, false};
 }
 
 // When a query references an external table such as table from MySQL database,
@@ -580,10 +597,10 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
 // send the query to the storage as AST. Before that, we have to remove the conditions
 // that reference other tables from `WHERE`, so that the external engine is not confused
 // by the unknown columns.
-bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
 {
     if (!node)
-        return false;
+        return {false, false};
 
     NameSet known_names;
     for (const auto & col : available_columns)
@@ -592,8 +609,8 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
     {
         /// traverse expression list on top level
-        removeUnknownChildren(expr_list->children, known_names);
-        return !expr_list->children.empty();
+        bool modified = removeUnknownChildren(expr_list->children, known_names);
+        return {!expr_list->children.empty(), modified};
     }
     return removeUnknownSubexpressions(node, known_names);
 }
@@ -634,9 +651,14 @@ String transformQueryForExternalDatabaseImpl(
     for (const auto & column : available_columns)
         if (!local_only_columns.contains(column.name))
             pushdown_columns.push_back(column);
-    bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, pushdown_columns);
+    auto where_result = removeUnknownSubexpressionsFromWhere(original_where, pushdown_columns);
 
-    if (original_where && where_has_known_columns)
+    if (strict && where_result.modified)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
+    }
+
+    if (original_where && where_result.keep)
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
