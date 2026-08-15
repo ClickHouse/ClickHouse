@@ -66,11 +66,11 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 
     /// Propagate the rows-TTL fingerprint (expression and time zone). The result is known only if every
     /// merged part that carries rows-TTL data agrees on it; otherwise it becomes empty (unknown), which
-    /// forces the fast `MATERIALIZE TTL` path to fall back to a full rewrite. Presence of rows-TTL data is
-    /// detected via `table_ttl.min`, so this must run before merging `table_ttl` below.
-    if (other_infos.table_ttl.min != 0)
+    /// forces the fast `MATERIALIZE TTL` path to fall back to a full rewrite. An epoch-only part has no
+    /// bounds, so `has_epoch_timestamps` must also count as rows-TTL provenance here.
+    if (other_infos.table_ttl.initialized() || other_infos.table_ttl.has_epoch_timestamps)
     {
-        if (table_ttl.min == 0)
+        if (!table_ttl.initialized() && !table_ttl.has_epoch_timestamps)
         {
             table_ttl_expression = other_infos.table_ttl_expression;
             table_ttl_timezone = other_infos.table_ttl_timezone;
@@ -122,6 +122,9 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
+
+        if (table.has("has_epoch_timestamps"))
+            table_ttl.has_epoch_timestamps = table["has_epoch_timestamps"].getUInt();
 
         if (table.has("expression"))
             table_ttl_expression = table["expression"].getString();
@@ -198,7 +201,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         }
         writeString("]", out);
     }
-    if (table_ttl.min)
+    if (table_ttl.min || table_ttl.has_epoch_timestamps)
     {
         if (!columns_ttl.empty())
             writeString(",", out);
@@ -208,6 +211,8 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.max, out);
         writeString(R"(,"finished":)", out);
         writeIntText(static_cast<uint8_t>(table_ttl.finished()), out);
+        if (table_ttl.has_epoch_timestamps)
+            writeString(R"(,"has_epoch_timestamps":true)", out);
         if (!table_ttl_expression.empty())
         {
             writeString(R"(,"expression":)", out);
