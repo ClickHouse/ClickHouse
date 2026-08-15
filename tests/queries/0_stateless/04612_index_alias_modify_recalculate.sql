@@ -19,7 +19,7 @@ SHOW CREATE TABLE t_index_alias_realias;
 -- Rows inserted before the alias change: the part's index files are built from `a + 1`, range [1, 1000].
 INSERT INTO t_index_alias_realias SELECT number FROM numbers(1000);
 
-ALTER TABLE t_index_alias_realias MODIFY COLUMN x UInt64 ALIAS a + 2;
+ALTER TABLE t_index_alias_realias MODIFY COLUMN x UInt64 ALIAS a + 2 SETTINGS mutations_sync = 2;
 
 -- After changing the alias body, the index expression follows the new definition.
 SELECT expr FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_index_alias_realias';
@@ -32,7 +32,7 @@ SELECT count() FROM t_index_alias_realias WHERE x = 500 SETTINGS force_data_skip
 
 -- Removing the alias converts the column to a physical one that reads as the type default
 -- from old parts; the index is rebuilt accordingly instead of keeping the stale range.
-ALTER TABLE t_index_alias_realias MODIFY COLUMN x REMOVE ALIAS;
+ALTER TABLE t_index_alias_realias MODIFY COLUMN x REMOVE ALIAS SETTINGS mutations_sync = 2;
 SELECT count() FROM t_index_alias_realias WHERE x = 0 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE t_index_alias_realias;
