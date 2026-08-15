@@ -64,7 +64,7 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
 
     /// Arm the worker's wait toward a deadline 10 minutes away and wait until the worker has
     /// actually parked on it, so the buggy interleaving is reproduced deterministically.
-    ASSERT_TRUE(checker.appendTask(long_query, /*timeout=*/600'000, OverflowMode::THROW));
+    ASSERT_TRUE(checker.appendTask(long_query, /*timeout=*/600'000'000, OverflowMode::THROW));
     for (int i = 0; i < 2000 && checker.getArmedDeadline() == 0; ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     ASSERT_NE(checker.getArmedDeadline(), 0u);
@@ -74,7 +74,7 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
     checker.appendDoneTasks(long_query);
 
     /// A short deadline appended while the worker is armed for the (already removed) long one.
-    ASSERT_TRUE(checker.appendTask(short_query, /*timeout=*/100, OverflowMode::THROW));
+    ASSERT_TRUE(checker.appendTask(short_query, /*timeout=*/100'000, OverflowMode::THROW));
 
     /// 100 ms deadline + 100 ms cancellation grid; poll with a generous bound for sanitizer builds.
     bool killed = false;
@@ -97,7 +97,7 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
 TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
 {
     /// Every sub-millisecond phase of `now`, against every phase of the grid the deadline can land on.
-    for (const Int64 timeout_ms : {1, 7, 50, 99, 100, 101, 999, 1000, 1001, 60'000})
+    for (const Int64 timeout_us : {1, 900, 1'000, 7'000, 50'000, 99'000, 100'000, 100'001, 999'000, 1'000'000, 1'000'900, 60'000'000})
     {
         for (Int64 now_ms = 0; now_ms < 1000; ++now_ms)
         {
@@ -107,12 +107,12 @@ TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
                 const auto now = std::chrono::steady_clock::time_point{
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::nanoseconds{now_ns})};
 
-                const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_ms);
+                const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_us);
 
-                ASSERT_GE(static_cast<Int64>(deadline_ms) * 1'000'000, now_ns + timeout_ms * 1'000'000)
-                    << "a task appended " << sub_ms_ns << " ns into a millisecond with a timeout of " << timeout_ms
-                    << " ms is cancelled "
-                    << (static_cast<double>(now_ns + timeout_ms * 1'000'000 - static_cast<Int64>(deadline_ms) * 1'000'000) / 1e6)
+                ASSERT_GE(static_cast<Int64>(deadline_ms) * 1'000'000, now_ns + timeout_us * 1'000)
+                    << "a task appended " << sub_ms_ns << " ns into a millisecond with a timeout of " << timeout_us
+                    << " us is cancelled "
+                    << (static_cast<double>(now_ns + timeout_us * 1'000 - static_cast<Int64>(deadline_ms) * 1'000'000) / 1e6)
                     << " ms early";
             }
         }
