@@ -56,11 +56,21 @@ TTL c0 + INTERVAL 1 DAY GROUP BY toTime(c0) SET v = max(v);
 SELECT 'ttl_group_by', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_key';
 "
 
+# DDL entry formats below NORMALIZE_CREATE_ON_INITIATOR_VERSION ship the query text as written and
+# carry no settings, so the spelling a worker receives has to be unambiguous already.
+OLDEST_VERSION=1
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 \
+    --distributed_ddl_entry_format_version $OLDEST_VERSION --distributed_ddl_output_mode none --multiquery -q "
+CREATE TABLE t_on_cluster_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
+SELECT 'on_cluster_oldest_entry', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_key';
+"
+
 ${CLICKHOUSE_CLIENT} --multiquery -q "
 DROP TABLE t_udf_key;
 DROP TABLE t_attach_key;
 DROP TABLE t_qualified_key;
 DROP TABLE t_replayed_key;
 DROP TABLE t_ttl_key;
+DROP TABLE t_on_cluster_key;
 DROP FUNCTION ${UDF};
 "

@@ -233,6 +233,13 @@ void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
     }
 }
 
+/// Idempotent, so the local path may re-run it after the compatibility `ON CLUSTER` path already did.
+void replaceLegacyToTimeIfRequested(ASTPtr & ast, const ASTCreateQuery & create, bool is_restore_from_backup, const ContextPtr & context)
+{
+    if (!create.attach_short_syntax && !is_restore_from_backup && context->getSettingsRef()[Setting::use_legacy_to_time])
+        replaceLegacyToTimeInCreateQuery(ast);
+}
+
 }
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -1923,9 +1930,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. A replayed definition (short attach,
     /// metadata load, backup restore) already records the spelling it was created with.
-    if (!create.attach_short_syntax && !is_restore_from_backup
-        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        replaceLegacyToTimeInCreateQuery(query_ptr);
+    replaceLegacyToTimeIfRequested(query_ptr, create, is_restore_from_backup, getContext());
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -3473,6 +3478,10 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// Entry format versions below `NORMALIZE_CREATE_ON_INITIATOR_VERSION` ship the query text as
+            /// written and carry no settings, so each worker would resolve `toTime` with its own default.
+            replaceLegacyToTimeIfRequested(query_ptr, create, is_restore_from_backup, getContext());
 
             return executeQueryOnCluster(create);
         }
