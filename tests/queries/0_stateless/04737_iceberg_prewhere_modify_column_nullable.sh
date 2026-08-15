@@ -94,8 +94,60 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE_STR} MODIFY COLUMN v Nullable(String)"
 ${CLICKHOUSE_CLIENT} ${PREWHERE_SETTINGS} --query "SELECT v, toTypeName(v) FROM ${TABLE_STR} PREWHERE v = '4' ORDER BY v"
 
+# The reverse direction (optional -> required) cannot be produced by `ALTER`, which rejects it
+# above, so the passthrough branch is reached only through metadata written by another engine.
+# Appending a schema leaves schema 0 byte-identical, so the schema-id immutability check still
+# passes, and the read selects the pair with `iceberg_metadata_file_path`.
+echo "--- externally authored optional to required stays a passthrough ---"
+TABLE_REV="t_rev_${CLICKHOUSE_DATABASE}_${RANDOM}"
+REV_PATH="${USER_FILES_PATH}/${TABLE_REV}/"
+rm -rf "${REV_PATH}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE_REV} (id Nullable(Int64), s String) ENGINE = IcebergLocal('${REV_PATH}', 'Parquet')"
+# The NULL row is what makes the assertion non-vacuous: a cast to the required type only
+# misbehaves when a NULL actually has to pass through it.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_REV} SELECT * FROM values('id Nullable(Int64), s String', (1, 'one'), (NULL, 'none'), (3, 'three'))"
+
+LATEST_REV=$(ls "${REV_PATH}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
+REV_META=$(python3 - "${REV_PATH}metadata" "${LATEST_REV}" <<'PYEOF'
+import copy, json, os, re, sys
+
+metadata_dir, latest_file = sys.argv[1], sys.argv[2]
+
+with open(os.path.join(metadata_dir, latest_file)) as fh:
+    metadata = json.load(fh)
+
+current = next(s for s in metadata["schemas"] if s["schema-id"] == metadata["current-schema-id"])
+tightened = copy.deepcopy(current)
+tightened["schema-id"] = max(s["schema-id"] for s in metadata["schemas"]) + 1
+for field in tightened["fields"]:
+    if field["name"] == "id":
+        field["required"] = True
+
+metadata["schemas"].append(tightened)
+metadata["current-schema-id"] = tightened["schema-id"]
+metadata["last-updated-ms"] = metadata.get("last-updated-ms", 0) + 60000
+
+version = int(re.match(r"v(\d+)\.metadata\.json", latest_file).group(1)) + 1
+tmp_file = os.path.join(metadata_dir, ".tmp_next")
+with open(tmp_file, "w") as fh:
+    json.dump(metadata, fh)
+os.rename(tmp_file, os.path.join(metadata_dir, f"v{version}.metadata.json"))
+print(f"metadata/v{version}.metadata.json")
+PYEOF
+)
+
+REV_TF="icebergLocal('${REV_PATH}', 'Parquet', SETTINGS iceberg_metadata_file_path = '${REV_META}')"
+# The tightened schema is what the reader resolves against.
+${CLICKHOUSE_CLIENT} --query "DESCRIBE ${REV_TF}" | cut -f1,2
+# Each of these three shapes fails if the transform casts the old optional column to the new
+# required type instead of passing it through.
+${CLICKHOUSE_CLIENT} --query "SELECT s FROM ${REV_TF} ORDER BY s"
+${CLICKHOUSE_CLIENT} --query "SELECT s FROM ${REV_TF} WHERE id IS NOT NULL ORDER BY s"
+${CLICKHOUSE_CLIENT} ${PREWHERE_SETTINGS} --query "SELECT s FROM ${REV_TF} PREWHERE id > 1 ORDER BY s"
+
 drop_table "${TABLE}"
 drop_table "${TABLE_REN}"
 drop_table "${TABLE_WID}"
 drop_table "${TABLE_REJ}"
 drop_table "${TABLE_STR}"
+drop_table "${TABLE_REV}"

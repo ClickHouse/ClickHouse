@@ -27,3 +27,13 @@ none
 Iceberg spec doesn't allow change type from nullable to non-nullable
 --- String column made Nullable ---
 4	Nullable(String)
+--- externally authored optional to required stays a passthrough ---
+id	Int64
+s	String
+none
+one
+three
+none
+one
+three
+three
