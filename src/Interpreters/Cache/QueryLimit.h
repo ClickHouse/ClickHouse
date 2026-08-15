@@ -2,6 +2,8 @@
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 
+#include <mutex>
+
 namespace DB
 {
 struct ReadSettings;
@@ -20,7 +22,11 @@ public:
         const ReadSettings & settings,
         const CachePriorityGuard::Lock &);
 
-    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::Lock &);
+    /// Releases this holder's reference to the query context and, when it was the last holder,
+    /// removes the map entry and returns the now-orphaned context so the caller can destroy it
+    /// after releasing the cache write lock (see ~QueryContextHolder). Returns nullptr when the
+    /// context is still owned by another live holder.
+    QueryContextPtr removeQueryContext(const std::string & query_id, QueryContextPtr & context, const CachePriorityGuard::Lock &);
 
     class QueryContext
     {
@@ -77,6 +83,9 @@ public:
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
+    /// query_map is protected by this dedicated leaf mutex. Its callers can hold the cache
+    /// priority lock, but the mutex is the single lock that serializes map access.
+    mutable std::mutex query_map_mutex;
 };
 
 using FileCacheQueryLimitPtr = std::unique_ptr<FileCacheQueryLimit>;
