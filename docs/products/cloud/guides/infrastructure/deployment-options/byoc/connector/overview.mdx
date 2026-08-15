@@ -1,18 +1,18 @@
 ---
 title: 'Connector overview'
 sidebarTitle: 'Overview'
-description: 'Observability and support for ClickHouse clusters in your BYOC environment, with no standing access'
+description: 'Observability and support for ClickHouse clusters in environments you operate, with no standing access'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
 <Note>
-The BYOC connector is in Private Preview. To request access, contact your ClickHouse account team.
+The ClickHouse Connector is in Private Preview. To request access, contact your ClickHouse account team.
 </Note>
 
 ## What the connector does {#what-the-connector-does}
 
-The BYOC connector is a component you deploy inside your [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) environment. It gives ClickHouse the visibility needed to monitor your ClickHouse clusters and the ability to support them when you ask for help, without granting ClickHouse standing access to your environment. The connector ships as a single binary named `clicklink`, which contains both the connector daemons and the `clicklink clctl` command-line tooling you use to install and operate them.
+The ClickHouse Connector is a component you deploy inside your own environment, alongside ClickHouse clusters you operate. It gives ClickHouse the visibility needed to monitor those clusters and the ability to support them when you ask for help, without granting ClickHouse standing access to your environment. The connector ships as a single binary named `clicklink`, which contains both the connector daemons and the `clicklink clctl` command-line tooling you use to install and operate them.
 
 The connector has two components:
 
@@ -23,7 +23,7 @@ Every connection the connector makes is outbound. ClickHouse Cloud never initiat
 
 ## When to use it {#when-to-use-it}
 
-Deploy the connector when ClickHouse operates or supports ClickHouse clusters running in your environment and your security posture requires that:
+Deploy the connector when ClickHouse monitors or supports ClickHouse clusters running in your environment and your security posture requires that:
 
 - All access paths originate from inside your boundary, with no inbound connectivity.
 - Support access is time-boxed, enabled by you, and revocable by you at any moment.
@@ -53,4 +53,4 @@ See [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/c
 - [Configuration](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration) and [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations): tuning, upgrades, and day-2 tasks.
 - [FAQ](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/faq): common questions, including data egress and revocation.
 
-For the surrounding BYOC deployment model, see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) page.
+The connector serves environments you operate yourself. If you would rather have ClickHouse operate the clusters inside your cloud account, that is the [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) deployment model; see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) page for how the two differ.

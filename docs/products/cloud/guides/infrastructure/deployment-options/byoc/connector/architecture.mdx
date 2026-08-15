@@ -1,7 +1,7 @@
 ---
 title: 'Architecture'
 sidebarTitle: 'Architecture'
-description: 'BYOC connector components, connections, certificate lifecycle, and data flow'
+description: 'ClickHouse Connector components, connections, certificate lifecycle, and data flow'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
@@ -10,14 +10,14 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ## Components {#components}
 
-The BYOC connector runs two daemons, both built into the `clicklink` binary:
+The ClickHouse Connector runs two daemons, both built into the `clicklink` binary:
 
 - **The scraper** reads an allowlist of ClickHouse system tables on a fixed interval, buffers the results locally, and ships them to your connector endpoint together with infrastructure metadata and health status.
 - **The troubleshooter** holds an outbound command channel to your connector endpoint and executes read-only diagnostics during an active [support session](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions). Outside a session it executes nothing.
 
 On Kubernetes, both run as workloads deployed by the `clicklink-connector` Helm chart in a namespace you choose (default `clicklink`). On a Linux VM, they run as the `clicklink-scraper` and `clicklink-troubleshooter` systemd units under an unprivileged `clicklink` system user.
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="BYOC connector architecture" />
+<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
 
 ## Connections {#connections}
 
@@ -48,7 +48,7 @@ The connector verifies your endpoint's server certificate against the system tru
 
 ## Data flow {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="BYOC connector data flow" />
+<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connector data flow" />
 
 ### What leaves your environment {#what-leaves}
 
