@@ -12,3 +12,7 @@ SELECT accurateCastOrDefault('123', 'Nullable(UInt32)');
 
 -- NULL input should produce NULL output for Nullable targets.
 SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)');
+
+-- A NULL input is a successful cast to a Nullable target, not a failure that
+-- should be replaced with an explicit default.
+SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));

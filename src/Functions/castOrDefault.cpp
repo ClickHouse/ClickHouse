@@ -161,6 +161,8 @@ public:
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
+        const auto * source_nullable = checkAndGetColumn<ColumnNullable>(non_const_column_to_cast.get());
+        const auto * source_null_map_data = source_nullable ? &source_nullable->getNullMapData() : nullptr;
         size_t null_map_data_size = null_map_data.size();
         const auto & nested_column = cast_result_nullable.getNestedColumn();
         auto result = return_type->createColumn();
@@ -203,7 +205,9 @@ public:
                     result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
             }
 
-            if (default_column)
+            if (result_nullable && source_null_map_data && (*source_null_map_data)[i])
+                result_nullable->insertFrom(cast_result_nullable, i);
+            else if (default_column)
                 result->insertFrom(*default_column, i);
             else
                 result->insert(default_value);
