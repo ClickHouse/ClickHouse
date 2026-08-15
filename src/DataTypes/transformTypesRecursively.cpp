@@ -227,21 +227,6 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
                         std::make_unique<DataTypeNestedCustomName>(new_tuple->getElements(), new_tuple->getElementNames())));
             }
 
-            /// `SimpleAggregateFunction` keeps a separate copy of its argument types in its custom
-            /// name. Rebuild that copy too: otherwise a replacement below the Array would either
-            /// discard the custom name or announce an aggregate-state version different from the
-            /// payload written for an older peer.
-            if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
-            {
-                DataTypes new_argument_types = simple->getArgumentsDataTypes();
-                for (auto & argument_type : new_argument_types)
-                    if (auto new_argument_type = replaceNestedSimpleTypes(argument_type, callback))
-                        argument_type = new_argument_type;
-
-                replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
-                    std::make_unique<DataTypeCustomSimpleAggregateFunction>(
-                        simple->getFunction(), new_argument_types, simple->getParameters())));
-            }
         }
     }
     else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -316,6 +301,22 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
 
     if (!replacement)
         return nullptr;
+
+    /// `SimpleAggregateFunction` keeps a separate copy of its argument types in its custom name.
+    /// Rebuild that copy for every storage wrapper, not only Array: otherwise a replacement below
+    /// Tuple or Map would discard the custom name or announce an aggregate-state version different
+    /// from the payload written for an older peer.
+    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+    {
+        DataTypes new_argument_types = simple->getArgumentsDataTypes();
+        for (auto & argument_type : new_argument_types)
+            if (auto new_argument_type = replaceNestedSimpleTypes(argument_type, callback))
+                argument_type = new_argument_type;
+
+        replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
+            std::make_unique<DataTypeCustomSimpleAggregateFunction>(
+                simple->getFunction(), new_argument_types, simple->getParameters())));
+    }
 
     /// A custom name is part of the observable type, so a wrapper whose custom name cannot be
     /// faithfully rebuilt (the callback is responsible for the custom names of the types it replaces)

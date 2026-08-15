@@ -236,6 +236,29 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnWrapperIsRebuilt)
     ASSERT_EQ(simple->getName(), name_before);
 }
 
+/// `SimpleAggregateFunction` can use any legal storage type, not only Array. Its custom name must
+/// therefore be rebuilt when the versioned leaf is below a Tuple as well.
+GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnTupleWrapperIsRebuilt)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr simple = DataTypeFactory::instance().get(
+        "SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(sumMap, Array(UInt64), Array(UInt64))))");
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(simple->getCustomName()), nullptr);
+    const String name_before = simple->getName();
+
+    DataTypePtr assigned = simple;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt);
+
+    ASSERT_NE(assigned.get(), simple.get());
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
+    ASSERT_EQ(assigned->getName(), "SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(sumMap, Array(UInt64), Array(UInt64))))");
+    ASSERT_NE(assigned->getName(), name_before);
+
+    /// The shared source type is untouched.
+    ASSERT_EQ(simple->getName(), name_before);
+}
+
 /// A state cannot be directly inside Nullable, but a Tuple can be, so
 /// `Nullable(Tuple(AggregateFunction(...)))` is reachable (with enable_nullable_tuple_type) and
 /// transformTypesRecursively descended into Nullable first of all. Skipping it would leave the leaf
