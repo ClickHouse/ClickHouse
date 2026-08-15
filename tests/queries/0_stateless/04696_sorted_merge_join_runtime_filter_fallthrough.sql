@@ -63,7 +63,7 @@ EXPLAIN actions = 1
 SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id
 ) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
 
-SELECT '--- Earlier `partial_merge` wins before `sorted_merge`, with a runtime filter ---';
+SELECT '--- Earlier `partial_merge` wins before `sorted_merge` ---';
 
 SET join_algorithm = 'partial_merge,sorted_merge,hash';
 
