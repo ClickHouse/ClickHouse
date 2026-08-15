@@ -831,8 +831,15 @@ void StorageTimeSeriesSelector::readImpl(
     if (!samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
             "{}: the \"samples\" table {} is missing column {} required for Prometheus stale-marker handling. "
-            "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it",
+            "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it. "
+            "Adding the column marks all existing rows non-stale, so a table which already holds stale markers "
+            "needs a backfill too: with a Float64 \"value\" run "
+            "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002; "
+            "with a Float32 \"value\" the marker's NaN payload was already lost at insert, "
+            "so such history can only be corrected by re-ingesting it",
             config.time_series_storage_id.getNameForLogs(),
+            samples_table_id.getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
             TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
