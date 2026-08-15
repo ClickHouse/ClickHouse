@@ -26,7 +26,7 @@ SELECT trimLeft(explain) FROM
     SELECT tupleElement(tup, 'a') FROM (SELECT tup FROM t_push_subcolumns_function_forms)
 )
 WHERE explain LIKE '%Output%';
-SELECT tupleElement(tup, 'a') FROM (SELECT tup FROM t_push_subcolumns_function_forms) ORDER BY id;
+SELECT tupleElement(tup, 'a') FROM (SELECT id, tup FROM t_push_subcolumns_function_forms) ORDER BY id;
 
 SELECT 'mapKeys';
 SELECT trimLeft(explain) FROM
@@ -35,7 +35,7 @@ SELECT trimLeft(explain) FROM
     SELECT mapKeys(m) FROM (SELECT m FROM t_push_subcolumns_function_forms)
 )
 WHERE explain LIKE '%Output%';
-SELECT mapKeys(m) FROM (SELECT m FROM t_push_subcolumns_function_forms) ORDER BY id;
+SELECT mapKeys(m) FROM (SELECT id, m FROM t_push_subcolumns_function_forms) ORDER BY id;
 
 SELECT 'isNull';
 SELECT trimLeft(explain) FROM
@@ -44,6 +44,6 @@ SELECT trimLeft(explain) FROM
     SELECT isNull(n) FROM (SELECT n FROM t_push_subcolumns_function_forms)
 )
 WHERE explain LIKE '%Output%';
-SELECT isNull(n) FROM (SELECT n FROM t_push_subcolumns_function_forms) ORDER BY id;
+SELECT isNull(n) FROM (SELECT id, n FROM t_push_subcolumns_function_forms) ORDER BY id;
 
 DROP TABLE t_push_subcolumns_function_forms;
