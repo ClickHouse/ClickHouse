@@ -211,6 +211,23 @@ TEST(TreeHashCompleteness, NormalizedUnionJSONRoundTripKeepsHash)
     EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false));
 }
 
+TEST(TreeHashCompleteness, NormalizedDistinctUnionJSONRoundTripKeepsModes)
+{
+    auto ast = parse("SELECT 1 UNION DISTINCT SELECT 2");
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::ALL};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+    const auto * normalized = ast->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(normalized);
+    ASSERT_TRUE(normalized->is_normalized);
+    ASSERT_TRUE(normalized->hasNonDefaultUnionMode());
+
+    auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    const auto * restored_union = restored->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(restored_union);
+    EXPECT_TRUE(restored_union->hasNonDefaultUnionMode());
+}
+
 TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
 {
     /// `TEMPORARY` lives in `ASTQueryWithTableAndOutput`'s flags, so it is not a child either, and it

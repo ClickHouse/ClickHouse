@@ -14,6 +14,36 @@
 namespace DB
 {
 
+namespace
+{
+
+void restoreSetOfModes(ASTSelectWithUnionQuery & ast)
+{
+    ast.set_of_modes.clear();
+
+    if (ast.is_normalized)
+    {
+        /// A normalized union stores one mode for all of its separators. A single select has no
+        /// separator, so its `union_mode` is not semantically relevant.
+        if (ast.list_of_selects->children.size() > 1)
+            ast.set_of_modes.insert(ast.union_mode);
+    }
+    else
+    {
+        ast.set_of_modes.insert(ast.list_of_modes.begin(), ast.list_of_modes.end());
+    }
+
+    /// The normalizer accumulates modes from nested unions as well. `readJSON` visits child ASTs
+    /// before their parent, so their reconstructed sets are available here.
+    for (const auto & select_child : ast.list_of_selects->children)
+    {
+        if (const auto * nested_union = select_child->as<ASTSelectWithUnionQuery>())
+            ast.set_of_modes.insert(nested_union->set_of_modes.begin(), nested_union->set_of_modes.end());
+    }
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -311,6 +341,8 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
             list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
+
+    restoreSetOfModes(*this);
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
     /// through the shared helper so the validation of their interdependencies stays in one place
