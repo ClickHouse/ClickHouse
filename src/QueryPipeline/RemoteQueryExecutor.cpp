@@ -75,6 +75,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_receive_packet_pause[];
+    extern const char remote_query_executor_finish_drain_pause[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -634,6 +636,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
                 return ReadResult(Block());
         }
 
+        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
+        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
+        /// connections before `receivePacket` below runs.
+        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
+            in_receive_packet_window = true;
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
+            in_receive_packet_window = false;
+        });
 
         auto packet = connections->receivePacket();
 
@@ -916,10 +926,20 @@ void RemoteQueryExecutor::finish()
         /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
         /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
         /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-        /// never becomes true. On Linux the async startup path always sends the query before this
-        /// point, so only the synchronous (non-Linux) send path is affected.
+        /// never becomes true.
         if (!sent_query)
         {
+            /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
+            /// already be queued for execution (its `prepare()` ran before the output port was
+            /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
+            /// never on `finished`. Without this the query is still sent after we declared the
+            /// executor finished, and nothing releases it afterwards: `finish()` returns early
+            /// from here on, and the destructor's `isQueryPending()` is false because `finished`
+            /// is set, so the connection is returned to the pool without a `Cancel` packet and
+            /// without a disconnect. A parallel-replicas follower is then left blocked in
+            /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout`,
+            /// holding the table's shared lock and stalling a subsequent `DROP TABLE` (#109265).
+            was_cancelled = true;
             finished = true;
         }
         else if (was_cancelled && !finished && connections)
@@ -1018,6 +1038,11 @@ void RemoteQueryExecutor::finish()
                 break;
         }
     }
+
+    /// Reached only with this executor's own reader parked above, i.e. with its connections
+    /// cancelled and fully drained - the state that reader will observe when it wakes.
+    if (in_receive_packet_window)
+        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()

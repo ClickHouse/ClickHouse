@@ -226,7 +226,7 @@ sess.query("CREATE DATABASE IF NOT EXISTS youtube")
 ```
 
 これで、`CREATE...EMPTY AS` を使って、JSON ファイルのスキーマに基づく `dislikes` テーブルを作成できます。
-すべてのカラム型が `Nullable` にならないように、[`schema_inference_make_columns_nullable`](/ja/reference/settings/formats#schema_inference_make_columns_nullable) 設定を使用します。
+すべてのカラム型が `Nullable` にならないように、[`schema_inference_make_columns_nullable`](/ja/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) 設定を使用します。
 
 ```python
 sess.query(f"""

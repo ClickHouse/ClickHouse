@@ -14,7 +14,7 @@ Returns the first non-NULL value evaluated against the nth row (offset) in its o
 ```sql
 nth_value (x, offset)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
