@@ -34,6 +34,13 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT sum(length(lc)) FROM t_auto_lc_no_sparse;
 SELECT count() FROM t_auto_lc_no_sparse WHERE notEmpty(lc);
 
+-- Existing encoded parts must keep their table-level hint after the setting for new writes is disabled.
+ALTER TABLE t_auto_lc_no_sparse MODIFY SETTING max_uniq_number_for_low_cardinality = 0;
+DETACH TABLE t_auto_lc_no_sparse;
+ATTACH TABLE t_auto_lc_no_sparse;
+SELECT 'sparse disabled after reload: subcolumn rewrite is skipped';
+SELECT sum(length(lc)) FROM t_auto_lc_no_sparse;
+
 -- 2) An explicit subcolumn read of an encoded column is rejected with a clear message.
 SELECT 'explicit subcolumn read is rejected';
 SELECT sum(lc.size) FROM t_auto_lc_no_sparse; -- { serverError NOT_IMPLEMENTED }

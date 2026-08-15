@@ -42,7 +42,17 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , new_serialization_infos(info_settings)
 {
     if (reset_columns)
+    {
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+
+        /// Keep defaultness statistics current for automatically encoded String columns even when
+        /// sparse serialization is disabled. Their serialization info is also used by count optimizations.
+        for (const auto & column : columns_list)
+        {
+            if (isStringOrFixedString(column.type) && !new_serialization_infos.contains(column.name))
+                new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(info_settings));
+        }
+    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

@@ -4,6 +4,8 @@ LowCardinality
 sparse disabled: subcolumn rewrite is skipped
 6000
 2000
+sparse disabled after reload: subcolumn rewrite is skipped
+6000
 explicit subcolumn read is rejected
 mixed parts: kinds
 Default

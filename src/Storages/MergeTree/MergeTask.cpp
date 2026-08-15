@@ -913,33 +913,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// parts' kinds have to be aggregated even when sparse serialization is disabled - otherwise a merge
     /// would silently drop the encoding. `SerializationInfoByName` creates entries only for the columns
     /// eligible for sparse serialization, so the missing ones are created here.
-    const bool auto_low_cardinality = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0;
-    if (auto_low_cardinality)
+    for (const auto & column : global_ctx->storage_columns)
     {
-        for (const auto & column : global_ctx->storage_columns)
-        {
-            if (isStringOrFixedString(column.type) && !infos.contains(column.name))
-                infos.emplace(column.name, column.type->createSerializationInfo(info_settings));
-        }
+        if (isStringOrFixedString(column.type) && !infos.contains(column.name))
+            infos.emplace(column.name, column.type->createSerializationInfo(info_settings));
     }
 
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        if (!info_settings.isAlwaysDefault() || auto_low_cardinality)
-        {
-            auto part_infos = part->getSerializationInfos();
+        auto part_infos = part->getSerializationInfos();
 
-            addMissedColumnsToSerializationInfos(
-                part->rows_count,
-                part->getColumns().getNames(),
-                global_ctx->metadata_snapshot->getColumns(),
-                info_settings,
-                part_infos);
+        addMissedColumnsToSerializationInfos(
+            part->rows_count,
+            part->getColumns().getNames(),
+            global_ctx->metadata_snapshot->getColumns(),
+            info_settings,
+            part_infos);
 
-            infos.add(part_infos);
-        }
+        infos.add(part_infos);
 
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD

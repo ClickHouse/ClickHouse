@@ -823,12 +823,9 @@ getColumnsForNewDataPart(
     /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so an info that
     /// carries the `LowCardinality` kind must be kept even when sparse serialization is disabled -
     /// otherwise a mutation would silently drop the encoding.
-    const bool auto_low_cardinality
-        = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0;
     auto needs_serialization_info = [&](const IDataType & type)
     {
-        return (!settings.isAlwaysDefault() && settings.canUseSparseSerialization(type))
-            || (auto_low_cardinality && isStringOrFixedString(type));
+        return !settings.isAlwaysDefault() && settings.canUseSparseSerialization(type);
     };
 
     SerializationInfoByName new_serialization_infos(settings);
@@ -863,7 +860,8 @@ getColumnsForNewDataPart(
             if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
             {
                 const auto & storage_type = storage_column->type;
-                if (!needs_serialization_info(*storage_type))
+                if (!needs_serialization_info(*storage_type)
+                    && !ISerialization::hasKind(old_info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
@@ -881,7 +879,8 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (!needs_serialization_info(*new_type))
+        if (!needs_serialization_info(*new_type)
+            && !ISerialization::hasKind(old_info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);

@@ -13,4 +13,5 @@ Default
 UInt64	2000	9000
 mutation: kind after, correctness
 LowCardinality
-2000	10	1000
+2000	11	1000
+0

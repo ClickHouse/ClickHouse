@@ -12276,16 +12276,12 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     serialization_hints = SerializationInfoByName(physical_columns, settings);
 
     /// `SerializationInfoByName` creates entries only for the columns eligible for sparse serialization.
-    /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so entries for
-    /// eligible columns have to be created here as well - otherwise a part's `LowCardinality` kind would
-    /// have nowhere to be aggregated into and the hints would claim the table has no such column.
-    if ((*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0)
+    /// Keep entries for every String/FixedString column as well. They are needed to aggregate an already
+    /// persisted automatic `LowCardinality` kind after the setting for new writes is disabled.
+    for (const auto & column : physical_columns)
     {
-        for (const auto & column : physical_columns)
-        {
-            if (isStringOrFixedString(column.type) && !serialization_hints.contains(column.name))
-                serialization_hints.emplace(column.name, column.type->createSerializationInfo(settings));
-        }
+        if (isStringOrFixedString(column.type) && !serialization_hints.contains(column.name))
+            serialization_hints.emplace(column.name, column.type->createSerializationInfo(settings));
     }
 
     auto range = getDataPartsStateRange(DataPartState::Active);

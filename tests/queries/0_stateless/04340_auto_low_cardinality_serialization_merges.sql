@@ -100,15 +100,19 @@ CREATE TABLE t_auto_lc_mutate
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS max_uniq_number_for_low_cardinality = 1000, min_bytes_for_wide_part = 0;
+SETTINGS
+    max_uniq_number_for_low_cardinality = 1000,
+    ratio_of_defaults_for_sparse_serialization = 1,
+    min_bytes_for_wide_part = 0;
 
-INSERT INTO t_auto_lc_mutate SELECT number, 'm_' || toString(number % 10) FROM numbers(2000);
+INSERT INTO t_auto_lc_mutate SELECT number, if(number % 2 = 0, '', 'm_' || toString(number % 10)) FROM numbers(2000);
 
-ALTER TABLE t_auto_lc_mutate UPDATE lc = concat(lc, '!') WHERE id % 2 = 0;
+ALTER TABLE t_auto_lc_mutate UPDATE lc = 'updated' WHERE empty(lc);
 
 SELECT 'mutation: kind after, correctness';
 SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_mutate' AND active AND column = 'lc';
-SELECT count(), uniqExact(lc), countIf(lc LIKE '%!') FROM t_auto_lc_mutate;
+SELECT count(), uniqExact(lc), countIf(lc = 'updated') FROM t_auto_lc_mutate;
+SELECT count() FROM t_auto_lc_mutate WHERE empty(lc);
 
 DROP TABLE t_auto_lc_mutate;
