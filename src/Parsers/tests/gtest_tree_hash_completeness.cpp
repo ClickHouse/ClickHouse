@@ -360,6 +360,7 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     EXPECT_NE(hashOf("CREATE TABLE t (a UInt8) ENGINE = Memory"),
               hashOf("CREATE TABLE IF NOT EXISTS t (a UInt8) ENGINE = Memory"));
     EXPECT_NE(hashOf("CREATE TABLE dst AS db1.src"), hashOf("CREATE TABLE dst AS db2.src"));
+    EXPECT_NE(hashOf("CREATE TABLE dst AS a.bc"), hashOf("CREATE TABLE dst AS ab.c"));
     EXPECT_NE(hashOf("CREATE VIEW v AS SELECT 1"), hashOf("CREATE OR REPLACE VIEW v AS SELECT 1"));
 
     EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP VIEW t"));
@@ -368,6 +369,8 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
 
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM u"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+    EXPECT_NE(hashOf("SHOW COLUMNS FROM bc FROM a"), hashOf("SHOW COLUMNS FROM c FROM ab"));
+    EXPECT_NE(hashOf("SHOW INDEXES FROM bc FROM a"), hashOf("SHOW INDEXES FROM c FROM ab"));
     EXPECT_NE(hashOf("SHOW INDEXES FROM t"), hashOf("SHOW COLUMNS FROM t"));
     EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIMIT 1"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
 
@@ -383,6 +386,11 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
         EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
         EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), hash) << query;
     }
+}
+
+TEST(TreeHashCompleteness, OptimizeClusterIsSignificant)
+{
+    EXPECT_NE(hashOf("OPTIMIZE TABLE t ON CLUSTER c1"), hashOf("OPTIMIZE TABLE t ON CLUSTER c2"));
 }
 
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)

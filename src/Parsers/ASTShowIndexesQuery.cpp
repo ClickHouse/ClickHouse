@@ -23,8 +23,14 @@ void ASTShowIndexesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
 {
     /// `where_expression` is member-only in the parser and must be included explicitly.
     hash_state.update(extended);
-    hash_state.update(database);
-    hash_state.update(table);
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(database);
+    update_string(table);
     hash_state.update(where_expression != nullptr);
     if (where_expression)
         where_expression->updateTreeHash(hash_state, ignore_aliases);

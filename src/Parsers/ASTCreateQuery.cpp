@@ -442,10 +442,16 @@ void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// These members select the CREATE form or add clauses, but do not appear in `children`.
     /// `has_uuid_clause` and `attach_short_syntax` are intentionally excluded: they are parser-
     /// normalization / internal state that formatting does not preserve (see their declarations).
-    hash_state.update(cluster);
-    hash_state.update(as_database);
-    hash_state.update(as_table);
-    hash_state.update(attach_from_path);
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster);
+    update_string(as_database);
+    update_string(as_table);
+    update_string(attach_from_path);
     hash_state.update(attach_as_replicated.has_value());
     if (attach_as_replicated.has_value())
         hash_state.update(*attach_as_replicated);

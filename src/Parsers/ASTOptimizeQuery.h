@@ -70,13 +70,16 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
     {
-        /// `deduplicate_by_columns` is not a child, so without hashing it `OPTIMIZE TABLE t
-        /// DEDUPLICATE BY a` and `... DEDUPLICATE BY b` would hash the same. The remaining
-        /// non-child members (`final`, `deduplicate`, `cleanup`, `dry_run`, `manifest`) are part of
-        /// `getID`, which the default implementation hashes.
+        /// `deduplicate_by_columns` and `cluster` are not children, so without hashing them
+        /// `OPTIMIZE TABLE t DEDUPLICATE BY a` and `... BY b`, or `ON CLUSTER c1` and `... c2`,
+        /// would hash the same. The remaining non-child members (`final`, `deduplicate`,
+        /// `cleanup`, `dry_run`, `manifest`) are part of `getID`, which the default implementation
+        /// hashes.
         hash_state.update(deduplicate_by_columns != nullptr);
         if (deduplicate_by_columns)
             deduplicate_by_columns->updateTreeHash(hash_state, ignore_aliases);
+        hash_state.update(cluster.size());
+        hash_state.update(cluster);
         ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     }
 

@@ -37,9 +37,15 @@ void ASTShowColumnsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     hash_state.update(full);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
-    hash_state.update(database);
-    hash_state.update(table);
-    hash_state.update(like);
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(database);
+    update_string(table);
+    update_string(like);
     hash_state.update(where_expression != nullptr);
     if (where_expression)
         where_expression->updateTreeHash(hash_state, ignore_aliases);
