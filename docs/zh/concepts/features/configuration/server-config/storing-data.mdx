@@ -1098,7 +1098,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | 读取远程磁盘数据时的最大等待时间    | `10000` 秒 |
 | `remote_fs_read_backoff_max_tries`  | 使用退避机制读取时的最大重试次数    | `5`       |
 
-如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings#keep_alive_timeout)。
+如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings/http#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings/http#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings/other#keep_alive_timeout)。
 
 要获取用于上传的文件，请运行：
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (可通过查询 `SELECT data_paths FROM system.tables WHERE name = 'table_name'` 找到 `--metadata-path`) 。
