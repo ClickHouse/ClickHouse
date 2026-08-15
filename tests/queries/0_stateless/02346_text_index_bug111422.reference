@@ -1,3 +1,5 @@
 1
 -- the lazy materialization pass is reached (plan oracle)
 1	1
+-- only the kept index virtual reaches the plan (EXPLAIN entry path)
+1	0

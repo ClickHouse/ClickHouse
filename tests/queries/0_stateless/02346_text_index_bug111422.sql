@@ -76,4 +76,19 @@ FROM (
     LIMIT 681
 );
 
+SELECT '-- only the kept index virtual reaches the plan (EXPLAIN entry path)';
+
+-- Plan optimization also runs inside EXPLAIN, an entry path the queries above cannot reach.
+-- The second column counts the virtual of the index the rewrite discarded: it must be 0.
+SELECT countIf(explain LIKE '%__text_index_idx_mk%') > 0,
+       countIf(explain LIKE '%__text_index_idx_mv%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT id, pad FROM tab_lazy
+    PREWHERE 'a' IN (map['127.0.0.1'])
+    WHERE map['::1'] IN 'b'
+    ORDER BY id
+    LIMIT 681
+);
+
 DROP TABLE tab_lazy;
