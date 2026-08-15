@@ -2465,6 +2465,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             auto mutable_context = Context::createCopy(effective_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;
+                            /// Source processors may hold only a weak_ptr to the context they read
+                            /// with, so this copy has to outlive read() for the whole pipeline.
+                            query_plan.addInterpreterContext(updated_context);
                         }
 
                         effective_storage->read(
