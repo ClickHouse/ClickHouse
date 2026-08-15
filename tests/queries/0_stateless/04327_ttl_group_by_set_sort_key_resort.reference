@@ -29,6 +29,8 @@ mat key mut consistent	1
 mat key mut sorted	1
 mat chain consistent	1
 mat chain sorted	1
+mat tuple chain consistent	1
+mat tuple chain sorted	1
 mat subcol consistent	1
 mat subcol sorted	1
 eph mat data	cba	5

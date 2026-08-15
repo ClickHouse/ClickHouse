@@ -240,6 +240,30 @@ SELECT 'mat chain sorted', (SELECT groupArray(z) FROM (SELECT z FROM t_mat_chain
                         = (SELECT groupArray(z) FROM (SELECT z FROM t_mat_chain ORDER BY z));
 DROP TABLE t_mat_chain;
 
+-- MATERIALIZED chain through a Tuple subcolumn. `z` reads `y.d`, where `y` is itself a
+-- MATERIALIZED Tuple rebuilt after the SET rewrites `x`. The default-expression DAG must rebuild
+-- `y` before extracting its subcolumn for `z`; otherwise `z` can be derived from a stale or
+-- default `y.d`. The physical part must still be ordered by the freshly recomputed `z`.
+DROP TABLE IF EXISTS t_mat_tuple_chain;
+CREATE TABLE t_mat_tuple_chain
+(
+    x DateTime,
+    y Tuple(d Date) MATERIALIZED tuple(toDate(x)),
+    z UInt32 MATERIALIZED toYYYYMM(y.d)
+)
+ENGINE = MergeTree ORDER BY z
+TTL x + toIntervalDay(1) GROUP BY z
+    SET x = max(x) + interval 100 years
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_mat_tuple_chain;
+INSERT INTO t_mat_tuple_chain (x) SELECT toDateTime('2020-01-01') + number * 86400 * 40 FROM numbers(10);
+SYSTEM START MERGES t_mat_tuple_chain;
+OPTIMIZE TABLE t_mat_tuple_chain FINAL;
+SELECT 'mat tuple chain consistent', countIf(z = toYYYYMM(y.d) AND y.d = toDate(x)) = count() FROM t_mat_tuple_chain;
+SELECT 'mat tuple chain sorted', (SELECT groupArray(z) FROM (SELECT z FROM t_mat_tuple_chain SETTINGS optimize_read_in_order = 0))
+                              = (SELECT groupArray(z) FROM (SELECT z FROM t_mat_tuple_chain ORDER BY z));
+DROP TABLE t_mat_tuple_chain;
+
 -- MATERIALIZED sort-key column defined over a Tuple SUBCOLUMN source (`d = toDate(tup.ts)`,
 -- `ORDER BY d`), with the SET rewriting the whole `tup` via an aggregate over an unrelated plain
 -- column. Recomputing `d` needs the subcolumn `tup.ts`, which is not directly present in the
