@@ -231,8 +231,8 @@ public:
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
-            const NamesAndTypesList & virtual_columns,
-            const NamesAndTypesList & hive_columns,
+            const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false);
 
@@ -262,6 +262,13 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
+
+        /// A `_path` / `_file` filter that could not be applied while the iterator was created,
+        /// because a set in it was not ready yet. It is applied in `next`, when the pipeline runs,
+        /// before a file is opened.
+        ExpressionActionsPtr deferred_filter_actions;
+        NamesAndTypesList virtual_columns;
+        NamesAndTypesList hive_columns;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;

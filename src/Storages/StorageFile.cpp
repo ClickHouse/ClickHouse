@@ -1420,21 +1420,30 @@ StorageFileSource::FilesIterator::FilesIterator(
     const Strings & files_,
     std::optional<StorageFile::ArchiveInfo> archive_info_,
     const ActionsDAG::Node * predicate,
-    const NamesAndTypesList & virtual_columns,
-    const NamesAndTypesList & hive_columns,
+    const NamesAndTypesList & virtual_columns_,
+    const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_)
-    : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
+    : WithContext(context_)
+    , files(files_)
+    , archive_info(std::move(archive_info_))
+    , distributed_processing(distributed_processing_)
+    , virtual_columns(virtual_columns_)
+    , hive_columns(hive_columns_)
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
 
     if (filter_dag)
     {
-        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, hive_columns, context_);
+        if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
+        {
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns_, hive_columns_, context_);
+        }
+        else
+            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
     }
 }
 
@@ -1454,11 +1463,24 @@ String StorageFileSource::FilesIterator::next()
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
-    auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-    if (current_index >= fs.size())
-        return {};
+    while (true)
+    {
+        auto current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= fs.size())
+            return {};
 
-    return fs[current_index];
+        auto path = fs[current_index];
+        if (deferred_filter_actions)
+        {
+            std::vector<String> filtered_paths({path});
+            VirtualColumnUtils::filterByPathOrFile(
+                filtered_paths, filtered_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext());
+            if (filtered_paths.empty())
+                continue;
+        }
+
+        return path;
+    }
 }
 
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()

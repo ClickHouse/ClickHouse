@@ -297,13 +297,13 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns_, const NamesAndTypesList & hive_columns_, const ContextPtr & context_)
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
 
         if (filter_dag)
         {
@@ -312,19 +312,42 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns_, hive_columns_, context_);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                this->virtual_columns = virtual_columns_;
+                this->hive_columns = hive_columns_;
+                this->context = context_;
+            }
         }
     }
 
     String next()
     {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= uris.size())
-            return {};
+        while (true)
+        {
+            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+            if (current_index >= uris.size())
+                return {};
 
-        return uris[current_index];
+            auto uri = uris[current_index];
+            if (deferred_filter_actions)
+            {
+                std::vector<String> filtered_uris({uri});
+                const std::vector<String> paths({Poco::URI(uri).getPath()});
+                VirtualColumnUtils::filterByPathOrFile(
+                    filtered_uris, paths, deferred_filter_actions, virtual_columns, hive_columns, context);
+                if (filtered_uris.empty())
+                    continue;
+            }
+
+            return uri;
+        }
     }
 
     size_t size()
@@ -335,6 +358,10 @@ public:
 private:
     Strings uris;
     std::atomic_size_t index = 0;
+    ExpressionActionsPtr deferred_filter_actions;
+    NamesAndTypesList virtual_columns;
+    NamesAndTypesList hive_columns;
+    ContextPtr context;
 };
 
 StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
