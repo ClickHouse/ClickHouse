@@ -2457,7 +2457,8 @@ void Planner::buildPlanForQueryNode()
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
             std::optional<UInt64> trivial_group_by_limit;
-            if (query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
+            if (!settings[Setting::make_distributed_plan]
+                && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
                 && hasAggregateFunctionNodes(query_node.getProjectionNode()))
             {
                 trivial_group_by_limit = getTrivialGroupByLimit(query_node, settings);

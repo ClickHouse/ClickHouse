@@ -77,6 +77,16 @@ WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(10
      tru AS (SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(100000) GROUP BY k)
 SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k;
 
+-- `make_distributed_plan` rejects a nonzero aggregation cap because it cannot enforce it
+-- globally after splitting the aggregation. The aggregate cutoff must stay disabled here.
+SELECT count() FROM
+(
+    SELECT k, count()
+    FROM remote('127.0.0.{1,2}', view(SELECT toUInt64(number % 97) AS k FROM numbers(10000)))
+    GROUP BY k LIMIT 10
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1
+);
+
 -- Distributed query: the aggregation is split between the shards and the initiator, so the
 -- cutoff must stay off (per-shard kept keys would undercount across shards) and the values
 -- must still be exact.
