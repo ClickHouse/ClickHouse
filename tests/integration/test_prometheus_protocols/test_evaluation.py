@@ -3507,6 +3507,40 @@ def test_aggregation_operator_count_values():
         ],
     )
 
+    # `without` removes only the listed labels and `__name__`, so a destination label
+    # which is neither is kept and the result matches the `by (size)` form above.
+    do_query_test(
+        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','l'),('value','100')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('size','l'),('value','1000')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','700')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
     do_query_test(
         'count_values("value", nonexistent_metric_name)[50:10]',
         150,
@@ -3562,6 +3596,62 @@ def test_aggregation_operator_count_values():
         120,
         '{"resultType": "vector", "result": [{"metric": {"__name__": "5"}, "value": [120, "1"]}]}',
         [["[('__name__','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # `by` implicitly keeps the destination label, so `__name__` stays in the result
+    # and every distinct value remains its own bucket.
+    do_query_test(
+        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('__name__','0'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','100'),('size','l')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('__name__','1000'),('size','l')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','700'),('size','s')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` always removes `__name__`, including when it is the destination label,
+    # so the value buckets collapse into one count per remaining label set.
+    do_query_test(
+        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
     )
 
     # Prometheus 3.x accepts any non-empty UTF-8 label name rather than only
