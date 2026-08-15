@@ -185,7 +185,8 @@ struct QuantilePrometheusHistogram
 
         auto clamp_rank = [&](FractionRank & rank_value, bool rank_set)
         {
-            if (!rank_set || rank_value.cumulative > count || (rank_value.cumulative == count && rank_value.fractional > 0))
+            if (!rank_set
+                || subtractCounts(rank_value.cumulative, count) + rank_value.fractional > 0)
                 rank_value = {count, 0};
         };
 
