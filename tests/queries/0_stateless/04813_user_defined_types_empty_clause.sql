@@ -9,7 +9,7 @@ DROP TYPE IF EXISTS NoClauses;
 CREATE TYPE EmptyClauses AS UInt64 INPUT '' OUTPUT '' DEFAULT '';
 CREATE TYPE NoClauses AS UInt64;
 
-SELECT name, input_expression, output_expression, default_expression FROM system.user_defined_types WHERE name IN ('EmptyClauses', 'NoClauses') ORDER BY name;
+SELECT name, input_expression IS NULL, output_expression IS NULL, default_expression IS NULL FROM system.user_defined_types WHERE name IN ('EmptyClauses', 'NoClauses') ORDER BY name;
 SHOW TYPE EmptyClauses;
 SHOW TYPE NoClauses;
 
