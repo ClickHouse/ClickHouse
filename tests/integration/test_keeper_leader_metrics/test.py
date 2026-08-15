@@ -52,9 +52,8 @@ def get_keeper_async_metric(node, name):
 
 
 def test_leader_failover_metrics(started_cluster):
-    """The election / leader-unavailability metrics must actually advance on
-    the node that wins a re-election after a real no-leader window, not just
-    exist in `mntr` output."""
+    """Metrics must advance only for the winner of an election preceded by a
+    locally observed no-leader window, not merely exist in `mntr` output."""
     old_leader = None
     try:
         wait_nodes()

@@ -552,7 +552,7 @@ Index of the last committed log in ClickHouse Keeper.
 
 ### KeeperLastLeaderElectionTime {#keeperlastleaderelectiontime}
 
-Duration in milliseconds of the most recent locally observed leader election won by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed election.
+Duration in milliseconds of the most recent locally observed no-leader window that ended when this ClickHouse Keeper instance became leader. Leadership transfers that do not expose a sampled no-leader state are not recorded. `0` if this instance is not the active leader or has no recorded completed window.
 
 ### KeeperLastLeaderUnavailableTime {#keeperlastleaderunavailabletime}
 
