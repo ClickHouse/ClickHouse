@@ -2478,6 +2478,22 @@ bool StorageMergeTree::optimize(
         {
             for (const String & partition_id : partition_ids)
             {
+                /// Transactions must keep their merges sequential because a transaction object is
+                /// not safe to share between merge threads. They still need a merge-executor slot:
+                /// without it, a transactional `OPTIMIZE FINAL` could bypass the executor's capacity
+                /// accounting and start work after its shutdown.
+                size_t reserved_merge_slot = 0;
+                if (txn && merge_mutate_executor)
+                {
+                    reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
+                    if (reserved_merge_slot == 0)
+                        throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
+                }
+                SCOPE_EXIT({
+                    if (reserved_merge_slot)
+                        merge_mutate_executor->releaseTaskSlots(reserved_merge_slot);
+                });
+
                 PreformattedMessage partition_reason;
                 if (!optimize_partition(partition_id, partition_reason))
                 {
