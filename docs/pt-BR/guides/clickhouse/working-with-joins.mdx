@@ -107,7 +107,7 @@ Uma consulta `FULL OUTER JOIN` combina `LEFT` e `RIGHT OUTER JOIN` e retorna val
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Junção externa" />
 
 <Note>
-  O ClickHouse pode ser [configurado](/pt-BR/reference/settings/session-settings#join_use_nulls) para retornar [NULL](/pt-BR/reference/syntax#null) em vez de valores padrão (no entanto, por [motivos de desempenho](/pt-BR/reference/data-types/nullable#storage-features), isso é menos recomendável).
+  O ClickHouse pode ser [configurado](/pt-BR/reference/settings/session-settings/join#join_use_nulls) para retornar [NULL](/pt-BR/reference/syntax#null) em vez de valores padrão (no entanto, por [motivos de desempenho](/pt-BR/reference/data-types/nullable#storage-features), isso é menos recomendável).
 </Note>
 
 Esta consulta encontra todos os filmes sem gênero consultando todas as linhas da tabela `movies` que não têm correspondência na tabela `genres` e, por isso, recebem (no momento da consulta) o valor padrão 0 para a coluna `movie_id`:
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-A cláusula `INNER JOIN` na versão da consulta `CROSS JOIN` otimizada sintaticamente contém a palavra-chave `ALL`, que foi adicionada explicitamente para preservar a semântica do produto cartesiano do `CROSS JOIN` mesmo quando a consulta é reescrita como um `INNER JOIN`, para o qual o produto cartesiano pode ser [desativado](/pt-BR/reference/settings/session-settings#join_default_strictness).
+A cláusula `INNER JOIN` na versão da consulta `CROSS JOIN` otimizada sintaticamente contém a palavra-chave `ALL`, que foi adicionada explicitamente para preservar a semântica do produto cartesiano do `CROSS JOIN` mesmo quando a consulta é reescrita como um `INNER JOIN`, para o qual o produto cartesiano pode ser [desativado](/pt-BR/reference/settings/session-settings/join#join_default_strictness).
 
 ```sql
 ALL
