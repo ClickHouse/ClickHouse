@@ -7,6 +7,9 @@
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+#if !CLICKHOUSE_CLOUD
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
+#endif
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -467,5 +470,137 @@ TEST(IcebergSnapshotSummary, AppendPreservesInheritedEqualityDeletes)
     EXPECT_EQ(append.getTotals().delete_files, 2);       // preserved
     EXPECT_EQ(append.getTotals().records, 55);
 }
+
+#if !CLICKHOUSE_CLOUD
+TEST(IcebergCompactionOverwriteClassification, PositionDeleteOnlyPredicate)
+{
+    /// Compaction may skip an `overwrite` snapshot only when it adds position delete files and nothing
+    /// else, because it collects only data and position delete files: any other delta would be dropped from
+    /// the rewritten table. Each conjunct has at least one row isolating it, satisfying every other
+    /// conjunct, so dropping any single term admits a named row; some rows fail more than one term besides.
+    /// The accounting proof is bounded above by the two rows declaring more position delete files than
+    /// delete files and below by the three unaccounted ones. The refused shapes are constructed because
+    /// ClickHouse's own writer cannot emit them (it never writes an equality delete or a removal counter),
+    /// which is why they live here and not in a stateless test.
+    struct Case
+    {
+        /// Constructor rather than in-class initializers: a default `skippable` would let a row omit
+        /// its expected verdict and silently assert `false`.
+        Case(const char * name_, DB::Iceberg::SnapshotSummaryUpdateOverwrite update_, bool skippable_)
+            : name(name_), update(update_), skippable(skippable_)
+        {
+        }
+
+        const char * name;
+        DB::Iceberg::SnapshotSummaryUpdateOverwrite update;
+        bool skippable;
+    };
+
+    const Case cases[] = {
+        /// A foreign writer may omit the optional `added-position-delete-files` key. It reads as
+        /// 0, so requiring equality with `added-delete-files` would refuse a history that the
+        /// pre-fix guard accepted.
+        {"foreign_position_delete_file_count_absent",
+         {.added_delete_files = 1, .added_position_deletes = 1}, true},
+        /// The reported defect: one delete file marking many rows.
+        {"clickhouse_multi_row",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 10}, true},
+        /// A partitioned delete writes one position delete file per touched partition, so the accepted
+        /// shape is not limited to a single delete file.
+        {"clickhouse_multi_partition",
+         {.added_delete_files = 2, .added_position_delete_files = 2, .added_position_deletes = 10}, true},
+        {"clickhouse_single_row",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 1}, true},
+        /// A delete file marking no rows is still only a position delete file.
+        {"position_delete_file_marking_zero_rows",
+         {.added_delete_files = 1, .added_position_delete_files = 1}, true},
+
+        /// No delete file declared at all: nothing identifies this as a position delete overwrite.
+        {"no_delete_keys_at_all", {}, false},
+        /// Equality deletes are not collected, so admitting these would resurrect deleted rows.
+        {"equality_delete_files_and_rows",
+         {.added_delete_files = 2,
+          .added_position_delete_files = 1,
+          .added_equality_delete_files = 1,
+          .added_equality_deletes = 5}, false},
+        {"equality_delete_row_count_only",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .added_equality_deletes = 5}, false},
+        {"equality_delete_file_count_only",
+         {.added_delete_files = 2, .added_position_delete_files = 1, .added_equality_delete_files = 1}, false},
+        /// Accounted for via the absent-counter exception, so only the equality file-count term
+        /// can refuse it.
+        {"equality_delete_file_count_only_via_absent_counter",
+         {.added_delete_files = 1, .added_position_deletes = 5, .added_equality_delete_files = 1}, false},
+        /// Adding data files makes this a rewrite, not a row delete.
+        {"data_files_added",
+         {.added_files = 1, .added_delete_files = 1, .added_position_delete_files = 1}, false},
+        /// `added-records` is a separate optional key from `added-data-files`, so a writer may
+        /// declare added rows while omitting the file count. Records were added either way.
+        {"data_records_added_without_file_count",
+         {.added_records = 10, .added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 10}, false},
+        /// More position delete files than delete files is incoherent metadata.
+        {"position_delete_file_count_exceeds_delete_file_count",
+         {.added_delete_files = 1, .added_position_delete_files = 2}, false},
+        /// Same shape with rows declared, so only the exception's own file-count term refuses it:
+        /// the exception requires the count to be absent, not merely unequal.
+        {"position_delete_file_count_exceeds_with_rows_declared",
+         {.added_delete_files = 1, .added_position_delete_files = 2, .added_position_deletes = 5}, false},
+        /// A summary that declares delete files but accounts for none of them proves nothing:
+        /// the equality counters are optional too, so their absence is not evidence.
+        {"aggregate_delete_files_only_unaccounted",
+         {.added_delete_files = 1}, false},
+        /// Two delete files, one accounted for as a position delete: the second may be an
+        /// equality delete whose optional breakdown keys the writer omitted.
+        {"delete_files_partially_accounted",
+         {.added_delete_files = 2, .added_position_delete_files = 1, .added_position_deletes = 5}, false},
+        {"delete_files_partially_accounted_file_count_absent",
+         {.added_delete_files = 2, .added_position_deletes = 5}, false},
+        /// Removals are refused: compaction never drops a data file collected from an earlier
+        /// snapshot, so a removed file would be resurrected.
+        {"data_file_removal_declared",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .deleted_data_files = 1}, false},
+        {"removed_record_count_declared",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .removed_records = 5}, false},
+        {"removed_file_size_declared",
+         {.added_delete_files = 1, .added_position_delete_files = 1, .removed_files_size = 100}, false},
+    };
+
+    for (const auto & c : cases)
+        EXPECT_EQ(DB::Iceberg::overwriteIsPositionDeleteOnly(c.update), c.skippable) << "case: " << c.name;
+}
+
+TEST(IcebergCompactionOverwriteClassification, HistoryGuardConsultsThePredicate)
+{
+    /// The predicate above is only useful if the history guard actually calls it, so drive the
+    /// guard itself: a skippable overwrite must yield no append delta, and a refused one must
+    /// throw. Without this, reverting the call site would leave every row above green.
+    const auto record_for = [](DB::Iceberg::SnapshotSummaryUpdateOverwrite update)
+    {
+        DB::Iceberg::IcebergHistoryRecord record;
+        record.snapshot_id = 1;
+        record.snapshot_summary = SnapshotSummary(
+            std::move(update),
+            SnapshotSummary(DB::Iceberg::SnapshotSummaryUpdateAppend{
+                .added_files = 3, .added_records = 30, .added_files_size = 1000, .num_partitions = 1}).getTotals());
+        return record;
+    };
+
+    const auto skippable = record_for({.added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 10});
+    EXPECT_FALSE(DB::Iceberg::tryGetAppendUpdate(skippable).has_value());
+
+    const auto refused = record_for({.added_delete_files = 1, .added_position_delete_files = 1, .added_equality_deletes = 5});
+    EXPECT_THROW(static_cast<void>(DB::Iceberg::tryGetAppendUpdate(refused)), DB::Exception);
+
+    /// An append is replayed rather than skipped, so a guard that answered `nullopt` for
+    /// everything would fail here too.
+    DB::Iceberg::IcebergHistoryRecord append_record;
+    append_record.snapshot_id = 2;
+    append_record.snapshot_summary = SnapshotSummary(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 2, .added_records = 20, .added_files_size = 500, .num_partitions = 1});
+    const auto append = DB::Iceberg::tryGetAppendUpdate(append_record);
+    ASSERT_TRUE(append.has_value());
+    EXPECT_EQ(append->added_files, 2);
+}
+#endif
 
 #endif
