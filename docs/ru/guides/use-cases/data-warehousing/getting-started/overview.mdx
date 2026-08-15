@@ -1,6 +1,6 @@
 ---
 title: 'Начало работы с озерами данных'
-sidebarTitle: 'Начало работы'
+sidebarTitle: 'Обзор'
 slug: /use-cases/data-lake/getting-started
 description: 'Практическое введение в выполнение запросов, ускорение и обратную запись данных в открытых форматах таблиц с помощью ClickHouse.'
 keywords: ['озера данных', 'lakehouse', 'начало работы', 'iceberg', 'delta lake', 'hudi', 'paimon']
@@ -17,9 +17,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Скриншоты в этом руководстве взяты из SQL-консоли [ClickHouse Cloud](https://console.clickhouse.cloud). Все запросы работают как в Cloud, так и в самоуправляемых развертываниях.
 
+ClickHouse предлагает три способа читать открытые табличные форматы: табличные функции, Движки таблиц и движок базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake). **Если ваши таблицы находятся в каталоге данных** (Glue, Unity Catalog, REST и других), подключайтесь через `DataLakeCatalog`, чтобы получить доступ ко всем таблицам Iceberg/Delta через одну функцию. Разделы о табличных функциях и движках таблиц ниже лучше всего подходят для разовых запросов или для случаев, когда вы знаете конкретный путь к хранилищу и не используете каталог.
+
 <Steps>
   <Step title="Запрашивайте данные Iceberg напрямую" id="query-directly">
-    Самый быстрый способ начать — использовать табличную функцию [`icebergS3()`](/ru/reference/functions/table-functions/iceberg): укажите путь к таблице Iceberg в S3 и сразу выполняйте запросы — без какой-либо настройки.
+    Самый быстрый способ начать — особенно для разовых запросов или если вы не используете каталог, — использовать табличную функцию [`icebergS3()`](/ru/reference/functions/table-functions/iceberg). Укажите путь к таблице Iceberg в S3 и сразу выполняйте запросы — без какой-либо настройки.
 
     Проверьте схему:
 
@@ -47,7 +49,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 
   <Step title="Создайте постоянную таблицу с табличным движком" id="table-engine">
-    Для повторного доступа создайте таблицу с движком таблицы Iceberg, чтобы не указывать путь каждый раз. Данные остаются в S3 — ничего не дублируется:
+    Если вы не используете каталог, но планируете многократно запрашивать один и тот же путь, создайте таблицу с движком таблицы Iceberg, чтобы не передавать путь каждый раз. Данные остаются в S3 — дублирования данных не происходит:
 
     ```sql
     CREATE TABLE hits_iceberg
@@ -72,7 +74,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 
   <Step title="Подключение к каталогу" id="connect-catalog">
-    Большинство организаций управляют таблицами Iceberg через каталог данных, чтобы централизованно хранить метаданные таблиц и упростить поиск данных. ClickHouse поддерживает подключение к вашему каталогу с помощью движка базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake), предоставляя все таблицы каталога в виде базы данных ClickHouse. Это более масштабируемый подход: по мере создания новых таблиц Iceberg они будут сразу доступны в ClickHouse без дополнительной настройки.
+    Если ваша организация использует каталог данных, мы рекомендуем этот путь интеграции. Каталоги централизуют метаданные таблиц и их поиск — вместо того чтобы управлять определением таблицы для каждого пути в хранилище, один раз подключитесь с помощью движка базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake). Каждая таблица в каталоге отображается как таблица ClickHouse, включая таблицы, добавленные в каталог уже после создания подключения.
+
+    <Warning>
+      **Рекомендуется при использовании каталога**
+
+      Используйте `DataLakeCatalog` для рабочих нагрузок в продакшне с Glue, Unity Catalog, REST и другими [поддерживаемыми каталогами](/ru/guides/use-cases/data-warehousing/reference/index). Табличные функции и движки таблиц подходят, когда вам известен конкретный путь, но по мере роста каталога они не остаются синхронизированными и требуют отдельных учётных данных или путей для каждой таблицы.
+    </Warning>
 
     Вот пример подключения к [AWS Glue](/ru/guides/use-cases/data-warehousing/glue-catalog):
 
@@ -106,7 +114,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 
   <Step title="Выполните запрос" id="issue-query">
-    Независимо от того, какой метод вы использали выше — table function, движок таблицы или каталог, — во всех случаях используется один и тот же ClickHouse SQL:
+    Независимо от того, какой метод вы использали выше — table function, движок таблицы или `DataLakeCatalog`, — во всех случаях используется один и тот же ClickHouse SQL. В продакшн при использовании каталога выполняйте запросы через базу данных `DataLakeCatalog`; остальные примеры по-прежнему полезны для быстрых тестов и доступа по пути:
 
     ```sql
     -- Table function
@@ -229,8 +237,8 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Теперь, когда вы ознакомились со всем процессом, изучите подробнее каждое направление:
 
+* [Подключение к каталогам](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Рекомендуется для рабочих нагрузок на основе каталогов; полное пошаговое руководство по Unity Catalog с Delta и Iceberg
 * [Прямое выполнение запросов](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly) — Все четыре формата, варианты кластеров, движки таблиц, кэширование
-* [Подключение к каталогам](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Полное пошаговое руководство по Unity Catalog с Delta и Iceberg
 * [Ускорение аналитики](/ru/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Оптимизация схемы, индексация, демо ускорения примерно в 40 раз
 * [Запись в озера данных](/ru/guides/use-cases/data-warehousing/getting-started/writing-data) — Запись сырых данных, агрегированная запись, сопоставление типов
 * [Матрица поддержки](/ru/guides/use-cases/data-warehousing/support-matrix) — Сравнение возможностей в разных форматах и бэкендах хранилища
