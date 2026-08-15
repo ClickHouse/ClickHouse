@@ -92,8 +92,8 @@ namespace
 {
 
 /// Filter pushdown: the WHERE condition (`KeyCondition` built from the filter DAG) is translated
-/// into a Vortex filter expression, so the scan can prune whole segments by statistics and decode
-/// only the matching rows instead of decompressing the entire file.
+/// into a Vortex filter expression, so selective queries decode only the matching rows. Whole
+/// segments are not yet pruned by statistics.
 ///
 /// The translation is best-effort: any part of the condition that cannot be translated exactly is
 /// *weakened* so that the pushed filter always keeps a superset of the rows the query filter

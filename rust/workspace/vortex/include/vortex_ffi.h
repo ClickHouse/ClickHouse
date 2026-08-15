@@ -111,8 +111,8 @@ int32_t vortex_ffi_reader_schema(const VortexFFIReader * reader, struct ArrowSch
 
 /// Creates a scanner over the file. If `columns` is not nullptr, only the `num_columns` columns
 /// with the given names are read, in the given order. If `filter` is not nullptr, only the rows
-/// matching the filter expression are returned; the file may use it to prune whole segments by
-/// statistics and to decode only the matching rows. The reader must stay alive for the whole
+/// matching the filter expression are returned; selective queries decode only the matching rows.
+/// Whole segments are not yet pruned by statistics. The reader must stay alive for the whole
 /// lifetime of the scanner; `filter` is not consumed. Returns nullptr on error.
 VortexFFIScanner * vortex_ffi_scanner_create(
     const VortexFFIReader * reader,
