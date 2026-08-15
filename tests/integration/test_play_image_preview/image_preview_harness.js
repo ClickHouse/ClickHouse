@@ -986,6 +986,26 @@ async function main() {
             s && s.display === 'block' && s.owner === 'set', s);
     }
 
+    /// Contract 6: the page must use the production JS fallback tokenizer when the embedded WASM
+    /// lexer is unavailable. `makeContext` deliberately makes the lexer fetch fail, so this drives
+    /// `tokenizeOrNull` -> `tokenizeWithFallback` instead of merely exercising the C++ port of the
+    /// token walk. These cases must not mistake identifiers or string contents for query clauses.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const quoted = await detectFramingSetting("SELECT 'framing_output_format = None'");
+            const identifier = await detectExplicitFormatClause('WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1');
+            const clause = await detectExplicitFormatClause('SELECT 1 FORMAT JSONCompactColumns');
+            return JSON.stringify({ quoted, identifier, clause });
+        })()`));
+        check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
+            !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
+        check('fallback-tokenizer', 'identifier uses of format do not become a FORMAT clause',
+            res.identifier === null, res);
+        check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',
+            res.clause && res.clause.format === 'JSONCompactColumns', res);
+    }
+
     if (failures === 0) {
         console.log('All scenarios passed');
         process.exit(0);
