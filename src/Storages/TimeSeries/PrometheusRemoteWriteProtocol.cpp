@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
@@ -52,7 +51,6 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
 
 namespace ErrorCodes
@@ -185,16 +183,12 @@ namespace
     }
 
     /// Fills tag columns for the "tags" table by iterating over the time series.
-    /// Optional output columns (out_all_tags_*) are skipped when null.
     void fillTagsColumns(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         IColumn & out_tags_names,
         IColumn & out_tags_values,
         ColumnVector<IColumn::Offset> & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
-        IColumn * all_tags_names,
-        IColumn * all_tags_values,
-        ColumnVector<IColumn::Offset> * all_tags_offsets)
+        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name)
     {
         std::vector<std::pair<std::string_view, std::string_view>> sorted_tags;
 
@@ -212,8 +206,7 @@ namespace
             TimeSeriesSink::insertSortedTagsToColumns(
                 sorted_tags,
                 out_tags_names, out_tags_values, out_tags_offsets,
-                columns_by_tag_name,
-                all_tags_names, all_tags_values, all_tags_offsets);
+                columns_by_tag_name);
         }
     }
 
@@ -369,7 +362,7 @@ namespace
         if (!id_generator)
             id_generator = tags_id_col.default_desc.expression;
         if (!id_generator)
-            id_generator = TimeSeriesIDGenerator::getDefault(id_type, time_series_settings, time_series_storage.getStorageID());
+            id_generator = TimeSeriesIDGenerator::getDefault(id_type, time_series_storage.getStorageID());
         const bool id_generator_uses_all_tags = TimeSeriesIDGenerator::usesAllTags(id_generator);
 
         /// Column `metric_name` and also the columns from the `tags_to_columns` settings.
@@ -406,28 +399,6 @@ namespace
         auto tags_offsets = ColumnVector<IColumn::Offset>::create();
         tags_offsets->reserve(num_time_series);
 
-        /// Column "all_tags".
-        MutableColumnPtr all_tags_names;
-        MutableColumnPtr all_tags_values;
-        ColumnVector<IColumn::Offset>::MutablePtr all_tags_offsets;
-        std::shared_ptr<const DataTypeMap> all_tags_map_type;
-        if (id_generator_uses_all_tags)
-        {
-            /// The "all_tags" column may not exist in external target tables.
-            if (tags_metadata.columns.has(TimeSeriesColumnNames::AllTags))
-                all_tags_map_type = typeid_cast<std::shared_ptr<const DataTypeMap>>(tags_metadata.columns.get(TimeSeriesColumnNames::AllTags).type);
-            else
-                all_tags_map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-            if (!all_tags_map_type)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have a Map type", TimeSeriesColumnNames::AllTags);
-            all_tags_names = all_tags_map_type->getKeyType()->createColumn();
-            all_tags_names->reserve(num_time_series);
-            all_tags_values = all_tags_map_type->getValueType()->createColumn();
-            all_tags_values->reserve(num_time_series);
-            all_tags_offsets = ColumnVector<IColumn::Offset>::create();
-            all_tags_offsets->reserve(num_time_series);
-        }
-
         /// Columns "min_time" and "max_time".
         MutableColumnPtr min_time_column;
         MutableColumnPtr max_time_column;
@@ -451,8 +422,7 @@ namespace
         fillTagsColumns(
             time_series,
             *tags_names, *tags_values, *tags_offsets,
-            columns_by_tag_name,
-            all_tags_names.get(), all_tags_values.get(), all_tags_offsets.get());
+            columns_by_tag_name);
 
         /// Fill min_time and max_time columns.
         if (min_time_column)
@@ -468,17 +438,12 @@ namespace
         Columns tags_tuple_cols;
         tags_tuple_cols.push_back(std::move(tags_names));
         tags_tuple_cols.push_back(std::move(tags_values));
-        auto tags_column = ColumnMap::create(ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_cols)), std::move(tags_offsets)));
-        tags_block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_map_type, TimeSeriesColumnNames::Tags});
-        if (all_tags_names)
+        ColumnPtr tags_column = ColumnMap::create(ColumnArray::create(ColumnTuple::create(std::move(tags_tuple_cols)), std::move(tags_offsets)));
+        tags_block.insert(ColumnWithTypeAndName{tags_column, tags_map_type, TimeSeriesColumnNames::Tags});
+        if (id_generator_uses_all_tags)
         {
-            Columns all_tags_tuple_cols;
-            all_tags_tuple_cols.push_back(std::move(all_tags_names));
-            all_tags_tuple_cols.push_back(std::move(all_tags_values));
-            auto all_tags_column = ColumnMap::create(ColumnArray::create(
-                ColumnTuple::create(std::move(all_tags_tuple_cols)),
-                std::move(all_tags_offsets)));
-            tags_block.insert(ColumnWithTypeAndName{std::move(all_tags_column), all_tags_map_type, TimeSeriesColumnNames::AllTags});
+            /// The `all_tags` column contains the same data as the `tags` column.
+            tags_block.insert(ColumnWithTypeAndName{tags_column, tags_map_type, TimeSeriesColumnNames::AllTags});
         }
         if (min_time_column)
         {
@@ -490,9 +455,8 @@ namespace
         auto id_column_in_tags_table = calculateId(tags_block, context, id_type, id_generator);
         tags_block.insert(0, ColumnWithTypeAndName{id_column_in_tags_table, id_type, TimeSeriesColumnNames::ID});
 
-        /// The "all_tags" column in the "tags" table is either ephemeral or doesn't exist.
-        /// We've used the "all_tags" column to calculate the "id" column already,
-        /// and now we don't need it to insert to the "tags" table.
+        /// The "all_tags" column is not a stored column, we may have used it only to calculate "id",
+        /// so we don't insert it to the "tags" table.
         if (tags_block.has(TimeSeriesColumnNames::AllTags))
             tags_block.erase(TimeSeriesColumnNames::AllTags);
 

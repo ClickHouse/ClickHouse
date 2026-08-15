@@ -18,6 +18,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Processors/Port.h>
@@ -25,6 +26,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -34,6 +36,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
@@ -87,10 +90,27 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char http_output_finalize_throw[];
+    extern const char http_push_delayed_results_throw[];
 }
 
 namespace
 {
+/// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
+/// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
+/// "external data for query processing". Such a body must come with a length on a non-chunked request.
+bool requestDeclaresFormBody(const HTTPServerRequest & request)
+{
+    const auto & content_type = request.getContentType();
+    return startsWith(content_type, "application/x-www-form-urlencoded")
+        || startsWith(content_type, "multipart/form-data");
+}
+
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (!config.has("http_options_response"))
@@ -240,6 +260,26 @@ void HTTPHandler::processQuery(
 
     auto context = session->makeQueryContext();
 
+    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
+    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
+    context->setHTTPRequestURL(request.getURI());
+    if (!introspection_handler_name.empty())
+    {
+        context->setHTTPHandlerName(introspection_handler_name);
+
+        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
+        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
+        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// The client controls only the typed query parameters, never the query text, and could raise
+        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
+        /// still guards against stack overflow via `checkStackSize`.
+        context->setSetting("max_parser_depth", Field(0));
+        context->setSetting("max_parser_backtracks", Field(0));
+    }
+
     auto roles = params.getAll("role");
     if (!roles.empty())
         context->setCurrentRoles(roles);
@@ -252,8 +292,10 @@ void HTTPHandler::processQuery(
     if (!default_format.empty())
         context->setDefaultFormat(default_format);
 
-    /// Anything else beside HTTP POST should be readonly queries.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
+    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -461,7 +503,10 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    /// Hand the handler the same body object the query itself would read (see `getQuery` in the header):
+    /// whatever the handler layer consumes from it (form fields, `_request_body`) is then genuinely gone
+    /// from the stream, instead of resurfacing when the body is appended to the query text below.
+    const auto & query = getQuery(request, params, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -511,7 +556,11 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in;
-    if (has_external_data)
+    /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
+    /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
+    /// body is delimited only by the connection close, while `executeQuery` reads the query text ahead up to
+    /// `max_query_size`, so it would wait for a client that is itself waiting for the response.
+    if (has_external_data || !feeds_request_body_to_query)
     {
         in = std::move(in_param);
         in_post_maybe_compressed.reset();
@@ -523,9 +572,12 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    auto set_query_result = [&response, this] (const QueryResultDetails & details)
+    auto set_query_result = [&response, &used_output, this] (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
+
+        if (details.framed)
+            used_output.framed = true;
 
         if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
             && details.content_type)
@@ -552,7 +604,23 @@ void HTTPHandler::processQuery(
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
     {
-        if (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException())
+        const auto & framing = current_output_format.getFraming();
+
+        /// Latch the fail-close guard for framed responses here as well, not only in
+        /// `set_query_result`. On the exception path `executeQuery` deliberately swallows a failure
+        /// of the `set_result_details` callback (see the
+        /// `execute_query_calling_empty_set_result_func_on_exception` failpoint and the `04629`
+        /// test), so the callback may never run even though the response is about to be written
+        /// through a framing format. Without this, a second failure - while writing the exception
+        /// packet or while closing the response - would make `trySendExceptionToClient` miss the
+        /// framed fast path and append a plain `__exception__` block after a partial packet stream.
+        if (framing)
+            used_output.framed = true;
+
+        /// With a framing format, the exception is always written as a separate packet, because the
+        /// client parses the response as a stream of packets. Otherwise the exception is written into
+        /// the output format if the format supports it and the corresponding setting is enabled.
+        if (framing || (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException()))
         {
             /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
@@ -561,7 +629,21 @@ void HTTPHandler::processQuery(
             if (wait_end_of_query)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
+                String framing_name = framing ? framing->getName() : "";
+
+                /// The buffered output is discarded on an exception, so the framing format is recreated
+                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// were attached during parsing and planning (the `framing` object goes out of scope
+                /// before this writer runs, so the queues are captured by value here) - otherwise the
+                /// framed exception response would drop the `log` / `profile_events` packets that the
+                /// streaming path and the documentation promise.
+                std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
+                InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
+                String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
+                UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+
+                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -572,9 +654,27 @@ void HTTPHandler::processQuery(
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
 
-                    auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
-                    output_format->setException(message);
-                    output_format->finalize();
+                    if (!framing_name.empty())
+                    {
+                        /// All the output buffered so far is discarded, so the framing format is created
+                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
+                        /// accumulated so far followed by a single exception packet.
+                        auto framing_for_exception = createFramingFormat(
+                            framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
+                        if (framing_logs_queue)
+                            framing_for_exception->setLogsQueue(framing_logs_queue);
+                        if (framing_profile_events_queue)
+                            framing_for_exception->setProfileEventsQueue(
+                                framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
+                        framing_for_exception->setException(message);
+                        framing_for_exception->finalize();
+                    }
+                    else
+                    {
+                        auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
+                        output_format->setException(message);
+                        output_format->finalize();
+                    }
                     releaseOrCloseSession(session_id, close_session);
                     used_output.finalize();
                     used_output.exception_is_written = true;
@@ -590,8 +690,16 @@ void HTTPHandler::processQuery(
 
                 drainRequestIfNeeded(request, response);
                 used_output.out_holder->setExceptionCode(status.code);
-                current_output_format.setException(status.message);
+                if (framing)
+                    framing->setException(status.message);
+                else
+                    current_output_format.setException(status.message);
                 current_output_format.finalize();
+                /// The output format may defer finalizing the framing format (see
+                /// `deferFramingFinalize`); finalize it here so the exception packet is written.
+                /// `finalize` is idempotent, so this is a no-op if it was already finalized.
+                if (framing)
+                    framing->finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
 
@@ -604,9 +712,14 @@ void HTTPHandler::processQuery(
     {
         releaseOrCloseSession(session_id, close_session);
 
-        /// Flush all the data from one buffer to another, to track
-        /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
-        /// context
+        /// Flush all the data from one buffer to another. For a plain response the callback runs
+        /// before the QueryFinish entry is recorded (inside `finishExecutedQuery`), so the
+        /// NetworkSendElapsedMicroseconds/NetworkSendBytes of this flush are attributed to the
+        /// query. For a framed response it runs after the QueryFinish entry instead (the framed
+        /// stream tail must include the packets emitted by the query-finish logging, and closing
+        /// the response must come after that - see `executeQuery.h`), so the send counters of the
+        /// response tail are not part of the query's snapshot, like the trailing sends of the
+        /// native protocol.
         used_output.finalize();
     };
 
@@ -670,6 +783,49 @@ try
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);
+    }
+
+    /// A framed response fails closed once its transmission has started. That covers a failure in
+    /// the middle of `Output::finalize` after some of the response was pushed towards the client
+    /// (pushing the delayed results, finalizing the compression, closing the response stream) and
+    /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// throws while writing the terminal `exception` packet (for example while draining the `log`
+    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// exception lands here with the packet stream unterminated and `exception_is_written` still
+    /// false. In both cases some (or all) of the framed stream is already on the wire. The same
+    /// applies when framed packets are merely buffered: even before `response.sent()`, bytes
+    /// written into `out_maybe_compressed` / `out_holder` are not discarded by
+    /// `cancelWithException` (it keeps non-empty buffers and appends the error message after
+    /// them), so the client would receive a partial packet stream followed by a plain error body.
+    /// Note that `count` is cumulative (bytes ever consumed by the buffer, not bytes currently
+    /// pending in its working buffer), and `out_maybe_compressed` is the buffer the framing
+    /// writes into - the topmost of the HTTP compression wrapper, the internal `compress=1`
+    /// layer and the response buffer. So framed bytes that a transport compressor has already
+    /// swallowed into its internal codec state (where nothing can discard them, and where a
+    /// `count` of the buffers below would show nothing) still make this check fire.
+    /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
+    /// `__exception__` block that `cancelWithException` writes -
+    /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
+    /// The client observes a truncated response and an aborted connection instead - the same
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`). A framed response
+    /// that has not produced any output yet takes the paths below instead: the `exception_writer`
+    /// set up for `wait_end_of_query` discards the stream buffered in the cascade (which does not
+    /// pass through `out_maybe_compressed` until `pushDelayedResults`) and writes a fresh framed
+    /// exception response, and the generic path produces a proper HTTP error response.
+    /// Deliberately NOT gated on `Output::isFinalized`: `finalized` is latched at the very start
+    /// of `Output::finalize`, before `pushDelayedResults` moves anything out of the cascade. Under
+    /// `wait_end_of_query` that push can fail before a single delayed byte reaches
+    /// `out_maybe_compressed` (finalizing the cascade, reopening a temporary file to re-read it),
+    /// and then the response is still untouched - `response.sent()` is false and both counters
+    /// are zero - so a clean error response is still possible and fail-close would only turn a
+    /// reportable error into an aborted connection for no benefit.
+    bool framed_bytes_produced = (used_output.out_maybe_compressed && used_output.out_maybe_compressed->count() > 0)
+        || (used_output.out_holder && used_output.out_holder->count() > 0);
+    if (used_output.framed && !used_output.exception_is_written
+        && (response.sent() || framed_bytes_produced))
+    {
+        used_output.cancel();
+        return false;
     }
 
     chassert(used_output.out_maybe_compressed);
@@ -793,11 +949,37 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
+        /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
+        /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
+        /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        ///
+        /// But require it only when the body is actually consumed - either by the handler's query
+        /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
+        /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
+        /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
+        /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
+        /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
+        /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
+        /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        ///
+        /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
+        /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
+        /// returns false, `HTTPServerResponse::writeHeaders` advertises `Connection: close`, and
+        /// `HTTPServerConnection` closes the socket after the response - the unread bytes can never be
+        /// misread as the next request on the connection (pinned by 04826_handler_lengthless_body_keep_alive).
+        const auto & method = request.getMethod();
+        const bool is_body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool body_may_be_consumed = body_contract_known
+            ? (consumes_request_body || requestDeclaresFormBody(request))
+            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+        const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
+        if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+                            "is no Content-Length header for a {} request", method);
         }
 
         processQuery(request, params, response, used_output, query_scope, write_event);
@@ -870,7 +1052,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -884,8 +1066,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    auto input_stream = request.getStream();
-    params.load(request, *input_stream, handler);
+    params.load(request, body, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -989,17 +1170,102 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
+    bool body_fields_loaded = false;
+
+    /// A handler may declare `_request_body` alongside form-bindable parameters. Form parsing consumes the
+    /// body, while `_request_body` is bound in `customizeContext`, which runs only after `getQuery` - so it
+    /// would find the body at EOF and bind an empty string. Preserve a copy of the raw body up front and
+    /// parse the form from the copy, so both contracts hold: `_request_body` receives the raw body and the
+    /// form fields bind their parameters. The copy is bounded by `http_max_request_param_data_size` - the same
+    /// limit `customizeContext` applies when it reads the body itself.
+    const auto & preserve_raw_body = [&]
+    {
+        WriteBufferFromOwnString value;
+        copyDataMaxBytes(body, value, context->getSettingsRef()[Setting::http_max_request_param_data_size]);
+        context->setQueryParameter("_request_body", value.str());
+        return std::make_unique<ReadBufferFromOwnString>(std::move(value.str()));
+    };
+    const bool wants_request_body
+        = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
+
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        auto input_stream = request.getStream();
-        params.load(request, *input_stream, handler);
+        if (wants_request_body)
+        {
+            auto body_copy = preserve_raw_body();
+            params.load(request, *body_copy, handler);
+        }
+        else
+            params.load(request, body, handler);
+        body_fields_loaded = true;
+    }
+    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    {
+        /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
+        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
+        /// not count: a handler whose only body use is `_request_body` gets the raw body instead of form parsing.
+        const bool wants_form_body_params = std::any_of(
+            receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
+        const auto & method = request.getMethod();
+        const bool body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        if (wants_form_body_params && body_carrying_method)
+        {
+            if (wants_request_body)
+            {
+                auto body_copy = preserve_raw_body();
+                params.read(*body_copy);
+            }
+            else
+                params.read(body);
+            body_fields_loaded = true;
+        }
+    }
+
+    if (body_fields_loaded)
+    {
+        /// The parameter loop in `processQuery` ran before the body was parsed, so bind the body-sourced fields
+        /// here. Unlike URL parameters they only bind declared query parameters and are never treated as settings
+        /// (mirroring the `DynamicQueryHandler` multipart path), and a parameter already bound - e.g. from the
+        /// URL query string, which `params` still also contains - keeps its value.
+        for (const auto & [key, value] : params)
+        {
+            String name = key;
+            if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+                name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+            if (receive_params.contains(name) && !context->getQueryParameters().contains(name))
+                context->setQueryParameter(name, value);
+        }
     }
 
     return predefined_query;
+}
+
+SQLDefinedQueryHandler::SQLDefinedQueryHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config,
+    const SQLDefinedHandler & handler)
+    : PredefinedQueryHandler(
+        server_,
+        connection_config,
+        handler.receive_params,
+        handler.query,
+        handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
+        {},
+        std::nullopt)
+{
+    setIntrospectionHandlerName(handler.name);
+    setConsumesRequestBody(handler.consumes_request_body);
+}
+
+std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
+{
+    return PredefinedQueryHandler::getQuery(request, params, context, body) + "\n";
 }
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
@@ -1080,6 +1346,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 
 void HTTPHandler::Output::pushDelayedResults() const
 {
+    /// Test-only: emulate a failure before any delayed byte reaches the real response (finalizing
+    /// the cascade, reopening a temporary file to re-read it). A framed response must still get a
+    /// proper HTTP error response here, not an aborted connection (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_push_delayed_results_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before pushing the delayed results");
+    });
+
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
@@ -1125,6 +1399,14 @@ void HTTPHandler::Output::finalize()
 
     if (hasDelayed())
         pushDelayedResults();
+
+    /// Test-only: emulate a failure in the middle of finalizing the response - after the delayed
+    /// results were pushed towards the client, but before the response stream is closed. A framed
+    /// response must fail closed here (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_output_finalize_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the HTTP response");
+    });
 
     if (out_delayed_and_compressed_holder)
         out_delayed_and_compressed_holder->finalize();
