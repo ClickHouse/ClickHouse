@@ -3528,7 +3528,15 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
         /// hundreds of milliseconds on machines with many cores, dominating short aggregation
         /// queries whose states crossed `group_by_two_level_threshold_bytes` mid-scan
         /// (https://github.com/ClickHouse/ClickHouse/issues/114640).
-        if (variants_to_convert.size() > 1 && params.max_threads > 1)
+        /// `convertToTwoLevel` keeps both hash tables alive while copying. Restrict the parallel
+        /// path to small hash tables so that it does not multiply the transient memory usage for
+        /// queries close to their memory limit.
+        constexpr size_t max_rows_for_parallel_two_level_conversion = 1 << 14;
+        const bool are_all_variants_small = std::ranges::all_of(
+            variants_to_convert,
+            [](const auto * variant) { return variant->sizeWithoutOverflowRow() <= max_rows_for_parallel_two_level_conversion; });
+
+        if (variants_to_convert.size() > 1 && params.max_threads > 1 && are_all_variants_small)
         {
             std::atomic<size_t> next_variant_to_convert = 0;
             auto converter = [&variants_to_convert, &next_variant_to_convert]()
