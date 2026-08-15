@@ -302,6 +302,7 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
             "enable_hash_ring_filtering": 1,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
+            "use_persistent_processing_nodes": 1,
             # Both conditions must land in the SAME batch, so pin the listing batch size instead
             # of relying on the engine default (1000) happening to exceed files_to_generate.
             "list_objects_batch_size": files_to_generate,
@@ -315,8 +316,7 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
     conflict_file = f"{files_path}/test_1.csv"
     conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
     zk = started_cluster.get_kazoo_client("zoo1")
-    # `create_table` enables persistent processing nodes, so the conflicting node must
-    # be created in the same Keeper directory used by the queue.
+    # Use the persistent-processing directory configured above.
     processing_path = f"{keeper_path}/persistent_processing"
     zk.ensure_path(processing_path)
     zk.create(f"{processing_path}/{conflict_node}", b"conflict")
