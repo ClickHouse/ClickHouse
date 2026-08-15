@@ -27,7 +27,7 @@ Inbound, the connector exposes only local health and metrics ports plus the opt-
 
 ### ClickHouse grants {#clickhouse-grants}
 
-Provisioning creates one least-privilege user per component, read-only except for the scraper's single log-flush grant listed below. The users are created with `IDENTIFIED WITH bcrypt_hash`, so only a salted bcrypt hash exists in the provisioning SQL; the plaintext password lives only in the credential file the daemon reads at runtime. The grants are exactly these, with the default table sets:
+Provisioning creates one read-only user per component. The single exception to pure reads is the scraper's `SYSTEM FLUSH LOGS` grant listed below, which cannot read or modify anything; it only forces log tables to persist entries they already buffer. The users are created with `IDENTIFIED WITH bcrypt_hash`, so only a salted bcrypt hash exists in the provisioning SQL; the plaintext password lives only in the credential file the daemon reads at runtime. The grants are exactly these, with the default table sets:
 
 ```sql
 CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
