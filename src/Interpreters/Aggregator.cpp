@@ -343,8 +343,8 @@ Aggregator::Params::Params(
     bool enable_producing_buckets_out_of_order_in_aggregation_,
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
-    bool group_by_each_block_no_merge_,
-    bool enable_packed_string_keys_)
+    bool enable_packed_string_keys_,
+    bool group_by_each_block_no_merge_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
