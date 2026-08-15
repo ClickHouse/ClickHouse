@@ -917,7 +917,9 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
     /// End to end on such an endpoint: the widened walk must produce every key of the matching sub-tree
     /// exactly once, prune the non-matching siblings the wider prefix exposes, and never send a `StartAfter`.
     FakeS3 s3;
-    s3.page_size = 11;
+    /// Keep the widened level's first page within the fixed-prefix region. The `zother` siblings
+    /// deliberately sort after it and exercise the root-range bound on a subsequent page.
+    s3.page_size = 4;
     s3.reject_start_after = true;
     for (int y = 2020; y <= 2022; ++y)
         for (int m = 1; m <= 12; ++m)
@@ -970,7 +972,9 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
     auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
 
     FakeS3 s3;
-    s3.page_size = 7;
+    /// The three matching directory prefixes fill the widened level's first page; the following
+    /// `zother` siblings are reached only if the root-range bound is ignored.
+    s3.page_size = 3;
     s3.reject_start_after = true;
     for (int y = 2020; y <= 2022; ++y)
     {
