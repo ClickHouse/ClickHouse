@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental until its `COLUMNAR_V1` frame header is versioned.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # Fixed-width types wider than 8 bytes (UUID, IPv6, Int128, Decimal128/256) and
 # FixedString(N) of any length now round-trip via COL_FIXEDN (element width recovered
 # as data_size/num_rows on read, since there's no per-width wire tag for them).

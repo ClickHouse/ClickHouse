@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"allow_experimental_column_binary_format", false, false, "New setting: gate the experimental `ColumnBinary` input and output format, whose `COLUMNAR_V1` frame header is not versioned yet."},
             {"column_binary_disable_preallocation", false, false, "New setting: disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics."},
             {"column_binary_max_frame_size", 0, 1024ull * 1024 * 1024, "New setting: caps the total column data size of a single ColumnBinary frame, rejecting malformed frames before they can force an unreasonably large allocation."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},

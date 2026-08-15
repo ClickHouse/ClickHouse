@@ -269,6 +269,27 @@ private:
     StopToken stop_token;
 };
 
+/// The user-facing `ColumnBinary` format is gated behind
+/// `allow_experimental_column_binary_format` because its `COLUMNAR_V1` frame header carries no
+/// wire version yet. The `COLUMNAR_V1` WASM UDF ABI shares that wire format but not the gate:
+/// WASM UDFs are experimental in their own right, and their frames never outlive a single call,
+/// so no persisted data can be misparsed by a future layout change. Start from the query's own
+/// format settings so per-query knobs (e.g. `column_binary_disable_preallocation`) still apply.
+static FormatSettings wasmFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    format_settings.column_binary.allow_experimental = true;
+    return format_settings;
+}
+
+/// Same, for the construction-time probe format, which has no Context to read settings from.
+static FormatSettings columnBinaryEnabledFormatSettings()
+{
+    FormatSettings format_settings;
+    format_settings.column_binary.allow_experimental = true;
+    return format_settings;
+}
+
 class UserDefinedWebAssemblyFunctionBufferedV1 : public UserDefinedWebAssemblyFunction
 {
 public:
@@ -289,7 +310,8 @@ public:
         // executeOnBlock below builds its own format from the query's actual Context for the
         // real precompute/serialize work, since this one's default settings would silently
         // diverge from whatever the query actually configured.
-        probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(serialization_format, probe_null_wb, input_header);
+        probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(
+            serialization_format, probe_null_wb, input_header, columnBinaryEnabledFormatSettings());
         // The result type is only read back lazily on the first call, so validate it eagerly
         // here too.
         if (serialization_format == "ColumnBinary")
@@ -367,7 +389,7 @@ public:
             // to serialize. A local NullWriteBuffer (not the probe_null_wb member) avoids a
             // data race if this const method is called concurrently for the same instance.
             NullWriteBuffer local_probe_wb;
-            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, block.cloneEmpty());
+            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, block.cloneEmpty(), wasmFormatSettings(context));
             std::optional<uint64_t> precomputed = probe->precomputeSerializedSize(block, num_rows);
 
             if (precomputed)
@@ -385,7 +407,7 @@ public:
                         "Maybe '{}' function implementation in WebAssembly module is incorrect",
                         *precomputed, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
                 WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
-                auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty());
+                auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty(), wasmFormatSettings(context));
                 // write()+finalize() instead of formatBlock(): formatBlock calls flush()
                 // which triggers out.next() — fatal for WriteBufferFromPointer.
                 // auto_flush defaults to false so neither write() nor finalize() flush.
@@ -402,7 +424,7 @@ public:
                 StringWithMemoryTracking input_data;
                 {
                     WriteBufferFromStringWithMemoryTracking buf(input_data);
-                    auto out = context->getOutputFormat(serialization_format, buf, block.cloneEmpty());
+                    auto out = context->getOutputFormat(serialization_format, buf, block.cloneEmpty(), wasmFormatSettings(context));
                     formatBlock(out, block);
                 }
                 wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
@@ -428,7 +450,9 @@ public:
         Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
         auto pipeline = QueryPipeline(
-            Pipe(context->getInputFormat(serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
+            Pipe(context->getInputFormat(
+                serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE,
+                wasmFormatSettings(context))));
         readSingleBlock(std::make_unique<PullingPipelineExecutor>(pipeline), result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
@@ -768,7 +792,7 @@ static bool computePreserveConstColumns(const ContextPtr & context, const std::s
     size_t arg_idx = 0;
     for (const auto & arg : udf->getArguments())
         sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
-    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block, wasmFormatSettings(context));
     return !format->expectMaterializedColumns() || format->supportsColumnSchema();
 }
 

@@ -215,6 +215,7 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
+        ColumnarV1::checkColumnBinaryFormatIsAllowed(settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryInputFormat>(buf, header, params, settings);
     });
 
@@ -225,6 +226,13 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
 | ✔     | ✔      |       |
 
 ## Description {#description}
+
+:::note Experimental
+`ColumnBinary` is experimental and disabled by default; set `allow_experimental_column_binary_format = 1` to use it.
+Its `COLUMNAR_V1` frame header carries no wire version, so the layout may change incompatibly and data written today
+may not be readable by a future version. Do not persist `ColumnBinary` data until the layout is frozen and the frame
+header is versioned.
+:::
 
 `ColumnBinary` is a compact columnar binary format that reuses the `COLUMNAR_V1` wire layout also used by the [`COLUMNAR_V1` WASM UDF ABI](/sql-reference/functions/wasm_udf#abi-columnar-v1). Unlike [Native](./Native.md) and [Buffers](./Buffers.md), which serialize each column independently one after another, `ColumnBinary` writes a single frame per block: a header, a fixed-size descriptor table (one descriptor per column), and then every column's data packed contiguously. All numeric fields are little-endian.
 

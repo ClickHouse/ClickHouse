@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental until its `COLUMNAR_V1` frame header is versioned.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # Nullable(T) nested inside Array/Tuple: complexDataSize/writeComplexData/decode prepend
 # a u8 null_map[n] before T's own layout. Rows mix NULL and non-NULL elements to catch
 # null-map bit-position bugs.

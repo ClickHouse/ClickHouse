@@ -644,6 +644,7 @@ struct FormatSettings
     // ColumnBinary format settings
     struct
     {
+        bool allow_experimental = false;
         bool disable_preallocation = false;
         UInt64 max_frame_size = 1_GiB;
     } column_binary{};

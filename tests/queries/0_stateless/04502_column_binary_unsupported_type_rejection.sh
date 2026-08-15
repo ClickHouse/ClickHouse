@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental until its `COLUMNAR_V1` frame header is versioned.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # ColumnBinary/COLUMNAR_V1 cannot represent Variant nested inside Array/Tuple. This
 # signature must be rejected at format construction time, before any block is
 # serialized, rather than failing partway through the first block. Fixed-width types of

@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is experimental until its `COLUMNAR_V1` frame header is versioned.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS array_of_len;
 DELETE FROM system.webassembly_modules WHERE name = 'columnar_abi_nullable_arg';
