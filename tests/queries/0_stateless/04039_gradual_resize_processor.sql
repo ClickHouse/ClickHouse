@@ -31,6 +31,7 @@ INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(1000000)
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET max_threads = 4;
+SET optimize_aggregation_in_order = 0;
 
 SELECT count() > 0
 FROM
