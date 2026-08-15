@@ -28,8 +28,10 @@ protected:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
-    /// TODO: replace isSuitableForShortCircuitArgumentsExecution with a dedicated canThrow interface on functions.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->isSuitableForShortCircuitArgumentsExecution(arguments); }
+    /// TODO: most functions still answer this through `isSuitableForShortCircuitArgumentsExecution`
+    /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
+    /// should become the conservative `true` instead of that approximation.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;
