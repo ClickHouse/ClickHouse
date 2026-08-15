@@ -111,10 +111,10 @@ Paste the enrollment token at the hidden prompt. The CLI then prompts for:
 
 The single invocation then runs end to end: it redeems the token (saving the enrollment bundle as `handoff.yaml` in the working directory), stages the Helm values overlay `clicklink-values.yaml`, creates the namespace, applies the `clicklink-hmac` and `clicklink-mtls` Secrets, provisions read-only ClickHouse users for each instance (auto-selecting SQL grants or CR injection for operator-managed instances), generates a private key and CSR and has ClickHouse sign the client certificate, installs the `clicklink-connector` Helm release with the built-in Helm client (no `helm` binary required), and verifies health.
 
-For unattended runs, answer the prompts with flags instead:
+For unattended runs, answer the prompts with flags instead. Use the saved bundle as the entry point, because `--enroll` reads the enrollment token from the first line of stdin in non-terminal runs and would consume the redirected password:
 
 ```bash
-clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm \
+clicklink clctl init --handoff handoff.yaml --target helm \
   --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
   --operators '<operator-email-1>,<operator-email-2>' \
   --storage-class <storage-class> \

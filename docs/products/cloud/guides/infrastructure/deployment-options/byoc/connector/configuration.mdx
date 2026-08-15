@@ -86,7 +86,7 @@ clicklink clctl troubleshoot access provision --target helm \
   --server <kubernetes-api-server-url>
 ```
 
-Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
+For an operator-managed instance with no SQL-capable admin, add `--ch-user-via cr` and the pod-selection flags (`--ch-pod`, `--ch-pod-namespace`); see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli). Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
 
 ```yaml
 scraper:

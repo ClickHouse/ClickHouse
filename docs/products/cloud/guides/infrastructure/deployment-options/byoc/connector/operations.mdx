@@ -98,6 +98,8 @@ sudo clicklink clctl troubleshoot access provision --provider local \
   --instance <instance-name> --server <kubernetes-api-server-url> --force
 ```
 
+For operator-managed instances, add `--ch-user-via cr` and the pod-selection flags to either form; see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli).
+
 - **Client certificate**: renewal is automatic (see [certificates](#certificates)). To supersede an unexpired certificate immediately, re-run `init` with `--force`.
 
 ## Re-runs and recovery {#re-runs-and-recovery}

@@ -19,7 +19,7 @@ This is the complete list of connections the connector opens. All of them origin
 | Your org's connector API endpoint | HTTPS with mTLS, every request HMAC-signed | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew` |
 | Your org's connector API endpoint | Outbound WebSocket, `/v1/commands/ws` | The troubleshooter's command channel, gated by support-session state |
 | Your org's enrollment endpoint | HTTPS (enrollment token or HMAC; no mTLS) | Token redemption and certificate signing (`/v1/pcm/cert/sign`) at install time |
-| Your ClickHouse instances | ClickHouse native protocol | Read-only queries as `pcm_scraper` and `pcm_troubleshooter` |
+| Your ClickHouse instances | ClickHouse native protocol | Read-only queries as `pcm_scraper` and `pcm_troubleshooter`, plus the scraper's log-flush statement (see [grants](#clickhouse-grants)) |
 | The Kubernetes API server | HTTPS | Namespace-scoped reads, ServiceAccount token requests, and exact-name read and update of the connector's own mTLS Secret to persist renewed certificates |
 | Your identity provider's JWKS endpoint | HTTPS | Operator token validation, only when the session gateway is enabled |
 
@@ -27,7 +27,7 @@ Inbound, the connector exposes only local health and metrics ports plus the opt-
 
 ### ClickHouse grants {#clickhouse-grants}
 
-Provisioning creates one read-only user per component. The users are created with `IDENTIFIED WITH bcrypt_hash`, so only a salted bcrypt hash exists in the provisioning SQL; the plaintext password lives only in the credential file the daemon reads at runtime. The grants are exactly these, with the default table sets:
+Provisioning creates one least-privilege user per component, read-only except for the scraper's single log-flush grant listed below. The users are created with `IDENTIFIED WITH bcrypt_hash`, so only a salted bcrypt hash exists in the provisioning SQL; the plaintext password lives only in the credential file the daemon reads at runtime. The grants are exactly these, with the default table sets:
 
 ```sql
 CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';

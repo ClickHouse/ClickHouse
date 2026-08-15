@@ -31,7 +31,7 @@ Deploy the connector when ClickHouse monitors or supports ClickHouse clusters ru
 
 ## How it works {#how-it-works}
 
-ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding. You run `clicklink clctl init --enroll` once, from a workstation with kubeconfig access for a Kubernetes install or directly on the host for a Linux VM install. That single invocation redeems the token, creates dedicated read-only ClickHouse users for each component, obtains an mTLS client certificate, deploys and starts the daemons, and verifies their health.
+ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding. You run `clicklink clctl init --enroll` once, from a workstation with kubeconfig access for a Kubernetes install or directly on the host for a Linux VM install. That single invocation redeems the token, creates dedicated least-privilege ClickHouse users for each component, obtains an mTLS client certificate, deploys and starts the daemons, and verifies their health.
 
 From then on, the scraper periodically reads the allowlisted system tables and ships metrics, metadata, and health status to your connector endpoint over mutually authenticated TLS. The troubleshooter stays idle: it maintains an outbound command channel, but that channel carries nothing until you enable a support session. The mTLS certificate renews automatically with no action on your side.
 
@@ -41,7 +41,7 @@ From then on, the scraper periodically reads the allowlisted system tables and s
 - **Outbound network access on port 443** to your connector endpoint and its enrollment endpoint, plus `releases.clicklink.clickhouse.com` and ECR Public at install time. This is the standard path; air-gapped and mirrored alternatives exist for every step, see [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding).
 - **A reachable ClickHouse native listener.** The connector talks to each cluster over the native protocol; on Kubernetes it auto-detects secure (9440) or plaintext (9000).
 - **An enrollment token.** ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding.
-- **ClickHouse admin access during setup.** Initial provisioning creates the connector's read-only users. An admin password, when one is set, is prompted once and never stored.
+- **ClickHouse admin access during setup.** Initial provisioning creates the connector's least-privilege users. An admin password, when one is set, is prompted once and never stored.
 
 See [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding) for the full walkthrough of both install targets.
 
