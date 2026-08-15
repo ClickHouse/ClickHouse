@@ -11,7 +11,10 @@ DROP TABLE IF EXISTS payloads;
 CREATE TABLE events (Time DateTime, Id String) ENGINE = MergeTree ORDER BY Time;
 INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECOND AS Time, toString(number) AS Id FROM numbers(10000);
 
-CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tuple();
+-- A `Join`-engine table uses `FilledJoinStep`. It must receive the same parallel-replica
+-- protection as `JoinStep`, because its probe side may otherwise choose `WithOrder` while a
+-- remote replica chooses `Default`.
+CREATE TABLE payloads (Payload String, Id String) ENGINE = Join(ANY, LEFT, Id);
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
 SET enable_analyzer = 1;

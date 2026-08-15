@@ -132,6 +132,11 @@ struct FindReadingStepContext
     /// build-side pipeline to synchronize with and preserves the probe order as is.
     bool passed_order_preserving_join = false;
 
+    /// Set to true when the traversal passes through an order-preserving INNER JOIN. Unlike a
+    /// `LEFT` join, an inner join can discard probe-side rows, so sorting requires virtual rows
+    /// to choose the next input stream correctly.
+    bool passed_inner_order_preserving_join = false;
+
     /// Set to true when the traversal descends through an order-preserving step that performs
     /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
     /// into `PREWHERE`, an `ArrayJoinStep`, or a non-trivial `ExpressionStep`). Callers use this
@@ -207,6 +212,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
                 if (reading_step)
                 {
                     data.passed_order_preserving_join = true;
+                    data.passed_inner_order_preserving_join = data.passed_inner_order_preserving_join || kind == JoinKind::Inner;
                     if (auto * join_step = typeid_cast<JoinStep *>(step))
                         data.joins_to_keep_in_order.push_back(join_step);
                 }
@@ -1251,7 +1257,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         /// ("Replica decided to read in Default mode, not in WithOrder").
         /// Skip this optimization for parallel replicas when it goes through a JOIN,
         /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
             return nullptr;
 
         auto order_info = buildInputOrderFromSortDescription(
@@ -1277,15 +1283,10 @@ InputOrderInfoPtr buildInputOrderInfo(
                 /// Without it, the sorting step after join cannot correctly determine
                 /// which input stream to read from when most rows are filtered out,
                 /// potentially reading excessive amount of data.
-                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                if (find_reading_ctx.passed_inner_order_preserving_join)
                 {
-                    const auto & table_join = join_step->getJoin()->getTableJoin();
-                    auto strictness = table_join.strictness();
-                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
-                    {
-                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
-                        return nullptr;
-                    }
+                    LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                    return nullptr;
                 }
             }
 
@@ -1419,7 +1420,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1552,7 +1553,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         /// Same as above: skip distinct-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1785,7 +1786,7 @@ bool wouldReadInOrderBeUseful(
     {
         /// Pass 2 bails out for parallel replicas reached through a `JOIN`, because the
         /// initiator and the replicas can disagree on the plan.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
             return false;
 
         auto order_info = buildInputOrderFromSortDescription(reading, fixed_columns, dag, description, limit);
