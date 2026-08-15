@@ -29,6 +29,10 @@ import urllib3
 
 temp_dir = "../../ci/tmp"
 
+# Emitted once per RabbitMQ container recreation. ci/jobs/integration_test_job.py
+# matches this literal, so it is an interface: renaming it zeroes the reported count.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -810,6 +814,8 @@ class ClickHouseCluster:
         self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
         self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
+        # Counts calls to wait_rabbitmq_to_start; `attempt` restarts at 0 in each one.
+        self.rabbitmq_wait_calls = 0
 
         self.nats_host = "nats1"
         self._nats_port = 0
@@ -3141,6 +3147,8 @@ class ClickHouseCluster:
 
     def wait_rabbitmq_to_start(self, timeout=120, retries=2):
         self.print_all_docker_pieces()
+        self.rabbitmq_wait_calls += 1
+        call = self.rabbitmq_wait_calls
 
         for attempt in range(retries):
             if attempt > 0:
@@ -3148,8 +3156,34 @@ class ClickHouseCluster:
                 # no output at all and the Erlang node never registers with epmd, while
                 # a fresh container on the same host starts in seconds. Recreate it and
                 # wait again instead of failing the whole test module.
+                #
+                # The broker log is copied out first: it lives under `instances_dir`,
+                # which is removed on teardown and on a second `start()`. S3 upload keys
+                # are built from the basename alone, so it must be unique along every
+                # axis that can produce two copies in one job: the pytest process, the
+                # cluster, the waiter call and the attempt. The path is absolute because
+                # the CI job script resolves it from the repo root, not from here.
+                snapshot = os.path.abspath(
+                    os.path.join(
+                        temp_dir,
+                        f"rabbit-{self.project_name}-pid{os.getpid()}"
+                        f"-call{call}-attempt{attempt}.log",
+                    )
+                )
+                try:
+                    os.makedirs(temp_dir, exist_ok=True)
+                    shutil.copyfile(
+                        os.path.join(self.rabbitmq_logs_dir, "rabbit.log"), snapshot
+                    )
+                except Exception as ex:
+                    logging.debug("Unable to preserve the RabbitMQ log: %s", ex)
+                    snapshot = ""
                 logging.warning(
-                    "RabbitMQ did not start in %s seconds, recreating the container",
+                    "%s attempt=%s snapshot=%s RabbitMQ did not start in %s seconds,"
+                    " recreating the container",
+                    RABBITMQ_RECREATE_TOKEN,
+                    attempt,
+                    snapshot,
                     timeout,
                 )
                 run_and_check(
