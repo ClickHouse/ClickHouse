@@ -220,10 +220,11 @@ bool containsEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
 
 bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function, const QueryTreeNodePtr & node)
 {
-    static constexpr std::array<std::string_view, 6> comparison_names
-        = {"equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
-    return std::ranges::contains(comparison_names, function.getFunctionName())
-        && containsEarlyShortCircuitScalarPlaceholder(node);
+    const auto & name = function.getFunctionName();
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    return is_comparison && containsEarlyShortCircuitScalarPlaceholder(node);
 }
 
 bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
