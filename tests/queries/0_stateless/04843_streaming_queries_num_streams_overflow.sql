@@ -46,4 +46,16 @@ SELECT count() FROM (SELECT n FROM t_stream_num_streams STREAM LIMIT 1)
 SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 2,
          allow_asynchronous_read_from_io_pool_for_merge_tree = 1, max_streams_for_merge_tree_reading = 100000;
 
+-- `Merge` amplifies streams before child plans are built. Each child would stay at the per-table
+-- limit here, but the aggregate would create 131072 streaming sources without the global check.
+CREATE TABLE t_stream_merge_num_streams_1 AS t_stream_num_streams ENGINE = MergeTree ORDER BY n;
+CREATE TABLE t_stream_merge_num_streams_2 AS t_stream_num_streams ENGINE = MergeTree ORDER BY n;
+
+SELECT n FROM merge(currentDatabase(), '^t_stream_merge_num_streams_[12]$') STREAM
+SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 16384, max_streams_for_merge_tree_reading = 0
+FORMAT Null; -- { serverError PARAMETER_OUT_OF_BOUND }
+
+DROP TABLE t_stream_merge_num_streams_1;
+DROP TABLE t_stream_merge_num_streams_2;
+
 DROP TABLE t_stream_num_streams;

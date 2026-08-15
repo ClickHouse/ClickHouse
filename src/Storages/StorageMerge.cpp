@@ -836,6 +836,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         static_cast<Float64>(tables_count),
         std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
     size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
+
+    /// A streaming read creates one source for every child stream. Check the aggregate before
+    /// building child plans: checking each child in `ReadFromMergeTree` is insufficient because
+    /// the `Merge` fan-out can keep every child below the limit while exceeding it in total.
+    /// When there are fewer requested streams than tables, every table still gets one stream.
+    static constexpr size_t max_streams_for_streaming_read = 65536;
+    if (query_info_.isStream() && std::max(num_streams, tables_count) > max_streams_for_streaming_read)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Too many streams for a streaming read: {} (the maximum is {}). "
+            "Lower `max_streams_to_max_threads_ratio`, `max_threads`, or `max_streams_multiplier_for_merge_tables`",
+            std::max(num_streams, tables_count), max_streams_for_streaming_read);
+
     size_t remaining_streams = num_streams;
 
     if (order_info)
