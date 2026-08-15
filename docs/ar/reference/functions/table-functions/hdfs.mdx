@@ -1,5 +1,6 @@
 ---
-description: 'تنشئ جدولًا من ملفات موجودة في HDFS. تشبه دالة الجدول هذه دالتي الجداول url وfile.'
+description: 'تنشئ جدولًا من ملفات موجودة في HDFS. تشبه دالة الجدول هذه دالتي الجداول
+  url وfile.'
 sidebarTitle: 'hdfs'
 slug: /sql-reference/table-functions/hdfs
 title: 'hdfs'
@@ -31,7 +32,7 @@ hdfs(URI, format, structure)
 | `format`    | [صيغة](/ar/reference/formats/index) الملف.                                                                                                                                                |
 | `structure` | بنية الجدول. الصيغة: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                    |
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المُعادة
 </div>
 
@@ -54,7 +55,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="globs_in_path">
+<div id="globs-in-path">
   ## أنماط globs في المسار
 </div>
 
@@ -137,9 +138,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
   ## إعدادات التخزين
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_truncate_on_insert) - يسمح باقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. يكون معطّلًا افتراضيًا.
-* [hdfs&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#hdfs_skip_empty_files) - يسمح بتخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - يسمح باقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان للصيغة لاحقة. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - يسمح بتخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
 
 <div id="related">
   ## مواضيع ذات صلة
