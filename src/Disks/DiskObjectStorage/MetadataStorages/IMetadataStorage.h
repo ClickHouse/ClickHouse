@@ -283,17 +283,6 @@ public:
     /// answer `true`.
     virtual bool hasLocalFilesystemDirectoryNamespace() const { return false; }
 
-    /// True if transactions apply operations immediately instead of accumulating them until commit.
-    virtual bool appliesOperationsEagerly() const
-    {
-        return false;
-    }
-
-    /// The generator of object storage keys for new blobs, if this storage owns one.
-    virtual ObjectStorageKeyGeneratorPtr getKeyGenerator() const
-    {
-        return nullptr;
-    }
     virtual bool isTransactional() const
     {
         return false;
