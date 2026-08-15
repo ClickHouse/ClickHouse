@@ -496,7 +496,7 @@ struct HashMethodKeysFixed
             return false;
 
         for (auto size : key_sizes)
-            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16 && size != 32)
                 return false;
 
         return true;
@@ -672,6 +672,7 @@ struct HashMethodKeysFixed
             }
         };
 
+        fill_size(32);
         fill_size(16);
         fill_size(8);
         fill_size(4);
