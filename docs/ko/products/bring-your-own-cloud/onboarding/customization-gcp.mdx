@@ -18,7 +18,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
 <Steps>
   <Step title="기존 VPC 구성" id="configure-existing-vpc">
     1. ClickHouse Kubernetes(GKE) 클러스터용으로 [ClickHouse BYOC 지원 리전](/ko/products/cloud/reference/supported-regions)에 프라이빗 서브넷을 최소 1개 할당하십시오. GKE 클러스터 노드에 충분한 IP 주소를 제공할 수 있도록 서브넷의 CIDR 범위는 최소 `/24`(예: 10.0.0.0/24)여야 합니다.
-    2. 프라이빗 서브넷 내에서 GKE 클러스터 파드에 사용할 보조 IPv4 범위를 최소 1개 할당하십시오. GKE 클러스터 파드에 충분한 IP 주소를 제공할 수 있도록 보조 범위는 최소 `/23`이어야 합니다.
+    2. 프라이빗 서브넷 내에서 GKE 클러스터 파드에 사용할 보조 IPv4 범위를 최소 1개 할당하십시오. 보조 범위는 최소 `/21`이어야 합니다. 이보다 작은 범위는 GKE 클러스터가 프로비저닝을 완료하는 데 필요한 파드 IP 주소를 충분히 제공하지 못하므로 인프라 설정이 실패합니다.
     3. 서브넷에서 **Private Google Access**를 활성화하십시오. 이렇게 하면 GKE 노드가 외부 IP 주소 없이도 Google API 및 서비스에 연결할 수 있습니다.
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access가 활성화된 기본 및 보조 IPv4 범위를 보여주는 BYOC GCP 서브넷 세부 정보" />
