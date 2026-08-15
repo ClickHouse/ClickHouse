@@ -31,6 +31,7 @@ namespace DB
 
 namespace FailPoints
 {
+    extern const char filter_transform_before_expression_pause[];
     extern const char filter_transform_pause[];
     extern const char query_condition_cache_part_switch_pause[];
 }
@@ -243,6 +244,14 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
+
+        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_before_expression_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
 
         if (expression)
             expression->execute(block, num_rows_before_filtration, false, false, [this]() { return isCancelled(); });

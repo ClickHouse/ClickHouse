@@ -17,6 +17,7 @@ namespace DB
 {
 namespace FailPoints
 {
+    extern const char totals_having_transform_before_expression_pause[];
     extern const char totals_having_transform_pause[];
     extern const char totals_having_transform_totals_pause[];
     extern const char totals_having_transform_totals_start_pause[];
@@ -214,6 +215,15 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         {
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Having clause cannot contain arrayJoin");
+        }
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_before_expression_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
         }
 
         expression->execute(finalized_block, num_rows, false, false, [this]() { return isCancelled(); });
