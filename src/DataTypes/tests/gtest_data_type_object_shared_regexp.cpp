@@ -267,6 +267,21 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapKeyMismatchOnTargetSide)
     EXPECT_EQ(asJSON(result_map->getKeyType()).getSharedDataPathRules().size(), 1);
 }
 
+TEST(DataTypeObjectSharedRegexp, MergeAppliesToBothMapSidesWhenBothAreJSON)
+{
+    /// `map(j, j)`: DataTypeMap::isValidKeyType allows a JSON key, so both sides of a Map can be
+    /// JSON-shaped at once. The source's policy must reach both, not just whichever side an
+    /// early-return would have stopped at first.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeMap>(makeJSONType({}), makeJSONType({})), rule_bearing);
+    const auto * result_map = typeid_cast<const DataTypeMap *>(merged.get());
+    ASSERT_TRUE(result_map);
+    EXPECT_EQ(asJSON(result_map->getKeyType()).getSharedDataPathRules().size(), 1);
+    EXPECT_EQ(asJSON(result_map->getValueType()).getSharedDataPathRules().size(), 1);
+}
+
 TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnSourceSide)
 {
     /// The reverse shape, e.g. `arr[1]` over `arr Array(JSON(...))`: the expression's own output
@@ -312,6 +327,21 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapKeyMismatchOnSourceSide)
     const auto merged = mergeJSONSharedDataPathRules(
         makeJSONType({}), std::make_shared<DataTypeMap>(rule_bearing, std::make_shared<DataTypeString>()));
     EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeMergesAmbiguousMapSidesOnSourceSide)
+{
+    /// Extracting from a historical Map(JSON(...), JSON(...)) (e.g. mapKeys(m)[1] vs
+    /// mapValues(m)[1]/m[k]): the expression's own bare output type can't say which side it came
+    /// from when both are JSON-shaped. With different rules on each side, conservatively take the
+    /// union of both rather than guessing and silently dropping whichever side wasn't picked.
+    const auto key_rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+    const auto value_rule_bearing = makeJSONType({{"^flag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeMap>(key_rule_bearing, value_rule_bearing));
+    const auto & merged_object = asJSON(merged);
+    ASSERT_EQ(merged_object.getSharedDataPathRules().size(), 2);
 }
 
 TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsPropagatesRulesAndExtendsPrefix)
