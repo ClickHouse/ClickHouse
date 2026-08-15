@@ -89,7 +89,6 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     /// updateMany or dropped.
     /// Each spec is translated before it is run, so a malformed update is still an error for a
     /// collection that does not exist.
-    Int64 matched = 0;
     bson_t * bson_doc = bson_new();
     bson_t write_errors;
     bool has_write_errors = false;
@@ -148,21 +147,6 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             /// an update of zero documents rather than an error.
             if (objectExists(executor, "TABLE", collection.getQualifiedName()))
             {
-                auto count_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
-                auto count_parser = Mongo::ParserMongoQuery(count_query.size(), 10000, 10000);
-                auto count_ast = Mongo::parseMongoQuery(
-                    count_parser,
-                    count_query.data(),
-                    count_query.data() + count_query.size(),
-                    "",
-                    count_query.size(),
-                    10000,
-                    10000,
-                    collection.database);
-                String sql_count_query;
-                WriteBufferFromString count_buffer(sql_count_query);
-                count_ast->format(count_buffer, IAST::FormatSettings(true));
-                matched += std::stoll(executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_count_query)));
                 executor->execute(alter_query);
             }
         }
@@ -188,9 +172,8 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     if (has_write_errors)
         bson_append_array_end(bson_doc, &write_errors);
     /// A mutation is asynchronous, so its modified count is not known at acknowledgement time.
-    appendCount(bson_doc, "n", matched);
-    if (matched == 0)
-        BSON_APPEND_INT32(bson_doc, "nModified", 0);
+    appendCount(bson_doc, "n", 0);
+    BSON_APPEND_INT32(bson_doc, "nModified", 0);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;

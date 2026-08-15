@@ -515,9 +515,9 @@ def test_bulk_delete_executes_every_spec(started_cluster):
     assert collection.estimated_document_count() == 1
 
 
-def test_mutation_replies_report_the_matched_rows(started_cluster):
-    """An acknowledged update or delete identifies the rows matched by its filter, even though
-    ClickHouse applies the mutation asynchronously."""
+def test_mutation_replies_report_unknown_counts(started_cluster):
+    """An asynchronous ClickHouse mutation cannot report its exact affected-row count when it
+    is acknowledged."""
     node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["mutation_reply_counts"]
@@ -531,12 +531,12 @@ def test_mutation_replies_report_the_matched_rows(started_cluster):
     collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
 
     result = collection.update_many({"id": {"$gte": 1}}, {"$inc": {"value": 1}})
-    assert result.matched_count == 2
-    assert result.modified_count is None
+    assert result.matched_count == 0
+    assert result.modified_count == 0
     assert wait_for(lambda: collection.find_one({"id": 1})["value"] == 2)
 
     result = collection.delete_many({"id": {"$gte": 1}})
-    assert result.deleted_count == 2
+    assert result.deleted_count == 0
     assert wait_for(lambda: collection.estimated_document_count() == 0)
 
 

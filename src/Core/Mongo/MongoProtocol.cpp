@@ -107,6 +107,12 @@ String QueryExecutor::execute(const String & query)
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);
 
+    /// A cursor reply is one BSON document and cannot be larger than the limit advertised to
+    /// clients. Limit the query result before `FORMAT JSON` materializes it into `out`; the
+    /// cursor encoder checks the exact BSON size afterwards, including its envelope.
+    query_context->setSetting("max_result_bytes", Field(UInt64(MAX_BSON_OBJECT_SIZE)));
+    query_context->setSetting("result_overflow_mode", "throw");
+
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
     /// way the parsing expects rather than the way the user's profile asks.
     query_context->setSetting("date_time_output_format", String("simple"));
