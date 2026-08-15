@@ -7,7 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/SipHash.h>
+#include <Common/transformEndianness.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -39,6 +39,11 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <ranges>
+#include <xxhash.h>
+
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 namespace DB
 {
@@ -177,16 +182,12 @@ enum class JSONBloomDomain : UInt8
     DynamicComplexPresence = 5,
 };
 
-UInt64 finishTokenHash(SipHash & hash)
+void updateTokenHash(XXH3_state_t & hash, std::string_view value)
 {
-    return hash.get64();
-}
-
-void updateTokenHash(SipHash & hash, std::string_view value)
-{
-    const UInt64 size = value.size();
-    hash.update(size);
-    hash.update(value.data(), value.size());
+    UInt64 size = value.size();
+    transformEndianness<std::endian::little>(size);
+    XXH_INLINE_XXH3_64bits_update(&hash, &size, sizeof(size));
+    XXH_INLINE_XXH3_64bits_update(&hash, value.data(), value.size());
 }
 
 UInt64 hashToken(
@@ -196,15 +197,16 @@ UInt64 hashToken(
     std::string_view type,
     std::string_view value)
 {
-    SipHash hash;
+    XXH3_state_t hash;
+    XXH_INLINE_XXH3_64bits_reset(&hash);
     static constexpr std::string_view namespace_name = "jsonbf_v1";
     updateTokenHash(hash, namespace_name);
-    hash.update(static_cast<UInt8>(role));
-    hash.update(static_cast<UInt8>(domain));
+    XXH_INLINE_XXH3_64bits_update(&hash, &role, sizeof(role));
+    XXH_INLINE_XXH3_64bits_update(&hash, &domain, sizeof(domain));
     updateTokenHash(hash, path);
     updateTokenHash(hash, type);
     updateTokenHash(hash, value);
-    return finishTokenHash(hash);
+    return XXH_INLINE_XXH3_64bits_digest(&hash);
 }
 
 UInt64 alwaysPresentHash()
