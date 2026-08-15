@@ -76,7 +76,7 @@ SELECT * FROM prometheusQuery(ts, 'sort_desc(up) or vector(99)', $EVAL_TIME);
 SELECT '-- or preserves an ordered right suffix';
 SELECT * FROM prometheusQuery(ts, 'vector(99) or sort_desc(up)', $EVAL_TIME);
 
-SELECT '-- topk''s own value order (descending) is propagated as a sort order, so or preserves it as an ordered left prefix';
+SELECT '-- the value order of topk (descending) is propagated as a sort order, so or preserves it as an ordered left prefix';
 SELECT * FROM prometheusQuery(ts, 'topk(2, up) or vector(99)', $EVAL_TIME);
 
 SELECT '-- topk with by(...) grouping carries a bucket-aware sort order (buckets consecutive in an unspecified hash-based order, values ordered within each bucket), so it composes with or as an ordered left prefix (all 3 singleton buckets pass through)';
