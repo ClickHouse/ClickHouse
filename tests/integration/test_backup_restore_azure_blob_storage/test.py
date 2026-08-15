@@ -538,6 +538,58 @@ def test_backup_restore_on_merge_tree(cluster):
     azure_query(node, "DROP TABLE test_simple_merge_tree_restored")
 
 
+@pytest.mark.parametrize("max_single_part_upload_size", [32 * 1024 * 1024, 1])
+def test_incremental_backup_restore_on_log(cluster, max_single_part_upload_size):
+    # A `Log` table grows by appending, so an incremental backup writes only the tail of each data
+    # file, i.e. `base_size` is non-zero. The first parameter keeps the data files below
+    # `max_single_part_upload_size` so they take the single-part upload path, the second forces the
+    # multipart path.
+    node = cluster.instances["node"]
+    azure_query(node, "DROP TABLE IF EXISTS test_incremental_log")
+    azure_query(
+        node,
+        "CREATE TABLE test_incremental_log (key UInt64, data String) Engine = Log",
+    )
+    azure_query(
+        node,
+        "INSERT INTO test_incremental_log VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc')",
+    )
+
+    base_backup_name = new_backup_name()
+    base_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{base_backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_incremental_log TO {base_backup_destination}",
+        settings={"azure_max_single_part_upload_size": max_single_part_upload_size},
+    )
+
+    azure_query(
+        node,
+        "INSERT INTO test_incremental_log VALUES (4, 'ddd'), (5, 'eee'), (6, 'fff')",
+    )
+
+    incremental_backup_name = new_backup_name()
+    incremental_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{incremental_backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_incremental_log TO {incremental_backup_destination} SETTINGS base_backup = {base_backup_destination}",
+        settings={"azure_max_single_part_upload_size": max_single_part_upload_size},
+    )
+
+    azure_query(node, "DROP TABLE IF EXISTS test_incremental_log_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_incremental_log AS test_incremental_log_restored FROM {incremental_backup_destination}",
+    )
+
+    assert azure_query(
+        node, "SELECT * FROM test_incremental_log_restored ORDER BY key"
+    ) == azure_query(node, "SELECT * FROM test_incremental_log ORDER BY key")
+
+    azure_query(node, "DROP TABLE test_incremental_log")
+    azure_query(node, "DROP TABLE test_incremental_log_restored")
+
+
 def test_backup_restore_keeper_map_reference_copy(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]

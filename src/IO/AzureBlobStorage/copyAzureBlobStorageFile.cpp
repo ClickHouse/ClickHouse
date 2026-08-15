@@ -165,13 +165,14 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// `offset` is non-zero for incremental backups, where only the tail of the file is uploaded.
+            LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
                 memory.resize(total_size);
                 WriteBufferFromVector<PODArray<char>> wb(memory);
-                copyData(*read_buffer, wb, total_size);
+                copyData(read_buffer, wb, total_size);
             }
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
