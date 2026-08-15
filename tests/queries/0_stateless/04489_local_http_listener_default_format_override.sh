@@ -20,8 +20,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_LOCAL \
     --listen_host 127.0.0.1 \
     --http_port 0 \
-    --input-format CSV \
-    --output-format CSV \
     --query "
     SYSTEM START LISTEN HTTP;
     SELECT '-- default_format=CSV wins over the local display default';

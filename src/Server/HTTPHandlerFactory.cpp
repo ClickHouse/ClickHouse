@@ -144,6 +144,11 @@ static void addDefaultHandlersFactory(
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics);
 
+static void addCatchAllQueryHandlerFactory(
+    HTTPRequestHandlerFactoryMain & factory,
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config);
+
 static auto createPingHandlerFactory(IServer & server)
 {
     auto creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
@@ -383,6 +388,14 @@ createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfigurati
 
     /// SQL-defined handlers (CREATE HANDLER) are matched after all configuration-defined handlers.
     factory->addHandler(std::make_shared<SQLDefinedHTTPHandlerFactory>(server, protocol_name));
+
+    /// And the catch-all query handler comes last of all, so that it only sees the requests no
+    /// handler claimed: it matches paths that belong to somebody else (any `OPTIONS` preflight, and -
+    /// when `http_allow_path_requests` is on - any path at all, to interpret it as a database/table
+    /// reference). Registering it earlier would shadow every SQL-defined handler.
+    if (factory->areDefaultHandlersRegistered())
+        addCatchAllQueryHandlerFactory(*factory, server, config);
+
     return factory;
 }
 
@@ -555,6 +568,47 @@ void addDefaultHandlersFactory(
     {
         return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query", std::nullopt, "", path_hints);
     };
+    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
+    query_handler->addFilter([](const auto & request)
+        {
+            /// The explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an empty or "/"
+            /// POST. These name no path of their own, so nothing else can be competing for them and
+            /// they are claimed here, among the defaults. The catch-all forms (a CORS preflight for
+            /// any path, and the path-as-file routing) are registered separately, after the
+            /// SQL-defined handlers - see `addCatchAllQueryHandlerFactory`.
+            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
+                            || startsWith(request.getURI(), "/?")
+                            || startsWith(request.getURI(), "/query?");
+            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+
+            bool path_matches_post_or_options = path_matches_get_or_head
+                             || request.getURI() == "/"
+                             || request.getURI().empty();
+            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
+        }
+    );
+    factory.addHandler(query_handler);
+
+    /// Record that the catch-all still has to be appended. It cannot be added here: it claims paths
+    /// it does not own, so it has to lose to every handler that does - including the SQL-defined ones
+    /// (`CREATE HANDLER`), which `createHTTPHandlerFactory` registers after all of these.
+    factory.setDefaultHandlersRegistered();
+}
+
+void addCatchAllQueryHandlerFactory(
+    HTTPRequestHandlerFactoryMain & factory,
+    IServer & server,
+    const Poco::Util::AbstractConfiguration & config)
+{
+    auto path_hints = factory.getPathHints();
+    auto dynamic_creator = [&server, path_hints] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query", std::nullopt, "", path_hints);
+    };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
     /// default off), evaluated here at routing time — before authentication, where the connecting
     /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
@@ -566,7 +620,6 @@ void addDefaultHandlersFactory(
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([allow_path_requests](const auto & request)
         {
-            const auto & uri = request.getURI();
             const auto & method = request.getMethod();
             bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
                                || method == Poco::Net::HTTPRequest::HTTP_HEAD;
@@ -575,21 +628,15 @@ void addDefaultHandlersFactory(
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
-            /// authentication and without running a query, so it must always be claimed here —
+            /// authentication and without running a query, so it is claimed here for any path —
             /// regardless of the URL shape and independent of `http_allow_path_requests`. Otherwise an
             /// `OPTIONS` preflight to a path the page will later GET (e.g. `/play`, `/db/table`)
-            /// reaches no handler and the browser treats the connection as broken.
+            /// reaches no handler and the browser treats the connection as broken. A handler that owns
+            /// the path answers the preflight itself: config-defined and SQL-defined handlers both
+            /// match `OPTIONS`, and both are registered before this one.
             if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
                 return true;
 
-            /// Existing routing: explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an
-            /// empty or "/" POST.
-            bool original_get_match = startsWith(uri, "?")
-                                   || startsWith(uri, "/?")
-                                   || startsWith(uri, "/query?");
-            bool original_post_match = original_get_match || uri == "/" || uri.empty();
-            if ((is_get_or_head && original_get_match) || (is_post_or_options && original_post_match))
-                return true;
             if (!is_get_or_head && !is_post_or_options)
                 return false;
 
