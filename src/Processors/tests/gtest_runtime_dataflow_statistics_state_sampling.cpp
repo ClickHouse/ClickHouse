@@ -303,6 +303,85 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithStateAlternativeSamplesN
     EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
 }
 
+/// A state alternative can be absent from a sampled `Variant` block. Its aggregate-state leaf then has
+/// zero rows, even though the outer block is non-empty. This must not establish a zero-byte sample for
+/// later blocks: the Native stream contains no state values in the first block, while following blocks can
+/// contain large state payloads. Keep sampling until at least one state value was serialized.
+TEST(RuntimeDataflowStatisticsStateSampling, VariantWithoutSampledStateValuesDoesNotExtrapolateFromZero)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t string_rows = 100;
+    constexpr size_t state_rows = 200;
+    constexpr size_t state_blocks = 4;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+
+    const auto make_string_variant = [&]
+    {
+        auto empty_states = ColumnAggregateFunction::create(function);
+        auto strings = ColumnString::create();
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < string_rows; ++row)
+        {
+            strings->insertData("sample", 6);
+            discriminators->insertValue(1);
+            offsets->insertValue(row);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(empty_states));
+        alternatives.emplace_back(std::move(strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), std::move(alternatives));
+    };
+    const auto make_state_variant = [&]
+    {
+        auto states = ColumnAggregateFunction::create(function);
+        auto empty_strings = ColumnString::create();
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < state_rows; ++row)
+        {
+            states->insertFrom(*source_state, 0);
+            discriminators->insertValue(0);
+            offsets->insertValue(row);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(states));
+        alternatives.emplace_back(std::move(empty_strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), std::move(alternatives));
+    };
+
+    const size_t cache_key = 0x111985 + 8;
+    size_t exact_compressed_bytes = 0;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, string_rows + state_rows * state_blocks);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state_or_string"});
+
+        auto sample = make_string_variant();
+        exact_compressed_bytes += compressedColumnSize({sample, variant_type, "variant_state_or_string"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sample)}, string_rows), header);
+
+        for (size_t block = 0; block < state_blocks; ++block)
+        {
+            auto states = make_state_variant();
+            exact_compressed_bytes += compressedColumnSize({states, variant_type, "variant_state_or_string"});
+            updater.recordOutputChunk(Chunk(Columns{std::move(states)}, state_rows), header);
+        }
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
 /// A state leaf can also sit inside a `ColumnDynamic` - `Dynamic` accepts `AggregateFunction` values, so
 /// e.g. `if(cond, CAST(groupArrayState(x), 'Dynamic'), CAST(s, 'Dynamic'))` emits a `ColumnDynamic` whose
 /// nested `ColumnVariant` holds a state leaf next to a plain string alternative. The walk that samples the

@@ -391,7 +391,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     /// the `AggregationState` statistic measure the same thing. Serializing states is not cheap, and when
     /// `aggregation_in_order_max_block_bytes` splits large states into many small blocks, doing it per block
     /// would serialize every state of every block; so only the sampled blocks serialize, and the rest are
-    /// extrapolated from the per-row figure the sampled blocks give, like the compression ratio is.
+    /// extrapolated from the per-state-value figure the sampled blocks give, like the compression ratio is.
     /// Aggregate-state leaves of every column, top-level or wrapped: the wrappers' `byteSize` just sums the
     /// nested `byteSize`, so a wrapped leaf drops its shared-arena payload the same way a top-level one does.
     /// Every aggregate-state leaf with the number of times each of its rows appears on the wire.
@@ -426,11 +426,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     }
     const bool has_aggregate_states = !state_leaves.empty();
 
-    /// Until the first sampled block lands there is no per-row figure to extrapolate from, so blocks
+    /// Until the first sampled block with aggregate-state values lands there is no per-value figure to extrapolate from, so blocks
     /// racing with the first sampled one serialize their states too and count as extra samples.
-    const bool serialize_states = has_aggregate_states
-        && (sample_block || statistics.serialized_state_rows.load(std::memory_order_relaxed) == 0);
+    const bool serialize_states
+        = has_aggregate_states && (sample_block || statistics.serialized_state_values.load(std::memory_order_relaxed) == 0);
     size_t serialized_state_bytes = 0;
+    size_t serialized_state_values = 0;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     if (serialize_states)
@@ -442,6 +443,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         static constexpr size_t max_states_to_serialize = 1000;
         for (const auto & [aggregate_column, repetitions] : state_leaves)
         {
+            serialized_state_values += aggregate_column->size() * repetitions;
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
             /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
             /// population of states even when state size or compressibility changes with key order
@@ -485,17 +487,21 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     if (serialize_states)
     {
         statistics.serialized_state_bytes += serialized_state_bytes;
-        statistics.serialized_state_rows += num_rows;
+        statistics.serialized_state_values += serialized_state_values;
         if (!full_bytes)
             block_bytes += serialized_state_bytes;
     }
     else if (has_aggregate_states && !full_bytes)
     {
-        /// Every block of one statistics stream has the same layout, so the block's rows are a sound base
-        /// for the per-row figure even when the block holds several aggregate-state columns.
+        /// Aggregate-state leaves can have a different number of values than the outer block has rows:
+        /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
+        /// Extrapolate from the values that the Native serialization writes, not outer rows.
+        size_t block_state_values = 0;
+        for (const auto & [aggregate_column, repetitions] : state_leaves)
+            block_state_values += aggregate_column->size() * repetitions;
         block_bytes += static_cast<size_t>(
-            static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(num_rows)
-            / static_cast<double>(statistics.serialized_state_rows.load(std::memory_order_relaxed)));
+            static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(block_state_values)
+            / static_cast<double>(statistics.serialized_state_values.load(std::memory_order_relaxed)));
     }
     statistics.bytes += block_bytes;
     if (compressed_bytes)
