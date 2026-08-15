@@ -130,7 +130,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     : master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
@@ -144,7 +143,6 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
@@ -250,7 +248,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
     {
@@ -261,9 +259,14 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent)
+{
+    return ThreadGroupPtr(new ThreadGroup(parent));
+}
+
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }

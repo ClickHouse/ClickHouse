@@ -135,7 +135,7 @@ struct CallbackRunnerTask
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
 
