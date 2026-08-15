@@ -7,9 +7,9 @@
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
-#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -224,12 +224,14 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffer to avoid repeated heap allocations when deserializing
-    /// small posting lists stored as raw VarUInts.
+    /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
+    PaddedPODArray<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -362,6 +364,8 @@ struct TextIndexSerialization
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);

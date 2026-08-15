@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
@@ -67,6 +68,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace MergeTreeSetting
@@ -213,9 +215,44 @@ PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_co
     chassert(posting_list_codec);
 }
 
+const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
+{
+    if (!posting_list_codec)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "No posting list codec is configured");
+
+    /// An uncompressed posting list is always a plain serialized roaring bitmap.
+    if (!(header & IsCompressed))
+    {
+        static const PostingListCodecNone codec_none;
+        return codec_none;
+    }
+
+    static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
+
+    if (serialization_version < required_version)
+    {
+        /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
+        /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
+        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+            posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    }
+
+    if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list header marks compressed data but configured codec is None");
+    }
+
+    return *posting_list_codec;
+}
+
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
-    chassert(posting_list_codec);
+    /// Raw posting lists are never compressed, so the flags are mutually exclusive.
+    if ((header & RawPostings) && (header & IsCompressed))
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Posting list header marks the data as both raw and compressed");
+    }
 
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (header & RawPostings)
@@ -231,28 +268,8 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         return postings;
     }
 
-    if (header & IsCompressed)
-    {
-        static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-
-        if (serialization_version < required_version)
-        {
-            /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
-            /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
-            if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-                posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
-        }
-
-        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but configured codec is None");
-        }
-    }
-
-    /// All other posting lists (including the uncompressed None format) are decoded by the codec.
     auto postings = std::make_shared<PostingList>();
-    posting_list_codec->decode(istr, *postings);
+    resolveCodec(header).decode(istr, *postings, deserialization_buffer);
     return postings;
 }
 
@@ -343,6 +360,9 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
         {
             UInt64 first_token_size = 0;
             readVarUInt(first_token_size, istr);
+            /// Prevent a corrupt or malicious .dct file from allocating huge amounts of memory
+            if (first_token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
             offset += first_token_size;
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -360,7 +380,26 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
             UInt64 data_size = 0;
             readVarUInt(data_size, istr);
 
-            offset += lcp + data_size;
+            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
+            const UInt64 previous_token_size = data_offset - previous_token_offset;
+            if (lcp > previous_token_size)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
+                    lcp, previous_token_size);
+
+            UInt64 token_size = 0;
+            UInt64 next_offset = 0;
+            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
+                    lcp, data_size);
+
+            if (token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
+
+            offset = next_offset;
 
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -429,7 +468,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
-    analyzePostings(postings_serialization, *postings_stream, state);
+    if (!state.skip_postings_deserialization)
+        analyzePostings(postings_serialization, *postings_stream, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
@@ -823,6 +863,7 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         writeVarUInt(current_token.size(), ostr);
         ostr.write(current_token.data(), current_token.size());
     }
@@ -841,6 +882,7 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = token_getter(block_begin);
+    TextIndexSerialization::checkTokenSize(first_token.size());
     writeVarUInt(first_token.size(), ostr);
     ostr.write(first_token.data(), first_token.size());
 
@@ -848,6 +890,7 @@ void serializeTokensFrontCoding(
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, ostr);
         writeVarUInt(current_token.size() - lcp, ostr);
@@ -1021,6 +1064,12 @@ void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_id
 {
     for (UInt32 row_id : row_ids)
         writeVarUInt(row_id, ostr);
+}
+
+void TextIndexSerialization::checkTokenSize(size_t token_size)
+{
+    if (token_size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
@@ -1349,6 +1398,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         chassert(dictionary_mark.offset_in_decompressed_block == 0);
 
         const auto & first_token = sorted_tokens[block_begin].token;
+        TextIndexSerialization::checkTokenSize(first_token.size());
         sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 

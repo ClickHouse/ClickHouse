@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/PODArray_fwd.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
@@ -81,8 +82,9 @@ public:
     /// Creates an accumulator that encodes segments of row ids into this codec's format.
     virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
 
-    /// Reads a single encoded segment of a posting list, decodes it, and appends it to `postings`.
-    virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
+    /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
+    /// `buffer` is a caller-owned scratch buffer, reused across calls.
+    virtual void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
 private:
     Type type{};
 };

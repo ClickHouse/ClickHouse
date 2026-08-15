@@ -150,7 +150,7 @@ public:
     ///
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
-    void decode(ReadBuffer & in, PostingList & postings);
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer);
 
 private:
     /// Write all segments to output and fill TokenPostingsInfo:
@@ -178,7 +178,7 @@ private:
     /// Decodes into the `current_segment` member and advances `prev_row_id`.
     void decodeBlock(std::span<const std::byte> & in, size_t count);
 
-    /// All segments
+    /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     std::string compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
@@ -237,7 +237,7 @@ public:
     size_t getSegmentSize(size_t posting_list_block_size) const override;
     std::unique_ptr<IPostingListEncoder> createEncoder() const override;
 
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
 };
 
 /// Accumulator for the None codec.
@@ -261,8 +261,8 @@ private:
     size_t total_row_ids = 0;
 };
 
-/// A posting list codec that doesn't compress.
-/// Each segment is serialized as a portable Roaring bitmap with a leading VarUInt size.
+/// A codec that applies no compression: a posting list segment is stored as
+/// [VarUInt: number of bytes][portable serialization of a roaring bitmap].
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -271,7 +271,7 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     std::unique_ptr<IPostingListEncoder> createEncoder() const override;
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
 };
 
 }
