@@ -201,6 +201,31 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     return false;
 }
 
+bool containsEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
+{
+    if (const auto * column = node->as<ColumnNode>();
+        column && column->getColumnName() == "__early_short_circuit_scalar")
+        return true;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        if (containsEarlyShortCircuitScalarPlaceholder(constant->getSourceExpression()))
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsEarlyShortCircuitScalarPlaceholder(child))
+            return true;
+
+    return false;
+}
+
+bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function, const QueryTreeNodePtr & node)
+{
+    static constexpr std::array<std::string_view, 6> comparison_names
+        = {"equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
+    return std::ranges::contains(comparison_names, function.getFunctionName())
+        && containsEarlyShortCircuitScalarPlaceholder(node);
+}
+
 bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
 {
     if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
@@ -221,7 +246,8 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 for (const auto & argument : argument_nodes)
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
 
-                if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
+                if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
+                    && !isComparisonOfEarlyShortCircuitScalar(*function, node))
                     return true;
             }
         }
