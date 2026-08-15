@@ -1735,7 +1735,19 @@ void StorageWindowView::writeIntoWindowView(
         }
 
         if (block_max_timestamp)
+        {
+            /// Validate the actual timestamp as well as the interval definition. A bounded
+            /// watermark and allowed lateness can be representable at the epoch but wrap when
+            /// they are applied close to the limits of `DateTime32`.
+            if (window_view.is_watermark_bounded)
+                addTimeStrictly(
+                    block_max_timestamp, window_view.watermark_kind, window_view.watermark_num_units, *window_view.time_zone);
+            if (window_view.allowed_lateness)
+                addTimeStrictly(
+                    block_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
+
             window_view.updateMaxTimestamp(block_max_timestamp);
+        }
     }
 
     UInt32 lateness_upper_bound = 0;
