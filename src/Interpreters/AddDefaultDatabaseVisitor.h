@@ -16,7 +16,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Core/Settings.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -30,11 +29,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool enable_global_with_statement;
-}
-
 /// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
@@ -46,21 +40,7 @@ public:
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false)
-        : context(context_)
-        , database_name(database_name_)
-        , inherit_with_aliases(context_->getSettingsRef()[Setting::enable_global_with_statement])
-        , only_replace_current_database_function(only_replace_current_database_function_)
-        , only_replace_in_join(only_replace_in_join_)
-    {
-        if (!context->isGlobalContext())
-        {
-            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
-            {
-                external_tables.insert(table_name);
-            }
-        }
-    }
+        bool only_replace_in_join_ = false);
 
     void visitDDL(ASTPtr & ast) const
     {
