@@ -1171,7 +1171,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
                 left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
                     && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->isDynamic() || left_key_type->isVariant());
+                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || isDynamic(left_key_type) || isVariant(left_key_type));
             }
 
             if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
