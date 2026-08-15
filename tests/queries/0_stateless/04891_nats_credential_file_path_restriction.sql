@@ -55,6 +55,24 @@ ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222'); -- { 
 CREATE TABLE nats_file_with_server_list_override (key UInt64) ENGINE = NATS(nats_config_credentials)
 SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMENTS }
 
+-- Existing metadata is accepted during an upgrade, including a destination override that was valid
+-- before this validation was added. The table does not attempt to connect while it is attached.
+ATTACH TABLE nats_file_with_url_override_from_existing_metadata (key UInt64)
+ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222');
+DROP TABLE nats_file_with_url_override_from_existing_metadata;
+
+-- Basic authentication and token credentials configured in a named collection have the same
+-- destination-binding rule as a `.creds` file.
+CREATE TABLE nats_basic_credentials_in_config_collection (key UInt64)
+ENGINE = NATS(nats_config_basic_credentials); -- { serverError CANNOT_CONNECT_NATS }
+
+CREATE TABLE nats_basic_credentials_with_url_override (key UInt64)
+ENGINE = NATS(nats_config_basic_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_basic_credentials_with_server_list_override (key UInt64)
+ENGINE = NATS(nats_config_basic_credentials)
+SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMENTS }
+
 -- But an override of the path on top of the configuration-defined collection comes from SQL again.
 CREATE TABLE nats_file_over_config_collection (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_credential_file = '/etc/shadow'); -- { serverError BAD_ARGUMENTS }

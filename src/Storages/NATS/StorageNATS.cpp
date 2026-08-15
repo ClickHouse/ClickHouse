@@ -901,7 +901,11 @@ void resolveCredentialSource(
     bool collection_defined_in_config,
     bool credential_file_assigned_by_query,
     bool credentials_assigned_by_query,
+    bool username_assigned_by_query,
+    bool password_assigned_by_query,
+    bool token_assigned_by_query,
     bool destination_assigned_by_query,
+    bool credentials_from_global_config,
     bool allow_named_collection_override_by_default,
     bool loading_from_existing_metadata)
 {
@@ -917,13 +921,20 @@ void resolveCredentialSource(
 
     const String credential_file_in_collection = value_in_collection("nats_credential_file");
     const String credentials_in_collection = value_in_collection("nats_credentials");
+    const String username_in_collection = value_in_collection("nats_username");
+    const String password_in_collection = value_in_collection("nats_password");
+    const String token_in_collection = value_in_collection("nats_token");
 
     const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
 
     const bool credential_file_from_collection = !credential_file_in_collection.empty() && !credential_file_assigned_by_query;
     const bool credentials_from_collection = !credentials_in_collection.empty() && !credentials_assigned_by_query;
-    const bool trusted_credentials_from_collection
-        = collection_defined_in_config && (credential_file_from_collection || credentials_from_collection);
+    const bool username_from_collection = !username_in_collection.empty() && !username_assigned_by_query;
+    const bool password_from_collection = !password_in_collection.empty() && !password_assigned_by_query;
+    const bool token_from_collection = !token_in_collection.empty() && !token_assigned_by_query;
+    const bool trusted_credentials_from_collection = collection_defined_in_config
+        && (credential_file_from_collection || credentials_from_collection || username_from_collection || password_from_collection
+            || token_from_collection);
 
     const bool credential_file_from_query
         = !nats_settings[NATSSetting::nats_credential_file].value.empty() && !credential_file_from_collection;
@@ -937,14 +948,14 @@ void resolveCredentialSource(
             ErrorCodes::BAD_ARGUMENTS, "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
 
     /// Credentials read from the server configuration are secrets selected by the operator. They
-    /// must not be sent to an endpoint selected by the query. The global `nats.credential_file`
-    /// and `nats.credentials` fallbacks are deliberately not supported: a `NATS` table always
-    /// gets its destination from SQL, so those global credentials could never satisfy this rule.
-    if (trusted_credentials_from_collection && destination_assigned_by_query)
+    /// must not be sent to an endpoint selected by the query. The global `nats.user`,
+    /// `nats.password`, and `nats.token` fallbacks follow the same rule. Loading an existing table
+    /// definition is exempt so an upgrade does not make previously valid metadata unloadable.
+    if (!loading_from_existing_metadata && (trusted_credentials_from_collection || credentials_from_global_config)
+        && destination_assigned_by_query)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "`nats_url` and `nats_server_list` cannot be overridden when credentials come from a named collection defined in the server "
-            "configuration file");
+            "`nats_url` and `nats_server_list` cannot be overridden when credentials come from the server configuration file");
 
     /// Credentials the operator explicitly locked (`<nats_credential_file overridable="false">`) cannot be
     /// replaced from a query. `tryGetNamedCollectionWithOverrides` checks this for the engine-argument
@@ -1034,6 +1045,9 @@ void registerStorageNATS(StorageFactory & factory)
         /// Whether the query assigned a credential source, in either spelling.
         bool credential_file_assigned_by_query = false;
         bool credentials_assigned_by_query = false;
+        bool username_assigned_by_query = false;
+        bool password_assigned_by_query = false;
+        bool token_assigned_by_query = false;
         bool destination_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
@@ -1044,6 +1058,9 @@ void registerStorageNATS(StorageFactory & factory)
 
             credential_file_assigned_by_query = named_collection->isQueryOverridden("nats_credential_file");
             credentials_assigned_by_query = named_collection->isQueryOverridden("nats_credentials");
+            username_assigned_by_query = named_collection->isQueryOverridden("nats_username");
+            password_assigned_by_query = named_collection->isQueryOverridden("nats_password");
+            token_assigned_by_query = named_collection->isQueryOverridden("nats_token");
             destination_assigned_by_query
                 = named_collection->isQueryOverridden("nats_url") || named_collection->isQueryOverridden("nats_server_list");
             collection_defined_in_config = named_collection->getSourceId() == NamedCollection::SourceId::CONFIG;
@@ -1064,10 +1081,21 @@ void registerStorageNATS(StorageFactory & factory)
                     credential_file_assigned_by_query = true;
                 else if (change.name == "nats_credentials")
                     credentials_assigned_by_query = true;
+                else if (change.name == "nats_username")
+                    username_assigned_by_query = true;
+                else if (change.name == "nats_password")
+                    password_assigned_by_query = true;
+                else if (change.name == "nats_token")
+                    token_assigned_by_query = true;
                 else if (change.name == "nats_url" || change.name == "nats_server_list")
                     destination_assigned_by_query = true;
             }
         }
+
+        const auto & config = args.getContext()->getConfigRef();
+        const bool credentials_from_global_config = ((*nats_settings)[NATSSetting::nats_username].value.empty() && config.has("nats.user"))
+            || ((*nats_settings)[NATSSetting::nats_password].value.empty() && config.has("nats.password"))
+            || ((*nats_settings)[NATSSetting::nats_token].value.empty() && config.has("nats.token"));
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(
@@ -1085,7 +1113,11 @@ void registerStorageNATS(StorageFactory & factory)
             collection_defined_in_config,
             credential_file_assigned_by_query,
             credentials_assigned_by_query,
+            username_assigned_by_query,
+            password_assigned_by_query,
+            token_assigned_by_query,
             destination_assigned_by_query,
+            credentials_from_global_config,
             args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
             isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 
@@ -1165,9 +1197,9 @@ Optional parameters:
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
 - `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
-- `nats_username` - NATS username.
-- `nats_password` - NATS password.
-- `nats_token` - NATS auth token.
+- `nats_username` - NATS username. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
+- `nats_password` - NATS password. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
+- `nats_token` - NATS auth token. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
 - `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.

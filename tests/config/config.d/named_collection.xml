@@ -78,5 +78,16 @@
             <nats_startup_connect_tries>1</nats_startup_connect_tries>
             <nats_reconnect_wait>1</nats_reconnect_wait>
         </nats_config_no_credentials>
+        <!-- Basic credentials configured by the operator must stay paired with this destination. -->
+        <nats_config_basic_credentials>
+            <nats_url>127.0.0.1:1</nats_url>
+            <nats_subjects>subject</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_startup_connect_tries>1</nats_startup_connect_tries>
+            <nats_reconnect_wait>1</nats_reconnect_wait>
+            <nats_username>operator</nats_username>
+            <nats_password>secret</nats_password>
+            <nats_token>token</nats_token>
+        </nats_config_basic_credentials>
     </named_collections>
 </clickhouse>
