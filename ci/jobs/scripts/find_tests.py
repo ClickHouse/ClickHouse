@@ -232,13 +232,34 @@ class Targeting:
         test name as used by `clickhouse-test` (`00001_x` or `00001_x.`), or
         `None` when no such file exists in `tests/queries/0_stateless` - a
         stateful test, or a test that has since been removed or renamed.
+
+        `clickhouse-test` reports rendered `.sql.j2` tests as `<name>.gen` in
+        failures and as `<name>.gen.sql` in coverage. Normalize those report
+        names to the template base before looking up the source file.
         """
-        base_name = test_name.rstrip(".")
+        base_name = cls.normalize_stateless_test_name(test_name).rstrip(".")
         test_dir = Path("tests/queries/0_stateless")
         for ext in cls._TEST_FILE_EXTENSIONS:
             if (test_dir / f"{base_name}{ext}").is_file():
                 return f"{base_name}{ext}"
         return None
+
+    @staticmethod
+    def normalize_stateless_test_name(test_name: str) -> str:
+        """Map a rendered `.sql.j2` test name reported by CI to its source name.
+
+        Rendered template tests are recorded as `<name>.gen` by test failures
+        and `<name>.gen.sql` by per-test coverage, whereas `clickhouse-test`
+        selectors match source test names. Keep a trailing dot, used for exact
+        matching of changed tests, intact.
+        """
+        exact = test_name.endswith(".")
+        base_name = test_name.rstrip(".")
+        if base_name.endswith(".gen.sql"):
+            base_name = base_name.removesuffix(".gen.sql")
+        elif base_name.endswith(".gen"):
+            base_name = base_name.removesuffix(".gen")
+        return f"{base_name}." if exact else base_name
 
     @staticmethod
     def is_sequential_functional_test(test_source_file: str) -> bool:
@@ -403,6 +424,7 @@ class Targeting:
         # Stateless test names are the base name of a file under
         # `tests/queries/0_stateless/` with one of the known extensions.
         test_dir = Path("tests/queries/0_stateless")
+        test_name = self.normalize_stateless_test_name(test_name)
         return any(
             (test_dir / f"{test_name}{ext}").is_file()
             for ext in self._TEST_FILE_EXTENSIONS
@@ -2222,6 +2244,8 @@ class Targeting:
 
         def add_tests(new_tests):
             for t in new_tests:
+                if self.job_type == self.STATELESS_JOB_TYPE:
+                    t = self.normalize_stateless_test_name(t)
                 if t not in seen:
                     seen.add(t)
                     ranked.append(t)

@@ -48,6 +48,36 @@ def test_selected_test_name_resolves_to_source_file():
     )
 
 
+def test_rendered_selected_template_test_name_resolves_to_source_file():
+    assert (
+        Targeting.functional_test_source_file("00172_hits_joins.gen")
+        == "00172_hits_joins.sql.j2"
+    )
+    assert (
+        Targeting.functional_test_source_file("00172_hits_joins.gen.sql")
+        == "00172_hits_joins.sql.j2"
+    )
+
+
+def test_selected_tests_normalize_rendered_template_test_names(monkeypatch):
+    targeter = Targeting.__new__(Targeting)
+    targeter.job_type = Targeting.STATELESS_JOB_TYPE
+
+    monkeypatch.setattr(
+        targeter,
+        "get_previously_failed_tests_with_info",
+        lambda strict: (["00172_hits_joins.gen"], None),
+    )
+    monkeypatch.setattr(
+        targeter,
+        "get_most_relevant_tests",
+        lambda: (["00172_hits_joins.gen.sql"], None),
+    )
+
+    tests, _ = targeter.get_all_relevant_tests_with_info()
+    assert tests == ["00172_hits_joins"]
+
+
 def test_unknown_selected_test_name_has_no_source_file():
     # A stateful test, or a test removed or renamed since the selection data
     # (coverage / previous failures) was collected.
