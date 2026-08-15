@@ -179,6 +179,13 @@ bool recomputeAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context);
 
+/// As above, but restricted to the given `set_targets` from `GROUP BY` TTLs that actually fire.
+bool recomputeAffectedMaterializedColumns(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    const NameSet & set_targets);
+
 /// Recompute the sorting-key expression columns from the post-`SET` values and re-sort the
 /// pipeline by the sorting key. Used by the mutation path (e.g. `MATERIALIZE TTL`) after a
 /// `TTL ... GROUP BY ... SET` step that rewrites a sort-key column, so the written part is
@@ -192,5 +199,14 @@ void resortPipelineAfterTTLGroupBySet(
     const NamesAndTypesList & storage_columns,
     const ContextPtr & context,
     const MergeTreeSettings & storage_settings);
+
+/// As above, but restricted to the given `set_targets` from `GROUP BY` TTLs that actually fire.
+void resortPipelineAfterTTLGroupBySet(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NamesAndTypesList & storage_columns,
+    const ContextPtr & context,
+    const MergeTreeSettings & storage_settings,
+    const NameSet & set_targets);
 
 }

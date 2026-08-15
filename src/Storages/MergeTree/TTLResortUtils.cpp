@@ -950,12 +950,22 @@ bool recomputeAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context)
 {
+    return recomputeAffectedMaterializedColumns(
+        builder, metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+bool recomputeAffectedMaterializedColumns(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    const NameSet & set_targets)
+{
     /// If a MATERIALIZED column's source was rewritten by the `SET` (e.g. `d MATERIALIZED toDate(ts)`,
     /// `... SET ts = ...`), the stored `d` in the stream is stale. Recompute EVERY affected
     /// MATERIALIZED column so the written part (and any rebuilt skip index / projection reading them)
     /// is not stale. Independent of the sort-key re-sort: it must run even when no sort-key column is
     /// assigned. Returns true when a recompute step was added.
-    auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context);
+    auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context, set_targets);
     if (affected_materialized_columns.empty())
         return false;
 
@@ -976,12 +986,24 @@ void resortPipelineAfterTTLGroupBySet(
     const ContextPtr & context,
     const MergeTreeSettings & storage_settings)
 {
+    resortPipelineAfterTTLGroupBySet(
+        builder, metadata_snapshot, storage_columns, context, storage_settings, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+void resortPipelineAfterTTLGroupBySet(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NamesAndTypesList & storage_columns,
+    const ContextPtr & context,
+    const MergeTreeSettings & storage_settings,
+    const NameSet & set_targets)
+{
     /// A MATERIALIZED sort-key column whose source the `SET` rewrote (e.g. `d MATERIALIZED toDate(ts)`,
     /// `ORDER BY d`, `... SET ts = ...`) is stale in the stream; recompute the affected MATERIALIZED
     /// columns before recomputing the sorting-key expression and re-sorting, otherwise the re-sort
     /// would key on the stale value. `recomputeAffectedMaterializedColumns` covers every affected
     /// MATERIALIZED column (including the sort-key subset), so nothing else is needed here.
-    recomputeAffectedMaterializedColumns(builder, metadata_snapshot, context);
+    recomputeAffectedMaterializedColumns(builder, metadata_snapshot, context, set_targets);
 
     auto recalculate_sorting_key_dag
         = buildRecomputeSortKeyExpressionDAG(builder.getHeader(), metadata_snapshot, storage_columns, context);

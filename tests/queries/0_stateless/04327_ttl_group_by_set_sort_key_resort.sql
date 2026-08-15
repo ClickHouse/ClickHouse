@@ -302,3 +302,23 @@ SELECT 'eph mat data', sk, v FROM t_eph_mat ORDER BY sk;
 SELECT 'eph mat sorted', (SELECT groupArray(sk) FROM (SELECT sk FROM t_eph_mat SETTINGS optimize_read_in_order = 0))
                        = (SELECT groupArray(sk) FROM (SELECT sk FROM t_eph_mat ORDER BY sk));
 DROP TABLE t_eph_mat;
+
+-- A future GROUP BY TTL does not fire during MATERIALIZE TTL. Its SET target must therefore not
+-- trigger the post-TTL MATERIALIZED-column repair: `m` contains `now()` and would change despite
+-- unchanged source data if the repair were keyed on table metadata instead of firing TTL targets.
+DROP TABLE IF EXISTS t_future_ttl_mut;
+CREATE TABLE t_future_ttl_mut
+(
+    ts DateTime,
+    x UInt32,
+    m String MATERIALIZED concat(toString(x), '|', toString(now())),
+    saved_m String DEFAULT m
+)
+ENGINE = MergeTree ORDER BY x
+TTL ts + toIntervalYear(50) GROUP BY x SET x = max(x) + 1
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_future_ttl_mut;
+INSERT INTO t_future_ttl_mut (ts, x) VALUES ('2020-01-15 00:00:00', 7), ('2020-02-15 00:00:00', 8);
+ALTER TABLE t_future_ttl_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'future ttl leaves materialized', countIf(m = saved_m) = count() FROM t_future_ttl_mut;
+DROP TABLE t_future_ttl_mut;

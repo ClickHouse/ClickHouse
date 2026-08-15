@@ -36,3 +36,4 @@ mat subcol sorted	1
 eph mat data	cba	5
 eph mat data	zyx	2
 eph mat sorted	1
+future ttl leaves materialized	1
