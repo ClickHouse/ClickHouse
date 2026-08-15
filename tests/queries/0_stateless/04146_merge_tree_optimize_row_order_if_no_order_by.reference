@@ -1,7 +1,6 @@
-default == explicit_on
+default != explicit_on
 1
-1
-disabled != explicit_on
+default == disabled
 1
 optimized rows
 Alex	1	63	0

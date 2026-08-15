@@ -1118,14 +1118,14 @@ High-cardinality primary keys, e.g. involving timestamp columns of type
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
 )", 0) \
-    DECLARE(Bool, optimize_row_order_if_no_order_by, true, R"(
+    DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
 Controls whether row order optimization (see `optimize_row_order`) is applied
 automatically on insert for tables with an empty sorting key, i.e. tables
 declared with `ORDER BY ()` or `ORDER BY tuple()`.
 
-Enabled by default. For such tables there is no explicit row order to preserve,
-so reordering the rows of newly inserted parts to improve the compressibility
-of LZ4 or ZSTD is generally beneficial.
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
 
 As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
 optimize the row order of the new data. Disable this setting if preserving the

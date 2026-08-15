@@ -1,5 +1,5 @@
 -- An explicitly set `optimize_row_order = 0` opts a table without a sorting key out of
--- row order optimization, even though `optimize_row_order_if_no_order_by` is enabled by default.
+-- row order optimization, even when `optimize_row_order_if_no_order_by` is enabled.
 
 SET max_insert_threads = 1;
 SET max_threads = 1;
@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS tab_opt_out;
 DROP TABLE IF EXISTS tab_opt_out_explicit_on;
 DROP TABLE IF EXISTS tab_opt_out_projection;
 
--- Baseline: without the opt-out, rows of a table with an empty sorting key are reordered on insert.
+-- Baseline: with the setting enabled, rows of a table with an empty sorting key are reordered on insert.
 CREATE TABLE tab_optimized (
     name String,
     timestamp Int64,
@@ -18,9 +18,9 @@ CREATE TABLE tab_optimized (
 ) ENGINE = MergeTree
 ORDER BY ()
     -- Disable add_minmax_index_for_numeric_columns since it affects the order
-SETTINGS add_minmax_index_for_numeric_columns = 0;
+SETTINGS optimize_row_order_if_no_order_by = 1, add_minmax_index_for_numeric_columns = 0;
 
--- Explicit `optimize_row_order = 0`, the new setting omitted (default 1): insertion order must be preserved.
+-- Explicit `optimize_row_order = 0`: insertion order must be preserved.
 CREATE TABLE tab_opt_out (
     name String,
     timestamp Int64,
