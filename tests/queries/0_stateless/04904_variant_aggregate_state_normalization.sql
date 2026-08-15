@@ -4,7 +4,7 @@
 SELECT anyMerge(state)
 FROM
 (
-    SELECT anyState(CAST(1, 'Variant(UInt64)')) AS state
+    SELECT anyState(CAST(1::UInt64, 'Variant(UInt64)')) AS state
     UNION ALL
-    SELECT anyIfState(CAST(2, 'Variant(UInt64)'), 1) AS state
+    SELECT anyIfState(CAST(2::UInt64, 'Variant(UInt64)'), 1) AS state
 );
