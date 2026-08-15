@@ -1,6 +1,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -206,6 +207,20 @@ ASTPtr * getTableFunctionStructureArgument(ASTFunction & table_function)
         return index < arguments.size() ? &arguments[index] : nullptr;
     };
 
+    /// Named arguments override a positional structure slot. This also covers the object-storage table-function
+    /// family, whose positional signatures differ according to credentials, but all share `structure = ...`.
+    for (auto & argument : arguments)
+    {
+        auto * equals = argument->as<ASTFunction>();
+        if (!equals || !equalsCaseInsensitiveString(equals->name, "equals") || !equals->arguments
+            || equals->arguments->children.size() != 2)
+            continue;
+
+        const auto * name = equals->arguments->children[0]->as<ASTIdentifier>();
+        if (name && equalsCaseInsensitiveString(name->name(), "structure"))
+            return &equals->arguments->children[1];
+    }
+
     if (equalsCaseInsensitiveString(table_function.name, "format"))
         return arguments.size() == 3 ? argument_at(1) : nullptr;
     if (equalsCaseInsensitiveString(table_function.name, "generateRandom")
@@ -219,6 +234,12 @@ ASTPtr * getTableFunctionStructureArgument(ASTFunction & table_function)
         || equalsCaseInsensitiveString(table_function.name, "azureBlobStorage")
         || equalsCaseInsensitiveString(table_function.name, "executable"))
         return argument_at(2);
+    if (equalsCaseInsensitiveString(table_function.name, "fileCluster")
+        || equalsCaseInsensitiveString(table_function.name, "urlCluster")
+        || equalsCaseInsensitiveString(table_function.name, "hdfsCluster"))
+        return argument_at(3);
+    if (equalsCaseInsensitiveString(table_function.name, "mongodb"))
+        return arguments.size() >= 6 ? argument_at(5) : arguments.size() >= 3 ? argument_at(2) : nullptr;
     if (equalsCaseInsensitiveString(table_function.name, "redis"))
         return argument_at(2);
     if (equalsCaseInsensitiveString(table_function.name, "ytsaurus"))
