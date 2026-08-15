@@ -2172,6 +2172,14 @@ void ColumnObject::choosePathPlacementForMerge(const VectorWithMemoryTracking<Co
 
 void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
+    /// This may be freshly created from a stale source type; inherit the policy from source_columns
+    /// (already correctly patched by the reader) so filtering below uses the current policy.
+    if (!source_columns.empty())
+    {
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
+        setSharedDataPathMatcher(source_object.getSharedDataPathMatcher(), source_object.getSharedDataPathPrefix());
+    }
+
     choosePathPlacementForMerge(source_columns, max_dynamic_subcolumns);
 
     /// Typed paths also can contain types with dynamic structure.
