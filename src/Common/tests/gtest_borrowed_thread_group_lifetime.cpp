@@ -81,4 +81,62 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerCapturesGroupAtEnqueueTime)
     t.join();
 }
 
+/// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
+/// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
+/// The capture must keep the accounting chain alive, allocations must still charge the owning
+/// query group, and once the work is done nothing must stay pinned.
+TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeChargesOwningQueryAccounting)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> root_weak = root;
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+        /// The async work is gated so that it allocates only after the test dropped its own
+        /// references to both groups - the exact window of the use-after-free.
+        std::promise<void> refs_dropped;
+        std::shared_future<void> refs_dropped_future = refs_dropped.get_future().share();
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<Int64>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([refs_dropped_future, root_weak]
+        {
+            refs_dropped_future.wait();
+
+            auto root_locked = root_weak.lock();
+            if (!root_locked)
+                return Int64(-1);
+
+            /// Large enough to exceed any per-thread untracked-memory batching.
+            constexpr Int64 allocation = 64 << 20;
+            const Int64 before = root_locked->memory_tracker.get();
+            std::ignore = CurrentMemoryTracker::alloc(allocation);
+            const Int64 charged = root_locked->memory_tracker.get() - before;
+            std::ignore = CurrentMemoryTracker::free(allocation);
+            return charged;
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        borrowed.reset();
+        root.reset();
+        refs_dropped.set_value();
+
+        const Int64 charged = future.get();
+        pool->wait();
+
+        ASSERT_NE(charged, -1)
+            << "the async capture must keep the owning query group it charges alive";
+        EXPECT_GE(charged, 32 << 20) << "async allocations must charge the owning query group";
+        EXPECT_TRUE(root_weak.expired())
+            << "once the async work is done nothing must keep the chain alive";
+    });
+    t.join();
+}
+
 } // namespace DB

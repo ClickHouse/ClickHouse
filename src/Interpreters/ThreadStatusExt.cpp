@@ -130,8 +130,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -143,8 +144,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -259,14 +261,14 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
 {
-    return ThreadGroupPtr(new ThreadGroup(parent));
+    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)
 {
-    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent));
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
