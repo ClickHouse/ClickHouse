@@ -811,7 +811,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// database replay) therefore never consults the setting again, so one `CREATE VIEW`
             /// definition always materializes the same way on every replica and across restarts.
             if (create.isParameterizedView()
-                && (mode == LoadingStrictnessLevel::CREATE || (mode == LoadingStrictnessLevel::ATTACH && create.select))
+                && (mode == LoadingStrictnessLevel::CREATE
+                    || (mode == LoadingStrictnessLevel::ATTACH && create.select && !create.attach_short_syntax))
                 && !getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
             {
                 create.columns_list->reset(create.columns_list->columns);
