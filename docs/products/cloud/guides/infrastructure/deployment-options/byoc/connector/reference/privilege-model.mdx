@@ -119,6 +119,6 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 ## Data minimization defaults {#data-minimization-defaults}
 
 - **`query_log` is excluded from scrapes by default.** Its columns carry raw SQL with literal values, which can contain personal data or secrets, so it does not leave your boundary unless you add it deliberately.
-- **The troubleshooter reads only allowlisted tables**, and the validator denies `query_log` and `text_log` unconditionally.
+- **The troubleshooter reads only allowlisted tables**, and the validator denies `query_log` and `text_log` unconditionally, so query history is never readable. The default allowlist does include `system.processes` (live query text); trim `allowedTables` if that must stay hidden during sessions.
 - **All troubleshooter output is redacted** with built-in patterns for IPv4 and IPv6 addresses, bearer tokens, AWS access keys, emails, JWTs, SSH private keys, and connection-string credentials, plus any patterns you define. The daemon refuses to start with an invalid patterns file rather than run unredacted.
 - **Credentials are minimized at rest.** Provisioning SQL contains bcrypt hashes, never plaintext passwords; the enrollment token is never written to the command line, disk, or logs; keys live in Kubernetes Secrets or files with mode 0600.

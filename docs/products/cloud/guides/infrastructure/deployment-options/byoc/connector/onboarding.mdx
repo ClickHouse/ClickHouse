@@ -118,7 +118,7 @@ clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target he
   --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
   --operators '<operator-email-1>,<operator-email-2>' \
   --storage-class <storage-class> \
-  --ch-admin-password-stdin < <password-file>
+  --ch-admin-password-stdin < admin-password.txt
 ```
 
 Repeat `--instance` for each ClickHouse instance. Pass `--no-gateway` instead of `--operators` to disable support sessions; the two flags are mutually exclusive.

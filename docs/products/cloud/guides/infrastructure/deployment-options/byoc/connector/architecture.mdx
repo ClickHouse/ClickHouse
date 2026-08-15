@@ -59,7 +59,7 @@ The connector verifies your endpoint's server certificate against the system tru
 
 ### What never leaves by default {#what-never-leaves}
 
-- **Raw query text.** `system.query_log` is deliberately excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets. Re-adding it is a per-deployment override you make knowingly.
+- **Raw query text, on the scrape path.** `system.query_log` is deliberately excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets; re-adding it is a per-deployment override you make knowingly. During a support session the default table allowlist does include `system.processes`, which shows the text of live queries; see [support sessions](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions) for trimming it.
 - **Credentials.** Configuration files hold no credentials, ClickHouse stores only bcrypt hashes of the connector users' passwords, and secrets stay in Kubernetes Secrets or root-readable files on the host. Nothing in the scrape or sync paths transmits them.
 - **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions).
 
