@@ -1867,7 +1867,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
                 if (!admission_write_buffer_memory)
                     admission_write_buffer_memory.emplace();
-                admission_write_buffer_memory->ceiling = std::max(admission_write_buffer_memory->ceiling, disk_write_buffer_memory.ceiling);
+                admission_write_buffer_memory->memory.ceiling = std::max(admission_write_buffer_memory->memory.ceiling, disk_write_buffer_memory.memory.ceiling);
             }
 
             /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
