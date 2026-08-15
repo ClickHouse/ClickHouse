@@ -99,9 +99,14 @@ set queries_file "$CLICKHOUSE_TMP/$basename.queries"
 set fp [open $queries_file w]
 puts $fp "/dialect prql\nfrom s\"SELECT * FROM numbers(1)\""
 close $fp
-spawn bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_prql_dialect=1 --queries-file=$queries_file"
-expect -- "0"
-expect eof
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_prql_dialect=1 --queries-file=$queries_file"} output]} {
+    puts stderr "clickhouse-local failed: $output"
+    exit 1
+}
+if {![regexp {(^|\n)0(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not return the expected result: $output"
+    exit 1
+}
 file delete $queries_file
 
 # A server-side setting constraint must reject the meta-command without
