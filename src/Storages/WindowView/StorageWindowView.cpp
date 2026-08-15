@@ -1322,13 +1322,15 @@ StorageWindowView::StorageWindowView(
     const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH;
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_, validate_intervals);
 
-    if (validate_intervals)
-    {
-        if (is_watermark_bounded)
-            checkIntervalAdvancesTime(watermark_kind, watermark_num_units, *time_zone);
-        if (allowed_lateness)
-            checkIntervalAdvancesTime(lateness_kind, lateness_num_units, *time_zone);
-    }
+    /// Window, slide, and slice intervals from old metadata remain attach-compatible: their
+    /// runtime advancement paths fail closed. Bounded watermark and allowed lateness intervals
+    /// must instead be rejected even during `ATTACH`: a wrapped watermark is advanced from
+    /// `WatermarkTransform`'s noexcept destructor, while wrapped lateness silently changes the
+    /// retention semantics.
+    if (is_watermark_bounded)
+        checkIntervalAdvancesTime(watermark_kind, watermark_num_units, *time_zone);
+    if (allowed_lateness)
+        checkIntervalAdvancesTime(lateness_kind, lateness_num_units, *time_zone);
 
     if (auto * inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
         inner_table_engine = inner_storage->clone();

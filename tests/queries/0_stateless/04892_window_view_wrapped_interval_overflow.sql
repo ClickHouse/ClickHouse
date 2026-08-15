@@ -31,6 +31,15 @@ CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483648 DAY
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory ALLOWED_LATENESS INTERVAL 2147483648 DAY
     AS SELECT count(v) AS c, tumble(now(), toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
+-- `ATTACH` rejects unsafe legacy bounded-watermark and lateness metadata as well: a wrapped
+-- watermark would otherwise throw from the noexcept `WatermarkTransform` destructor and wrapped
+-- lateness would silently be treated as zero.
+ATTACH WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483648 DAY
+    AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
+
+ATTACH WINDOW VIEW 04892_wv ENGINE = Memory ALLOWED_LATENESS INTERVAL 2147483648 DAY
+    AS SELECT count(v) AS c, tumble(now(), toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
+
 -- A sane window is unaffected.
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w;
