@@ -314,14 +314,38 @@ struct AggregatedDataVariants : private boost::noncopyable
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
+    /// Whether any rows were aggregated: `empty` only says no method was ever initialized,
+    /// while a table that was flushed to disk keeps its type with zero rows.
+    /// `empty` is not the negation of `size` here, so the two checks are not redundant and
+    /// `readability-container-size-empty` does not apply.
+    /// NOLINTNEXTLINE(readability-container-size-empty)
+    bool hasData() const { return !empty() && size() != 0; }
     void invalidate() { type = Type::EMPTY; }
+    /// Tears the variants down after the aggregate states changed owner (`aggregator` must
+    /// already be null): destroys the active method and with it the hash-table buffer, drops
+    /// the arenas and the overflow row, and leaves the variants empty, with no arena. Calling
+    /// this while the variants still own live nontrivial states would leak them undestroyed.
+    void resetAfterStateOwnershipTransfer();
     void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;
     size_t sizeWithoutOverflowRow() const;
+    /// Memory held by the variants: the arenas (keys and states) plus the active method's
+    /// hash-table buffer, which dominates for inline states over fixed keys.
+    size_t allocatedBytes() const;
+
+    /// The adaptive bucket-parallel merge's per-bucket arenas, populated on the merge
+    /// destination when the merge sources are created. Deliberately outside
+    /// `aggregates_pools`: the output conversion captures that list wholesale into every
+    /// bucket's non-final and -State columns, while these slots are handed out per bucket and
+    /// reset as buckets retire (`Aggregator::retireAdaptiveMergedBucket`), so a converted
+    /// bucket's drained and merged states free early. States adopted from the producers'
+    /// mixed arenas stay in `aggregates_pools` and live until the variants die.
+    Arenas adaptive_merge_bucket_arenas;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
+    static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
@@ -333,4 +357,22 @@ struct AggregatedDataVariants : private boost::noncopyable
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
+
+/// The two-level twin of a convertible variant type; other types map to themselves.
+inline AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(AggregatedDataVariants::Type type)
+{
+    using Type = AggregatedDataVariants::Type;
+    switch (type)
+    {
+#define M(NAME) \
+    case Type::NAME: \
+        return Type::NAME##_two_level;
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+        default:
+            return type;
+    }
+    UNREACHABLE();
+}
+
 }
