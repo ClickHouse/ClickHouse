@@ -21,6 +21,7 @@ namespace FailPoints
     extern const char totals_having_transform_pause[];
     extern const char totals_having_transform_totals_pause[];
     extern const char totals_having_transform_totals_start_pause[];
+    extern const char totals_having_transform_totals_before_expression_pause[];
 }
 
 namespace ErrorCodes
@@ -367,6 +368,19 @@ void TotalsHavingTransform::prepareTotals()
     {
         size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_before_expression_pause);
+
+        if (isCancelled())
+        {
+            /// The query was cancelled after the preceding guard and before evaluating the
+            /// totals-row `HAVING` expression. Do not start a new expression action; its
+            /// cancellation callback is checked only after each action completes.
+            totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+            total_prepared = true;
+            return;
+        }
+
         expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
         FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_pause);
