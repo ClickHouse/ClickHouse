@@ -346,18 +346,18 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-/// True if the node and all its descendants are functions which cannot throw an exception on invalid input values.
-static bool isNoExceptNode(const ActionsDAG::Node * node)
+/// True if the node and all its descendants are deterministic functions which cannot throw an exception on invalid input values.
+static bool isSafeForEagerExecutionNode(const ActionsDAG::Node * node)
 {
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
 
-    if (!node->function_base->isNoExcept())
+    if (!node->function_base->isNoExcept() || !node->function_base->isDeterministic())
         return false;
 
     for (const auto * child : node->children)
     {
-        if (!isNoExceptNode(child))
+        if (!isSafeForEagerExecutionNode(child))
             return false;
     }
 
@@ -461,7 +461,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         node_to_action_pos[node] = actions.size();
         /// `is_no_except` is only used by AdaptiveExpressionActions, and its calculation is not free,
         /// so do not pay for it when the adaptive mode is disabled.
-        bool is_no_except = settings.enable_adaptive_short_circuit_lazy_execution && isNoExceptNode(node);
+        bool is_no_except = settings.enable_adaptive_short_circuit_lazy_execution && isSafeForEagerExecutionNode(node);
         actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node), is_no_except, {}});
 
         for (const auto & parent : cur_info.parents)
@@ -1207,6 +1207,7 @@ ColumnPtr AdaptiveExpressionActions::executeFunction(
     const auto & action = actions[action_index];
 
     FunctionExecutionProfile profile;
+    size_t lazy_arguments_elapsed = 0;
     /// An action which could have been executed lazily, but is executed eagerly now, may still have lazily
     /// executed arguments. Reduce them here to measure how much they cost.
     if (action.is_lazy_executed)
@@ -1219,12 +1220,14 @@ ColumnPtr AdaptiveExpressionActions::executeFunction(
                 profile.argument_profiles.emplace_back(i, FunctionExecutionProfile());
                 auto & argument_profile = profile.argument_profiles.back().second;
                 argument.column = column_function->reduce(dry_run, &argument_profile).column;
-                profile.execution_elapsed += argument_profile.execution_elapsed;
+                lazy_arguments_elapsed += argument_profile.execution_elapsed;
             }
         }
     }
 
     auto res = action.node->function->execute(arguments, result_type, num_rows, dry_run, &profile);
+    /// Function execution updates `execution_elapsed` itself, so add the time spent reducing lazy arguments afterwards.
+    profile.execution_elapsed += lazy_arguments_elapsed;
     accumulateProfile(action_index, profile);
     return res;
 }
