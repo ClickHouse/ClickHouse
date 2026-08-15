@@ -151,7 +151,7 @@ TEST(SerializationIPBinaryBulk, IPv4BigEndianHostReadReconstructsOriginalValue)
     /// same explicit-FromEndian trick applies here too.
     const std::string wire_bytes{"\x04\x03\x02\x01", 4}; /// wire format for IPv4(0x01020304)
     std::string be_native_bytes(wire_bytes.rbegin(), wire_bytes.rend());
-    UInt32 be_native_value;
+    UInt32 be_native_value = 0;
     memcpy(&be_native_value, be_native_bytes.data(), sizeof(be_native_value));
 
     IPv4 addr(be_native_value);
