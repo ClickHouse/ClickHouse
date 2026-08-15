@@ -187,6 +187,7 @@ void registerOutputFormatColumnBinary(FormatFactory & factory)
         const FormatSettings & format_settings,
         FormatFilterInfoPtr /*format_filter_info*/)
     {
+        ColumnarV1::checkColumnBinaryFormatIsAllowed(format_settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryOutputFormat>(
             buf,
             std::make_shared<const Block>(sample),
@@ -194,6 +195,8 @@ void registerOutputFormatColumnBinary(FormatFactory & factory)
             format_settings.column_binary.max_frame_size);
     });
     factory.markOutputFormatSupportsParallelFormatting("ColumnBinary");
+    factory.markOutputFormatNotTTYFriendly("ColumnBinary");
+    factory.setContentType("ColumnBinary", "application/octet-stream");
 }
 
 }

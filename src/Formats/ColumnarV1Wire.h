@@ -126,6 +126,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ColumnarV1
@@ -145,6 +146,22 @@ constexpr uint32_t COL_LOWCARD      = 8;  // LowCardinality(T), top-level only: 
 // Modifier flags (OR'd onto base type; base types 0–6, so bits 5-7 are free for flags).
 constexpr uint32_t COL_IS_NULLABLE  = 0x20u; // Nullable(T); null_offset carries u8[row_count] null map
 constexpr uint32_t COL_IS_CONST     = 0x80u;
+
+/// The user-facing `ColumnBinary` format is gated behind
+/// `allow_experimental_column_binary_format`: the frame header carries no wire version,
+/// so an incompatible layout change would misparse previously written data rather than
+/// reject it. The gate keeps `ColumnBinary` out of persisted data until the layout is
+/// frozen and the header is versioned. The `COLUMNAR_V1` WASM UDF ABI shares this wire
+/// format but is not gated by this setting — WASM UDFs are experimental in their own
+/// right, and their frames never outlive a single call.
+inline void checkColumnBinaryFormatIsAllowed(bool allow_experimental)
+{
+    if (!allow_experimental)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The 'ColumnBinary' format is experimental: its COLUMNAR_V1 wire layout is still "
+            "evolving and its frame header carries no version, so data written today may not be "
+            "readable by a future version. Set allow_experimental_column_binary_format = 1 to use it.");
+}
 
 constexpr uint32_t COLUMNAR_HEADER_BYTES = 8;
 constexpr uint32_t COLUMNAR_DESC_BYTES   = 40;
@@ -1299,6 +1316,12 @@ inline MutableColumnPtr readColumnFromDesc(
             // the frame header and still decode "successfully".
             uint32_t sub_rows = checkFitsUint32(inner_desc.null_offset, "Variant sub-column row count read from frame");
             uint64_t sub_region_end = desc.data_offset + desc.data_size;
+            // The sub-columns' payload starts right after this variant header (the writer places
+            // it there), so the region a sub-descriptor may address begins at payload_start, not
+            // at desc.data_offset. Without that lower bound a malformed frame could point an
+            // alternative back at the header bytes that describe it and have them decoded as
+            // payload instead of being rejected.
+            uint64_t payload_start = desc.data_offset + 4u + static_cast<uint64_t>(k) * record_bytes;
             // offsets_offset's *start* being inside the region isn't enough: its full extent
             // (e.g. COL_BYTES's uint64[rows+1] array) depends on the alternative's raw type, so
             // checking only the start here would let a malformed frame point an alternative's
@@ -1308,17 +1331,17 @@ inline MutableColumnPtr readColumnFromDesc(
             // compare against buf.size()) automatically bound against this region instead of
             // the whole frame, without duplicating per-type offset-array size formulas here.
             if (inner_desc.offsets_offset != 0
-                && (inner_desc.offsets_offset < desc.data_offset || inner_desc.offsets_offset > sub_region_end))
+                && (inner_desc.offsets_offset < payload_start || inner_desc.offsets_offset > sub_region_end))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_VARIANT sub-variant offsets_offset {} outside variant data region [{}, {})",
-                    inner_desc.offsets_offset, desc.data_offset, sub_region_end);
-            if (inner_desc.data_offset < desc.data_offset
+                    inner_desc.offsets_offset, payload_start, sub_region_end);
+            if (inner_desc.data_offset < payload_start
                 || inner_desc.data_offset > sub_region_end
                 || inner_desc.data_size > sub_region_end - inner_desc.data_offset)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_VARIANT sub-variant data range [{}, {}) outside variant data region [{}, {})",
                     inner_desc.data_offset, inner_desc.data_offset + inner_desc.data_size,
-                    desc.data_offset, sub_region_end);
+                    payload_start, sub_region_end);
             sub_by_global[global_d] = {inner_desc, sub_rows};
             sub_present[global_d] = true;
             record_ptr += record_bytes;
@@ -1399,22 +1422,27 @@ inline MutableColumnPtr readColumnFromDesc(
         // it's written via the ordinary buildColDescriptor path — so it needs the same
         // containment check as offsets_offset/data_offset, not an exemption.
         uint64_t region_end = desc.data_offset + desc.data_size;
+        // The dictionary payload starts right after this header (the writer places it there),
+        // so the addressable region begins at payload_start, not at desc.data_offset — otherwise
+        // a malformed frame could point the dictionary back at the header bytes that describe it
+        // and have them decoded as dictionary values instead of being rejected.
+        uint64_t payload_start = desc.data_offset + header_bytes;
         if (dict_desc.null_offset != 0
-            && (dict_desc.null_offset < desc.data_offset || dict_desc.null_offset > region_end))
+            && (dict_desc.null_offset < payload_start || dict_desc.null_offset > region_end))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_LOWCARD dictionary null_offset {} outside data region [{}, {})",
-                dict_desc.null_offset, desc.data_offset, region_end);
+                dict_desc.null_offset, payload_start, region_end);
         if (dict_desc.offsets_offset != 0
-            && (dict_desc.offsets_offset < desc.data_offset || dict_desc.offsets_offset > region_end))
+            && (dict_desc.offsets_offset < payload_start || dict_desc.offsets_offset > region_end))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_LOWCARD dictionary offsets_offset {} outside data region [{}, {})",
-                dict_desc.offsets_offset, desc.data_offset, region_end);
-        if (dict_desc.data_offset < desc.data_offset
+                dict_desc.offsets_offset, payload_start, region_end);
+        if (dict_desc.data_offset < payload_start
             || dict_desc.data_offset > region_end
             || dict_desc.data_size > region_end - dict_desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_LOWCARD dictionary data range [{}, {}) outside data region [{}, {})",
-                dict_desc.data_offset, dict_desc.data_offset + dict_desc.data_size, desc.data_offset, region_end);
+                dict_desc.data_offset, dict_desc.data_offset + dict_desc.data_size, payload_start, region_end);
 
         // Confining to a subspan ending at region_end (rather than checking
         // null_offset/offsets_offset as start-only pointers) closes the extent gap for both:
