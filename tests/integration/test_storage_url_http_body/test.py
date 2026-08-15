@@ -267,6 +267,19 @@ def test_post_count_with_explicit_structure_is_one(started_cluster):
     assert get_request_count() == 1
 
 
+def test_body_subquery_is_not_planned_twice(started_cluster):
+    # The explicit outer structure avoids outer schema inference. The inner `url()` has automatic
+    # structure, so evaluating the body needs one GET for schema inference and one for the read.
+    # Format validation must not build the body pipeline before the callback, otherwise the inner
+    # source is contacted twice as often.
+    reset_request_count()
+    server.query(
+        "SELECT * FROM url('http://localhost:8000/', JSONEachRow, 'v UInt8', "
+        "body((SELECT * FROM url('http://localhost:8002/', JSONEachRow))))"
+    )
+    assert get_request_count() == 2
+
+
 def test_invalid_body_format_sends_no_request(started_cluster):
     # An invalid `body(...)` output format is a purely local argument error, so it must be
     # rejected while parsing the arguments, before any HTTP request is created. Otherwise the

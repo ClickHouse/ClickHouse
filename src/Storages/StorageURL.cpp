@@ -183,15 +183,15 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
 
     const String body_format = format.empty() ? "JSONLines" : format;
 
-    /// Preflight the full output-format construction before returning the callback. The callback
-    /// itself runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote
-    /// server, and some formats pass the name-level checks done while parsing `body(...)` but throw
-    /// in their constructor (for example, `AvroConfluent` without `output_format_avro_confluent_subject`).
-    /// Without the preflight such a locally-doomed query would still produce a remote `POST`.
+    /// Preflight the output-format construction before returning the callback. The callback itself
+    /// runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote server,
+    /// and some formats pass the name-level checks done while parsing `body(...)` but throw in their
+    /// constructor (for example, `AvroConfluent` without `output_format_avro_confluent_subject`).
+    /// Do not build the body query pipeline here: planning a subquery with a table function can
+    /// contact its remote source and must happen only when the request body is actually evaluated.
     {
         NullWriteBuffer null_buf;
-        auto builder = buildBodyQueryPipeline(query, context);
-        auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(builder.getHeader()));
+        auto preflight_format = context->getOutputFormat(body_format, null_buf, {});
     }
 
     return [body_query = query, body_format, context](std::ostream & os)

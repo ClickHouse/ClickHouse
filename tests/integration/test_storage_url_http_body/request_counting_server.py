@@ -3,10 +3,11 @@ import json
 import sys
 import threading
 
-# A mock HTTP endpoint that counts how many POST requests it receives. It is used to document the
-# request semantics of `body(...)`: when `structure` is omitted, the `url` table function sends one
-# POST to infer the schema and one more to read the data (two POSTs); with an explicit `structure`,
-# schema inference is skipped, so exactly one POST is sent.
+# A mock HTTP endpoint that counts every request it receives. It is used to document the request
+# semantics of `body(...)`: when `structure` is omitted, the `url` table function sends one POST to
+# infer the schema and one more to read the data (two POSTs); with an explicit `structure`, schema
+# inference is skipped, so exactly one POST is sent. It also detects accidental planning-time reads
+# of an inner `url()` source used by a body subquery.
 #
 # The current count is written to COUNT_PATH after every POST, and every received body is appended
 # to BODIES_PATH as a JSON-encoded string (one per line), so tests can also assert that repeated
@@ -33,6 +34,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 _count = 0
                 self._write_count()
                 open(BODIES_PATH, "w").close()
+        else:
+            with _lock:
+                _count += 1
+                self._write_count()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
