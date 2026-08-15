@@ -1803,7 +1803,7 @@ void PostgreSQLHandler::processParseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        ignore_extended_query_messages_until_sync = true;
     }
 }
 
@@ -1841,7 +1841,7 @@ void PostgreSQLHandler::processDescribeQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        ignore_extended_query_messages_until_sync = true;
     }
 }
 
@@ -1883,7 +1883,7 @@ void PostgreSQLHandler::processExecuteQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        ignore_extended_query_messages_until_sync = true;
     }
 }
 
@@ -1946,7 +1946,7 @@ void PostgreSQLHandler::processCloseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        ignore_extended_query_messages_until_sync = true;
     }
 }
 

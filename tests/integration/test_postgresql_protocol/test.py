@@ -868,6 +868,45 @@ def _pg_connect_raw(node, user, password, database):
             return sock
 
 
+def test_extended_query_errors_recover_at_sync(started_cluster):
+    """An error in an extended-query cycle is not fatal to the connection. The server must return
+    an `ErrorResponse`, ignore everything through the matching `Sync`, and then accept the next
+    cycle. Cover both an unsupported `Describe` and a query execution error after a complete
+    `Parse` / `Bind` / `Execute` sequence."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    def assert_recovered():
+        send(b"Q", b"SELECT 20260815\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260815" in seen[b"D"], seen
+
+    try:
+        # Parse succeeds, but `Describe` is not implemented. `Sync` must restore the connection.
+        send(b"P", b"describe_probe\x00SELECT 1\x00\x00\x00")
+        send(b"D", b"Sdescribe_probe\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+        assert_recovered()
+
+        # A statement whose execution fails after `Bind` follows the same extended-query recovery
+        # rule. The three zero Int16 fields in `Bind` mean default parameter and result formats,
+        # with no parameters.
+        send(b"P", b"execute_probe\x00SELECT throwIf(1)\x00\x00\x00")
+        send(b"B", b"\x00execute_probe\x00\x00\x00\x00\x00\x00\x00")
+        send(b"E", b"\x00\x00\x00\x00\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+        assert_recovered()
+    finally:
+        sock.close()
+
+
 def test_kill_query_cancels_copy_from_stdin_stalled_inside_a_frame(started_cluster):
     """A `CopyData` frame is not read as a whole: a client may announce a large frame and then stall
     in the middle of it, and an external `KILL QUERY` must still take effect promptly - the frame
