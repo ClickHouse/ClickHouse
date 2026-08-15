@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ネットワーキング'
+description: 'ClickPipes のネットワーク設定オプション。'
+slug: /integrations/clickpipes/networking
+title: 'ネットワーキング'
+doc_type: 'guide'
+keywords: ['clickpipes networking', 'private networking', 'reverse private endpoint', 'aws privatelink', 'gcp private service connect', 'private connectivity', 'azure privatelink']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+アップストリームのデータソースのネットワーク構成に応じて、以下の方法で ClickPipes に接続できます。
+
+<div id="ip-allowlisting">
+  ## IP 許可リスト
+</div>
+
+パブリックインターネットに公開されているデータソースでは、IP 許可リストを使用して、ClickPipes の接続元となる固定 NAT IP からのトラフィックのみに制限できます。ClickPipes が接続するリージョンの[固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips)を、アップストリームのファイアウォールまたはセキュリティグループのルールに追加してください。
+
+<div id="managed-private-endpoints">
+  ## マネージドプライベートエンドポイント
+</div>
+
+パブリックインターネットに公開されて**いない**データソースには、マネージドプライベートエンドポイントを使用して接続できます。ClickPipes は VPC 内に**リバースプライベートエンドポイント (RPE) **を作成し、データソース用に公開されたプライベートエンドポイントサービスに接続するため、トラフィックがパブリックインターネットに公開されることはありません。
+
+RPE のサポート状況は、データソースがホストされているクラウドプロバイダーとリージョンによって異なります。
+
+| プロバイダー                                                                      | サポート | 注記                                                                                                                                                                        |
+| --------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/ja/integrations/clickpipes/networking/aws-privatelink)      | はい   | AWS でホストされているデータソース向けです。VPC エンドポイントサービスを使用してクロスリージョン接続を構成できます。                                                                                                            |
+| [GCP Private Service Connect](/ja/integrations/clickpipes/networking/gcp-psc)  | はい   | GCP でホストされている `AlloyDB` データソース向けです。Global Access を使用したクロスリージョン接続はまだサポートされていません。サポート対象外の GCP リージョンにあるプライベート `AlloyDB` データソースに接続するには、[SSH トンネリング](#ssh-tunneling)を使用してください。 |
+| [Azure Private Link](/ja/integrations/clickpipes/networking/azure-privatelink) | いいえ  | プライベートな Azure データソースに接続するには、[SSH トンネリング](#ssh-tunneling)を使用してください。                                                                                                        |
+
+<div id="ssh-tunneling">
+  ## SSH トンネリング
+</div>
+
+パブリックインターネットに公開されておらず、マネージドプライベートエンドポイントを使用できないデータソースには、踏み台サーバー経由の SSH トンネルを使用して接続できます。ClickPipes の接続元リージョンの[固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips)を、アップストリームの踏み台サーバーのファイアウォールルールに追加します。
+
+次の場合は、この方法を使用してください。
+
+* データソースが Azure でホストされている。
+* データソースと ClickPipes が異なるクラウドプロバイダーまたはリージョンでホストされており、[マネージドプライベートエンドポイント](#managed-private-endpoints)によるクロスリージョン接続を利用できない。
+* [マネージドプライベートエンドポイント](#managed-private-endpoints)を使用できない。たとえば、踏み台サーバー経由でしか到達できないオンプレミス環境の場合。
