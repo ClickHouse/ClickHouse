@@ -453,7 +453,12 @@ String getInsertDataSchemaMismatchDescription(
                 parse_context->setInsertionTable(StorageID::createEmpty());
 
                 auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
-                auto input = parse_context->getInputFormat(format_name, *buffer, header, DEFAULT_BLOCK_SIZE, format_settings);
+                /// Make the input format return no more than the schema-inference sample in its
+                /// first block. Limiting only the copy-out loop below is too late: a row input
+                /// format can parse a whole `DEFAULT_BLOCK_SIZE` block before `executor.pull`
+                /// returns it, including a later malformed row that schema inference did not see.
+                const size_t max_sample_block_size = format_settings.max_rows_to_read_for_schema_inference;
+                auto input = parse_context->getInputFormat(format_name, *buffer, header, max_sample_block_size, format_settings);
                 QueryPipeline pipeline(std::move(input));
                 PullingPipelineExecutor executor(pipeline);
 
