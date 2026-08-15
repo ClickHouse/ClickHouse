@@ -31,9 +31,9 @@ CREATE DATABASE testdb [UUID '...'] ENGINE = Replicated('zoo_path', 'shard_name'
 
 `zoo_path` にマクロ `{uuid}` が含まれている場合は、このデータベースのすべてのレプリカで同じ UUID が使われるように、明示的に UUID を指定するか、CREATE ステートメントに [ON CLUSTER](/ja/reference/statements/distributed-ddl) を追加する必要があります。
 
-[ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルでは、引数が指定されていない場合、デフォルト引数 `/clickhouse/tables/{uuid}/{shard}` と `{replica}` が使用されます。これらは、サーバー設定 [default&#95;replica&#95;path](/ja/reference/settings/server-settings/settings#default_replica_path) および [default&#95;replica&#95;name](/ja/reference/settings/server-settings/settings#default_replica_name) で変更できます。マクロ `{uuid}` はテーブルの uuid に展開され、`{shard}` と `{replica}` はデータベースエンジンの引数ではなく、サーバー設定の値に展開されます。ただし将来的には、Replicated データベースの `shard_name` と `replica_name` を使用できるようになる予定です。
+[ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルでは、引数が指定されていない場合、デフォルト引数 `/clickhouse/tables/{uuid}/{shard}` と `{replica}` が使用されます。これらは、サーバー設定 [default&#95;replica&#95;path](/ja/reference/settings/server-settings/settings/default-replica#default_replica_path) および [default&#95;replica&#95;name](/ja/reference/settings/server-settings/settings/default-replica#default_replica_name) で変更できます。マクロ `{uuid}` はテーブルの uuid に展開され、`{shard}` と `{replica}` はデータベースエンジンの引数ではなく、サーバー設定の値に展開されます。ただし将来的には、Replicated データベースの `shard_name` と `replica_name` を使用できるようになる予定です。
 
-デフォルトの ZooKeeper クラスターの代わりに、Replicated データベースのメタデータ保存先として補助 ZooKeeper クラスターを使用することもサポートされています。次のように SQL を使用して、補助 ZooKeeper クラスターを使うReplicated データベースを作成できます。
+デフォルトの ZooKeeper クラスターの代わりに、Replicated データベースのメタデータ保存先として補助 ZooKeeper クラスターを使用することもサポートされています。次のように SQL を使用して、補助 ZooKeeper クラスターを使用する Replicated データベースを作成できます。
 
 ```sql
 CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'shard_name', 'replica_name')
@@ -45,9 +45,9 @@ CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_
 
 `Replicated` データベースでの DDL クエリは、[ON CLUSTER](/ja/reference/statements/distributed-ddl) クエリとほぼ同様に動作しますが、いくつか細かな違いがあります。
 
-まず、DDL リクエストはイニシエーター (ユーザーからのリクエストを最初に受け取ったホスト) で実行が試みられます。ここでリクエストを完了できなかった場合、ユーザーには即座にエラーが返され、他のホストで実行が試みられることはありません。イニシエーターで正常に完了した場合は、他のすべてのホストが完了するまで自動的に再試行します。イニシエーターは、他のホストでのクエリ完了を待機しようとし (待機時間は [distributed&#95;ddl&#95;task&#95;timeout](/ja/reference/settings/session-settings#distributed_ddl_task_timeout) まで) 、各ホストにおけるクエリ実行ステータスを示すテーブルを返します。
+まず、DDL リクエストはイニシエーター (ユーザーからのリクエストを最初に受け取ったホスト) で実行が試みられます。ここでリクエストを完了できなかった場合、ユーザーには即座にエラーが返され、他のホストで実行が試みられることはありません。イニシエーターで正常に完了した場合は、他のすべてのホストが完了するまで自動的に再試行します。イニシエーターは、他のホストでのクエリ完了を待機しようとし (待機時間は [distributed&#95;ddl&#95;task&#95;timeout](/ja/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) まで) 、各ホストにおけるクエリ実行ステータスを示すテーブルを返します。
 
-エラー時の動作は [distributed&#95;ddl&#95;output&#95;mode](/ja/reference/settings/session-settings#distributed_ddl_output_mode) 設定で制御されますが、`Replicated` データベースではこれを `null_status_on_timeout` に設定することを推奨します。つまり、一部のホストが [distributed&#95;ddl&#95;task&#95;timeout](/ja/reference/settings/session-settings#distributed_ddl_task_timeout) 以内にリクエストを実行できなかった場合でも、例外をスローするのではなく、それらのホストについてはテーブル内に `NULL` ステータスを表示します。
+エラー時の動作は [distributed&#95;ddl&#95;output&#95;mode](/ja/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode) 設定で制御されますが、`Replicated` データベースではこれを `null_status_on_timeout` に設定することを推奨します。つまり、一部のホストが [distributed&#95;ddl&#95;task&#95;timeout](/ja/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) 以内にリクエストを実行できなかった場合でも、例外をスローするのではなく、それらのホストについてはテーブル内に `NULL` ステータスを表示します。
 
 [system.clusters](/ja/reference/system-tables/clusters) システムテーブルには、Replicated データベースと同名のクラスターが含まれており、そのクラスターはそのデータベースのすべてのレプリカで構成されます。このクラスターは、レプリカの作成や削除に応じて自動的に更新され、[Distributed](/ja/reference/engines/table-engines/special/distributed) 分散テーブルで利用できます。
 

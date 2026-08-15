@@ -2978,7 +2978,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_table_expression*/);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+    {
         validateGroupByKeyType(partition_by_node->getResultType(), scope);
+        validateWindowKeyType(partition_by_node->getResultType(), "PARTITION BY");
+    }
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
@@ -6492,7 +6495,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
+        bool in_prewhere = scope.in_prewhere;
+        scope.in_prewhere = true;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.

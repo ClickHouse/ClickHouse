@@ -12,7 +12,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-只读副本可让您为主节点 Managed Postgres 数据库创建一个或多个副本。这些副本会通过 PostgreSQL 的原生复制持续跟随主节点数据库，及时同步变更。
+只读副本可让您为主节点 ClickHouse Managed Postgres 数据库创建一个或多个副本。这些副本会通过 PostgreSQL 的原生复制持续跟随主节点数据库，及时同步变更。
 
 要管理只读副本，请点击仓库上的编辑图标：
 
@@ -64,7 +64,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 只读副本的工作原理
 </div>
 
-Managed Postgres 中的只读副本采用 WAL shipping 架构，而非流式复制。这种设计旨在尽量降低对主节点数据库的影响。
+ClickHouse Managed Postgres 中的只读副本采用传输 WAL架构，而非流式复制。这种设计旨在尽量降低对主节点数据库的影响。
 
 <div id="wal-shipping-from-object-storage">
   ### 通过对象存储传输 WAL
