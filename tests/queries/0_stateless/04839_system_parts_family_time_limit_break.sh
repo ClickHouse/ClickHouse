@@ -50,6 +50,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A table with several parts and a projection: exercises the checkpoints of the per-part loops.
 NUM_PARTS=20
+# This fixture exercises the eager storage-discovery pass in `StoragesDroppedInfoStream`.
+NUM_DROPPED_TABLES=20
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
 # loops, which fire every 128 enumerated columns: 641 columns give 5 checkpoints per part.
 NUM_WIDE_COLUMNS=640
@@ -58,6 +60,10 @@ NUM_WIDE_COLUMNS=640
 MAX_DURATION_MS=3000
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_WIDE_COLUMNS); do echo -n ", c$i UInt64"; done)
+DROPPED_DISCOVERY_TABLES=$(for i in $(seq 1 $NUM_DROPPED_TABLES); do echo "
+CREATE TABLE t_slowdown_system_parts_dropped_discovery_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_slowdown_system_parts_dropped_discovery_$i VALUES (1);
+DROP TABLE t_slowdown_system_parts_dropped_discovery_$i SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;"; done)
 
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_slowdown_system_parts;
@@ -100,9 +106,11 @@ INSERT INTO t_slowdown_system_parts_dropped SELECT number FROM numbers($NUM_PART
 INSERT INTO t_slowdown_system_parts_wide (x) VALUES (1);
 INSERT INTO t_slowdown_system_parts_snap SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_meta (x) VALUES (1);
+$DROPPED_DISCOVERY_TABLES
 
 -- Sanity check: without any limits, the whole result is built.
 SELECT 'full columns', count() = $NUM_WIDE_COLUMNS + 1 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_slowdown_system_parts_wide';
+SELECT 'full dropped discovery', count() = $NUM_DROPPED_TABLES FROM system.dropped_tables_parts WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%';
 
 -- The table is dropped but kept in system.dropped_tables_parts for database_atomic_delay_before_drop_table_sec.
 DROP TABLE t_slowdown_system_parts_dropped SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;
@@ -122,6 +130,20 @@ function check_break_query()
     "
 }
 
+function check_break_dropped_discovery()
+{
+    echo "
+    TRUNCATE TABLE t_break_result;
+
+    INSERT INTO t_break_result
+        SELECT name FROM system.dropped_tables_parts
+        WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%'
+        SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break';
+
+    SELECT 'quick dropped_tables_parts_discovery', count() < $NUM_DROPPED_TABLES FROM t_break_result;
+    "
+}
+
 # The failpoint must be enabled after the sanity check above, which builds the full result
 # of the wide table and would take minutes with the per-column sleeps.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumeration"
@@ -135,6 +157,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
     check_break_query projection_parts_columns projection_parts_columns t_slowdown_system_parts $NUM_PARTS
     check_break_query parts_columns_wide parts_columns t_slowdown_system_parts_wide $((NUM_WIDE_COLUMNS + 1))
     check_break_query dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped $NUM_PARTS
+    check_break_dropped_discovery
 } | $CLICKHOUSE_CLIENT
 
 # $1 - the position of the check, $2 - a label, $3 - the system table, $4 - the source table,
@@ -152,6 +175,16 @@ function timed_query()
     "
 }
 
+function timed_dropped_discovery()
+{
+    echo "
+    SELECT name FROM system.dropped_tables_parts
+    WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%'
+    FORMAT Null
+    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = 'timed_04839_08 dropped_tables_parts_discovery';
+    "
+}
+
 {
     timed_query 01 parts parts t_slowdown_system_parts
     timed_query 02 parts_columns parts_columns t_slowdown_system_parts
@@ -161,19 +194,23 @@ function timed_query()
     timed_query 06 projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
     timed_query 07 dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped
 
+    # The failpoint delays each of 20 entries while `StoragesDroppedInfoStream` eagerly discovers
+    # dropped storages. This is before inherited per-part enumeration, so it pins the prepass poll.
+    timed_dropped_discovery
+
     # The '_snap' fixture times out inside the parts-snapshot walk in MergeTree (500 ms per part,
     # at least 10 seconds for the full walk). Selecting the _state column switches to the walks
     # over all part states (getAllDataPartsVector / getAllProjectionPartsVector instead of the
     # ForInternalUsage helpers), so both pairs of helpers are covered.
-    timed_query 08 parts_snap parts t_slowdown_system_parts_snap
-    timed_query 09 parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
-    timed_query 10 projection_parts_snap projection_parts t_slowdown_system_parts_snap
-    timed_query 11 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
+    timed_query 09 parts_snap parts t_slowdown_system_parts_snap
+    timed_query 10 parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
+    timed_query 11 projection_parts_snap projection_parts t_slowdown_system_parts_snap
+    timed_query 12 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
 
     # The '_meta' fixture times out inside the column-metadata prepass (1 second per 128 enumerated
     # metadata columns, at least 5 seconds for the full prepass over 641 columns).
-    timed_query 12 parts_columns_meta parts_columns t_slowdown_system_parts_meta
-    timed_query 13 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
+    timed_query 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
+    timed_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 } | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration"
