@@ -33,7 +33,10 @@ $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS" 2>&1 | grep -o -m1 "SU
 query_pid=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT parallel_replicas_pause_before_sending_queries PAUSE"
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_pr_merge_repeated_a"
+# The paused query retains a table reference. Detach it from the catalog without
+# waiting for that reference, otherwise the test deadlocks before it releases
+# the failpoint.
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_pr_merge_repeated_a SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT parallel_replicas_pause_before_sending_queries"
 
 wait $query_pid
