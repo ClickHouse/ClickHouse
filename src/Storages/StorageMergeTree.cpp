@@ -2397,7 +2397,14 @@ bool StorageMergeTree::optimize(
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
         if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
+        {
             reserved_merge_slots = merge_mutate_executor->reserveTaskSlots(partition_ids.size());
+
+            /// A zero reservation means that the executor is shutting down. Do not start an
+            /// unaccounted synchronous merge after it has stopped accepting new work.
+            if (reserved_merge_slots == 0)
+                throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
+        }
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 
