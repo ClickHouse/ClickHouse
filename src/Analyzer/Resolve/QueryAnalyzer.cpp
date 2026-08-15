@@ -2975,7 +2975,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_table_expression*/);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+    {
         validateGroupByKeyType(partition_by_node->getResultType(), scope);
+        validateWindowKeyType(partition_by_node->getResultType(), "PARTITION BY");
+    }
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
