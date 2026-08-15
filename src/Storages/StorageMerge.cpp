@@ -1035,8 +1035,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)
                 && !storage->isView();
+            /// The capability is part of the key because column resolution for the child runs with
+            /// `withSubcolumns(storage->supportsSubcolumns())`: two children with identical declared
+            /// columns but different capability resolve a requested subcolumn differently.
             auto structure_key = can_cache
-                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
+                ? (std::get<0>(table) + "\n" + (storage->supportsSubcolumns() ? "1\n" : "0\n")
+                   + storage_metadata_snapshot->getColumns().toString(false))
                 : String{};
             auto cache_it = can_cache ? query_info_cache.find(structure_key) : query_info_cache.end();
 

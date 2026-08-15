@@ -98,3 +98,14 @@ old analyzer still reads the converted parent
 old analyzer keeps the implicit rewrite correct
 6
 view over a mistyped target is unaffected
+capability differs under identical declarations, high-capability child first
+5
+1	2
+2	3
+capability differs under identical declarations, low-capability child first
+5
+1	2
+2	3
+the parent column agrees in both orders
+5
+5

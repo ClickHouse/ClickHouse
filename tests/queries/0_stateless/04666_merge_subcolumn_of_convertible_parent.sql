@@ -546,6 +546,41 @@ DROP TABLE t_merge_sub_al_good;
 DROP TABLE t_merge_sub_hom;
 DROP TABLE t_merge_sub_hom_b;
 DROP TABLE t_merge_sub_hom_a;
+-- Two children with identical declared columns but different `supportsSubcolumns()` must each get
+-- their own plan: the requested subcolumn resolves for one and is derived from the parent for the
+-- other. Both child orders are asserted because the first one planned is the one that seeds reuse.
+SELECT 'capability differs under identical declarations, high-capability child first';
+CREATE TABLE t_merge_sub_cap_a_mt (k UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_merge_sub_cap_b_rd (k UInt8, arr Array(UInt8)) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+INSERT INTO t_merge_sub_cap_a_mt VALUES (1, [1, 2]);
+INSERT INTO t_merge_sub_cap_b_rd VALUES (2, [3, 4, 5]);
+CREATE TABLE t_merge_sub_m_cap1 (k UInt8, arr Array(UInt8))
+    ENGINE = Merge(currentDatabase(), '^t_merge_sub_cap_(a_mt|b_rd)$');
+SELECT sum(arr.size0) FROM t_merge_sub_m_cap1;
+SELECT k, arr.size0 FROM t_merge_sub_m_cap1 ORDER BY k;
+
+SELECT 'capability differs under identical declarations, low-capability child first';
+CREATE TABLE t_merge_sub_cap2_a_rd (k UInt8, arr Array(UInt8)) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+CREATE TABLE t_merge_sub_cap2_b_mt (k UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_merge_sub_cap2_a_rd VALUES (2, [3, 4, 5]);
+INSERT INTO t_merge_sub_cap2_b_mt VALUES (1, [1, 2]);
+CREATE TABLE t_merge_sub_m_cap2 (k UInt8, arr Array(UInt8))
+    ENGINE = Merge(currentDatabase(), '^t_merge_sub_cap2_(a_rd|b_mt)$');
+SELECT sum(arr.size0) FROM t_merge_sub_m_cap2;
+SELECT k, arr.size0 FROM t_merge_sub_m_cap2 ORDER BY k;
+
+-- The parent read is unaffected in both orders, so the arms above are about the subcolumn.
+SELECT 'the parent column agrees in both orders';
+SELECT sum(length(arr)) FROM t_merge_sub_m_cap1 SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT sum(length(arr)) FROM t_merge_sub_m_cap2 SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_merge_sub_m_cap2;
+DROP TABLE t_merge_sub_cap2_b_mt;
+DROP TABLE t_merge_sub_cap2_a_rd;
+DROP TABLE t_merge_sub_m_cap1;
+DROP TABLE t_merge_sub_cap_b_rd;
+DROP TABLE t_merge_sub_cap_a_mt;
+
 DROP TABLE t_merge_sub_m_null;
 DROP TABLE t_merge_sub_isnull;
 DROP TABLE t_merge_sub_notnull;
