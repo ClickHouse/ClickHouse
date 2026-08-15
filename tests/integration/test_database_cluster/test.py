@@ -150,8 +150,8 @@ def test_replica_fallback(started_cluster):
 
 def test_nested_cluster_missing_from_config_uses_remote_replica(started_cluster):
     # The outer proxy first resolves `chain_inner` locally. Once that intermediate `Cluster`
-    # database loses its named cluster, it must treat the local answer as unavailable and use the
-    # other replica of its shard, rather than leaking `CLUSTER_DOESNT_EXIST` from node1.
+    # database loses its named cluster, it must treat the local answer as unavailable and use node2,
+    # the other replica of its shard, rather than leaking `CLUSTER_DOESNT_EXIST` from node1.
     for node, value in ((node1, 1), (node2, 2)):
         node.query("CREATE DATABASE chain_src")
         node.query("CREATE TABLE chain_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
@@ -177,7 +177,9 @@ def test_nested_cluster_missing_from_config_uses_remote_replica(started_cluster)
 
         assert node1.query("SHOW TABLES FROM chain_outer") == "t\n"
         assert node1.query("EXISTS TABLE chain_outer.t") == "1\n"
-        assert node1.query("SELECT sum(x) FROM chain_outer.t") == "3\n"
+        # The fallback has only node2. `chain_inner` is a one-shard cluster, so it selects the
+        # local replica there rather than reading both independently populated replicas.
+        assert node1.query("SELECT sum(x) FROM chain_outer.t") == "2\n"
     finally:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
         node1.query("SYSTEM RELOAD CONFIG")
