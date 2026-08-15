@@ -69,11 +69,14 @@ WHERE (id IN (SELECT id FROM pv_data WHERE id = 'a'))
 ORDER BY id SETTINGS log_comment = '04907_plain';
 
 -- The rows above are also what a query returns when parallel replicas never engage, so assert
--- each one reached the coordinator. ParallelReplicasHandleAnnouncementMicroseconds is
+-- each query reached the coordinator at all. ParallelReplicasHandleAnnouncementMicroseconds is
 -- incremented in ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement, which
--- is the function that raised the mismatch. ParallelReplicasHandleRequestMicroseconds is not
--- usable here: the two AND queries read no marks, so they never reach a read request. Prints 1
--- for every query.
+-- is the function that raised the mismatch. This counts the initiator's own local plan too, so
+-- it shows coordination happened, not which replica announced; the two-sided randomized run is
+-- what shows the repaired path. ParallelReplicasHandleRequestMicroseconds is not usable here:
+-- the two AND queries read no marks, so they never reach a read request. Prints 1 for every
+-- query. enable_parallel_replicas = 0 keeps this query itself off the offloaded path, where
+-- mode 2 throws on a shape it does not support instead of falling back.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
@@ -84,7 +87,8 @@ WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query_id = initial_query_id
   AND event_time >= now() - INTERVAL 600 SECOND
-ORDER BY log_comment;
+ORDER BY log_comment
+SETTINGS enable_parallel_replicas = 0;
 
 DROP VIEW pv_other_table;
 DROP VIEW pv_same_table;
