@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -177,6 +178,8 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
+    /// Reached when loading already-validated metadata, which stores no column list for this engine.
+    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
@@ -611,6 +614,44 @@ void StorageBuffer::read(
     }
 
     auto result_header = buffers_plan.getCurrentHeader();
+
+    /// Reading the destination table can return a full column where the plan over the buffers keeps
+    /// it constant (e.g. constants come back materialized from a `Distributed` destination), and a
+    /// full column cannot be converted back to a constant. Materialize such constants in the buffers
+    /// branch and unite the branches on the materialized header.
+    {
+        const auto & destination_header = *query_plan.getCurrentHeader();
+        ColumnsWithTypeAndName materialized_columns;
+        materialized_columns.reserve(result_header->columns());
+        bool buffers_header_changed = false;
+        for (const auto & column : *result_header)
+        {
+            auto materialized_column = column;
+            if (column.column && isColumnConst(*column.column))
+            {
+                const auto * destination_column = destination_header.findByName(column.name);
+                if (destination_column && (!destination_column->column || !isColumnConst(*destination_column->column)))
+                {
+                    materialized_column.column = column.column->convertToFullColumnIfConst();
+                    buffers_header_changed = true;
+                }
+            }
+            materialized_columns.push_back(std::move(materialized_column));
+        }
+
+        if (buffers_header_changed)
+        {
+            auto materialize_actions_dag = ActionsDAG::makeConvertingActions(
+                    result_header->getColumnsWithTypeAndName(),
+                    materialized_columns,
+                    ActionsDAG::MatchColumnsMode::Name,
+                    local_context);
+
+            auto materializing = std::make_unique<ExpressionStep>(result_header, std::move(materialize_actions_dag));
+            buffers_plan.addStep(std::move(materializing));
+            result_header = buffers_plan.getCurrentHeader();
+        }
+    }
 
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
@@ -1491,9 +1532,22 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
+        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
+        /// a long-lived context and would read the destination's columns with no user at all. Loading
+        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !destination_id.empty()
+            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
+            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            columns = destination_metadata->getColumns();
+        }
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             args.getContext(),
@@ -1513,7 +1567,7 @@ void registerStorageBuffer(StorageFactory & factory)
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
 :::
 
 ```sql
