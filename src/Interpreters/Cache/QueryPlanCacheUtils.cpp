@@ -946,7 +946,7 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
                 if (auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context))
                 {
                     const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-                    columns = metadata->getColumns().getNames();
+                    columns = metadata->getColumns().getAll().getNames();
                 }
             }
             query_context->addQueryAccessInfo(storage_id, columns);
