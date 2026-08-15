@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool use_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
