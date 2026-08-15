@@ -21,7 +21,7 @@ wait_failed() {
     echo "Wait failed for: $1"
     echo "Expected: $2"
     echo "Actual: $3"
-    echo "Query status: $4"
+    echo "Outcome: $4"
     # Bounded as well: reading system.view_refreshes takes the refresh task's mutex.
     timeout -k "$WAIT_KILL_S" "$((WAIT_DUMP_S - WAIT_KILL_S))" $CLICKHOUSE_CLIENT -q \
         "select * from system.view_refreshes where database = currentDatabase() format Vertical" \
@@ -33,20 +33,20 @@ wait_failed() {
 # skips the transient internal state system.view_refreshes briefly reports between state
 # transitions), leaving the last output in $wait_result. Expiry reports and exits non-zero.
 wait_for() {
-    local query="$1" op="$2" value="$3" rc remaining
+    local query="$1" op="$2" value="$3" rc remaining reason
     local poll_end=$((EPOCHSECONDS + WAIT_POLL_S + WAIT_KILL_S))
     while :
     do
         remaining=$((poll_end - EPOCHSECONDS - WAIT_KILL_S))
-        if ((remaining > 0))
+        if ((remaining <= 0))
         then
-            # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
-            wait_result=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
-            # Not through a pipe: rc would then be xargs' status, not the client's.
-            rc=$?
-        else
-            rc=124
+            wait_failed "$query" "$op $value" "$wait_result" \
+                "budget exhausted, last poll returned normally"
         fi
+        # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
+        wait_result=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
+        # Not through a pipe: rc would then be xargs' status, not the client's.
+        rc=$?
         if ((rc == 0))
         then
             case "$op" in
@@ -55,10 +55,12 @@ wait_for() {
                 '!=') [ "$wait_result" != "$value" ] && return ;;
                 no-scheduling) grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$wait_result" || return ;;
             esac
-        fi
-        if ((rc != 0)) || ((EPOCHSECONDS >= poll_end))
-        then
-            wait_failed "$query" "$op $value" "$wait_result" "$rc"
+        else
+            if ((rc == 124 || rc == 137))
+            then reason="poll query hit the remaining budget, killed with exit $rc"
+            else reason="client failed with exit $rc"
+            fi
+            wait_failed "$query" "$op $value" "$wait_result" "$reason"
         fi
         sleep 0.5
     done
