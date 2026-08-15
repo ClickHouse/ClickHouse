@@ -1173,12 +1173,14 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
 
     std::vector<std::string> failed_paths;
     std::vector<size_t> check_paths_indexes;
+    std::vector<bool> processed_by_pointer;
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
         const auto bucket = use_buckets_for_processing
             ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
             : 0;
+        bool is_processed_by_pointer = false;
         if (!last_processed_file_map.empty())
         {
             if (hasPartitioningMode(partitioning_mode))
@@ -1188,23 +1190,30 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 if (max_processed_file != last_processed_file_map[bucket].end()
                     && path <= max_processed_file->second)
                 {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
-                    continue;
+                    is_processed_by_pointer = true;
                 }
             }
             else
             {
                 if (path <= last_processed_file_map[bucket][""])
                 {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
-                    continue;
+                    is_processed_by_pointer = true;
                 }
             }
         }
+
+        if (is_processed_by_pointer)
+        {
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
+        }
+
+        /// A `failed` node has precedence over the bucket-level processed pointer.
+        /// A later file may advance that pointer while a failed node for an earlier
+        /// file remains in Keeper.
         failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
         check_paths_indexes.push_back(i);
+        processed_by_pointer.push_back(is_processed_by_pointer);
     }
 
     std::vector<std::string> result;
@@ -1231,13 +1240,14 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         check_code(responses[i].error, filename);
         if (responses[i].error == Coordination::Error::ZNONODE)
         {
-            result.push_back(std::move(filename));
+            if (!processed_by_pointer[i])
+                result.push_back(std::move(filename));
         }
         else
         {
             LOG_TEST(log_, "Skipping file {}: Failed", filename);
             auto failed_node_metadata = NodeMetadata::fromString(responses[i].data);
-            terminal_states.emplace(
+            terminal_states.insert_or_assign(
                 std::move(filename),
                 FileTerminalState{
                     .state = FileStatus::State::Failed,

@@ -832,6 +832,84 @@ def test_terminal_failure_replaces_cached_retriable_local_failure(started_cluste
         )
 
 
+def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_cluster):
+    """An ordered queue keeps a foreign terminal failure after its pointer has advanced.
+
+    A `processed` pointer is a high-water mark, not a record of the outcome of every
+    preceding file. A foreign processor can leave a terminal `failed` node for one file
+    and later process another file. In that case the listing pre-filter must report the
+    former as `Failed`, including its Keeper payload, rather than overwriting it with
+    `Processed` in `system.s3queue_metadata_cache`.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_failed_over_processed_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    generate_random_files(started_cluster, files_path, 3, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+        },
+    )
+
+    failed_file = f"{files_path}/test_1.csv"
+    later_processed_file = f"{files_path}/test_2.csv"
+    failed_node = node.query(f"SELECT sipHash64('{failed_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def foreign_node_metadata(file_path, exception, retries):
+        return json.dumps(
+            {
+                "file_path": file_path,
+                "last_processed_timestamp": int(time.time()),
+                "last_exception": exception,
+                "retries": retries,
+                "processor_id": "0",
+            }
+        ).encode()
+
+    try:
+        # A foreign processor failed `test_1.csv`, then processed `test_2.csv`.
+        # The ordered high-water mark now covers both files, but the failed node is
+        # still authoritative for `test_1.csv`.
+        zk.ensure_path(f"{keeper_path}/failed")
+        zk.create(
+            f"{keeper_path}/failed/{failed_node}",
+            foreign_node_metadata(failed_file, exception="Failed by another processor", retries=100),
+        )
+        zk.set(f"{keeper_path}/processed", foreign_node_metadata(later_processed_file, exception="", retries=0))
+
+        create_mv(node, table_name, dst_table_name)
+
+        def get_cached_record():
+            return node.query(
+                f"SELECT status, exception FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{failed_file}'"
+            ).strip()
+
+        run_with_retry(lambda x: x == "Failed\tFailed by another processor", get_cached_record)
+        assert node.query(f"SELECT count() FROM {dst_table_name}").strip() == "0"
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
+
+
 def test_later_files_wait_for_unresolved_set_processing_with_multiple_threads(started_cluster):
     """A later file must wait for the set-processing outcome of a smaller file of its domain.
 
