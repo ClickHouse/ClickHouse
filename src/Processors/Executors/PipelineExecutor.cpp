@@ -190,10 +190,6 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
 
 PipelineExecutor::~PipelineExecutor()
 {
-    /// A cancelled step-driven pipeline never reaches `finalizeExecution`,
-    /// so the reservation of the caller thread is released here.
-    releaseSingleThreadSpeculativeReservation();
-
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
 }
@@ -293,22 +289,14 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         tasks.upscale(single_thread_cpu_slot->slot_id);
         chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
-        /// In step-driven execution the calling thread is the only pipeline worker for the
-        /// whole pipeline lifetime, so it carries a single speculative reservation from the
-        /// first step until `finalizeExecution` (or the executor destruction on cancellation)
-        /// instead of a per-job one. A `MEMORY_LIMIT_EXCEEDED` throw from here propagates
-        /// to the caller like any other error raised by a pipeline step.
-        Int64 reservation = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
-        if (reservation > 0)
-        {
-            single_thread_speculative_reservation_tracker = CurrentMemoryTracker::allocGlobal(reservation);
-            single_thread_speculative_reservation = reservation;
-        }
-
         if (yield_flag && *yield_flag)
             return true;
     }
 
+    /// A step-driven executor runs this job on its caller. Keep the reservation scoped to
+    /// that job rather than to the executor object's lifetime: one caller can keep several
+    /// executors alive, but it still has only one untracked-memory buffer.
+    SpeculativeMemoryReservation speculative_memory_reservation;
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())
@@ -356,19 +344,8 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
     read_progress_callback = std::move(callback);
 }
 
-void PipelineExecutor::releaseSingleThreadSpeculativeReservation() noexcept
-{
-    if (single_thread_speculative_reservation > 0)
-    {
-        CurrentMemoryTracker::freeGlobal(single_thread_speculative_reservation, single_thread_speculative_reservation_tracker);
-        single_thread_speculative_reservation = 0;
-        single_thread_speculative_reservation_tracker = nullptr;
-    }
-}
-
 void PipelineExecutor::finalizeExecution()
 {
-    releaseSingleThreadSpeculativeReservation();
     single_thread_cpu_slot.reset();
     tasks.freeCPU();
     {

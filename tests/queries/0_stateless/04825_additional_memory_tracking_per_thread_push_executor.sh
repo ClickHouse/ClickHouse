@@ -31,7 +31,7 @@ cat > "$CONFIG_FILE" <<'EOF'
 EOF
 
 # The caller thread of the step-driven INSERT pipeline must acquire the 2 GiB
-# reservation on the first `executeStep` and fail with MEMORY_LIMIT_EXCEEDED;
+# reservation while it executes `executeStep` and fail with MEMORY_LIMIT_EXCEEDED;
 # if `executeStep` carries no reservation, the INSERT succeeds and nothing is
 # printed.
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
@@ -41,8 +41,8 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
 
 # Control: with a hard limit far above the reservation (and above any realistic
 # baseline memory usage of `clickhouse-local`), the same step-driven INSERT must
-# succeed — the reservation is acquired on the first `executeStep`, held for the
-# pipeline lifetime, and released at finalization without hanging or leaking.
+# succeed — each `executeStep` job holds and then releases its reservation without
+# hanging or leaking.
 cat > "$CONFIG_FILE" <<'EOF'
 <clickhouse>
     <max_server_memory_usage>107374182400</max_server_memory_usage>

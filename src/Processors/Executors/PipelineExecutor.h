@@ -94,18 +94,6 @@ private:
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
 
-    /// In step-driven execution (`executeStep`, used by `PullingPipelineExecutor` and
-    /// `PushingPipelineExecutor`) the calling thread is the only pipeline worker, and it stays
-    /// a worker across the whole pipeline lifetime rather than for a single job. The speculative
-    /// server-wide memory reservation (see `additional_memory_tracking_per_thread`) is therefore
-    /// held here from the first `executeStep` call until `finalizeExecution` (or the executor
-    /// destruction, if the pipeline is cancelled). Zero when no reservation is held.
-    Int64 single_thread_speculative_reservation = 0;
-    /// The query tracker the reservation above was credited to for the overcommit victim
-    /// ranking (see `CurrentMemoryTracker::allocGlobal`); it must be passed back on release
-    /// because the destruction path may run on a different thread. The pointee is owned by
-    /// the query's thread group, which `process_list_element` keeps alive.
-    MemoryTracker * single_thread_speculative_reservation_tracker = nullptr;
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
@@ -150,7 +138,6 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void releaseSingleThreadSpeculativeReservation() noexcept;
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
