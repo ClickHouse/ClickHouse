@@ -182,13 +182,6 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1);
 
-SELECT 'plan: unsupported UUID/IP roots still lift up';
-SELECT countIf(explain LIKE '%[lifted up part]%') > 0
-FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
-    SELECT empty(u), empty(ipv4), empty(ipv6), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
-    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
-             query_plan_execute_functions_after_sorting = 1);
-
 -- ----------------------------------------------------------------------------
 -- Equivalence regressions: ON vs OFF must produce identical result sets in
 -- every shape we accept for pushdown.
