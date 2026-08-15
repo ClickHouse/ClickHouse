@@ -188,6 +188,7 @@ public:
     }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+    bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -270,7 +271,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
-    ColumnSizeByName getColumnSizes(const Names & columns) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns) : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();
