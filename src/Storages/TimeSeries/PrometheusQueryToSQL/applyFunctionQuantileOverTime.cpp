@@ -356,8 +356,8 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     ASTPtr quantile_grid;
     if (varying_phi)
     {
-        /// The grid is Array(context.scalar_data_type), which can be Array(Float32); the aggregate's 3rd
-        /// argument always expects Array(Float64), so normalize it here regardless of table type.
+        /// The grid is Array(context.scalar_data_type), which can be Array(Float32); normalized here so the
+        /// aggregate and the edge-case wrapping below see one type regardless of the table's value type.
         auto castVaryingPhi = [&]
         {
             return makeASTFunction(

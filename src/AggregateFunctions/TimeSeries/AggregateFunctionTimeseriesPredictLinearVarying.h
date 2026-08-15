@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <limits>
 #include <optional>
 
@@ -69,7 +70,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        captureGridOffsetsOnce(place, columns[2], row_num);
+        captureOrCheckGridOffsets(place, columns[2], row_num);
 
         if (array_arguments)
         {
@@ -105,17 +106,22 @@ public:
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place)->samples.merge(data(rhs)->samples);
-        if (!data(place)->grid_offsets_captured && data(rhs)->grid_offsets_captured)
+
+        if (!data(rhs)->grid_offsets_captured)
+            return;
+
+        if (!data(place)->grid_offsets_captured)
         {
             data(place)->grid_offsets = data(rhs)->grid_offsets;
             data(place)->grid_offsets_captured = true;
+            return;
         }
-        else if (data(place)->grid_offsets_captured && data(rhs)->grid_offsets_captured
-            && data(place)->grid_offsets != data(rhs)->grid_offsets)
-        {
+
+        /// States are merged in full here: unlike `add`, merging happens once per partial state, not once per sample.
+        if (!sameArray(data(place)->grid_offsets, data(rhs)->grid_offsets))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "timeSeriesPredictLinearVaryingToGrid: predict_offsets (3rd argument) must be the same array for every row");
-        }
+                "Cannot merge states of aggregate function {} created with different arguments: "
+                "the `predict_offsets` array must be the same for all rows", getName());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -203,7 +209,10 @@ public:
             std::optional<ValueType> result;
             if (summary.count >= 2 && summary.m2_x != 0)
             {
-                const Float64 predict_offset = state->grid_offsets_captured ? grid_offsets[grid_index] : 0.0;
+                /// Offsets arrive in seconds (PromQL units); scaled to internal timestamp units here,
+                /// matching the constant-offset registration's pre-multiply.
+                const Float64 predict_offset = state->grid_offsets_captured
+                    ? grid_offsets[grid_index] * static_cast<Float64>(timestamp_scale_multiplier) : 0.0;
                 const Float64 slope = summary.c_xy / summary.m2_x;
                 const Float64 intercept = summary.mean_y - slope * summary.mean_x;
                 const Float64 predict_x = static_cast<Float64>(
@@ -299,34 +308,54 @@ private:
         return staleness_cutoff <= static_cast<Int128>(static_cast<Int64>(grid_point));
     }
 
-    /// Captures the 3rd argument on the first row, then validates every later row matches it (public SQL
-    /// aggregates can't otherwise enforce that). Values arrive in seconds; scaled here to internal units.
-    void captureGridOffsetsOnce(AggregateDataPtr __restrict place, const IColumn * offsets_column, size_t row_num) const
+    /// Bitwise comparison so that arrays holding a NaN offset still compare equal to themselves.
+    static bool sameValue(Float64 lhs, Float64 rhs) { return std::bit_cast<UInt64>(lhs) == std::bit_cast<UInt64>(rhs); }
+
+    static bool sameArray(const VectorWithMemoryTracking<Float64> & lhs, const VectorWithMemoryTracking<Float64> & rhs)
+    {
+        return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin(), sameValue);
+    }
+
+    /// The 3rd argument's element type follows the value type of the time series, which can be Float32 or Float64.
+    static Float64 gridValueAt(const IColumn & column, size_t index)
+    {
+        if (const auto * float64_column = typeid_cast<const ColumnVector<Float64> *>(&column))
+            return float64_column->getData()[index];
+        return typeid_cast<const ColumnVector<Float32> &>(column).getData()[index];
+    }
+
+    /// The 3rd argument must be the same array in every row: it is captured from the first row and later rows are
+    /// verified by a cheap fingerprint (size and endpoints), because `add` runs once per sample on the hot path.
+    void captureOrCheckGridOffsets(AggregateDataPtr __restrict place, const IColumn * offsets_column, size_t row_num) const
     {
         const auto & arr = typeid_cast<const ColumnArray &>(*offsets_column);
         const auto & offsets = arr.getOffsets();
         const auto begin = row_num == 0 ? 0 : offsets[row_num - 1];
         const auto end = offsets[row_num];
-        const auto & values = typeid_cast<const ColumnVector<Float64> &>(arr.getData()).getData();
-        const auto scale = static_cast<Float64>(timestamp_scale_multiplier);
+        const size_t size = end - begin;
+        const auto & values = arr.getData();
+        auto & grid_offsets = data(place)->grid_offsets;
 
-        if (!data(place)->grid_offsets_captured)
+        if (data(place)->grid_offsets_captured)
         {
-            auto & grid_offsets = data(place)->grid_offsets;
-            grid_offsets.reserve(end - begin);
-            for (auto i = begin; i < end; ++i)
-                grid_offsets.push_back(values[i] * scale);
-            data(place)->grid_offsets_captured = true;
+            if (size != grid_offsets.size()
+                || (size != 0
+                    && (!sameValue(gridValueAt(values, begin), grid_offsets.front())
+                        || !sameValue(gridValueAt(values, end - 1), grid_offsets.back()))))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} requires the same `predict_offsets` array for all rows", getName());
             return;
         }
 
-        const auto & grid_offsets = data(place)->grid_offsets;
-        bool matches = grid_offsets.size() == end - begin;
-        for (auto i = begin; matches && i < end; ++i)
-            matches = values[i] * scale == grid_offsets[i - begin];
-        if (!matches)
+        if (size != grid_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "timeSeriesPredictLinearVaryingToGrid: predict_offsets (3rd argument) must be the same array for every row");
+                "Aggregate function {} requires the `predict_offsets` array to have one value per grid point, got {} and {}",
+                getName(), size, grid_size);
+
+        grid_offsets.reserve(size);
+        for (auto i = begin; i < end; ++i)
+            grid_offsets.push_back(gridValueAt(values, i));
+        data(place)->grid_offsets_captured = true;
     }
 
     const bool array_arguments{};

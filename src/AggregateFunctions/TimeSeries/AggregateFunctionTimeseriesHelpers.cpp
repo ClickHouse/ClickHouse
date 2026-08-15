@@ -283,10 +283,14 @@ AggregateFunctionPtr createAggregateFunctionTimeseriesVarying(const std::string 
             "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
             argument_types[0]->getName(), argument_types[1]->getName(), name);
 
-    if (argument_types[2]->getTypeId() != TypeIndex::Array
-        || typeid_cast<const DataTypeArray &>(*argument_types[2]).getNestedType()->getTypeId() != TypeIndex::Float64)
+    /// The per-grid-point argument carries scalar values, so it accepts the same value types as the 2nd argument:
+    /// a PromQL scalar grid is typed after the TimeSeries table's value column, which can be Float32 or Float64.
+    const auto * varying_array_type = typeid_cast<const DataTypeArray *>(argument_types[2].get());
+    const auto varying_value_type_id = varying_array_type ? varying_array_type->getNestedType()->getTypeId() : TypeIndex::Nothing;
+    if (varying_value_type_id != TypeIndex::Float64 && varying_value_type_id != TypeIndex::Float32)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of 3rd argument for aggregate function {}, expected Array(Float64)", argument_types[2]->getName(), name);
+            "Illegal type {} of 3rd argument for aggregate function {}, expected Array(Float32) or Array(Float64)",
+            argument_types[2]->getName(), name);
 
     const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
     const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
@@ -1268,7 +1272,7 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, p
         documentation_timeSeriesQuantileToGrid});
 
     /// timeSeriesPredictLinearVaryingToGrid documentation
-    FunctionDocumentation::Description description_timeSeriesPredictLinearVaryingToGrid = "Like `timeSeriesPredictLinearToGrid`, but `predict_offset` is a per-grid-point array argument instead of a fixed parameter.";
+    FunctionDocumentation::Description description_timeSeriesPredictLinearVaryingToGrid = "Like `timeSeriesPredictLinearToGrid`, but `predict_offset` is a per-grid-point array argument instead of a fixed parameter. The array describes the whole grid, so it must have one value per grid point and be the same in every aggregated row; otherwise the function throws.";
     FunctionDocumentation::Syntax syntax_timeSeriesPredictLinearVaryingToGrid = R"(
 timeSeriesPredictLinearVaryingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, predict_offsets)
     )";
@@ -1281,7 +1285,7 @@ timeSeriesPredictLinearVaryingToGrid(start_timestamp, end_timestamp, grid_step, 
     FunctionDocumentation::Arguments arguments_timeSeriesPredictLinearVaryingToGrid = {
         {"timestamp", "Timestamp of the sample.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
         {"value", "Value of the time series corresponding to the timestamp.", {"Float*", "Array(Float*)"}},
-        {"predict_offsets", "Prediction offset in seconds for each grid point, same length as the grid.", {"Array(Float64)"}}
+        {"predict_offsets", "Prediction offset in seconds for each grid point, same length as the grid. Must be the same for all rows.", {"Array(Float32)", "Array(Float64)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesPredictLinearVaryingToGrid = {"`predict_linear` values on the specified grid.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesPredictLinearVaryingToGrid = {};
@@ -1302,7 +1306,7 @@ timeSeriesPredictLinearVaryingToGrid(start_timestamp, end_timestamp, grid_step, 
         documentation_timeSeriesPredictLinearVaryingToGrid});
 
     /// timeSeriesQuantileVaryingToGrid documentation
-    FunctionDocumentation::Description description_timeSeriesQuantileVaryingToGrid = "Like `timeSeriesQuantileToGrid`, but `phi` is a per-grid-point array argument instead of a fixed parameter.";
+    FunctionDocumentation::Description description_timeSeriesQuantileVaryingToGrid = "Like `timeSeriesQuantileToGrid`, but `phi` is a per-grid-point array argument instead of a fixed parameter. The array describes the whole grid, so it must have one value per grid point and be the same in every aggregated row; otherwise the function throws.";
     FunctionDocumentation::Syntax syntax_timeSeriesQuantileVaryingToGrid = R"(
 timeSeriesQuantileVaryingToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value, phis)
     )";
@@ -1315,7 +1319,7 @@ timeSeriesQuantileVaryingToGrid(start_timestamp, end_timestamp, grid_step, stale
     FunctionDocumentation::Arguments arguments_timeSeriesQuantileVaryingToGrid = {
         {"timestamp", "Timestamp of the sample.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
         {"value", "Value of the time series corresponding to the timestamp.", {"Float*", "Array(Float*)"}},
-        {"phis", "Quantile level in [0, 1] for each grid point, same length as the grid.", {"Array(Float64)"}}
+        {"phis", "Quantile level in [0, 1] for each grid point, same length as the grid. Must be the same for all rows.", {"Array(Float32)", "Array(Float64)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileVaryingToGrid = {"Returns the phi-quantile of values on the specified grid.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesQuantileVaryingToGrid = {};

@@ -1460,6 +1460,57 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         node.query("DROP TABLE prometheus_f32 SYNC")
 
 
+# Regression test: `predict_linear` and `quantile_over_time` accept a scalar argument that varies with the
+# evaluation time (such as `time()` in a range query). Such a scalar is carried as an array of one value per
+# evaluation step, typed after the TimeSeries table's scalar (value) type, and passed to the underlying
+# timeSeries{PredictLinear,Quantile}VaryingToGrid aggregate functions. ClickHouse's TimeSeries engine explicitly
+# supports Float32-typed value columns, so on such a table these queries used to be rejected with
+# "Illegal type Array(Float32) of 3rd argument" - the aggregate functions accepted only Array(Float64).
+def test_range_functions_with_varying_scalar_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_range (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        # Series `m` rises by 1 per second: 10 at t=100, 20 at t=110, 30 at t=120.
+        # Series `q` carries the quantile level to use at each evaluation step: 0 at t=110 and 1 at t=120.
+        node.query(
+            "INSERT INTO prometheus_f32_range (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)]), "
+            "('q', map('host', 'h1'), [(toDateTime64(110, 3), 0), (toDateTime64(120, 3), 1)])"
+        )
+
+        # The prediction horizon is the evaluation time itself, so the predicted values are the fitted value at
+        # t=110 plus 110 seconds of growth (20 + 110) and the fitted value at t=120 plus 120 seconds (30 + 120).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'predict_linear(m[30], time())', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',130),('1970-01-01 00:02:00.000',150)]",
+                ]
+            ],
+        )
+
+        # The quantile level is 0 at the first evaluation step and 1 at the second one, so the results are the
+        # smallest value in the first window (10) and the greatest value in the second one (30).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'quantile_over_time(scalar(q), m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',30)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_range SYNC")
+
+
 def test_math_functions():
     do_query_test(
         "abs(vector(-3))",
