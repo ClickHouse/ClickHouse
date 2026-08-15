@@ -38,6 +38,17 @@ FROM
 )
 WHERE explain LIKE '%GradualResize%';
 
+-- Global aggregation has no grouping keys, so it must keep the strict resize even
+-- when gradual-resize thresholds are enabled. Check both that `GradualResize` is
+-- absent and that the ordinary `Resize` remains in the pipeline.
+SELECT countIf(explain LIKE '%GradualResize%') = 0 AND countIf(explain LIKE '%Resize%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT count()
+    FROM test_gradual_resize
+);
+
 -- Verify the bytes-threshold path also inserts GradualResize (rows threshold disabled).
 -- `numbers(...)` reports `hasEvenlyDistributedRead = true` and bypasses the pre-aggregation
 -- resize entirely, so the bytes path must be exercised over a MergeTree source.
