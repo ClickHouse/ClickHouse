@@ -1202,30 +1202,37 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         source_tuple && source_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(type.get()))
         return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements().front(), merge_rules);
 
-    /// `map('k', j)` or `map(j, 1)`: DataTypeMap::isValidKeyType permits a JSON key (it only
-    /// excludes Nullable), so the JSON value isn't necessarily in the value type -- try the key
-    /// side first and fall back to the value side, taking whichever one actually changes.
+    /// `map('k', j)`, `map(j, 1)`, or `map(j, j)`: DataTypeMap::isValidKeyType permits a JSON key
+    /// (it only excludes Nullable), so the JSON value isn't necessarily in just one side -- apply
+    /// the source policy to both sides independently (a no-op on whichever side isn't JSON-shaped)
+    /// rather than stopping at the first side that changes, so `map(j, j)` correctly updates both.
     if (const auto * target_map = typeid_cast<const DataTypeMap *>(type.get());
         target_map && !typeid_cast<const DataTypeMap *>(policy_source_type.get()))
     {
         auto nested_key = applyJSONSharedDataPathPolicyImpl(target_map->getKeyType(), policy_source_type, merge_rules);
-        if (nested_key != target_map->getKeyType())
-            return std::make_shared<DataTypeMap>(std::move(nested_key), target_map->getValueType());
-
         auto nested_value = applyJSONSharedDataPathPolicyImpl(target_map->getValueType(), policy_source_type, merge_rules);
-        if (nested_value == target_map->getValueType())
+        if (nested_key == target_map->getKeyType() && nested_value == target_map->getValueType())
             return type;
-        return std::make_shared<DataTypeMap>(target_map->getKeyType(), std::move(nested_value));
+        return std::make_shared<DataTypeMap>(std::move(nested_key), std::move(nested_value));
     }
 
-    /// Source-side mirror of the map case above: same either-side ambiguity, same resolution order.
+    /// Source-side mirror of the map case above. Unlike the target side, `type` here is a single
+    /// bare value, so it can only have come from *one* side of the source Map -- but when both
+    /// sides are JSON-shaped (e.g. extracting from a historical Map(JSON(...), JSON(...))), the
+    /// types alone can't say which one the expression actually picked (mapKeys(m)[1] vs
+    /// mapValues(m)[1]/m[k]). Prefer whichever single side changes; if both do, conservatively
+    /// merge them instead of guessing, so provenance is never silently dropped for the side not
+    /// picked.
     if (const auto * source_map = typeid_cast<const DataTypeMap *>(policy_source_type.get());
         source_map && !typeid_cast<const DataTypeMap *>(type.get()))
     {
         auto from_key = applyJSONSharedDataPathPolicyImpl(type, source_map->getKeyType(), merge_rules);
-        if (from_key != type)
+        auto from_value = applyJSONSharedDataPathPolicyImpl(type, source_map->getValueType(), merge_rules);
+        if (from_key == type)
+            return from_value;
+        if (from_value == type)
             return from_key;
-        return applyJSONSharedDataPathPolicyImpl(type, source_map->getValueType(), merge_rules);
+        return applyJSONSharedDataPathPolicyImpl(from_key, from_value, /*merge_rules=*/true);
     }
 
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
