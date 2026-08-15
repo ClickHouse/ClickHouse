@@ -248,37 +248,38 @@ def test_valid_for_replicated_mixed_timezone(started_cluster):
     )
     node3.query("SYSTEM RELOAD CONFIG")
 
-    node3.query("DROP USER IF EXISTS user_valid_for_tz")
-    node3.query(
-        "CREATE USER user_valid_for_tz ON CLUSTER default VALID FOR INTERVAL 30 DAY"
-    )
+    try:
+        node3.query("DROP USER IF EXISTS user_valid_for_tz")
+        node3.query(
+            "CREATE USER user_valid_for_tz ON CLUSTER default VALID FOR INTERVAL 30 DAY"
+        )
 
-    epoch_query = "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_tz'"
-    expected = node3.query(epoch_query).strip()
-    assert expected != "0"
-    assert_eq_with_retry(node1, epoch_query, expected)
-    assert_eq_with_retry(node2, epoch_query, expected)
+        epoch_query = "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_tz'"
+        expected = node3.query(epoch_query).strip()
+        assert expected != "0"
+        assert_eq_with_retry(node1, epoch_query, expected)
+        assert_eq_with_retry(node2, epoch_query, expected)
 
-    # `ALTER` takes the same replicated serialization path.
-    node3.query("ALTER USER user_valid_for_tz VALID FOR INTERVAL 60 DAY")
-    expected = node3.query(epoch_query).strip()
-    assert_eq_with_retry(node1, epoch_query, expected)
-    assert_eq_with_retry(node2, epoch_query, expected)
-
-    node3.query("DROP USER user_valid_for_tz")
-    node3.replace_config(
-        "/etc/clickhouse-server/users.d/users.xml",
-        inspect.cleandoc(
-            """
-            <clickhouse>
-                <profiles>
-                    <default/>
-                </profiles>
-            </clickhouse>
-            """
-        ),
-    )
-    node3.query("SYSTEM RELOAD CONFIG")
+        # `ALTER` takes the same replicated serialization path.
+        node3.query("ALTER USER user_valid_for_tz VALID FOR INTERVAL 60 DAY")
+        expected = node3.query(epoch_query).strip()
+        assert_eq_with_retry(node1, epoch_query, expected)
+        assert_eq_with_retry(node2, epoch_query, expected)
+    finally:
+        node3.query("DROP USER IF EXISTS user_valid_for_tz")
+        node3.replace_config(
+            "/etc/clickhouse-server/users.d/users.xml",
+            inspect.cleandoc(
+                """
+                <clickhouse>
+                    <profiles>
+                        <default/>
+                    </profiles>
+                </clickhouse>
+                """
+            ),
+        )
+        node3.query("SYSTEM RELOAD CONFIG")
 
 
 def test_reload_zookeeper(started_cluster):
