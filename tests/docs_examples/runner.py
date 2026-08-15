@@ -131,9 +131,8 @@ GLOBAL_OBJECT_RE = re.compile(
 # A call of a function that reaches out to an external service: the `ai*` family sends the given
 # text to a model provider. On a server that has provider credentials configured, such an example
 # would make a real outbound call, incur spend, and ship the example's text off the box, so it only
-# runs with an explicit opt-in. Deliberately case-sensitive, matching how the functions are
-# registered (`aiGenerate`, `aiClassify`, ...).
-EXTERNAL_CALL_RE = re.compile(r"\bai[A-Z][A-Za-z0-9]*\s*\(")
+# runs with an explicit opt-in. The functions have both `ai*` and `AI*` registered spellings.
+EXTERNAL_CALL_RE = re.compile(r"\b(?:ai|AI)[A-Z][A-Za-z0-9]*\s*\(")
 
 
 class Example:
