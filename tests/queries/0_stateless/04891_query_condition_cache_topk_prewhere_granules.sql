@@ -102,6 +102,23 @@ EXECUTE AS user_04891 SELECT k FROM tab ORDER BY k ASC LIMIT 5;
 DROP ROW POLICY policy_04891 ON tab;
 DROP USER user_04891;
 
+-- The WHERE carrier must have the same isolation. A policy is evaluated before WHERE,
+-- therefore its result must neither write nor reuse a WHERE cache entry that omits the
+-- policy predicate. Without this isolation, the first query would cache the first chunk
+-- as empty and make the unrestricted query incorrectly skip keys 0 through 4.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+DROP USER IF EXISTS user_04891;
+CREATE USER user_04891;
+GRANT SELECT ON tab TO user_04891;
+DROP ROW POLICY IF EXISTS policy_04891 ON tab;
+CREATE ROW POLICY policy_04891 ON tab FOR SELECT USING w = 1 TO user_04891;
+SELECT '--- Row policy must not poison WHERE cache entries';
+EXECUTE AS user_04891 SELECT k FROM tab WHERE k >= 0 ORDER BY k ASC LIMIT 5;
+SELECT '--- Unrestricted user must not reuse row-policy WHERE cache entries';
+SELECT k FROM tab WHERE k >= 0 ORDER BY k ASC LIMIT 5;
+DROP ROW POLICY policy_04891 ON tab;
+DROP USER user_04891;
+
 -- The opposite sort direction needs the rows with the *largest* `k`, which live
 -- exclusively in granules the ASC plan just recorded as skippable (every row outside
 -- the first chunk has `k >= 8192`). The `__topKFilter(k)` PREWHERE condition of both

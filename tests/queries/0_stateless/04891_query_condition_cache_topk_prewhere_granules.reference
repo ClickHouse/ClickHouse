@@ -55,6 +55,18 @@
 8194
 8195
 8196
+--- Row policy must not poison WHERE cache entries
+8192
+8193
+8194
+8195
+8196
+--- Unrestricted user must not reuse row-policy WHERE cache entries
+0
+1
+2
+3
+4
 --- DESC LIMIT 5: must not reuse the granule decisions of the ASC plan
 99999
 99998

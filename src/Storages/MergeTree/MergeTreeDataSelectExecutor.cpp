@@ -1787,7 +1787,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         }
     }
 
-    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
+    /// The WHERE cache key does not include the row policy. The policy runs before WHERE,
+    /// so reusing or recording a WHERE verdict under a policy could hide a mark for a user
+    /// without that policy.
+    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag; filter_actions_dag && !select_query_info.row_level_filter)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
         /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on

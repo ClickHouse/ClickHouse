@@ -296,8 +296,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
             /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
-            /// apply_mutations_on_fly = 0 query.
-            if (!current_task.appliesMutationsBeforePrewhere())
+            /// apply_mutations_on_fly = 0 query. A row policy also runs before WHERE but is not in
+            /// the cache key, so it must not contribute cached mark decisions.
+            if (!current_task.appliesMutationsBeforePrewhere() && !row_level_filter)
             {
                 String part_name
                     = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
