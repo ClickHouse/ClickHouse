@@ -82,6 +82,7 @@ namespace FailPoints
 {
     extern const char storage_url_pause_before_empty_file_probe[];
     extern const char storage_url_pause_between_metadata_probes[];
+    extern const char storage_url_pause_after_pull[];
     extern const char storage_url_pause_before_handling_interrupted_read_error[];
 }
 
@@ -564,6 +565,15 @@ Chunk StorageURLSource::generate()
             }
 
             pulled = reader->pull(chunk);
+
+            /// `pull` may complete after the source was cancelled. Do not return this chunk:
+            /// `ISource::prepare` pushes the result before it notices cancellation.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_after_pull);
+            if (isCancelled())
+            {
+                reader->cancel();
+                break;
+            }
         }
         catch (...)
         {
