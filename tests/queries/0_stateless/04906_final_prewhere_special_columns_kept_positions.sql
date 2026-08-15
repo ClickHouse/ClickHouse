@@ -54,22 +54,27 @@ SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) O
 SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
 
 -- The rows above come from an always-true predicate, so they alone would not notice the setting
--- being ignored. Deferring the filter puts a `FilterTransform` after the FINAL merge; the second
--- arm is the control showing this oracle can be false.
-SELECT count() AS deferred_filter_transform
+-- being ignored. `Deferred prewhere filter column` is printed from `deferred_prewhere_info`, so it
+-- is absent unless the filter really was deferred; the second arm is the control showing this
+-- oracle can be false. A `FilterTransform` probe over EXPLAIN PIPELINE is not specific to it:
+-- `readNonIntersectingFinalWithEngineFilter` adds an `is_deleted` filter whenever a range skips
+-- the merge, independently of this setting.
+SELECT count() AS deferred_prewhere
 FROM (
-    EXPLAIN PIPELINE
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
-    SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1
+    EXPLAIN PLAN actions = 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SETTINGS explain_query_plan_default = 'legacy', apply_prewhere_after_final = 1,
+             query_plan_remove_unused_columns = 1
 )
-WHERE explain LIKE '%FilterTransform%';
-SELECT count() AS deferred_filter_transform
+WHERE explain LIKE '%Deferred prewhere filter column%';
+SELECT count() AS deferred_prewhere
 FROM (
-    EXPLAIN PIPELINE
-    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
-    SETTINGS apply_prewhere_after_final = 0, query_plan_remove_unused_columns = 1
+    EXPLAIN PLAN actions = 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '')
+    SETTINGS explain_query_plan_default = 'legacy', apply_prewhere_after_final = 0,
+             query_plan_remove_unused_columns = 1
 )
-WHERE explain LIKE '%FilterTransform%';
+WHERE explain LIKE '%Deferred prewhere filter column%';
 
 -- Lazy materialization rebuilds the step header once more, so it is pinned rather than left to the
 -- 5% of runs that randomize it off. The assertion below shows the lazy step is present.
