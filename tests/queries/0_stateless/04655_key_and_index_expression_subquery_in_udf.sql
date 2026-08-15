@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS key_udf_index;
 DROP TABLE IF EXISTS key_udf_matcher;
 DROP TABLE IF EXISTS key_udf_alter;
 DROP TABLE IF EXISTS key_udf_plain;
+DROP TABLE IF EXISTS key_alias_index;
 
 CREATE TABLE key_udf_src (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE FUNCTION f_04655_in_set AS x -> x IN (SELECT id FROM key_udf_src);
@@ -28,6 +29,10 @@ CREATE TABLE key_udf_partition_by (x UInt64) ENGINE = MergeTree ORDER BY x PARTI
 
 -- The same for a skip-index expression, both at `CREATE` and at `ALTER` time.
 CREATE TABLE key_udf_index (x UInt64, INDEX idx f_04655_in_set(x) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- Alias replacement happens after the initial index-definition validation, so revalidate the
+-- expanded expression before it is analyzed.
+CREATE TABLE key_alias_index (x UInt64, a UInt8 ALIAS x IN key_udf_src, INDEX idx a TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE key_udf_alter (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE key_udf_alter ADD INDEX idx f_04655_in_set(y) TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }

@@ -189,6 +189,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     /// while existing parts keep index files built with the previous schema. Checked after
     /// alias replacement, so a matcher hidden in an `ALIAS` column is rejected too.
     checkExpressionDoesntContainMatchers(*expr_list);
+    checkExpressionDoesntContainSubqueries(*expr_list);
 
     expression_list_ast = expr_list->clone();
 
