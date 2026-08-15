@@ -845,12 +845,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
-
         /// Do not let a `CHECK` constraint that can never be evaluated (it contains a subquery) into the metadata.
-        /// Only for a fresh definition: an already existing table must keep loading even if its metadata has one.
-        if (is_fresh_definition)
-            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
+        /// Validate the raw AST before `getConstraintsDescription`: its `TreeRewriter` expands UDFs and executes
+        /// scalar subqueries. Only fresh definitions are checked, so an already existing table keeps loading even
+        /// if its metadata has one.
+        if (is_fresh_definition && create.columns_list->constraints)
+            ConstraintsDescription::validateNoSubqueries(create.columns_list->constraints->children, getContext());
+
+        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
     else if (!create.as_table.empty())
     {

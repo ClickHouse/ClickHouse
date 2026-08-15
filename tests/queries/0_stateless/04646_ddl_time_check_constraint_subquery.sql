@@ -9,6 +9,8 @@
 -- CREATE TABLE
 CREATE TABLE ddl_check_bare (c0 Int, CONSTRAINT c0 CHECK (SELECT 1)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE ddl_check_scalar (c0 Int, CONSTRAINT c0 CHECK equals((SELECT 1), c0)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+-- Validation must happen before `TreeRewriter` can execute the scalar subquery.
+CREATE TABLE ddl_check_scalar_throw (c0 Int, CONSTRAINT c0 CHECK equals((SELECT throwIf(1) FROM numbers(1)), c0)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE ddl_check_in_lhs (c0 Int, CONSTRAINT c0 CHECK (SELECT 1) IN (1, 2, 3)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE ddl_check_in_set_list (c0 Int, CONSTRAINT c0 CHECK c0 IN (1, (SELECT 1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'ddl_check_%';
