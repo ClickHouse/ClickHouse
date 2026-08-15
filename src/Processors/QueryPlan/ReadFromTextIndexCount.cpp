@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
@@ -250,6 +251,9 @@ public:
 protected:
     Chunk generate() override
     {
+        /// Reading part files may issue Keeper requests, which require a component to be set for the scope.
+        auto component_guard = Coordination::setCurrentComponent("TextIndexCountSource::generate");
+
         size_t part_idx = state->next_part.fetch_add(1);
         if (part_idx >= state->parts.size())
             return {};
