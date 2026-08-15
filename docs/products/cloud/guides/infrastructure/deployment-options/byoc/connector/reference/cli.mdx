@@ -110,7 +110,7 @@ The commands operate in one of two modes:
 | `--session-file <path>` | Path to the session state file (default `/var/lib/clicklink/session.json`). |
 | `--config <path>` | Connector config file; derives the session file path from its `troubleshooter` section. |
 | `--gateway-url <url>` | Session gateway base URL. When set, the command acquires an OIDC bearer token and calls the gateway instead of touching the local state file. Mutually exclusive with `--session-file` and `--config`. |
-| `--gateway-audience <aud>` | Audience claim the OIDC token is bound to. Defaults to the scheme and host of `--gateway-url`, which does not match the gateway's default required audience (`clicklink-clctl`), so pass `--gateway-audience clicklink-clctl` explicitly unless you reconfigured the gateway. |
+| `--gateway-audience <aud>` | Audience claim the OIDC token is bound to (default `clicklink-clctl`, matching the gateway's own default). Set it only when the gateway audience was reconfigured. |
 | `--gateway-issuer <url>` | OIDC issuer the gateway validates against. Empty selects the Google path; set it together with `--oidc-client-id` to run the device-code flow against a non-Google identity provider. |
 | `--oidc-client-id <id>` | Public OIDC client ID for the device-code flow, registered at `--gateway-issuer` with the device grant enabled. |
 | `--token-file <path>` | File containing a pre-minted OIDC ID token, used as the bearer and bypassing the other token providers. |
@@ -141,7 +141,6 @@ kubectl -n <connector-namespace> port-forward \
   statefulset/clicklink-connector-troubleshooter 8443:8443
 clicklink clctl troubleshoot session enable \
   --gateway-url http://localhost:8443 \
-  --gateway-audience clicklink-clctl \
   --duration 1h --reason "support ticket 1234"
 ```
 

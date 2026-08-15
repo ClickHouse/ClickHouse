@@ -40,7 +40,6 @@ Then, in another terminal, enable a session:
 ```bash
 clicklink clctl troubleshoot session enable \
   --gateway-url http://localhost:8443 \
-  --gateway-audience clicklink-clctl \
   --duration 4h \
   --reason "<ticket reference>"
 ```
@@ -48,10 +47,8 @@ clicklink clctl troubleshoot session enable \
 Check or end it the same way:
 
 ```bash
-clicklink clctl troubleshoot session status \
-  --gateway-url http://localhost:8443 --gateway-audience clicklink-clctl
-clicklink clctl troubleshoot session disable \
-  --gateway-url http://localhost:8443 --gateway-audience clicklink-clctl
+clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
+clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
 ```
 
 The caller's OIDC identity must be on the operator allowlist; unauthenticated or unlisted callers get a 401 or 403 and the attempt is logged. If you prefer not to require cluster credentials, the chart can expose the gateway through an opt-in Ingress that terminates TLS with a CA-issued certificate; see [configuration](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration).
