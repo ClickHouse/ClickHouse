@@ -233,6 +233,41 @@ void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
     }
 }
 
+/// Rewrites only the slots that can hold a key expression. The engine is deliberately left alone:
+/// it is an `ASTFunction` too, and a SQL UDF may carry an engine's name, so expanding UDFs over the
+/// whole definition would substitute an engine with a function body.
+void normalizeLegacyToTimeInKeyExpressions(ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.storage)
+        return;
+
+    std::array<IAST **, 6> key_expressions{
+        &create.storage->partition_by, &create.storage->primary_key, &create.storage->order_by,
+        &create.storage->sample_by, &create.storage->ttl_table, &create.storage->unique_key};
+
+    const bool substitute_udfs = !UserDefinedSQLFunctionFactory::instance().empty();
+    for (auto ** slot : key_expressions)
+    {
+        if (!*slot)
+            continue;
+
+        ASTPtr expression = (*slot)->ptr();
+        const IAST * old_ptr = expression.get();
+        /// A key expression can reach `toTime` through a SQL UDF body.
+        if (substitute_udfs)
+            UserDefinedSQLFunctionVisitor::visit(expression, context);
+        replaceLegacyToTimeInCreateQuery(expression);
+
+        if (expression.get() != old_ptr)
+        {
+            for (auto & child : create.storage->children)
+                if (child.get() == old_ptr)
+                    child = expression;
+            create.storage->updatePointerToChild(old_ptr, expression);
+        }
+    }
+}
+
 }
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -3476,17 +3511,9 @@ BlockIO InterpreterCreateQuery::execute()
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
-            /// Only a table carries key expressions, and a database engine is an `ASTFunction` a SQL UDF
-            /// of the same name would be substituted into, so both steps stay off that path.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-            {
-                /// A key expression can reach `toTime` through a SQL UDF body, so substitute those
-                /// first, in the same order `createTable` uses.
-                if (!UserDefinedSQLFunctionFactory::instance().empty())
-                    UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
-                replaceLegacyToTimeInCreateQuery(query_ptr);
-            }
+                normalizeLegacyToTimeInKeyExpressions(create, getContext());
 
             return executeQueryOnCluster(create);
         }
