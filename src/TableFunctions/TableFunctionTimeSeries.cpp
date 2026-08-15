@@ -264,7 +264,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -273,6 +273,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other    | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+
+**Note**: The scalar arguments of `quantile_over_time` (`phi`) and `predict_linear` (`t`) must keep the same value for the whole query: a literal, or a scalar subquery such as `scalar(sum(vector(60)))`. They are passed as aggregate function parameters, so expressions that vary per evaluation step such as `predict_linear(up[5m], time())` are rejected with a `NOT_IMPLEMENTED` error.
 
 ### Operators {#operators}
 
@@ -334,7 +336,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -343,6 +345,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other    | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+
+**Note**: The scalar arguments of `quantile_over_time` (`phi`) and `predict_linear` (`t`) must keep the same value for the whole query: a literal, or a scalar subquery such as `scalar(sum(vector(60)))`. They are passed as aggregate function parameters, so expressions that vary per evaluation step such as `predict_linear(up[5m], time())` are rejected with a `NOT_IMPLEMENTED` error.
 
 ### Operators {#operators}
 
