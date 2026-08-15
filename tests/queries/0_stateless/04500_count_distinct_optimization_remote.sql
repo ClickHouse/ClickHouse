@@ -32,6 +32,31 @@ SELECT uniqExact(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
 SELECT uniqExact(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
     SETTINGS count_distinct_optimization = 1, distributed_group_by_no_merge = 1;
 
+-- The top-level no-merge guard is also needed for an indirect remote source. Here the outer
+-- query sees a `QueryNode`, rather than the `TableFunctionNode` that `isRemote` identifies.
+-- Without the guard it rewrites the outer aggregate and counts the same shard-local groups
+-- twice. Keep the optimization on and off results equal for both aggregate spellings.
+SELECT countDistinct(x) FROM
+(
+    SELECT x FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+)
+SETTINGS count_distinct_optimization = 0, distributed_group_by_no_merge = 1;
+SELECT countDistinct(x) FROM
+(
+    SELECT x FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+)
+SETTINGS count_distinct_optimization = 1, distributed_group_by_no_merge = 1;
+SELECT uniqExact(x) FROM
+(
+    SELECT x FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+)
+SETTINGS count_distinct_optimization = 0, distributed_group_by_no_merge = 1;
+SELECT uniqExact(x) FROM
+(
+    SELECT x FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+)
+SETTINGS count_distinct_optimization = 1, distributed_group_by_no_merge = 1;
+
 -- With the default `distributed_group_by_no_merge = 0` the shard results are merged on the
 -- initiator to the global distinct count (a single row of 3), and must be identical whether
 -- the optimization is on or off.
