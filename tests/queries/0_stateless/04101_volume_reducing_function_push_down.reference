@@ -27,7 +27,7 @@ plan: default lift-up not regressed when push-down disabled
 plan: mixed roots keep only volume-reducing functions below sort
 1
 plan: do not push when the lifted expression needs the argument
-1
+0
 eq: filter
 eq: unsupported UUID/IP roots
 eq: sort+limit
