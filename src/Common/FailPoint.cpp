@@ -170,6 +170,7 @@ static struct InitFiu
     ONCE(iceberg_export_after_commit_before_zk_completed) \
     REGULAR(export_partition_commit_always_throw) \
     ONCE(export_partition_status_change_throw) \
+    REGULAR(export_partition_processed_paths_sync_fail) \
     REGULAR(export_part_non_retryable_throw) \
     REGULAR(export_part_retryable_throw) \
     ONCE(backup_add_empty_memory_table) \

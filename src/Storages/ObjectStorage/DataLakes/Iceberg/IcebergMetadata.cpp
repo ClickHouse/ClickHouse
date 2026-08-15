@@ -1670,7 +1670,7 @@ std::vector<Field> recomputeExportPartitionValues(
 
 }
 
-bool IcebergMetadata::commitImportPartitionTransactionImpl(
+std::optional<IStorage::ExportPartitionCommitInfo> IcebergMetadata::commitImportPartitionTransactionImpl(
     FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr & metadata,
     Poco::JSON::Object::Ptr & partition_spec,
@@ -1698,7 +1698,13 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
         LOG_INFO(log,
             "Export transaction {} already committed, skipping re-commit",
             transaction_id);
-        return true;
+        /// Surface a sentinel so the caller treats this as a successful attempt (non-empty
+        /// commit info), persists a commit_info znode, and makes the situation visible in
+        /// system.replicated_partition_exports.committed_metadata_file. We do not know the
+        /// original committer's paths from here.
+        IStorage::ExportPartitionCommitInfo already_committed_info;
+        already_committed_info.iceberg_metadata_file = "<committed in a previous run, paths unavailable>";
+        return already_committed_info;
     }
 
     const auto & resolver = persistent_components.path_resolver;
@@ -1893,7 +1899,7 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
             {
                 LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
                 cleanup(true);
-                return false;
+                return {};
             }
 
             LOG_DEBUG(log, "Metadata file {} written", storage_metadata_name);
@@ -1908,7 +1914,7 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
                 {
                     cleanup(true);
-                    return false;
+                    return {};
                 }
 
                 /// Catalog has accepted the commit - the new snapshot is now live and references
@@ -1951,11 +1957,16 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
             /// post-publish work (e.g. metadata-cache invalidation). Running cleanup()
             /// here would delete manifest files referenced by the published snapshot
             /// and corrupt it. Log and swallow - any transient state (stale cache)
-            /// is self-healing on subsequent reads.
+            /// is self-healing on subsequent reads. Surface the published paths anyway
+            /// so the partition export task can persist them in ZooKeeper.
             tryLogCurrentException(log,
                 "Post-publish work failed after Iceberg snapshot was committed; "
                 "skipping manifest cleanup to preserve published snapshot");
-            return true;
+            IStorage::ExportPartitionCommitInfo published_info;
+            published_info.iceberg_metadata_file = resolver.resolve(metadata_info.path);
+            published_info.iceberg_manifest_list = storage_manifest_list_name;
+            published_info.iceberg_manifest_file = storage_manifest_entry_name;
+            return published_info;
         }
 
         LOG_ERROR(log, "Failed to commit import partition transaction: {}", getCurrentExceptionMessage(false));
@@ -1963,10 +1974,18 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
         throw;
     }
 
-    return true;
+    /// Record the storage paths of the files we just published so the partition
+    /// export task can persist them in ZooKeeper for observability. Only set here
+    /// (not on the retry / "already committed" paths) so the struct reflects
+    /// exactly what this attempt produced.
+    IStorage::ExportPartitionCommitInfo published_info;
+    published_info.iceberg_metadata_file = resolver.resolve(metadata_info.path);
+    published_info.iceberg_manifest_list = storage_manifest_list_name;
+    published_info.iceberg_manifest_file = storage_manifest_entry_name;
+    return published_info;
 }
 
-void IcebergMetadata::commitExportPartitionTransaction(
+IStorage::ExportPartitionCommitInfo IcebergMetadata::commitExportPartitionTransaction(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id,
     const String & transaction_id,
@@ -2005,7 +2024,9 @@ void IcebergMetadata::commitExportPartitionTransaction(
         LOG_INFO(log,
             "Export transaction {} already committed, skipping re-commit",
             transaction_id);
-        return;
+        IStorage::ExportPartitionCommitInfo already_committed_info;
+        already_committed_info.iceberg_metadata_file = "<committed in a previous run, paths unavailable>";
+        return already_committed_info;
     }
 
     /// Fail fast if the table schema or partition spec changed between export-start and commit.
@@ -2072,7 +2093,7 @@ void IcebergMetadata::commitExportPartitionTransaction(
     size_t attempt = 0;
     while (attempt < MAX_TRANSACTION_RETRIES)
     {
-        if (commitImportPartitionTransactionImpl(
+        auto commit_info = commitImportPartitionTransactionImpl(
                 filename_generator,
                 metadata,
                 partition_spec,
@@ -2092,10 +2113,10 @@ void IcebergMetadata::commitExportPartitionTransaction(
                 table_id,
                 configuration->getTypeName(),
                 configuration->getNamespace(),
-                context))
-        {
-            return;
-        }
+                context);
+
+        if (commit_info)
+            return *commit_info;
 
         ++attempt;
     }
