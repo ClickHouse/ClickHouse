@@ -282,16 +282,28 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             {
                 /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
+                {
                     if (query.permanently)
+                    {
                         table->checkTableCanBeDetachedPermanently();
+                    }
                     else
+                    {
                         table->checkTableCanBeDetached();
+                    }
+                }
             }
             else
+            {
                 if (query.permanently)
+                {
                     table->checkTableCanBeDetachedPermanently();
+                }
                 else
+                {
                     table->checkTableCanBeDetached();
+                }
+            }
 
             bool check_ref_deps = false;
             bool check_loading_deps = false;
