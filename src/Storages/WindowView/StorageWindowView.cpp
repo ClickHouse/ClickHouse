@@ -497,7 +497,7 @@ UInt32 StorageWindowView::getCleanupBound()
 
     auto w_bound = max_fired_watermark;
     if (allowed_lateness)
-        w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        w_bound = addTimeStrictly(w_bound, lateness_kind, -lateness_num_units, *time_zone);
     return getWindowLowerBound(w_bound);
 }
 
@@ -1103,7 +1103,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     }
     else // strictly || bounded
     {
-        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, *time_zone);
+        UInt32 max_watermark_bias = addTimeStrictly(max_watermark, watermark_kind, watermark_num_units, *time_zone);
         updated = max_watermark_bias <= watermark;
         while (max_watermark_bias <= max_timestamp)
         {
@@ -1617,12 +1617,12 @@ void StorageWindowView::writeIntoWindowView(
     // Filter outdated data
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
-        lateness_bound = addTime(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
+        lateness_bound = addTimeStrictly(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
 
         if (window_view.is_watermark_bounded)
         {
             UInt32 watermark_lower_bound
-                = addTime(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
+                = addTimeStrictly(t_max_watermark, window_view.slide_kind, -window_view.slide_num_units, *window_view.time_zone);
 
             lateness_bound = std::min(watermark_lower_bound, lateness_bound);
         }

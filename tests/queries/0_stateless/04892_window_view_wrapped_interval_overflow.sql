@@ -44,6 +44,29 @@ ATTACH WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483648 DAY
 ATTACH WINDOW VIEW 04892_wv ENGINE = Memory ALLOWED_LATENESS INTERVAL 2147483648 DAY
     AS SELECT count(v) AS c, tumble(now(), toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
+-- A bounded watermark that is representable at the epoch can still overflow when it is applied to
+-- a timestamp near the end of `DateTime32`. Propagate this as a query exception rather than from
+-- the `WatermarkTransform` destructor.
+CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483647 SECOND
+    AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w;
+
+INSERT INTO 04892_src VALUES ('2106-02-07 05:00:00', 1); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE 04892_wv;
+
+TRUNCATE TABLE 04892_src;
+
+-- Likewise, subtracting a valid lateness interval from early timestamps must not wrap and cause
+-- the filter to silently discard all rows.
+CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING ALLOWED_LATENESS INTERVAL 1 DAY
+    AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w;
+
+INSERT INTO 04892_src VALUES ('1970-01-01 00:00:01', 1); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE 04892_wv;
+
+TRUNCATE TABLE 04892_src;
+
 -- A sane window is unaffected.
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w;
