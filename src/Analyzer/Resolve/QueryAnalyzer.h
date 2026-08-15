@@ -180,22 +180,30 @@ private:
 
     /// IN - related functions
 
-    std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
+    QueryTreeNodePtr makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, IdentifierResolveScope & scope);
 
     ProjectionNames buildHasExpression(
         QueryTreeNodePtr & node,
         QueryTreeNodePtr array_arg,
         QueryTreeNodePtr element_arg,
         bool is_not_in,
-        bool transform_null_in,
+        bool compare_nulls,
         const ProjectionNames & arguments_projection_names,
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope);
 
-    ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
-                                        const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
+    QueryTreeNodePtr convertTupleToArray(
+        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodePtr & in_first_argument,
+        IdentifierResolveScope & scope,
+        bool expand_single_tuple_value,
+        bool compare_nulls);
 
-    QueryTreeNodePtr convertTupleToArray(const QueryTreeNodes & tuple_args, const QueryTreeNodePtr & in_first_argument, IdentifierResolveScope & scope);
+    QueryTreeNodes getArrayElementsForInTupleArguments(
+        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodePtr & in_first_argument,
+        IdentifierResolveScope & scope,
+        bool expand_single_tuple_value);
 
     QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
 
@@ -253,9 +261,10 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
