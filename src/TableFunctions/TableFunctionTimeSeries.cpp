@@ -277,7 +277,9 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 ### Operators {#operators}
 
-All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+Arithmetic (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+
+Logical set operators `and`, `or`, and `unless`, with `on()`/`ignoring()` modifiers.
 
 Unary operators `+` and `-`.
 
@@ -352,7 +354,9 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 ### Operators {#operators}
 
-All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+Arithmetic (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+
+Logical set operators `and`, `or`, and `unless`, with `on()`/`ignoring()` modifiers.
 
 Unary operators `+` and `-`.
 
