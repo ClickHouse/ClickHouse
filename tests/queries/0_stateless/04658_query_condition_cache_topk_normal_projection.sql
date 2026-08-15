@@ -43,19 +43,21 @@ DROP TABLE IF EXISTS tab_proj;
 -- cache) every projection granule.
 CREATE TABLE tab_proj
 (
+    p UInt8,
     id UInt32,
     v1 UInt32,
     v2 UInt32,
     INDEX idx_v1 v1 TYPE minmax GRANULARITY 1,
     PROJECTION proj (SELECT v1, v2 ORDER BY v1)
 )
-ENGINE = MergeTree ORDER BY id
+ENGINE = MergeTree
+PARTITION BY p ORDER BY id
 SETTINGS index_granularity = 64,
          min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
          add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab_proj SELECT rand(), number, number FROM numbers(1_000_000);
+INSERT INTO tab_proj SELECT 0, rand(), number, number FROM numbers(1_000_000);
 
 -- QCC entries are keyed by part; a background merge between the queries would drop entries and
 -- make the entry counts flaky.
@@ -112,5 +114,22 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase()
     AND log_comment = '04658_plain_prime'
 ORDER BY event_time_microseconds;
+
+-- Projection parts all share the projection name, so the TopK part-set salt must use
+-- the parent-part-qualified identity. Otherwise dropping one parent part leaves the
+-- unchanged projection's cache entry reusable under the old threshold snapshot.
+SET use_query_condition_cache_for_top_k = 1;
+SET use_top_k_dynamic_filtering = 1;
+SET max_block_size = 8192;
+INSERT INTO tab_proj SELECT 1, rand(), number, number FROM numbers(1_000_000);
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+SELECT '--- Projection TopK part-set changes use a fresh QCC key';
+SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1;
+SELECT count() FROM system.query_condition_cache;
+
+ALTER TABLE tab_proj DROP PARTITION 0;
+SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1;
+SELECT count() FROM system.query_condition_cache;
 
 DROP TABLE tab_proj;

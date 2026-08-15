@@ -5323,7 +5323,18 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// fresh key and the now-stale decisions of the unchanged parts are never reused.
     SipHash parts_hash;
     for (const auto & part_with_ranges : getParts())
-        parts_hash.update(part_with_ranges.data_part->name);
+    {
+        const auto & data_part = part_with_ranges.data_part;
+        if (data_part->isProjectionPart())
+        {
+            /// Projection parts are all named after their projection. Use the same
+            /// `parent_part:projection` identity as the query condition cache key, so
+            /// a change to one projection's parent part invalidates the snapshot.
+            parts_hash.update(data_part->getParentPartName());
+            parts_hash.update(":");
+        }
+        parts_hash.update(data_part->name);
+    }
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
     /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
