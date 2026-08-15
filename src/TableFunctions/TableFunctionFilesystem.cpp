@@ -197,6 +197,7 @@ ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /
 StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
     bool local_mode = context->getApplicationType() == Context::ApplicationType::LOCAL;
+    bool user_files_policy = false;
 
     /// `StorageFilesystem` performs all access via local filesystem APIs (`fs::directory_iterator`,
     /// `fileOrSymlinkPathStartsWith`). With `user_files_policy` configured on a non-local disk
@@ -206,6 +207,7 @@ StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr conte
     {
         if (auto user_files_volume = context->getUserFilesVolume())
         {
+            user_files_policy = true;
             for (const auto & disk : user_files_volume->getDisks())
             {
                 if (!isPlainLocalDisk(*disk))
@@ -222,7 +224,7 @@ StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr conte
 
     StoragePtr res = std::make_shared<StorageFilesystem>(
         StorageID(getDatabaseName(), table_name), getActualTableStructure(context, is_insert_query), ConstraintsDescription(), String{},
-        local_mode, path, user_files_absolute_path_string);
+        local_mode, user_files_policy, path, user_files_absolute_path_string);
     res->startup();
     return res;
 }
