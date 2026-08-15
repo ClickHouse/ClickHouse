@@ -114,11 +114,11 @@ struct FramingSetting
 };
 
 /// Mirror of `SETTINGS_LIST_FOLLOWERS` in play.html: the keywords a query-level settings list may
-/// run into - the output clauses of `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data
-/// of an `INSERT ... SETTINGS ... VALUES ...`.
+/// run into - the output clauses of `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`), the data
+/// of an `INSERT ... SETTINGS ... VALUES ...`, and the query source of `INSERT ... SETTINGS ...`.
 const std::set<std::string> & settingsListFollowers()
 {
-    static const std::set<std::string> followers{"format", "into", "values"};
+    static const std::set<std::string> followers{"format", "into", "values", "select", "with", "from"};
     return followers;
 }
 
@@ -135,11 +135,54 @@ std::optional<std::string> settingName(const Tok & tok)
     return std::nullopt;
 }
 
+/// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
+/// `INSERT ... FORMAT <input format>` as rows, so SQL-looking payload must not reach this walker.
+std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
+{
+    int depth = 0;
+    bool saw_insert = false;
+    bool saw_statement_keyword = false;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Tok & t = tokens[i];
+        if (isOpeningBracket(t.type))
+        {
+            ++depth;
+            continue;
+        }
+        if (isClosingBracket(t.type))
+        {
+            if (depth > 0)
+                --depth;
+            continue;
+        }
+        if (depth != 0 || t.type != DB::TokenType::BareWord)
+            continue;
+
+        const std::string lower = toLower(t.text);
+        if (!saw_statement_keyword)
+        {
+            saw_statement_keyword = true;
+            saw_insert = lower == "insert";
+            if (!saw_insert)
+                return tokens;
+            continue;
+        }
+        if (lower == "select" || lower == "with" || lower == "from")
+            return tokens;
+        if (lower == "format" && i + 1 < tokens.size()
+            && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier))
+            return {tokens.begin(), tokens.begin() + i};
+    }
+    return tokens;
+}
+
 /// Faithful port of `detectFramingSetting` from play.html, over an already-produced token list (the
 /// browser runs the same walk over the WASM lexer's tokens and, when the lexer is unavailable, over
 /// `fallbackTokenize`'s - see `expectFraming`, which exercises both here).
-FramingSetting detectFramingSetting(const std::vector<Tok> & tokens)
+FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
 {
+    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens);
     int depth = 0;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
@@ -283,6 +326,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & tokens)
                 /// contributes nothing.
                 const bool list_ends_properly = j >= tokens.size()
                     || tokens[j].type == DB::TokenType::Semicolon
+                    || tokens[j].type == DB::TokenType::OpeningRoundBracket
                     || (tokens[j].type == DB::TokenType::BareWord && settingsListFollowers().contains(toLower(tokens[j].text)));
                 if (opened_by_shorthand && !list_ends_properly)
                 {
@@ -536,6 +580,11 @@ TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
         "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FORMAT TSV",
         false, true);
     expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None';", false, true);
+    /// `ParserInsertQuery` accepts several select-start forms after an insert settings list.
+    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' SELECT 1", false, true);
+    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' WITH 1 AS x SELECT x", false, true);
+    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FROM numbers(1)", false, true);
+    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' (SELECT 1)", false, true);
     /// A standalone `SET` with a leading shorthand entry is still a session-level change.
     expectFraming("SET optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'", false, false, true);
     /// The shorthand form of `framing_output_format` itself is rejected by the server (it is a
@@ -543,6 +592,12 @@ TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
     expectFraming("SELECT 1 SETTINGS max_threads = 1, framing_output_format", true, false);
     /// A shorthand list without the framing setting is not a framing choice at all.
     expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, allow_experimental_analyzer", false, false);
+}
+
+TEST(PlayDetectFramingSetting, InlineInsertPayloadIsNotSql)
+{
+    /// The line after an inline `INSERT ... FORMAT` is data, not a query-level settings clause.
+    expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nSETTINGS framing_output_format = 'None'", false, false);
 }
 
 TEST(PlayDetectFramingSetting, ShorthandOpenedListMustEndLikeASettingsList)

@@ -45,7 +45,7 @@ std::string toUpper(std::string s)
 
 /// Mirror of `PARALLELIZABLE_KEYWORDS` in play.html.
 const std::set<std::string> parallelizable_keywords = {
-    "SELECT", "SHOW", "DESCRIBE", "DESC", "EXISTS", "EXPLAIN", "WITH"};
+    "SELECT", "SHOW", "DESCRIBE", "DESC", "EXISTS", "EXPLAIN", "WITH", "FROM"};
 
 /// Mirror of `WRITE_STATEMENT_KEYWORDS` in play.html.
 const std::set<std::string> write_statement_keywords = {
@@ -238,6 +238,8 @@ TEST(PlayQueryIsReadOnly, PlainReadOnly)
     EXPECT_TRUE(queryIsReadOnly("/* c */ SELECT 1"));
     EXPECT_TRUE(queryIsReadOnly("(SELECT 1)"));
     EXPECT_TRUE(queryIsReadOnly("(SELECT 1 UNION ALL SELECT 2)"));
+    /// Pipe-operator queries may begin with `FROM` rather than `SELECT`.
+    EXPECT_TRUE(queryIsReadOnly("FROM orders |> SELECT customer"));
 }
 
 TEST(PlayQueryIsReadOnly, PlainWrite)
@@ -318,6 +320,9 @@ TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)
     /// A semicolon inside a string literal is one token and does not split the statement.
     EXPECT_EQ(
         splitAllQueriesIsSelect("SELECT 'a;b'; WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y"),
+        (std::vector<bool>{true, false}));
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("FROM orders |> SELECT customer; INSERT INTO t VALUES (1)"),
         (std::vector<bool>{true, false}));
 }
 

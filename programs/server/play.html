@@ -13579,6 +13579,45 @@ async function tokenizeWithFallback(text)
     return await tokenizeOrNull(text) ?? fallbackTokenize(text);
 }
 
+/// `ParserInsertQuery` treats everything after `INSERT ... FORMAT <input format>` as inline input
+/// data. Stop the request-shaping walks at that boundary: a row may legitimately begin with SQL
+/// words such as `SETTINGS` or `FORMAT`, but it is not part of the statement grammar.
+function tokensBeforeInlineInsertPayload(tokens)
+{
+    let depth = 0;
+    let saw_insert = false;
+    let saw_statement_keyword = false;
+    for (let i = 0; i < tokens.length; ++i) {
+        const t = tokens[i];
+        if (OPENING_BRACKETS.has(t.type)) {
+            ++depth;
+            continue;
+        }
+        if (CLOSING_BRACKETS.has(t.type)) {
+            if (depth > 0) --depth;
+            continue;
+        }
+        if (depth !== 0 || t.type !== TT.BareWord) continue;
+
+        const lower = t.token.toLowerCase();
+        if (!saw_statement_keyword) {
+            saw_statement_keyword = true;
+            saw_insert = lower === 'insert';
+            if (!saw_insert) return tokens;
+            continue;
+        }
+        /// `SELECT`, `WITH`, and `FROM` start the query source of an `INSERT ... SELECT`, whose
+        /// `FORMAT` clauses are SQL rather than inline rows.
+        if (lower === 'select' || lower === 'with' || lower === 'from') return tokens;
+        if (lower === 'format'
+            && tokens[i + 1]
+            && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)) {
+            return tokens.slice(0, i);
+        }
+    }
+    return tokens;
+}
+
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
 /// setting is a query-level choice (an inline `SETTINGS` clause), disables framing (`= 'None'`), or is
 /// a standalone `SET` statement that changes the setting for the whole session. Values the page cannot
@@ -13618,7 +13657,7 @@ async function tokenizeWithFallback(text)
 async function detectFramingSetting(query)
 {
     const raw_tokens = await tokenizeWithFallback(query);
-    const tokens = raw_tokens.filter(t => t.significant);
+    const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
     /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
@@ -13758,6 +13797,7 @@ async function detectFramingSetting(query)
                 /// and this occurrence contributes nothing - the page then keeps its own framing, as
                 /// it did before shorthand entries were understood at all.
                 const list_ends_properly = !tokens[j] || tokens[j].type === TT.Semicolon
+                    || tokens[j].type === TT.OpeningRoundBracket
                     || (tokens[j].type === TT.BareWord && SETTINGS_LIST_FOLLOWERS.has(tokens[j].token.toLowerCase()));
                 if (opened_by_shorthand && !list_ends_properly) {
                     saw_query_setting = saved_saw_query_setting;
@@ -13811,12 +13851,13 @@ async function detectExplicitFormatClause(query)
 
     /// Annotate the significant tokens with their character offsets in `query`, accumulating the
     /// length of every token (significant or not) so the offsets track the original string exactly.
-    const tokens = [];
+    const all_tokens = [];
     let offset = 0;
     for (const t of raw_tokens) {
-        if (t.significant) tokens.push({ type: t.type, token: t.token, start: offset, end: offset + t.token.length });
+        if (t.significant) all_tokens.push({ type: t.type, token: t.token, start: offset, end: offset + t.token.length });
         offset += t.token.length;
     }
+    const tokens = tokensBeforeInlineInsertPayload(all_tokens);
     /// Bare words after which an operand (an expression, or a table/column name) is expected, so a
     /// following `format` word is that operand, not the `FORMAT` clause keyword. The server tries
     /// the `FORMAT` clause exactly where an alias could appear - only after a COMPLETE expression -
@@ -13974,7 +14015,7 @@ async function getQueryUnderCursor(all_queries, cursor_position) {
 }
 
 const PARALLELIZABLE_KEYWORDS = new Set([
-    'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH'
+    'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH', 'FROM'
 ]);
 
 /// Statement keywords that introduce a write or DDL statement. Used to resolve the real kind of a
@@ -14299,10 +14340,10 @@ const OPENING_BRACKETS = new Set([TT.OpeningRoundBracket, TT.OpeningSquareBracke
 const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracket, TT.ClosingCurlyBrace]);
 /// The keywords a query-level settings list may run into: the output clauses of
 /// `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data of an `INSERT ... SETTINGS ...
-/// VALUES ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a
+/// VALUES ...`, or the `SELECT` source of `INSERT ... SETTINGS ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a
 /// shorthand entry from an identifier that merely looks like one (see `list_ends_properly`); the
 /// set is deliberately small, because an unlisted keyword only makes the page keep its own framing.
-const SETTINGS_LIST_FOLLOWERS = new Set(['format', 'into', 'values']);
+const SETTINGS_LIST_FOLLOWERS = new Set(['format', 'into', 'values', 'select', 'with', 'from']);
 /// The closing type that matches each opening type.
 const BRACKET_PAIR = {
     [TT.OpeningRoundBracket]:  TT.ClosingRoundBracket,

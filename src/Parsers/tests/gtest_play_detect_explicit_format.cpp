@@ -166,13 +166,56 @@ std::vector<Tok> fallbackTokenizeSignificant(const std::string & query)
     return tokens;
 }
 
+/// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
+/// `INSERT ... FORMAT <input format>` as rows, so SQL-looking payload must not reach this walker.
+std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
+{
+    int depth = 0;
+    bool saw_insert = false;
+    bool saw_statement_keyword = false;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Tok & t = tokens[i];
+        if (isOpeningBracket(t.type))
+        {
+            ++depth;
+            continue;
+        }
+        if (isClosingBracket(t.type))
+        {
+            if (depth > 0)
+                --depth;
+            continue;
+        }
+        if (depth != 0 || t.type != DB::TokenType::BareWord)
+            continue;
+
+        const std::string lower = toLower(t.text);
+        if (!saw_statement_keyword)
+        {
+            saw_statement_keyword = true;
+            saw_insert = lower == "insert";
+            if (!saw_insert)
+                return tokens;
+            continue;
+        }
+        if (lower == "select" || lower == "with" || lower == "from")
+            return tokens;
+        if (lower == "format" && i + 1 < tokens.size()
+            && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier))
+            return {tokens.begin(), tokens.begin() + i};
+    }
+    return tokens;
+}
+
 /// Faithful port of `detectExplicitFormatClause` from play.html, over an already-produced token list
 /// (the browser runs the same walk over the WASM lexer's tokens and, when the lexer is unavailable,
 /// over `fallbackTokenize`'s - see `expectFormat` / `expectStrip`, which exercise both here).
 /// Returns the format name and the span of the whole `FORMAT <name>` clause, or `nullopt` when the
 /// query has no real `FORMAT` clause.
-std::optional<FormatClause> detectExplicitFormatClause(const std::vector<Tok> & tokens)
+std::optional<FormatClause> detectExplicitFormatClause(const std::vector<Tok> & all_tokens)
 {
+    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens);
     int depth = 0;
     for (size_t i = 0; i + 1 < tokens.size(); ++i)
     {
@@ -365,6 +408,14 @@ TEST(PlayDetectExplicitFormat, CommentIsNotAFormatClause)
 {
     expectFormat("SELECT 1 -- FORMAT JSON\n", std::nullopt);
     expectFormat("SELECT 1 /* FORMAT JSONCompactColumns */", std::nullopt);
+}
+
+TEST(PlayDetectExplicitFormat, InlineInsertPayloadIsNotSql)
+{
+    /// A `FORMAT`-looking row after the input format is payload, not an output clause.
+    expectFormat("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns", std::nullopt);
+    expectStrip("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns",
+        "INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns");
 }
 
 TEST(PlayDetectExplicitFormat, RealClauseWinsOverStringMention)
