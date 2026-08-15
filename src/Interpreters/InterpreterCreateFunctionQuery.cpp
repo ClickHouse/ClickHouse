@@ -205,7 +205,8 @@ namespace
                 return false;
         }
 
-        /// This keeps validation of engine arguments and driver availability before any filesystem side effects.
+        /// Keep signature and engine validation, plus driver availability, before any filesystem side effects.
+        DriverUtils::validateSignatureTypes(query.arguments_ast, query.return_type_ast);
         const auto driver = UserDefinedExecutableFunctionDriverRegistry::instance().get(query.engine_name);
         formatEngineArguments(query, *driver);
 

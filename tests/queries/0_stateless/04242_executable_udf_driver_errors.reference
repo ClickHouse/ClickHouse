@@ -2,6 +2,7 @@ non_zero_exit_propagated
 workdir_clean
 config_clean
 sql_clean
+tuple_default_signatures_rejected
 empty_output_detected
 unknown_driver_detected
 name_mismatch_detected
