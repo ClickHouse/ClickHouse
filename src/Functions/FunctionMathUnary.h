@@ -42,11 +42,11 @@ private:
 
     String getSignatureString() const override
     {
-        /// Float32/Float64 keep their precision unless always_returns_float64; other Number types become Float64.
+        /// Float32/Float64 keep their precision unless always_returns_float64; other Number types, including BFloat16, become Float64.
         if constexpr (Impl::always_returns_float64)
             return "(Number) -> Float64";
         else
-            return "(T : Float) -> T OR (Number) -> Float64";
+            return "(T : NativeFloat) -> T OR (Number) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

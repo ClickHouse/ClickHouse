@@ -2,15 +2,14 @@
 -- and it must agree with the executor on the result type. These are the families where the two are
 -- easy to drift apart: wide integers and `BFloat16`.
 
--- `exp` / `log` / `sigmoid` / `tanh` keep the argument's own float type, `BFloat16` included --
--- `is_floating_point` covers `BFloat16`, so the executor builds a `BFloat16` column as well.
+-- `exp` / `log` / `sigmoid` / `tanh` widen `BFloat16` to `Float64`, matching the executor.
 SELECT
     toTypeName(exp(materialize(toBFloat16(1)))),
     toTypeName(log(materialize(toBFloat16(1)))),
     toTypeName(sigmoid(materialize(toBFloat16(1)))),
     toTypeName(tanh(materialize(toBFloat16(1))));
 
--- Native floats keep their precision; everything else widens to `Float64`.
+-- Native floats keep their precision; every other number type widens to `Float64`.
 SELECT
     toTypeName(exp(materialize(toFloat32(1)))),
     toTypeName(exp(materialize(toFloat64(1)))),
