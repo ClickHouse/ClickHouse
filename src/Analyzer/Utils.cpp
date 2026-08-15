@@ -487,6 +487,7 @@ static ASTPtr convertIntoTableExpressionAST(
         {
             auto ast_stream_settings = make_intrusive<ASTStreamSettings>();
             ast_stream_settings->setSubscribeForUpdates(stream_settings->subscribe_for_updates);
+            ast_stream_settings->setUnordered(stream_settings->unordered);
             if (stream_settings->cursor)
                 ast_stream_settings->setCursor(stream_settings->cursor->clone());
             if (stream_settings->watermark)
@@ -950,6 +951,13 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
+            return;
+        /// 'exists' is resolved outside FunctionFactory (via FunctionExists, a special correlated-subquery
+        /// function created by the rewrite_in_to_join path). Calling
+        /// FunctionFactory::instance().get("exists", ...) would throw UNKNOWN_FUNCTION.
+        /// The FunctionNode already carries the correct return type and implementation from the original
+        /// resolution, so no re-resolution is needed — same rationale as 'grouping' above.
+        if (name == "exists")
             return;
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
