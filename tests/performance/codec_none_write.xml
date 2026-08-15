@@ -1,23 +1,17 @@
 <test>
-    <!-- Write performance of columns compressed with CODEC(NONE).
-
-         The zero-copy write path lets the caller write NONE-coded data directly into the file
-         buffer, so an INSERT into a table with CODEC(NONE) columns should get measurably faster.
-         This test documents that the gain is reachable through SQL, not only in the microbenchmark
-         (gtest_compressed_write_buffer_none.cpp).
-
-         For stability: the INSERT is single-threaded so the write path dominates and run-to-run
-         scheduling noise is small; merges are stopped so no background merge competes with the
-         measured runs; the generated data is trivial to compute so the write path, not the SELECT,
-         dominates the time. -->
+    <!-- A single-threaded wide-String INSERT makes NONE-coded column writes dominate. -->
 
     <create_query>
         CREATE TABLE none_write
         (
-            a UInt64 CODEC(NONE),
-            b UInt64 CODEC(NONE),
-            c UInt64 CODEC(NONE),
-            d Float64 CODEC(NONE)
+            a String CODEC(NONE),
+            b String CODEC(NONE),
+            c String CODEC(NONE),
+            d String CODEC(NONE),
+            e String CODEC(NONE),
+            f String CODEC(NONE),
+            g String CODEC(NONE),
+            h String CODEC(NONE)
         )
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000
@@ -26,8 +20,9 @@
 
     <query>
         INSERT INTO none_write
-        SELECT number, number * 2, number * 3, toFloat64(number) / 3
-        FROM numbers(20000000)
+        WITH concat(toString(number), repeat('x', 64)) AS value
+        SELECT value, value, value, value, value, value, value, value
+        FROM numbers(3000000)
         SETTINGS max_threads = 1, max_insert_threads = 1
     </query>
 
