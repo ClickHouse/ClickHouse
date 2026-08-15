@@ -10,9 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function run_native()
 {
-    local query=$1 query_id=${2:-} run_in_background=${3:-1}
+    local query=$1 query_id=${2:-} run_in_background=${3:-1} user=${4:-}
     $CLICKHOUSE_CLIENT --async_insert 0 --run_query_in_background "$run_in_background" \
-        ${query_id:+--query_id "$query_id"} -q "$query" 2>&1
+        ${user:+--user "$user"} ${query_id:+--query_id "$query_id"} -q "$query" 2>&1
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"

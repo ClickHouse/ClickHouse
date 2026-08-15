@@ -74,4 +74,17 @@ function shared_native_and_http_tests()
     $run "SET max_threads = 4" "$set_id"
     wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
     echo "failed asynchronously"
+
+    echo '--- a background query runs as the submitting user, and a missing grant is denied asynchronously'
+    local user="user_${run}_${CLICKHOUSE_DATABASE}"
+    $CLICKHOUSE_CLIENT -q "CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_threads = 4 CONST; GRANT INSERT ON t TO $user"
+    local denied_id="denied_${run}_${CLICKHOUSE_DATABASE}"
+    out=$($run "INSERT INTO t SELECT count() FROM t" "$denied_id" 1 "$user")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$denied_id' AND user = '$user' AND exception_code = 497"
+    echo "denied asynchronously"
+
+    echo '--- a settings constraint of the user is enforced on a background query'
+    $run "SELECT 1 SETTINGS max_threads = 8" "" 1 "$user" | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
+    $CLICKHOUSE_CLIENT -q "DROP USER $user"
 }

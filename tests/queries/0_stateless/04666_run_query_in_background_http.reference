@@ -15,6 +15,11 @@ created with rows
 run_query_in_background cannot be changed with SET
 --- a query that cannot run in the background fails asynchronously
 failed asynchronously
+--- a background query runs as the submitting user, and a missing grant is denied asynchronously
+no output
+denied asynchronously
+--- a settings constraint of the user is enforced on a background query
+SETTING_CONSTRAINT_VIOLATION
 === http ===
 --- server-minted query_id is returned in the header and inline body data is inserted
 query_id header present

@@ -10,8 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function run_http()
 {
-    local query=$1 query_id=${2:-} run_in_background=${3:-1}
-    $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=${run_in_background}${query_id:+&query_id=$query_id}" -d "$query"
+    local query=$1 query_id=${2:-} run_in_background=${3:-1} user=${4:-}
+    $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=${run_in_background}${query_id:+&query_id=$query_id}${user:+&user=$user}" -d "$query"
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"

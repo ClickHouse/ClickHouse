@@ -15,6 +15,11 @@ created with rows
 run_query_in_background cannot be changed with SET
 --- a query that cannot run in the background fails asynchronously
 failed asynchronously
+--- a background query runs as the submitting user, and a missing grant is denied asynchronously
+no output
+denied asynchronously
+--- a settings constraint of the user is enforced on a background query
+SETTING_CONSTRAINT_VIOLATION
 === native ===
 --- an INSERT whose data streams over the connection is rejected synchronously
 BAD_ARGUMENTS
