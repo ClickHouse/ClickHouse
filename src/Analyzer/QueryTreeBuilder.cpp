@@ -275,6 +275,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
+    NameToNameVector query_parameters;
 
     /// We are going to remove settings LIMIT and OFFSET and
     /// further replace them with corresponding expression nodes
@@ -342,11 +343,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
                     offset = 0;
             }
         }
+
+        if (!set_query.query_parameters.empty())
+        {
+            query_parameters = set_query.query_parameters;
+            updated_context->addQueryParameters(NameToNameMap{query_parameters.begin(), query_parameters.end()});
+        }
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
 
-    auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes), std::move(default_settings));
+    auto current_query_tree = std::make_shared<QueryNode>(
+        std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());

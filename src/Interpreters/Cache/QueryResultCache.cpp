@@ -372,7 +372,7 @@ public:
                 /// `default_settings` (i.e. `SETTINGS x = DEFAULT`) is normalized above too, so any reset
                 /// that survives targets a setting which does affect the result and must remain part of the
                 /// cache key (see `ASTSetQuery::updateTreeHashImpl`).
-                if (set_clause->changes.empty() && set_clause->default_settings.empty())
+                if (set_clause->changes.empty() && set_clause->default_settings.empty() && set_clause->query_parameters.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
