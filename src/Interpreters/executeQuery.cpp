@@ -1537,6 +1537,31 @@ static BlockIO executeQueryImpl(
         const char * query_begin = begin;
         const char * query_end = end;
 
+        /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
+        /// whole statement at once, so the inline data belongs to the transpiled buffer and is
+        /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
+        /// the HTTP request body for `POST /?query=INSERT ... &dialect=polyglot` — never goes
+        /// through the transpiler and does not count towards `max_query_size`, so accepting it
+        /// would mix two different parsing rules in a single INSERT. Reject it instead of
+        /// silently reading it, mirroring the client-side rule for stdin and INFILE
+        /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
+        /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
+        /// guarded as well.
+        bool check_external_data_after_deferred_continue = false;
+        auto checkExternalDataAfterDeferredContinue = [&]
+        {
+            if (!check_external_data_after_deferred_continue)
+                return;
+
+            check_external_data_after_deferred_continue = false;
+            if (!istr->eof())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing an INSERT query in a foreign SQL dialect together with external data "
+                    "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                    "must carry all its data inline");
+        };
+
         if (out_ast)
         {
             /// Cut the inline INSERT data out of the query text used for logging/processlist,
@@ -1678,31 +1703,6 @@ static BlockIO executeQueryImpl(
                 enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
                 out_ast->format(buf, enforce_strict_identifier_format_settings);
             }
-
-            /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
-            /// whole statement at once, so the inline data belongs to the transpiled buffer and is
-            /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
-            /// the HTTP request body for `POST /?query=INSERT ... &dialect=polyglot` — never goes
-            /// through the transpiler and does not count towards `max_query_size`, so accepting it
-            /// would mix two different parsing rules in a single INSERT. Reject it instead of
-            /// silently reading it, mirroring the client-side rule for stdin and INFILE
-            /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
-            /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
-            /// guarded as well.
-            bool check_external_data_after_deferred_continue = false;
-            auto checkExternalDataAfterDeferredContinue = [&]
-            {
-                if (!check_external_data_after_deferred_continue)
-                    return;
-
-                check_external_data_after_deferred_continue = false;
-                if (!istr->eof())
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Processing an INSERT query in a foreign SQL dialect together with external data "
-                        "(the HTTP request body) is not supported: the query is transpiled as a whole and "
-                        "must carry all its data inline");
-            };
 
             if (const auto * inline_data_insert = getInsertAST(out_ast); inline_data_insert && inline_data_insert->data
                 && !inline_data_insert->select && istr && hasTranspiledInlineData(*inline_data_insert, context))
