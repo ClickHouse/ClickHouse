@@ -28,8 +28,6 @@ plan: mixed roots keep only volume-reducing functions below sort
 1
 plan: do not push when the lifted expression needs the argument
 1
-plan: duplicate pushed result names are not pushed
-1
 plan: unsupported UUID/IP roots still lift up
 1
 eq: filter

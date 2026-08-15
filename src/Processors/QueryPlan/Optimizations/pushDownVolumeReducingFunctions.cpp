@@ -229,7 +229,8 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
     return result;
 }
 
-std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(const ActionsDAG & actions)
+std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
+    const ActionsDAG & actions, const ActionsDAG::Node * low_part_root)
 {
     /// A column the DAG surfaces crosses the step no matter where the function is computed, so the
     /// function may be lifted as before.
@@ -238,6 +239,21 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
         surfaced.insert(resolveAliases(output));
 
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    std::unordered_set<const ActionsDAG::Node *> low_part_nodes;
+    if (low_part_root)
+    {
+        ActionsDAG::NodeRawConstPtrs stack{low_part_root};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (!low_part_nodes.insert(node).second)
+                continue;
+
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+    }
+
     for (const auto & node : actions.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || !node.function_base->isVolumeReducing())
@@ -262,12 +278,15 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
         if (surfaced.contains(argument))
             continue;
 
-        /// Keeping a volume-reducing function below the sort only pays off if no calculation that
-        /// is still lifted also needs its argument. Otherwise the wide argument crosses the sort
-        /// anyway and evaluating the function before a row-reducing sort is a regression.
+        /// Keeping a volume-reducing function below the barrier only pays off if no calculation
+        /// that is still lifted also needs its argument. Otherwise the wide argument crosses the
+        /// barrier anyway and evaluating the function before a row-reducing step is a regression.
         bool argument_is_needed_by_lifted_node = false;
         for (const auto & reader : actions.getNodes())
         {
+            if (low_part_nodes.contains(&reader))
+                continue;
+
             if (reader.type == ActionsDAG::ActionType::ALIAS)
                 continue;
 

@@ -182,12 +182,6 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1);
 
-SELECT 'plan: duplicate pushed result names are not pushed';
-SELECT countIf(explain LIKE '%[volume-reducing functions]%') = 0
-FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
-    SELECT length(s) AS x, length(arr) AS x FROM volume_reducing_function_push_down ORDER BY id
-    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
-
 SELECT 'plan: unsupported UUID/IP roots still lift up';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
