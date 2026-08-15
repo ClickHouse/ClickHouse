@@ -480,11 +480,12 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// The async text-log thread services this handshake. It is not running while logging is stopped around
+    /// The async text-log thread services this handshake. It is disabled when text_log.level is none, and is
+    /// not running while logging is stopped around
     /// remapExecutable (where the only caller is the fatal signal handler; the server accepts no connections
     /// yet) nor after shutdown, so return instead of waiting forever for a flag nobody will clear. Anything
     /// queued meanwhile is drained when the thread (re)starts.
-    if (!is_open)
+    if (!text_log_max_priority || !is_open)
         return;
 
     /// Take a request number and wait until the async thread reports it as served. The thread checks the
