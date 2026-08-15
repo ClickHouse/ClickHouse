@@ -9,6 +9,12 @@
 1	test2
 1
 0
+--- fixture is multi-part
+1
+--- deferred prewhere selects after the merge
+2	test3
+1	test1
+2	test3
 --- lazy materialization
 1	test2
 1

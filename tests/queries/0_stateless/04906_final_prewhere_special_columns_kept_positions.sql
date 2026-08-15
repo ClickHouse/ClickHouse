@@ -76,6 +76,35 @@ FROM (
 )
 WHERE explain LIKE '%Deferred prewhere filter column%';
 
+-- A selective predicate over the version column: applied after the merge it sees only the winning
+-- row per key, applied before it also admits the losing row. The rows differ between the two arms,
+-- so the deferral has to happen in the pipeline and not merely be recorded in the plan. The fixture
+-- has no is-deleted column, so no engine filter is added on top of the deferred one.
+DROP TABLE IF EXISTS t_replacing_deferred_04906;
+CREATE TABLE t_replacing_deferred_04906
+(
+    key Int64,
+    someCol String,
+    ver UInt64
+) ENGINE = ReplacingMergeTree(ver) ORDER BY key;
+SYSTEM STOP MERGES t_replacing_deferred_04906;
+
+INSERT INTO t_replacing_deferred_04906 VALUES (1, 'test1', 1);
+INSERT INTO t_replacing_deferred_04906 VALUES (1, 'test2', 2);
+INSERT INTO t_replacing_deferred_04906 VALUES (2, 'test3', 1);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_replacing_deferred_04906' AND active;
+
+SELECT '--- deferred prewhere selects after the merge';
+SELECT key, someCol FROM t_replacing_deferred_04906 FINAL PREWHERE ver = 1 ORDER BY key
+SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
+SELECT key, someCol FROM t_replacing_deferred_04906 FINAL PREWHERE ver = 1 ORDER BY key
+SETTINGS apply_prewhere_after_final = 0, query_plan_remove_unused_columns = 1;
+
+DROP TABLE t_replacing_deferred_04906;
+
 -- Lazy materialization rebuilds the step header once more, so it is pinned rather than left to the
 -- 5% of runs that randomize it off. The assertion below shows the lazy step is present.
 SELECT '--- lazy materialization';
