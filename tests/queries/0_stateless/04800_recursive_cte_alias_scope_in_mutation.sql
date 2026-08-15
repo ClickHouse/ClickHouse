@@ -243,4 +243,53 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
 SELECT 'C23', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
+-- A SELECT's own SETTINGS clause decides the visibility of an enclosing plain name, so the
+-- nested SELECT reads the updated table's `src` (2) while the statement setting is left at 1.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id)
+                SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C24', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- The shorthand form of the same clause stands for `= true`, so the name is the alias (7).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id)
+                SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement))
+    WHERE id = 1 SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C25', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- An override reaches only the SELECT that carries it: the innermost one turns inheritance back
+-- on for itself, so the name is the alias (7) even though the enclosing SELECT turned it off.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (SELECT (WITH src AS (SELECT 7 AS id)
+                        SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 1))
+                SETTINGS enable_global_with_statement = 0)
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C26', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- A setting written twice in one clause takes its last value, so the name is the alias (7).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id)
+                SELECT (SELECT max(id) FROM src
+                        SETTINGS enable_global_with_statement = 0, enable_global_with_statement = 1))
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C27', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- `compatibility` reaches the setting without naming it: 20.3 predates the default becoming 1,
+-- so the nested SELECT reads the updated table's `src` (2).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id)
+                SELECT (SELECT max(id) FROM src SETTINGS compatibility = '20.3'))
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C28', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- A newer inner `compatibility` reverts what an older outer one derived, so the name is the
+-- alias (7) again.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (SELECT (WITH src AS (SELECT 7 AS id)
+                        SELECT (SELECT max(id) FROM src SETTINGS compatibility = '24.1'))
+                SETTINGS compatibility = '20.3')
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C29', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

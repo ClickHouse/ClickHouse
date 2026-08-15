@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -127,6 +128,10 @@ private:
     /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
     struct Scope
     {
+        /// `enable_global_with_statement` in effect at this `SELECT`.
+        bool inherit_from_outer = true;
+        /// The `SETTINGS` clauses of this `SELECT` and of the ones enclosing it, in that order.
+        SettingsChanges settings;
         std::unordered_set<String> recursive;
         std::unordered_set<String> plain;
     };
@@ -139,7 +144,13 @@ private:
 
     struct WithAliasesScope
     {
-        explicit WithAliasesScope(std::deque<Scope> & scopes_) : scopes(scopes_) { scopes.emplace_back(); }
+        WithAliasesScope(std::deque<Scope> & scopes_, SettingsChanges settings, bool inherit_from_outer)
+            : scopes(scopes_)
+        {
+            Scope & scope = scopes.emplace_back();
+            scope.settings = std::move(settings);
+            scope.inherit_from_outer = inherit_from_outer;
+        }
         ~WithAliasesScope() { scopes.pop_back(); }
 
         std::deque<Scope> & scopes;
@@ -159,17 +170,31 @@ private:
         std::unordered_set<String>::node_type node;
     };
 
+    static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
+
+    bool evaluateWithAliasInheritance(const SettingsChanges & changes) const;
+
+    SettingsChanges settingsReaching(const ASTSelectQuery & select) const
+    {
+        SettingsChanges changes = scopes.empty() ? SettingsChanges{} : scopes.back().settings;
+        appendSettings(changes, select);
+        return changes;
+    }
+
     /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
     Scope * findScopeDeclaring(const String & name) const
     {
+        bool plain_visible = true;
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
         {
             /// A recursive name is visible in its own definition, which is a nested `SELECT`.
             if (it->recursive.contains(name))
                 return &*it;
-            /// Without `enable_global_with_statement` a plain name reaches only its own `SELECT`.
-            if (it->plain.contains(name) && (inherit_with_aliases || it == scopes.rbegin()))
+            if (plain_visible && it->plain.contains(name))
                 return &*it;
+            /// A plain name of an enclosing `SELECT` reaches this one only when every scope in
+            /// between inherits.
+            plain_visible = plain_visible && it->inherit_from_outer;
         }
         return nullptr;
     }
@@ -188,7 +213,9 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// An alias is visible only inside the subtree of the `SELECT` that declares it.
-        WithAliasesScope with_aliases_scope(scopes);
+        SettingsChanges settings = settingsReaching(select);
+        const bool inherit = evaluateWithAliasInheritance(settings);
+        WithAliasesScope with_aliases_scope(scopes, std::move(settings), inherit);
         Scope & scope = scopes.back();
 
         const ASTPtr with = select.with();
@@ -336,7 +363,7 @@ private:
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
-        /// This is WITH RECURSIVE alias.
+        /// This is a `WITH` alias in scope here.
         if (findScopeDeclaring(identifier.name()))
             return;
 
