@@ -102,6 +102,8 @@ public:
     /// data need not match the destination.
     bool allowVariableNumberOfColumns() const override { return column_names_read_from_data; }
 
+    bool allowsFewerColumnsThanExpected() const override { return true; }
+
     bool readsTypedJSONValueTokens() const override { return true; }
 
     /// The named columnar JSON formats (`JSONColumns`) carry the column names in the data and the

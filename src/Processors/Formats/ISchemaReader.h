@@ -57,6 +57,11 @@ public:
     /// `IRowSchemaReader::readSchema` to decide whether rows with a varying number of values are allowed.
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
+    /// True when the parser accepts fewer input columns than the destination, filling the missing
+    /// trailing columns with defaults. Most formats that allow a variable number of columns also
+    /// accept extra columns; `JSONCompactColumns` is the notable exception.
+    virtual bool allowsFewerColumnsThanExpected() const { return allowVariableNumberOfColumns(); }
+
     /// True if the parser of the format reads typed JSON value tokens (a bare number, `true` / `false`,
     /// an array, an object) and consults the `input_format_json_read_*_as_strings` settings to decide
     /// whether such a token may be read into a `String` column. It is false for the flat-text formats

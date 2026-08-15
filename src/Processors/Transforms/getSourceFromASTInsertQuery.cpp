@@ -199,6 +199,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_exact_types_from_data = false;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
+    bool format_allows_fewer_columns_than_expected = false;
     bool format_reads_typed_json_value_tokens = false;
     bool format_reads_string_values_as_whole_text = false;
     bool format_reads_any_value_into_string_column = true;
@@ -235,6 +236,7 @@ String getInsertDataSchemaMismatchDescription(
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
         format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
+        format_allows_fewer_columns_than_expected = schema_reader->allowsFewerColumnsThanExpected();
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
@@ -1070,13 +1072,11 @@ String getInsertDataSchemaMismatchDescription(
     else
     {
         /// Positional formats: each position must be compatible. Formats that legally accept a variable
-        /// number of columns (`JSONCompactColumns` always; `CSV` / `TSV` / `CustomSeparated` /
-        /// `JSONCompactEachRow` when their `*_allow_variable_number_of_columns` setting is enabled) may
-        /// present fewer or more columns than the destination — missing trailing columns are filled with
-        /// defaults and/or extra columns are skipped — so for them a differing column count is not by
-        /// itself a structure mismatch; only the overlapping positions are compared. For all other
-        /// positional formats a differing count is a genuine mismatch.
-        if (!format_allows_variable_number_of_columns && inferred.size() != expected.size())
+        /// Formats that legally accept a variable number of columns may omit trailing columns, which
+        /// are filled with defaults. Most also accept extra columns. `JSONCompactColumns` accepts the
+        /// former but rejects the latter, so keep the two directions distinct.
+        if ((inferred.size() < expected.size() && !format_allows_fewer_columns_than_expected)
+            || (inferred.size() > expected.size() && !format_allows_variable_number_of_columns))
             corresponds = false;
         size_t inferred_index = 0;
         for (auto it_inferred = inferred.begin(), it_expected = expected.begin();
