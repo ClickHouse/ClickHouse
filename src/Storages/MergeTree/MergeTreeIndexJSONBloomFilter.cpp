@@ -50,34 +50,111 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JSONBloomPathMatcher::JSONBloomPathMatcher(std::vector<String> paths_, const std::vector<String> & regexps_)
-    : paths(std::move(paths_))
+JSONBloomPathMatcher::JSONBloomPathMatcher(
+    std::vector<String> include_paths_,
+    const std::vector<String> & include_path_regexps_,
+    std::vector<String> skip_paths_,
+    const std::vector<String> & skip_path_regexps_)
+    : include_paths(normalizePaths(std::move(include_paths_)))
+    , skip_paths(normalizePaths(std::move(skip_paths_)))
 {
-    for (const auto & regexp : regexps_)
+    compileRegexps(include_path_regexps_, include_regexps);
+    compileRegexps(skip_path_regexps_, skip_regexps);
+}
+
+std::vector<String> JSONBloomPathMatcher::normalizePaths(std::vector<String> paths)
+{
+    std::sort(paths.begin(), paths.end());
+    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+
+    std::vector<String> result;
+    result.reserve(paths.size());
+    for (auto & path : paths)
     {
-        regexps.emplace_back(regexp);
+        if (!matchesAnyPathOrSubtree(path, result))
+            result.emplace_back(std::move(path));
+    }
+    return result;
+}
+
+bool JSONBloomPathMatcher::matchesAnyPathOrSubtree(std::string_view path, const std::vector<String> & paths)
+{
+    while (true)
+    {
+        const auto it = std::lower_bound(
+            paths.begin(),
+            paths.end(),
+            path,
+            [](const String & lhs, std::string_view rhs) { return lhs.compare(rhs) < 0; });
+        if (it != paths.end() && *it == path)
+            return true;
+
+        const auto separator = path.find_last_of(".[");
+        if (separator == std::string_view::npos)
+            return false;
+        path = path.substr(0, separator);
+    }
+}
+
+bool JSONBloomPathMatcher::matchesAnyAncestor(std::string_view path, const std::vector<String> & paths)
+{
+    String descendant_prefix(path);
+    descendant_prefix += '.';
+    auto it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
+    if (it != paths.end() && it->starts_with(descendant_prefix))
+        return true;
+
+    descendant_prefix.back() = '[';
+    it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
+    return it != paths.end() && it->starts_with(descendant_prefix);
+}
+
+bool JSONBloomPathMatcher::matchesAnyRegexp(std::string_view path, const Regexps & regexps)
+{
+    return std::ranges::any_of(regexps, [&](const auto & regexp) { return re2::RE2::PartialMatch(path, regexp); });
+}
+
+void JSONBloomPathMatcher::compileRegexps(const std::vector<String> & regexp_strings, Regexps & regexps)
+{
+    auto unique_regexp_strings = regexp_strings;
+    std::sort(unique_regexp_strings.begin(), unique_regexp_strings.end());
+    unique_regexp_strings.erase(
+        std::unique(unique_regexp_strings.begin(), unique_regexp_strings.end()),
+        unique_regexp_strings.end());
+    for (const auto & regexp_string : unique_regexp_strings)
+    {
+        regexps.emplace_back(regexp_string);
         if (!regexps.back().ok())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid `jsonbf_v1` path regexp '{}': {}",
-                regexp,
+                regexp_string,
                 regexps.back().error());
     }
 }
 
-bool JSONBloomPathMatcher::shouldSkip(std::string_view path) const
+bool JSONBloomPathMatcher::shouldIndex(std::string_view path) const
 {
     path = path.substr(0, path.find('\0'));
-    for (const auto & skipped : paths)
-    {
-        if (path == skipped
-            || (path.starts_with(skipped)
-                && path.size() > skipped.size()
-                && (path[skipped.size()] == '.' || path[skipped.size()] == '[')))
-            return true;
-    }
+    if (matchesAnyPathOrSubtree(path, skip_paths) || matchesAnyRegexp(path, skip_regexps))
+        return false;
 
-    return std::ranges::any_of(regexps, [&](const auto & regexp) { return re2::RE2::PartialMatch(path, regexp); });
+    return !hasIncludeFilter()
+        || matchesAnyPathOrSubtree(path, include_paths)
+        || matchesAnyRegexp(path, include_regexps);
+}
+
+bool JSONBloomPathMatcher::shouldVisit(std::string_view path) const
+{
+    path = path.substr(0, path.find('\0'));
+    if (matchesAnyPathOrSubtree(path, skip_paths))
+        return false;
+
+    /// An arbitrary include or skip regexp can match a descendant differently from its ancestor.
+    return !hasIncludeFilter()
+        || matchesAnyPathOrSubtree(path, include_paths)
+        || matchesAnyAncestor(path, include_paths)
+        || !include_regexps.empty();
 }
 
 namespace
@@ -166,6 +243,18 @@ DataTypePtr removeJSONBloomWrappers(DataTypePtr type)
         }
         return type;
     }
+}
+
+bool hasJSONPathDescendants(DataTypePtr type)
+{
+    type = removeJSONBloomWrappers(std::move(type));
+    if (typeid_cast<const DataTypeObject *>(type.get()) || typeid_cast<const DataTypeTuple *>(type.get()))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return hasJSONPathDescendants(array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return hasJSONPathDescendants(map->getValueType());
+    return false;
 }
 
 struct UnwrappedColumn
@@ -274,7 +363,7 @@ public:
     void beginRow() {}
     void endRow() {}
     void consumeNull(std::string_view, bool) {}
-    bool shouldConsumePath(std::string_view path) const { return !path_matcher.shouldSkip(path); }
+    bool shouldConsumePath(std::string_view path) const { return path_matcher.shouldVisit(path); }
 
     void consumeValue(
         std::string_view path,
@@ -501,8 +590,10 @@ private:
         size_t row,
         bool is_dynamic)
     {
-        if (path_matcher.shouldSkip(logical_path))
+        if (!path_matcher.shouldVisit(logical_path))
             return;
+
+        const bool index_path = path_matcher.shouldIndex(logical_path);
 
         if (isDynamic(type))
         {
@@ -517,7 +608,11 @@ private:
         type = unwrapped->type;
         const IColumn & column = *unwrapped->column;
 
-        if (is_dynamic
+        if (!index_path && !hasJSONPathDescendants(type))
+            return;
+
+        if (index_path
+            && is_dynamic
             && (typeid_cast<const DataTypeObject *>(type.get())
                 || typeid_cast<const DataTypeArray *>(type.get())
                 || typeid_cast<const DataTypeMap *>(type.get())
@@ -540,6 +635,8 @@ private:
 
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
         {
+            if (is_dynamic && !index_path)
+                return;
             emitMap(hash_path, logical_path, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
             return;
         }
@@ -549,6 +646,9 @@ private:
             emitTuple(hash_path, logical_path, role, *tuple_type, assert_cast<const ColumnTuple &>(column), row, is_dynamic);
             return;
         }
+
+        if (!index_path)
+            return;
 
         const WhichDataType which(type);
         if (which.isNothing())
@@ -1262,7 +1362,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
         auto key_node = function.getArgumentAt(0);
         auto path = tryMatchJSONPath(key_node, header);
-        if (!path || path_matcher->shouldSkip(path->logical_path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
+        if (!path || !path_matcher->shouldIndex(path->logical_path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
             return false;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
@@ -1308,7 +1408,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
     }
 
     auto path = tryMatchJSONPath(*key_node, header);
-    if (!path || path_matcher->shouldSkip(path->logical_path))
+    if (!path || !path_matcher->shouldIndex(path->logical_path))
         return false;
 
     if (function_name == "equals")
@@ -1491,6 +1591,10 @@ JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
         options.erase(it);
     }
 
+    auto include_paths = extractStringArrayOption(options, "include_paths");
+    if (std::ranges::any_of(include_paths, [](const auto & path) { return path.empty(); }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `include_paths` cannot contain an empty path");
+    auto include_paths_regexp = extractStringArrayOption(options, "include_paths_regexp");
     auto skip_paths = extractStringArrayOption(options, "skip_paths");
     if (std::ranges::any_of(skip_paths, [](const auto & path) { return path.empty(); }))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `skip_paths` cannot contain an empty path");
@@ -1498,7 +1602,13 @@ JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected `jsonbf_v1` argument `{}`", options.begin()->first);
-    return {false_positive_rate, std::make_shared<JSONBloomPathMatcher>(std::move(skip_paths), skip_paths_regexp)};
+    return {
+        false_positive_rate,
+        std::make_shared<JSONBloomPathMatcher>(
+            std::move(include_paths),
+            include_paths_regexp,
+            std::move(skip_paths),
+            skip_paths_regexp)};
 }
 
 }
