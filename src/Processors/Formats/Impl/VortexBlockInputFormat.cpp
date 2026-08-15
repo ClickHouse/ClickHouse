@@ -92,8 +92,8 @@ namespace
 {
 
 /// Filter pushdown: the WHERE condition (`KeyCondition` built from the filter DAG) is translated
-/// into a Vortex filter expression, so selective queries decode only the matching rows. Whole
-/// segments are not yet pruned by statistics.
+/// into a Vortex filter expression, which may reduce the rows decoded by selective queries.
+/// Whole segments are not yet pruned by statistics.
 ///
 /// The translation is best-effort: any part of the condition that cannot be translated exactly is
 /// *weakened* so that the pushed filter always keeps a superset of the rows the query filter
@@ -577,9 +577,10 @@ void VortexBlockInputFormat::prepareReader()
         return;
     }
 
-    /// Push the WHERE condition down into the scan, so selective queries decode only the
-    /// matching rows. Whole segments are not yet pruned by statistics. The translation is
-    /// best-effort, and ClickHouse re-applies the full filter on the returned rows anyway.
+    /// Push the translatable parts of the WHERE condition down into the scan, which may reduce
+    /// the rows decoded by selective queries. Whole segments are not yet pruned by statistics.
+    /// The translation is best-effort, and ClickHouse re-applies the full filter on the returned
+    /// rows anyway.
     VortexExpressionPtr filter;
     if (format_settings.vortex.filter_push_down && format_filter_info && format_filter_info->hasFilter())
     {
@@ -779,8 +780,9 @@ Other types are not supported. In particular, [Map](/reference/data-types/map),
 and [Interval](/reference/data-types/special-data-types/interval) columns cannot be written to Vortex files.
 [String](/reference/data-types/string) columns are written as `Binary` because ClickHouse strings are
 arbitrary byte sequences, while Vortex requires `Utf8` values to be valid UTF-8. Vortex has no
-fixed-size binary type, so [FixedString](/reference/data-types/fixedstring) is also written as `Binary`,
-and [LowCardinality](/reference/data-types/lowcardinality) columns are written as their underlying type
+fixed-size binary type, so [FixedString](/reference/data-types/fixedstring) is also written as `Binary`;
+schema inference reads it back as [String](/reference/data-types/string).
+[LowCardinality](/reference/data-types/lowcardinality) columns are written as their underlying type
 (Vortex chooses dictionary and other encodings adaptively by itself).
 [DateTime](/reference/data-types/datetime) columns are written as `vortex.timestamp` with second precision,
 so they are read back as [DateTime64](/reference/data-types/datetime64) with scale 0.
@@ -811,7 +813,7 @@ SELECT * FROM numbers(3) INTO OUTFILE 'numbers.vortex' FORMAT Vortex;
 
 | Setting                                  | Description                                                          | Default |
 |------------------------------------------|----------------------------------------------------------------------|---------|
-| `input_format_vortex_filter_push_down`   | Push the `WHERE` condition down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics. Pushdown currently supports top-level integer, floating-point, and string/binary columns; other predicates are evaluated by ClickHouse after the scan. | `1` |
+| `input_format_vortex_filter_push_down`   | Push translatable parts of the `WHERE` condition down into the scan, which may reduce the rows decoded by selective queries. ClickHouse reapplies the full filter after the scan. Whole segments are not yet pruned by statistics. Pushdown currently supports top-level integer, floating-point, and string/binary columns. | `1` |
 
 As in other columnar formats, only the columns used by the query are read from the file, and
 columns missing in the file are filled with default values.
