@@ -56,8 +56,8 @@ TTL c0 + INTERVAL 1 DAY GROUP BY toTime(c0) SET v = max(v);
 SELECT 'ttl_group_by', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_key';
 "
 
-# DDL entry formats below NORMALIZE_CREATE_ON_INITIATOR_VERSION ship the query text as written and
-# carry no settings, so the spelling a worker receives has to be unambiguous already.
+# The oldest DDL entry format ships the query text as written and carries no settings, so the
+# spelling a worker receives has to be unambiguous already.
 OLDEST_VERSION=1
 ${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 \
     --distributed_ddl_entry_format_version $OLDEST_VERSION --distributed_ddl_output_mode none --multiquery -q "

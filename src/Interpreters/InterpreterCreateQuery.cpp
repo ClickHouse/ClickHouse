@@ -3474,8 +3474,8 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// Entry format versions below `NORMALIZE_CREATE_ON_INITIATOR_VERSION` ship the query text as
-            /// written and carry no settings, so each worker would resolve `toTime` with its own default.
+            /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
+            /// so a worker there would resolve `toTime` with its own default.
             /// Only a table carries key expressions, and a database engine is an `ASTFunction` a SQL UDF
             /// of the same name would be substituted into, so both steps stay off that path.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
