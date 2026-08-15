@@ -60,6 +60,11 @@ struct SelectQueryOptions
     /// would require grants on columns the user never selected.
     bool ignore_table_access_check = false;
 
+    /// Do not resolve `additional_table_filters` for the table this query reads directly. Set only
+    /// where that table's entry is already applied as a filter above this read, so resolving it here
+    /// would filter twice. Tables reached from within the query keep resolving their own entries.
+    bool skip_additional_table_filters = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -101,6 +106,8 @@ struct SelectQueryOptions
         out.is_local_plan_for_distributed_query = false;
         /// A subquery names its own tables, so its column list is the user's own and is checked.
         out.ignore_table_access_check = false;
+        /// Nothing was applied above a subquery's own reads, so their entries still resolve.
+        out.skip_additional_table_filters = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

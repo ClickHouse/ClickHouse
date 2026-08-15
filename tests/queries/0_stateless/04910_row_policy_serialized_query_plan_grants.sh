@@ -143,3 +143,43 @@ DROP TABLE rp_sq_dist;
 DROP TABLE rp_sq_leaf;
 DROP TABLE rp_sq_src;
 "
+
+# The read table's own entry must stop resolving, while a read of that same table reached through
+# the policy's filter must keep resolving its entry. Both name one table, so suppressing the entry
+# for the whole read would take the second one with it. The policy admits whatever the view reports
+# as the maximum, so a lost entry moves that maximum and the row set changes rather than its size.
+${CLICKHOUSE_CLIENT} -m -q "
+DROP TABLE IF EXISTS rp_st_leaf;
+DROP TABLE IF EXISTS rp_st_dist;
+DROP VIEW IF EXISTS rp_st_v;
+CREATE TABLE rp_st_leaf (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO rp_st_leaf SELECT number, number FROM numbers(10);
+CREATE TABLE rp_st_dist AS rp_st_leaf
+    ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_st_leaf);
+-- Reading the table directly from its own policy would recurse, so the policy goes through a view
+-- that does not re-apply it.
+CREATE VIEW rp_st_v (y UInt32) DEFINER = CURRENT_USER SQL SECURITY NONE
+    AS SELECT y FROM ${CLICKHOUSE_DATABASE}.rp_st_leaf;
+DROP ROW POLICY IF EXISTS rp_st_policy ON rp_st_leaf;
+CREATE ROW POLICY rp_st_policy ON rp_st_leaf FOR SELECT
+    USING y IN (SELECT max(y) FROM ${CLICKHOUSE_DATABASE}.rp_st_v) TO ALL;
+"
+
+echo -n "atf same table local "
+${CLICKHOUSE_CLIENT} -q "
+    SELECT arraySort(groupArray(x)) FROM rp_st_leaf
+    SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_st_leaf': 'y < 3'}"
+for sqp in 1 0; do
+    echo -n "atf same table sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} -q "
+        SELECT arraySort(groupArray(x)) FROM rp_st_dist
+        SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1, serialize_query_plan = ${sqp},
+                 additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_st_leaf': 'y < 3'}"
+done
+
+${CLICKHOUSE_CLIENT} -m -q "
+DROP ROW POLICY rp_st_policy ON rp_st_leaf;
+DROP VIEW rp_st_v;
+DROP TABLE rp_st_dist;
+DROP TABLE rp_st_leaf;
+"

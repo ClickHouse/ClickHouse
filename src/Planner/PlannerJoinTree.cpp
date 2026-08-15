@@ -1635,8 +1635,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
         {
-            parseAdditionalFilterAstIfNeeded(
-                storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+            if (!select_query_options.skip_additional_table_filters)
+                parseAdditionalFilterAstIfNeeded(
+                    storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
             /// above, so it must run inside the same `!only_analyze` branch — otherwise
