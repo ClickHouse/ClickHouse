@@ -316,12 +316,6 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
 
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
-    if (readonly)
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). "
-            "Run CREATE TABLE in an underlying database",
-            backQuote(getDatabaseName()));
     for (auto & db : resolveDatabases())
     {
         if (!db->isReadOnly())
@@ -501,11 +495,6 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 
 String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
-    if (readonly)
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
-            backQuote(getDatabaseName()));
     String result;
     for (const auto & db : resolveDatabases())
     {
@@ -518,11 +507,6 @@ String DatabaseOverlay::getTableDataPath(const String & table_name) const
 
 String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
-    if (readonly)
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
-            backQuote(getDatabaseName()));
     String result;
     for (const auto & db : resolveDatabases())
     {
@@ -540,35 +524,26 @@ bool DatabaseOverlay::isReadOnly() const
 
 UUID DatabaseOverlay::getUUID() const
 {
-    // In the case of a non-readonly overlay database (typically created via clickhouse-local),
-    // the underlying database is not independently registered in the global context.
-    // Therefore, for all practical purposes, the overlay database acts as the underlying database.
+    // The table creation path delegates to the first available source database. Returning its
+    // UUID ensures that an Atomic source generates table UUIDs before it receives the table.
     UUID result = UUIDHelpers::Nil;
-    if (!readonly)
+    for (const auto & db : resolveDatabases())
     {
-        for (const auto & db : databases)
-        {
-            result = db->getUUID();
-            if (result != UUIDHelpers::Nil)
-                break;
-        }
-        return result;
+        result = db->getUUID();
+        if (result != UUIDHelpers::Nil)
+            break;
     }
-
-    return UUIDHelpers::Nil;
+    return result;
 }
 
 UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
-    if (!readonly)
+    for (const auto & db : resolveDatabases())
     {
-        for (const auto & db : databases)
-        {
-            result = db->tryGetTableUUID(table_name);
-            if (result != UUIDHelpers::Nil)
-                break;
-        }
+        result = db->tryGetTableUUID(table_name);
+        if (result != UUIDHelpers::Nil)
+            break;
     }
     return result;
 }
@@ -1201,7 +1176,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
     factory.registerDatabase("Overlay", create_fn, { .supports_arguments = true }, Documentation{
         .description = R"DOCS_MD(
-A read-only facade that exposes **the union of the tables of several underlying databases**. The facade does not own data itself: each table name is resolved through the listed source databases in order, reads and `INSERT` queries pass through to the underlying table, and DDL on the facade is rejected.
+A facade that exposes **the union of the tables of several underlying databases**. The facade does not own data itself: each table name is resolved through the listed source databases in order, reads and `INSERT` queries pass through to the underlying table, and `CREATE TABLE` creates the table in the first source database.
 
 `Overlay` is also used implicitly in `clickhouse-local` to represent local files from the filesystem in the default database.
 
@@ -1230,7 +1205,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE ... ENGIN
 
 | Operation                  | Behavior                                                                                        |
 | :------------------------- | :-----------------------------------------------------------------------------------------------|
-| `CREATE TABLE dboverlay.*` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Create the table in an underlying database.     |
+| `CREATE TABLE dboverlay.*` | **Pass-through** — creates the table in the first underlying database.                              |
 | `ATTACH TABLE dboverlay.*` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Attach the table in an underlying database.     |
 | `ALTER TABLE dboverlay.*`  | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`.                                                |
 | `RENAME TABLE dboverlay.*` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`.                                                |
@@ -1244,7 +1219,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE ... ENGIN
 | `TRUNCATE DATABASE dboverlay` / `TRUNCATE TABLES FROM dboverlay` | **Rejected** — `TABLE_IS_PERMANENTLY_READ_ONLY`. Truncate in the underlying databases that own the tables. |
 | `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying database.         |
 
-The facade is a **view**: data definition and data mutation happen in the member databases.
+The facade is a **view**: table creation is delegated to the first member database; other data definition and data mutation happen in the member databases.
 
 `DROP DATABASE dboverlay` drops the facade only — the member databases and their tables are left untouched.
 
@@ -1252,7 +1227,7 @@ The facade is a **view**: data definition and data mutation happen in the member
 
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any mutating/management operation through the facade — `CREATE`/`ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH`/`TRUNCATE`/`OPTIMIZE TABLE`, `DELETE FROM`, `UPDATE`, `SYSTEM`, `TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Any mutating/management operation through the facade except `CREATE TABLE` — `ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH`/`TRUNCATE`/`OPTIMIZE TABLE`, `DELETE FROM`, `UPDATE`, `SYSTEM`, `TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay references another Overlay, or a reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on the `CREATE`/`ATTACH` that would form it — checked from both sides, so a persisted definition never becomes unusable |
 | Overlay references missing database at `CREATE` | `BAD_ARGUMENTS` — a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source exists right now |
@@ -1345,7 +1320,7 @@ GRANT SELECT ON db_a.* TO some_user;
 
 ## Compatibility notes {#compatibility}
 
-- `Overlay` is intentionally **read-only** at the DDL surface (`CREATE`/`ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH`/`TRUNCATE` are rejected); reads and `INSERT` pass through to the underlying tables.
+- `Overlay` delegates `CREATE TABLE` to its first source database. `ATTACH`, `ALTER`, `RENAME`, `DROP`, `DETACH`, and `TRUNCATE` are rejected; reads and `INSERT` pass through to the underlying tables.
 )DOCS_MD",
         .syntax = "ENGINE = Overlay('db1', 'db2', ...)",
         .examples = {{"Union of two databases", "CREATE DATABASE facade ENGINE = Overlay('db1', 'db2')", ""}},

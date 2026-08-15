@@ -57,7 +57,8 @@ SELECT * FROM db_overlay.t_new ORDER BY k;
 
 SELECT * FROM db_a.t_new ORDER BY k;
 
-CREATE TABLE db_overlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+CREATE TABLE db_overlay.ct_created (x UInt8) ENGINE = MergeTree ORDER BY x;
+SHOW TABLES FROM db_a;
 
 ATTACH TABLE db_overlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
 
