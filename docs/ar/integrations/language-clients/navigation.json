@@ -1,10 +1,11 @@
 {
   "groups": [
     {
-      "group": "الصفحة الرئيسية",
+      "group": "Home",
       "icon": "house",
-      "pages": [],
-      "root": "ar/integrations/language-clients/index"
+      "pages": [
+        "ar/integrations/language-clients/index"
+      ]
     },
     {
       "$ref": "js/navigation.json"
@@ -31,14 +32,13 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "برامج عميلة تابعة لجهات خارجية",
+      "group": "Third-party clients",
       "icon": "users",
       "pages": [
-        "ar/integrations/language-clients/third-party/moose-olap",
         "ar/integrations/language-clients/third-party/client-libraries"
       ]
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "مكتبات العملاء للغات البرمجة"
+  "item": "Language clients"
 }

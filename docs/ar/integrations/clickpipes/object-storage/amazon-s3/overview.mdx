@@ -59,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بشكل افتراضي، يفترض S3 ClickPipe أن الملفات تُضاف إلى الحاوية وفق الترتيب المعجمي، ويعتمد على هذا الترتيب الضمني لإدخال الملفات بالتسلسل. وهذا يعني أن أي ملف جديد **يجب** أن يكون اسمه أكبر معجميًا من آخر ملف جرى إدخاله. على سبيل المثال، ستُدخَل الملفات المسماة `file1` و`file2` و`file3` بالتسلسل، ولكن إذا أُضيف ملف جديد باسم `file 0` إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف جرى إدخاله.
 
-في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يفحص وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **ولا يمكن** بدء الإدخال من ملف محدد أو من نقطة زمنية معينة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد.
+في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يفحص وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). لبدء الإدخال المستمر بعد ملف محدد، هيّئ **Start after**. ستتخطى ClickPipes الملفات التي تكون أقل من القيمة المُهيأة أو مساوية لها معجميًا، وتتابع إدخال الملفات الأحدث من تلك النقطة.
 
 <div id="continuous-ingestion-any-order">
   #### بأي ترتيب
@@ -75,13 +75,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   الوضع غير المرتب مدعوم **فقط** مع Amazon S3، وهو **غير** مدعوم للحاويات العامة أو الخدمات المتوافقة مع S3. كما يتطلب إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث.
 </Note>
 
-في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يستمع إلى أحداث `ObjectCreated:*` في قائمة الانتظار التي تطابق المسار المحدد. وسيتم **تجاهل** أي رسالة تخص ملفًا سبق رصده، أو ملفًا لا يطابق المسار، أو حدثًا من نوع مختلف.
+في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يستمع إلى أحداث `ObjectCreated:*` في قائمة الانتظار التي تطابق المسار المحدد. وسيتم **تجاهل** أي رسالة تخص ملفًا سبق رصده، أو ملفًا لا يطابق المسار، أو حدثًا من نوع مختلف. لإدخال الملفات التي تُسلَّم عبر قائمة الانتظار فقط، فعّل **تخطي التحميل الأولي**. عند تفعيله، تتخطى ClickPipes الفحص الأولي للملفات الموجودة في المسار المحدد وتعالج فقط الملفات التي تُسلَّم عبر قائمة انتظار SQS.
 
 <Note>
   تعيين بادئة/لاحقة للأحداث اختياري. وإذا فعلت ذلك، فتأكد من أنها تطابق المسار المحدد لـ ClickPipe. لا يتيح S3 وجود قواعد إشعارات متعددة ومتداخلة لأنواع الأحداث نفسها.
 </Note>
 
-تُدخَل الملفات عند بلوغ الحد المعيّن في `max insert bytes` أو `max file count`، أو بعد فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **لا يمكن** بدء الإدخال من ملف معيّن أو من نقطة زمنية محددة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد. وإذا جرى تهيئة DLQ، فستُعاد الرسائل الفاشلة إلى قائمة الانتظار وتُعالَج مجددًا حتى عدد المرات المحدد في المعلَمة `maxReceiveCount` الخاصة بـ DLQ.
+تُدخَل الملفات عند بلوغ الحد المعيّن في `max insert bytes` أو `max file count`، أو بعد فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). وإذا جرى تهيئة DLQ، فستُعاد الرسائل الفاشلة إلى قائمة الانتظار وتُعالَج مجددًا حتى عدد المرات المحدد في المعلَمة `maxReceiveCount` الخاصة بـ DLQ.
 
 <Tip>
   نوصي بشدة بتهيئة **Dead-Letter-Queue (DLQ)** لقائمة انتظار SQS، لتسهيل تصحيح الرسائل الفاشلة وإعادة محاولة معالجتها.
@@ -207,7 +207,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تستخدم S3 ClickPipes مسارين منفصلين على الشبكة لاكتشاف البيانات الوصفية وإدخال البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
 
-* بالنسبة إلى **التحكم في الوصول المستند إلى عناوين IP**، يجب أن تسمح سياسة حاوية S3 بعناوين IP الثابتة لمنطقة خدمة ClickPipes والمُدرجة [هنا](/ar/integrations/clickpipes/home#list-of-static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. للحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud الخاصة بك، افتح نافذة طرفية ونفّذ:
+* بالنسبة إلى **التحكم في الوصول المستند إلى عناوين IP**، يجب أن تسمح سياسة حاوية S3 بعناوين IP الثابتة لمنطقة خدمة ClickPipes والمُدرجة [هنا](/ar/integrations/clickpipes/networking/static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. للحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud الخاصة بك، افتح نافذة طرفية ونفّذ:
 
   ```bash
   # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
@@ -227,18 +227,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة الاستخدام لديك تتطلب ضبطًا إضافيًا أكثر دقة، فيمكنك تعديل الإعدادات التالية:
 
-| الإعداد                              | القيمة الافتراضية | الوصف                                                                                                                                         |
-| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB              | عدد البايتات التي تُعالَج في دفعة إدراج واحدة.                                                                                                |
-| `Max file count`                     | 100               | الحد الأقصى لعدد الملفات التي تُعالَج في دفعة إدراج واحدة.                                                                                    |
-| `Max threads`                        | auto(3)           | [الحد الأقصى لعدد الخيوط المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                                        |
-| `Max insert threads`                 | 1                 | [الحد الأقصى لعدد خيوط الإدراج المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
-| `Min insert block size bytes`        | 1GB               | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.            |
-| `Max download threads`               | 4                 | [الحد الأقصى لعدد خيوط التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                                         |
-| `Object storage polling interval`    | 30s               | يضبط الحد الأقصى لمدة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                        |
-| `Parallel distributed insert select` | 2                 | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                          |
-| `Parallel view processing`           | false             | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true              | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عُقد.                                                                                           |
+| الإعداد                              | القيمة الافتراضية | الوصف                                                                                                                                               |
+| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB              | عدد البايتات التي تُعالَج في دفعة إدراج واحدة.                                                                                                      |
+| `Max file count`                     | 100               | الحد الأقصى لعدد الملفات التي تُعالَج في دفعة إدراج واحدة.                                                                                          |
+| `Max threads`                        | auto(3)           | [الحد الأقصى لعدد الخيوط المتزامنة](/ar/reference/settings/session-settings/max-threads#max_threads) لمعالجة الملفات.                                  |
+| `Max insert threads`                 | 1                 | [الحد الأقصى لعدد خيوط الإدراج المتزامنة](/ar/reference/settings/session-settings/max-insert#max_insert_threads) لمعالجة الملفات.                      |
+| `Min insert block size bytes`        | 1GB               | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.       |
+| `Max download threads`               | 4                 | [الحد الأقصى لعدد خيوط التنزيل المتزامنة](/ar/reference/settings/session-settings/max-download#max_download_threads).                                  |
+| `Object storage polling interval`    | 30s               | يضبط الحد الأقصى لمدة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                              |
+| `Start after`                        | None              | للإدخال المستمر المرتب، يتخطى الملفات التي يقل اسمها أو مسارها عن اسم الملف أو المسار المُكوَّن أو يساويه وفق الترتيب المعجمي.                    |
+| `Skip initial load`                  | false             | للإدخال المستمر غير المرتب، يتخطى الفحص الأولي للملفات الموجودة ويعالج إشعارات الكائنات فقط من قائمة انتظار SQS المُكوَّنة.                       |
+| `Parallel distributed insert select` | 2                 | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                       |
+| `Parallel view processing`           | false             | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true              | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عُقد.                                                                                                 |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
 
