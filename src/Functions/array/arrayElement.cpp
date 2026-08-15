@@ -76,9 +76,15 @@ public:
             /// be inside Nullable, so they pass through bare). The DSL's
             /// `makeNullableIfCanBe(T)` encodes that predicate.
             return "(Array(T), NativeInteger) -> makeNullableIfCanBe(T)"
+                   " OR (Array(T), Array(MaybeNullable(NativeInteger))) -> Array(makeNullableIfCanBe(T))"
+                   " OR (Array(T), Array(LowCardinality(MaybeNullable(NativeInteger)))) -> Array(makeNullableIfCanBe(T))"
                    " OR (Map(K, V), Any) -> makeNullableIfCanBe(V)";
         }
-        return "(Array(T), NativeInteger) -> T OR (Map(K, V), Any) -> V";
+        return "(Array(T), NativeInteger) -> T"
+               " OR (Array(T), Array(NativeInteger)) -> Array(T)"
+               " OR (Array(T), Array(MaybeNullable(NativeInteger))) -> Array(makeNullableIfCanBe(T))"
+               " OR (Array(T), Array(LowCardinality(MaybeNullable(NativeInteger)))) -> Array(makeNullableIfCanBe(T))"
+               " OR (Map(K, V), Any) -> V";
     }
 
     /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
