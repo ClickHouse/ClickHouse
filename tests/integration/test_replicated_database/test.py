@@ -1796,7 +1796,7 @@ def test_skip_legacy_window_view_ddl_chain(started_cluster):
             data = zk.get(entry_path)[0]
             create_query = f"CREATE TABLE {database}.wv".encode()
             if create_query in data:
-                zk.set(entry_path, data.replace(create_query, f"CREATE WINDOW VIEW {database}.wv".encode()))
+                zk.set(entry_path, data.replace(create_query, f"CREATE WINDOW VIEW IF NOT EXISTS {database}.wv".encode()))
                 break
         else:
             raise AssertionError("Could not find the CREATE TABLE DDL entry")
@@ -1811,6 +1811,19 @@ def test_skip_legacy_window_view_ddl_chain(started_cluster):
 
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     assert dummy_node.query(f"SELECT count() FROM system.tables WHERE database = '{database}'") == "0\n"
+
+    main_node.query(
+        f"CREATE TABLE {database}.wv (n UInt8) ENGINE = Memory",
+        settings=settings,
+    )
+    main_node.query(
+        f"ALTER TABLE {database}.wv MODIFY COMMENT 'not obsolete'",
+        settings=settings,
+    )
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert dummy_node.query(
+        f"SELECT comment FROM system.tables WHERE database = '{database}' AND name = 'wv'"
+    ) == "not obsolete\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")

@@ -108,10 +108,20 @@ std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
         || !isKeyword(tokens[2], "VIEW"))
         return {};
 
-    return getTableName(tokens, 3);
+    size_t pos = 3;
+    if (pos + 2 < tokens.size() && isKeyword(tokens[pos], "IF") && isKeyword(tokens[pos + 1], "NOT") && isKeyword(tokens[pos + 2], "EXISTS"))
+        pos += 3;
+
+    return getTableName(tokens, pos);
 }
 
-std::optional<String> getWindowViewFollowupName(const Tokens & tokens)
+struct WindowViewFollowup
+{
+    String table_name;
+    bool removes_window_view;
+};
+
+std::optional<WindowViewFollowup> getWindowViewFollowup(const Tokens & tokens)
 {
     if (tokens.empty()
         || (!isKeyword(tokens[0], "ALTER")
@@ -133,7 +143,15 @@ std::optional<String> getWindowViewFollowupName(const Tokens & tokens)
     while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
         ++pos;
 
-    return getTableName(tokens, pos);
+    if (const auto table_name = getTableName(tokens, pos))
+    {
+        return WindowViewFollowup{
+            .table_name = *table_name,
+            .removes_window_view = isKeyword(tokens[0], "DROP") || isKeyword(tokens[0], "DETACH") || isKeyword(tokens[0], "RENAME"),
+        };
+    }
+
+    return {};
 }
 
 }
@@ -806,16 +824,26 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     const auto tokens = getSignificantTokens(task->entry.query);
     if (const auto window_view_name = getRemovedWindowViewName(tokens))
     {
-        removed_window_views.insert(*window_view_name);
+        if (!dry_run)
+        {
+            removed_window_views.insert(*window_view_name);
+            zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
+        }
         LOG_WARNING(log, "Skip removed WINDOW VIEW DDL {} for {}", entry_name, *window_view_name);
         out_reason = fmt::format("Entry {} creates an obsolete WINDOW VIEW {}", entry_name, *window_view_name);
         return {};
     }
 
-    if (const auto table_name = getWindowViewFollowupName(tokens); table_name && removed_window_views.contains(*table_name))
+    if (const auto followup = getWindowViewFollowup(tokens); followup && removed_window_views.contains(followup->table_name))
     {
-        LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW {}", entry_name, *table_name);
-        out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW {}", entry_name, *table_name);
+        if (!dry_run)
+        {
+            if (followup->removes_window_view)
+                removed_window_views.erase(followup->table_name);
+            zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
+        }
+        LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW {}", entry_name, followup->table_name);
+        out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW {}", entry_name, followup->table_name);
         return {};
     }
 
