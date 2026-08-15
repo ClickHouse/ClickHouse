@@ -35,6 +35,7 @@ INSERT INTO $ORDINARY_DB.t_parts_lock_wait SELECT number FROM numbers(5);
 
 READER_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_reader_$$"
 DROP_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_drop_$$"
+QUERY_LOG_COMMENT="04869_break_query_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Holds a share lock on the table for about 15 seconds (killed earlier at the end of the test).
 # The table has 5 single-row parts, so the rows arrive in single-row blocks and each block sleeps
@@ -82,7 +83,7 @@ $CLICKHOUSE_CLIENT --query "
 SELECT name FROM system.parts WHERE database = '$ORDINARY_DB' AND table = 't_parts_lock_wait'
 FORMAT Null
 SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', lock_acquire_timeout = 60,
-         log_comment = '04869_break_query';
+         log_comment = '$QUERY_LOG_COMMENT';
 "
 
 # Let the DROP TABLE proceed without waiting out the whole reader sleep.
@@ -98,7 +99,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT 'break query returned early ' || toString(count() = 1 AND max(query_duration_ms) < 6000)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04869_break_query';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '$QUERY_LOG_COMMENT';
 
 DROP DATABASE $ORDINARY_DB;
 "

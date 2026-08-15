@@ -60,14 +60,17 @@ NUM_WIDE_COLUMNS=640
 MAX_DURATION_MS=3000
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_WIDE_COLUMNS); do echo -n ", c$i UInt64"; done)
+DROPPED_TABLE="t_slowdown_system_parts_dropped_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+DROPPED_DISCOVERY_TABLE_PREFIX="t_slowdown_system_parts_dropped_discovery_${CLICKHOUSE_TEST_UNIQUE_NAME}_"
+QUERY_LOG_PREFIX="timed_04839_${CLICKHOUSE_TEST_UNIQUE_NAME}_"
 DROPPED_DISCOVERY_TABLES=$(for i in $(seq 1 $NUM_DROPPED_TABLES); do echo "
-CREATE TABLE t_slowdown_system_parts_dropped_discovery_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO t_slowdown_system_parts_dropped_discovery_$i VALUES (1);
-DROP TABLE t_slowdown_system_parts_dropped_discovery_$i SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;"; done)
+CREATE TABLE ${DROPPED_DISCOVERY_TABLE_PREFIX}$i (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DROPPED_DISCOVERY_TABLE_PREFIX}$i VALUES (1);
+DROP TABLE ${DROPPED_DISCOVERY_TABLE_PREFIX}$i SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;"; done)
 
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_slowdown_system_parts;
-DROP TABLE IF EXISTS t_slowdown_system_parts_dropped;
+DROP TABLE IF EXISTS $DROPPED_TABLE;
 DROP TABLE IF EXISTS t_slowdown_system_parts_wide;
 DROP TABLE IF EXISTS t_slowdown_system_parts_snap;
 DROP TABLE IF EXISTS t_slowdown_system_parts_meta;
@@ -77,7 +80,7 @@ CREATE TABLE t_slowdown_system_parts (x UInt64, PROJECTION p (SELECT x ORDER BY 
 ENGINE = MergeTree ORDER BY x PARTITION BY x
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 
-CREATE TABLE t_slowdown_system_parts_dropped (x UInt64)
+CREATE TABLE $DROPPED_TABLE (x UInt64)
 ENGINE = MergeTree ORDER BY x PARTITION BY x
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 
@@ -102,7 +105,7 @@ SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
 CREATE TABLE t_break_result (name String) ENGINE = Memory;
 
 INSERT INTO t_slowdown_system_parts SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
-INSERT INTO t_slowdown_system_parts_dropped SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
+INSERT INTO $DROPPED_TABLE SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_wide (x) VALUES (1);
 INSERT INTO t_slowdown_system_parts_snap SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_meta (x) VALUES (1);
@@ -110,10 +113,10 @@ $DROPPED_DISCOVERY_TABLES
 
 -- Sanity check: without any limits, the whole result is built.
 SELECT 'full columns', count() = $NUM_WIDE_COLUMNS + 1 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_slowdown_system_parts_wide';
-SELECT 'full dropped discovery', count() = $NUM_DROPPED_TABLES FROM system.dropped_tables_parts WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%';
+SELECT 'full dropped discovery', count() = $NUM_DROPPED_TABLES FROM system.dropped_tables_parts WHERE database = currentDatabase() AND table LIKE '${DROPPED_DISCOVERY_TABLE_PREFIX}%';
 
 -- The table is dropped but kept in system.dropped_tables_parts for database_atomic_delay_before_drop_table_sec.
-DROP TABLE t_slowdown_system_parts_dropped SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;
+DROP TABLE $DROPPED_TABLE SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;
 "
 
 # $1 - a label, $2 - the system table, $3 - the source table, $4 - the total number of rows without the time limit.
@@ -137,7 +140,7 @@ function check_break_dropped_discovery()
 
     INSERT INTO t_break_result
         SELECT name FROM system.dropped_tables_parts
-        WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%'
+        WHERE database = currentDatabase() AND table LIKE '${DROPPED_DISCOVERY_TABLE_PREFIX}%'
         SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break';
 
     SELECT 'quick dropped_tables_parts_discovery', count() < $NUM_DROPPED_TABLES FROM t_break_result;
@@ -163,7 +166,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
     check_break_query projection_parts projection_parts t_slowdown_system_parts $NUM_PARTS
     check_break_query projection_parts_columns projection_parts_columns t_slowdown_system_parts $NUM_PARTS
     check_break_query parts_columns_wide parts_columns t_slowdown_system_parts_wide $((NUM_WIDE_COLUMNS + 1))
-    check_break_query dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped $NUM_PARTS
+    check_break_query dropped_tables_parts dropped_tables_parts $DROPPED_TABLE $NUM_PARTS
     check_break_dropped_discovery
 } | $CLICKHOUSE_CLIENT
 
@@ -178,7 +181,7 @@ function timed_query()
     echo "
     SELECT ${5:-name} FROM system.$3 WHERE database = currentDatabase() AND table = '$4'
     FORMAT Null
-    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = 'timed_04839_$1 $2';
+    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = '${QUERY_LOG_PREFIX}$1 $2';
     "
 }
 
@@ -186,9 +189,9 @@ function timed_dropped_discovery()
 {
     echo "
     SELECT name FROM system.dropped_tables_parts
-    WHERE database = currentDatabase() AND table LIKE 't_slowdown_system_parts_dropped_discovery_%'
+    WHERE database = currentDatabase() AND table LIKE '${DROPPED_DISCOVERY_TABLE_PREFIX}%'
     FORMAT Null
-    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = 'timed_04839_08 dropped_tables_parts_discovery';
+    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = '${QUERY_LOG_PREFIX}08 dropped_tables_parts_discovery';
     "
 }
 
@@ -199,7 +202,7 @@ function timed_dropped_discovery()
     timed_query 04 projection_parts_columns projection_parts_columns t_slowdown_system_parts
     timed_query 05 parts_columns_wide parts_columns t_slowdown_system_parts_wide
     timed_query 06 projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
-    timed_query 07 dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped
+    timed_query 07 dropped_tables_parts dropped_tables_parts $DROPPED_TABLE
 
     # The failpoint delays each of 20 entries while `StoragesDroppedInfoStream` eagerly discovers
     # dropped storages. This is before inherited per-part enumeration, so it pins the prepass poll.
@@ -227,7 +230,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT 'fast ' || splitByChar(' ', log_comment)[2] || ' ' || toString(query_duration_ms < $MAX_DURATION_MS)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'timed_04839_')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '$QUERY_LOG_PREFIX')
 ORDER BY log_comment;
 
 DROP TABLE t_break_result;
