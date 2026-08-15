@@ -232,8 +232,12 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "SelectWithUnionQuery");
 
     w.writeString("union_mode", toString(union_mode));
+    w.writeBool("is_normalized", is_normalized);
 
-    if (!list_of_modes.empty())
+    /// A normalized union uses `union_mode` for every separator. Its old `list_of_modes` can
+    /// describe the pre-normalized tree and need not have one entry per flattened select, so do
+    /// not serialize it as though it were part of the normalized representation.
+    if (!is_normalized && !list_of_modes.empty())
     {
         w.writeKey("list_of_modes");
         auto & o = w.getOut();
@@ -265,10 +269,12 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
+    is_normalized = r.getBool("is_normalized");
 
     auto modes_arr = r.readStringArray("list_of_modes");
-    for (const auto & mode_str : modes_arr)
-        list_of_modes.push_back(parseSelectUnionMode(mode_str));
+    if (!is_normalized)
+        for (const auto & mode_str : modes_arr)
+            list_of_modes.push_back(parseSelectUnionMode(mode_str));
 
     /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
     /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
@@ -300,7 +306,7 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
     /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
     /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+    if (!is_normalized && !list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",

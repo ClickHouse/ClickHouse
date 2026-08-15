@@ -7,6 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 
 using namespace DB;
 
@@ -185,6 +186,29 @@ TEST(TreeHashCompleteness, OutputOptionsJSONRoundTripKeepsChildOrder)
 
     const std::string with_all = "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' LEVEL 3 FORMAT JSONEachRow SETTINGS max_threads = 1";
     EXPECT_EQ(hashOfJSONRoundTrip(with_all), hashOf(with_all));
+}
+
+TEST(TreeHashCompleteness, NormalizedUnionJSONRoundTripKeepsHash)
+{
+    /// Normalization flattens nested UNION ALL nodes but deliberately does not rebuild
+    /// `list_of_modes`. JSON must preserve the normalized representation instead of validating
+    /// the stale pre-normalization vector against the flattened list of selects.
+    auto ast = parse("SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT 3)");
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::ALL};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+    const auto * normalized = ast->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(normalized);
+    ASSERT_TRUE(normalized->is_normalized);
+    ASSERT_EQ(normalized->list_of_selects->children.size(), 3);
+    ASSERT_LT(normalized->list_of_modes.size(), normalized->list_of_selects->children.size() - 1);
+
+    auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    const auto * restored_union = restored->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(restored_union);
+    EXPECT_TRUE(restored_union->is_normalized);
+    EXPECT_TRUE(restored_union->list_of_modes.empty());
+    EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false));
 }
 
 TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
