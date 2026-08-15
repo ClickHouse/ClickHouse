@@ -366,11 +366,7 @@ ClickHouse Client and `clickhouse-local` include a built-in AI assistant that he
 
 The assistant is agentic: it can inspect the schema, consult the embedded documentation, look at your recent queries, and run queries on your connection to answer the question. It runs read-only queries on its own and asks for confirmation before anything else. Queries it runs are displayed and executed in your terminal exactly as if you typed them, so you see and keep every result.
 
-The conversation keeps its context between questions in the same session, so you can refine and follow up. Type `? clear` to start a fresh conversation, and `?` with no text to see a short status line.
-
-:::note
-The older `??` command, which generated a single SQL query and pre-filled it at the prompt, now invokes the same assistant. Both `?` and `??` are equivalent.
-:::
+The conversation keeps its context between questions in the same session, so you can refine and follow up. Type `? clear` to start a fresh conversation.
 
 ### What the assistant can do {#ai-sql-generation-usage}
 

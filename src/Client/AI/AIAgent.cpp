@@ -80,10 +80,20 @@ AIAgent::AIAgent(
     bool use_colors)
     : config(config_)
     , transport(std::move(transport_))
-    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access, config_.enable_query_log_access))
+    , hooks(hooks)
+    , tools(buildAIAgentToolSet(this->hooks, config_.enable_schema_access, config_.enable_query_log_access))
     , query_context(std::move(query_context_))
     , display(output_stream, use_colors)
 {
+}
+
+void AIAgent::setQueryLogAccess(bool enabled)
+{
+    if (config.enable_query_log_access == enabled)
+        return;
+
+    config.enable_query_log_access = enabled;
+    tools = buildAIAgentToolSet(hooks, config.enable_schema_access, config.enable_query_log_access);
 }
 
 String AIAgent::systemPrompt() const

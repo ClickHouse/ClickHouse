@@ -2959,7 +2959,20 @@ void ClientBase::processParsedSingleQuery(
             {
                 if (change.name != "profile")
                     client_context->applySettingChange(change);
+
+#if USE_CLIENT_AI
+                if (ai_running_query && change.name == "dialect")
+                    ai_running_query_changed_dialect = true;
+
+                if (ai_agent && change.name == "readonly")
+                    ai_agent->setQueryLogAccess(client_context->getSettingsRef()[Setting::readonly] != 1);
+#endif
             }
+
+#if USE_CLIENT_AI
+            if (ai_running_query && std::find(set_query->default_settings.begin(), set_query->default_settings.end(), "dialect") != set_query->default_settings.end())
+                ai_running_query_changed_dialect = true;
+#endif
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -3715,12 +3728,10 @@ bool ClientBase::processQueryText(const String & text)
 
 
 #if USE_CLIENT_AI
-    /// Handle the AI chat command: "? <free text>" (and "?? <free text>" for compatibility
-    /// with the older AI SQL generation command).
+    /// Handle the AI chat command: "? <free text>".
     if (trimmed_input.starts_with("?"))
     {
-        size_t skip_prefix_size = trimmed_input.starts_with("??") ? 2 : 1;
-        auto free_text = trim(trimmed_input.substr(skip_prefix_size), [](char c) { return isWhitespaceASCII(c); });
+        auto free_text = trim(trimmed_input.substr(1), [](char c) { return isWhitespaceASCII(c); });
         return processAIChat(free_text);
     }
 #endif
@@ -3877,6 +3888,7 @@ void ClientBase::initAIAgent()
         return ask("Run this query? [Y/n] ", *std_in, *std_out, /*default_yes=*/ true);
     };
     hooks.check_syntax = [this](const String & query) { return checkAIQuerySyntax(query); };
+    hooks.can_read_query_log = [this] { return client_context->getSettingsRef()[Setting::readonly] != 1; };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -3906,9 +3918,8 @@ void ClientBase::initAIAgent()
     if (!transport)
         return;
 
-    /// In a `readonly` session the server rejects the `log_comment` marker for internal
-    /// queries. Without that marker, `read_query_log` could feed the assistant's own schema
-    /// and documentation probes back as if the user had run them, so do not expose the tool.
+    /// A `readonly` session cannot apply the `log_comment` marker to internal queries, so do not
+    /// offer `read_query_log` until a confirmed `SET readonly = 0` makes it safe again.
     ai_config.enable_query_log_access = client_context->getSettingsRef()[Setting::readonly] != 1;
     ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
@@ -4100,7 +4111,8 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
     /// dialect even when the session was switched to another one (`SET dialect = 'prql'`,
     /// `'kusto'`, ...) - the validation above also parsed the query as ClickHouse SQL.
     /// For run_query the pin is undone afterwards unless the confirmed query changed the
-    /// dialect itself (then the current dialect is no longer the pinned one and is kept).
+    /// dialect itself. This is tracked from its successfully applied `SET`, rather than by
+    /// comparing the final value: setting the dialect to `clickhouse` is a real change too.
     std::optional<Field> dialect_to_restore;
     if (client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
     {
@@ -4109,7 +4121,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         client_context->setSetting("dialect", String("clickhouse"));
     }
     SCOPE_EXIT_SAFE({
-        if (dialect_to_restore && client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse)
+        if (dialect_to_restore && !ai_running_query_changed_dialect)
             client_context->setSetting("dialect", *dialect_to_restore);
     });
 
@@ -4154,6 +4166,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
 
     const UInt64 seqno_before = ai_query_context->latestSeqno();
 
+    ai_running_query_changed_dialect = false;
     ai_running_query = true;
     /// The query is displayed exactly once, by `echoQueryForAI` (in the read-only branch above,
     /// or in the confirmation prompt for `run_query`). Suppress the echo of `executeMultiQuery`
@@ -4162,6 +4175,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
     echo_queries = false;
     SCOPE_EXIT({
         ai_running_query = false;
+        ai_running_query_changed_dialect = false;
         echo_queries = saved_echo_queries;
     });
 

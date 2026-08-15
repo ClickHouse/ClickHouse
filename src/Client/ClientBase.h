@@ -569,7 +569,7 @@ protected:
     int error_code = 0;
 
 #if USE_CLIENT_AI
-    /// The AI agent behind the interactive `?` (and `??`) command
+    /// The AI agent behind the interactive `?` command
     std::unique_ptr<AIAgent> ai_agent;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
@@ -585,6 +585,9 @@ protected:
     /// Set while the AI agent runs a query through the normal query path, so the
     /// query context buffer can attribute the entry to the agent
     bool ai_running_query = false;
+    /// Set when a confirmed agent query successfully changes `dialect`, so cleanup does not undo
+    /// a real session setting change while removing the temporary ClickHouse-dialect pin.
+    bool ai_running_query_changed_dialect = false;
 #endif
 
     struct

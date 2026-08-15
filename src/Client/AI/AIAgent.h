@@ -35,9 +35,13 @@ public:
     /// A short status line for the bare `?` command.
     String status() const;
 
+    /// Add or remove `read_query_log` after a successful session `SET readonly`.
+    void setQueryLogAccess(bool enabled);
+
 private:
     AIConfiguration config;
     std::unique_ptr<IAIAgentTransport> transport;
+    AIAgentHooks hooks;
     ai::ToolSet tools;
     std::shared_ptr<QueryContextBuffer> query_context;
     AIAgentDisplay display;

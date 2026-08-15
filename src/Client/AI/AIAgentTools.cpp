@@ -116,6 +116,11 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                 return guarded(
                     [&]
                     {
+                        /// Internal queries cannot be marked after `SET readonly = 1`, so do not
+                        /// return potentially unmarked agent activity as user query history.
+                        if (!hooks->can_read_query_log || !hooks->can_read_query_log())
+                            return errorResult("The query-log tool is unavailable while readonly = 1.");
+
                         UInt64 limit = 20;
                         if (args.contains("limit") && args["limit"].is_number())
                             limit = std::min<UInt64>(std::max<Int64>(args["limit"].get<Int64>(), 1), 100);

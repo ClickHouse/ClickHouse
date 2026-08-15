@@ -38,6 +38,10 @@ struct AIAgentHooks
     /// Syntax-check a query before running it. Returns the parse error message when the query is
     /// malformed, or an empty optional when it parses.
     std::function<std::optional<String>(const String & query)> check_syntax;
+
+    /// Whether internal agent queries can be reliably marked in `system.user_query_log` at this
+    /// instant. A confirmed `SET readonly = 1` can change it after agent construction.
+    std::function<bool()> can_read_query_log;
 };
 
 /// Builds the tool set of the client AI agent:
@@ -47,7 +51,8 @@ struct AIAgentHooks
 /// - read-only query execution without confirmation, under restrictive limits;
 /// - arbitrary query execution with the user's confirmation.
 /// When `enable_schema_access` is false, the internal schema exploration tools are omitted.
-/// When `enable_query_log_access` is false, `read_query_log` is omitted.
+/// When `enable_query_log_access` is false, `read_query_log` is omitted. When the hook reports
+/// that access is unsafe, the tool fails closed without querying the log.
 ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks, bool enable_schema_access, bool enable_query_log_access);
 
 }
