@@ -316,11 +316,9 @@ void PostingsSerialization::deserializeToArray(ReadBuffer & istr, UInt64 header,
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (header & RawPostings)
     {
-        size_t old_size = row_ids.size();
-        row_ids.resize(old_size + cardinality);
-
+        row_ids.resize(cardinality);
         for (size_t i = 0; i < cardinality; ++i)
-            readVarUInt(row_ids[old_size + i], istr);
+            readVarUInt(row_ids[i], istr);
         return;
     }
 
