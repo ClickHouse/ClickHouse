@@ -192,8 +192,6 @@ class Result(MetaClasses.Serializable):
             files=files or [],
             links=links or [],
         )
-        for link in result.links:
-            result._record_link_size(link)
         if isinstance(labels, str):
             labels = [labels]
         for label in labels or []:
@@ -362,24 +360,10 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
-    def set_link(self, link, size=None) -> "Result":
+    def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._record_link_size(link, size)
         self._dump_if_persisted()
         return self
-
-    def _record_link_size(self, link, size=None):
-        """Remember the size in bytes of the object a link points to.
-
-        Stored in ``ext["link_sizes"]`` as a ``{link: bytes}`` map and rendered by
-        ``json.html`` next to the link, e.g. ``clickhouse-common-static.deb (1.2 GiB)``.
-        When ``size`` is not given it is taken from the uploads this process made,
-        so links to files uploaded by praktika get their size for free.
-        """
-        if size is None:
-            size = S3.get_uploaded_size(link)
-        if size is not None:
-            self.ext.setdefault("link_sizes", {})[link] = size
 
     def _add_job_summary_to_info(self):
         if not self.info:
@@ -1339,7 +1323,6 @@ class _ResultS3:
                     _uploaded_file_link[file] = file_link
 
                 result.links.append(file_link)
-                result._record_link_size(file_link)
             except Exception as e:
                 traceback.print_exc()
                 print(f"ERROR: Failed to upload file [{file}] for result [{result.name}]")
