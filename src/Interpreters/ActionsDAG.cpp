@@ -29,6 +29,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
@@ -978,18 +979,23 @@ struct FoldResult
     bool masked_secret;
 };
 
+/// These operators depend only on their argument values, rather than whether an argument is a
+/// `ColumnConst` or a full column. Keep this list deliberately narrow: the generic constant-folding
+/// contract does not cover functions that impose their own const-only requirement in `executeImpl`.
+const std::unordered_set<std::string> & foldablePredicateFunctions()
+{
+    static const std::unordered_set<std::string> functions{
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or"};
+    return functions;
+}
+
 /// Fold a predicate: const COLUMN leaves, walk past alias/materialize, evaluate functions
-/// over the folded constant arguments.
+/// over the folded constant arguments for the value-only predicate operators above.
 ///
 /// This is ordinary constant folding, just performed after stripping `materialize`, so the same
-/// contract applies: the function must be deterministic (which excludes functions that inspect
-/// the column representation, like `isConstant`) and `isSuitableForConstantFolding` (which
-/// excludes functions whose whole point is a runtime effect, like `throwIf`). Constant arguments are
-/// always supported, so evaluating on the plain constants is a faithful stand-in for executing
-/// over the materialized ones. If the evaluation throws (e.g. a function that supports only a
-/// constant argument, or a genuinely failing computation), the predicate is left unfolded and
-/// runtime keeps its exact behavior, including `short_circuit_function_evaluation` semantics
-/// for `and` / `or` arguments
+/// contract applies: the function must be deterministic and `isSuitableForConstantFolding`.
+/// If the evaluation throws, the predicate is left unfolded and runtime keeps its exact behavior,
+/// including `short_circuit_function_evaluation` semantics for `and` / `or` arguments.
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
     bool through_materialize = false;
@@ -1021,7 +1027,8 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base
         || !node->function
         || !node->function_base->isDeterministic()
-        || !node->function_base->isSuitableForConstantFolding())
+        || !node->function_base->isSuitableForConstantFolding()
+        || !foldablePredicateFunctions().contains(node->function_base->getName()))
         return std::nullopt;
 
     try

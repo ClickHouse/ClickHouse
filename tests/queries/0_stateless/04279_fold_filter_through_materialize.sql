@@ -58,6 +58,9 @@ SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#'))
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM numbers(1) WHERE format(materialize('{}'), 1) = '1'; -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM numbers(1) WHERE format(concat(materialize('{}'), ''), 1) = '1'; -- { serverError ILLEGAL_COLUMN }
+-- Some functions enforce their const-only contract only in `executeImpl`; they must not be
+-- evaluated while folding a filter after stripping `materialize`.
+SELECT count() FROM numbers(1) WHERE getMaxTableNameLengthForDatabase(materialize('default')) = getMaxTableNameLengthForDatabase('default'); -- { serverError ILLEGAL_COLUMN }
 
 -- mixed String/non-String comparison raises at analysis (header build on non-const String),
 -- before any fold runs - the exception must be preserved
