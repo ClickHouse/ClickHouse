@@ -19,6 +19,34 @@ $CLICKHOUSE_LOCAL -q "
     FROM numbers(10000)
     FORMAT Vortex" > "$DATA_FILE"
 
+# A scan-side assertion: a selective predicate must avoid reading the wide payload
+# when pushdown is enabled. Result equivalence below alone would also pass if the
+# filter stopped reaching the Vortex scan, because ClickHouse reapplies WHERE.
+PUSHDOWN_DATA_FILE=$CUR_DIR/pushdown_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
+$CLICKHOUSE_LOCAL -q "
+    SELECT number AS n, concat(toString(number), repeat('x', 512)) AS payload
+    FROM numbers(50000)
+    FORMAT Vortex" > "$PUSHDOWN_DATA_FILE"
+
+get_read_bytes() {
+    local push_down=$1
+    $CLICKHOUSE_LOCAL -q "
+        SELECT sum(length(payload))
+        FROM file('$PUSHDOWN_DATA_FILE', 'Vortex')
+        WHERE n = 1
+        SETTINGS input_format_vortex_filter_push_down = $push_down
+        FORMAT JSON" | jq -r '.statistics.bytes_read'
+}
+
+read_bytes_with_pushdown=$(get_read_bytes 1)
+read_bytes_without_pushdown=$(get_read_bytes 0)
+if [ "$read_bytes_with_pushdown" -lt "$read_bytes_without_pushdown" ]; then
+    echo "Pushdown reduces scan bytes: ok"
+else
+    echo "Pushdown did not reduce scan bytes: on=$read_bytes_with_pushdown off=$read_bytes_without_pushdown"
+    exit 1
+fi
+
 # Runs the query twice: with the filter pushdown enabled and disabled. The two results must be
 # identical, so every case below prints its result twice.
 run_query() {
@@ -69,4 +97,4 @@ run_query "Predicate on a column read with a different type:" \
 run_query "LowCardinality target type:" \
     "SELECT toTypeName(lc), lc FROM file('$DATA_FILE', 'Vortex', 'lc LowCardinality(String)') WHERE lc = '4' LIMIT 1"
 
-rm -f "$DATA_FILE"
+rm -f "$DATA_FILE" "$PUSHDOWN_DATA_FILE"

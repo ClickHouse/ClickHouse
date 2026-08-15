@@ -254,7 +254,7 @@ The time zone name for ORC row reader, the default ORC row reader's time zone is
 Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files.
 )", 0) \
     DECLARE(Bool, input_format_vortex_filter_push_down, true, R"(
-When reading Vortex files, push the WHERE condition down into the scan, so that selective queries decode only the matching rows.
+When reading Vortex files, push WHERE conditions on top-level integer, floating-point, and string/binary columns down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics; other predicates are evaluated by ClickHouse after the scan.
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
