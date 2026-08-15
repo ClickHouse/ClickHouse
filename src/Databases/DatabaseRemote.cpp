@@ -438,10 +438,9 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
 }
 
 
-ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const
+ColumnsDescription DatabaseRemote::fetchTableStructure(
+    const String & table_name, ContextPtr local_context, const ProxyClusters & clusters, ClusterPtr & table_cluster) const
 {
-    const ProxyClusters clusters = getProxyClusters();
-
     table_cluster = clusters.cluster;
 
     /// A shard that points to this server is handled locally, like in `fetchTablesList`. Crucially, the
@@ -595,11 +594,18 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
 
 StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
+    return fetchTable(table_name, local_context, throw_on_error, getProxyClusters());
+}
+
+
+StoragePtr DatabaseRemote::fetchTable(
+    const String & table_name, ContextPtr local_context, bool throw_on_error, const ProxyClusters & clusters) const
+{
     ColumnsDescription columns;
     ClusterPtr table_cluster;
     try
     {
-        columns = fetchTableStructure(table_name, local_context, table_cluster);
+        columns = fetchTableStructure(table_name, local_context, clusters, table_cluster);
     }
     catch (const Exception & e)
     {
@@ -850,7 +856,8 @@ ASTPtr DatabaseRemote::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, throw_on_error);
+    const ProxyClusters clusters = getProxyClusters();
+    auto storage = fetchTable(table_name, local_context, throw_on_error, clusters);
     if (!storage)
     {
         if (throw_on_error)
@@ -865,8 +872,6 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// local replica (`INSERT`). Serialize the effective fallback addresses instead, so the emitted
     /// definition reconstructs the object that actually serves the queries.
     const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
-
-    const ProxyClusters clusters = getProxyClusters();
 
     String effective_addresses;
     if (clusters.remote_only_cluster)

@@ -77,7 +77,8 @@ DatabaseRemote::ProxyClusters DatabaseCluster::getProxyClusters() const
 
 ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, throw_on_error);
+    const ProxyClusters clusters = getProxyClusters();
+    auto storage = fetchTable(table_name, local_context, throw_on_error, clusters);
     if (!storage)
     {
         if (throw_on_error)
@@ -99,7 +100,7 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
     /// are defined by the per-replica settings of the cluster configuration, which no explicit
     /// address list can carry. No re-executable definition exists for this transient state, so
     /// report that instead of emitting a definition that recreates a different object.
-    if (distributed && distributed->getCluster() != getProxyClusters().cluster)
+    if (distributed && distributed->getCluster() != clusters.cluster)
     {
         if (throw_on_error)
             throw Exception(

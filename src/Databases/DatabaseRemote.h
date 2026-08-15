@@ -142,6 +142,7 @@ protected:
     /// propagated instead of being reported as a missing table; when it is not set (the best-effort
     /// path used by `tryGetTable`/`system.tables`), any failure returns `nullptr`.
     StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error, const ProxyClusters & clusters) const;
 
     const ASTPtr database_engine_define;
     const String remote_database;
@@ -206,7 +207,8 @@ private:
     /// shard. Returns an empty set when the table does not exist, and sets
     /// `table_cluster` to the cluster through which the table should be accessed (the remote-only
     /// fallback cluster when the structure came from the fallback, the full cluster otherwise).
-    ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const;
+    ColumnsDescription fetchTableStructure(
+        const String & table_name, ContextPtr local_context, const ProxyClusters & clusters, ClusterPtr & table_cluster) const;
 };
 
 }
