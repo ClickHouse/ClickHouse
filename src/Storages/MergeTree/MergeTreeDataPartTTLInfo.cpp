@@ -64,23 +64,34 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
         moves_ttl[expression].update(ttl_info);
 
-    /// Propagate the rows-TTL fingerprint (expression and time zone). The result is known only if every
-    /// merged part that carries rows-TTL data agrees on it; otherwise it becomes empty (unknown), which
-    /// forces the fast `MATERIALIZE TTL` path to fall back to a full rewrite. An epoch-only part has no
-    /// bounds, so `has_epoch_timestamps` must also count as rows-TTL provenance here.
-    if (other_infos.table_ttl.initialized() || other_infos.table_ttl.has_epoch_timestamps)
+    /// Propagate the rows-TTL fingerprint (expression and time zone). A source without a fingerprint can
+    /// be an old epoch-only part: before `has_epoch_timestamps` was serialized, such a part had neither a
+    /// table TTL section nor a fingerprint. Preserve that unknown provenance across the rest of the merge
+    /// so a sibling fingerprint cannot make the merged part eligible for the metadata-only fast path.
+    const bool other_has_known_rows_ttl_provenance =
+        !other_infos.table_ttl_expression.empty() && !other_infos.table_ttl_timezone.empty() && !other_infos.has_unknown_rows_ttl_provenance;
+    if (!other_has_known_rows_ttl_provenance || has_unknown_rows_ttl_provenance)
     {
-        if (!table_ttl.initialized() && !table_ttl.has_epoch_timestamps)
+        table_ttl_expression.clear();
+        table_ttl_timezone.clear();
+        has_unknown_rows_ttl_provenance = true;
+    }
+    else if (table_ttl_expression.empty() && table_ttl_timezone.empty())
+    {
+        table_ttl_expression = other_infos.table_ttl_expression;
+        table_ttl_timezone = other_infos.table_ttl_timezone;
+    }
+    else
+    {
+        if (table_ttl_expression != other_infos.table_ttl_expression)
         {
-            table_ttl_expression = other_infos.table_ttl_expression;
-            table_ttl_timezone = other_infos.table_ttl_timezone;
+            table_ttl_expression.clear();
+            has_unknown_rows_ttl_provenance = true;
         }
-        else
+        if (table_ttl_timezone != other_infos.table_ttl_timezone)
         {
-            if (table_ttl_expression != other_infos.table_ttl_expression)
-                table_ttl_expression.clear();
-            if (table_ttl_timezone != other_infos.table_ttl_timezone)
-                table_ttl_timezone.clear();
+            table_ttl_timezone.clear();
+            has_unknown_rows_ttl_provenance = true;
         }
     }
 
@@ -251,7 +262,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeString("]", out);
     };
 
-    bool is_first = columns_ttl.empty() && !table_ttl.min;
+    bool is_first = columns_ttl.empty() && !table_ttl.min && !table_ttl.has_epoch_timestamps;
     if (!moves_ttl.empty())
     {
         write_infos(moves_ttl, "moves", is_first);

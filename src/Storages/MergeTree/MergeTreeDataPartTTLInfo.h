@@ -30,9 +30,7 @@ struct MergeTreeDataPartTTLInfo
 
     /// Whether `update` saw a timestamp of exactly 0 (the epoch). The TTL machinery treats such a
     /// timestamp as "no TTL": `ITTLAlgorithm::isTTLExpired` never expires it and `update` excludes it
-    /// from `min`, so a row that computed to it is invisible in the stored bounds. Transient - used
-    /// while the infos are being computed to decide whether the rows-TTL fingerprint may be recorded
-    /// (see `MergeTreeDataPartTTLInfos::table_ttl_expression`); not serialized to `ttl.txt`.
+    /// from `min`, so a row that computed to it is invisible in the stored bounds.
     bool has_epoch_timestamps = false;
 
     void update(time_t time);
@@ -62,6 +60,11 @@ struct MergeTreeDataPartTTLInfos
     /// down: a `DateTime` column can change its zone with a metadata-only `MODIFY COLUMN`, and the
     /// server time zone can change with a restart.
     String table_ttl_timezone;
+
+    /// A merge source without a rows-TTL fingerprint may have been written by an older server, including
+    /// an epoch-only part that had no serializable TTL bounds. Do not let a later source fingerprint make
+    /// the merged part eligible for the metadata-only `MATERIALIZE TTL` path.
+    bool has_unknown_rows_ttl_provenance = false;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
     /// to merge in order to remove expired rows.
