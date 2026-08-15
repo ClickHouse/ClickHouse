@@ -1004,15 +1004,10 @@ def test_default_codec_recovery_fenced_after_codec_alter(start_cluster):
 
 
 def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
-    # A part whose default codec could only be recovered approximately must stay "unknown" across a
-    # column-only mutation. Such a mutation hardlinks most of the part and rewrites only the updated
-    # columns, inheriting the source part's - guessed - default codec, and then used to serialize that
-    # guess into the new part's `default_compression_codec.txt`. After the next load the descendant
-    # looked exact, so `buildRecompressTTLInfo` started trusting the guess again and a wrong guess
-    # could suppress a due `RECOMPRESS` TTL one generation later - the very bug that
-    # `default_codec_is_approximate` prevents for the original part. The codec file must therefore not
-    # be written at all when the codec is a guess: its absence is how "this part's default codec is not
-    # recorded" is spelled on disk, so the recovery, and the flag with it, runs again on every load.
+    # A part whose default codec could only be recovered approximately must not reuse that guess to
+    # encode columns rewritten by a column-only mutation. The writer chooses the current table / TTL
+    # policy independently, so the result is an exact codec for the newly written columns and may be
+    # recorded in the descendant's `default_compression_codec.txt`.
     #
     # `node5` pins `ZSTD(3)` for parts of any size, and the recovery reconstructs the codec from the
     # column frame's method byte, which does not store the level - so the guess is `ZSTD(1)`, exactly
@@ -1088,7 +1083,9 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     ).strip()
     assert mutated_part_name != part_name
 
-    # The guessed codec must not have been laundered into authoritative on-disk metadata.
+    # The writer must choose the due `RECOMPRESS` TTL codec instead of reusing the recovered
+    # `ZSTD(1)` estimate merely because it happens to match it. This codec is selected by the
+    # current policy, so it is safe to persist as authoritative metadata.
     assert (
         node5.exec_in_container(
             [
@@ -1097,27 +1094,17 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
                 f"test -e {data_path}{mutated_part_name}/default_compression_codec.txt && echo present || echo absent",
             ]
         ).strip()
-        == "absent"
+        == "present"
     )
 
-    # Reload the table from disk - this is where a persisted guess would start looking exact - and
-    # thereby also restart TTL merges for the table.
+    # Reloading preserves the selected, exact codec rather than converting the recovered estimate
+    # into metadata.
     node5.query("DETACH TABLE codec_provenance_mutation")
     node5.query("ATTACH TABLE codec_provenance_mutation")
 
     assert node5.query("SELECT extra FROM codec_provenance_mutation").strip() == "2"
 
-    # The rewritten part's codec is still unknown, so the selector must reconsider the part for the due
-    # `RECOMPRESS` TTL even though the guessed `ZSTD(1)` equals the TTL's codec. The recompression is a
-    # merge of this single part, so it bumps the part level; with the guess trusted it never happens.
-    assert_eq_with_retry(
-        node5,
-        "SELECT count() FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' "
-        "AND active AND rows > 0 AND level > 0",
-        "1",
-    )
-
-    # Recompressed with the TTL's codec, now recorded exactly.
+    # The descendant records the codec selected by the current due `RECOMPRESS` TTL exactly.
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.parts "

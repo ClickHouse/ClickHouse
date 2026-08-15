@@ -3069,16 +3069,34 @@ private:
                 new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
-        /// Column-only mutations keep the source part's codec, only the explicitness of a due `RECOMPRESS` is consulted.
-        ctx->compression_codec = ctx->source_part->default_codec;
-        const bool is_explicit_recompression = isExplicitRecompression(
-            ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
+        /// Column-only mutations normally keep the source part's codec. However, a part whose
+        /// `default_compression_codec.txt` is missing has only an approximate recovered codec.
+        /// Reusing that estimate here would make it a real write-path decision for the rewritten
+        /// columns. Choose the codec from the current table and TTL policy instead, as the
+        /// full-rewrite mutation path does. The resulting codec is a fact about the new writes,
+        /// even though other columns are hardlinked from the source part.
+        bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
+        bool is_explicit_recompression;
+        if (codec_is_approximate)
+        {
+            auto part_compression_codec = ctx->data->getCompressionCodecForPart(
+                ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+            ctx->compression_codec = std::move(part_compression_codec.codec);
+            is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+            codec_is_approximate = false;
+        }
+        else
+        {
+            ctx->compression_codec = ctx->source_part->default_codec;
+            is_explicit_recompression = isExplicitRecompression(
+                ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
+        }
+
         /// Record the chosen codec on the part so that its projections merged by the sub-merge in
-        /// `MergeTask` (see the projection branch there) inherit the same codec. The source part's codec
-        /// may be only an approximate recovery; carry that over so consumers of the new part treat it as
-        /// unknown as well (`finalizeMutatedPart` does the same for the on-disk side).
+        /// `MergeTask` (see the projection branch there) inherit the same codec. This remains
+        /// approximate only when the source value was reused unchanged.
         ctx->new_data_part->default_codec = ctx->compression_codec;
-        ctx->new_data_part->default_codec_is_approximate = ctx->source_part->default_codec_is_approximate;
+        ctx->new_data_part->default_codec_is_approximate = codec_is_approximate;
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
