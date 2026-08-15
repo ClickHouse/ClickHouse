@@ -802,3 +802,25 @@ clickhousectl update --check
 ```
 
 Le CLI vérifie également les mises à jour en arrière-plan (au plus une fois toutes les 24 heures) et affiche une notification lorsqu&#39;une version plus récente est disponible.
+
+<div id="telemetry">
+  ## Télémétrie
+</div>
+
+`clickhousectl` collecte des données d’utilisation anonymes afin de nous aider à comprendre comment la CLI est utilisée. Elle est activée par défaut, mais aucune donnée n’est envoyée avant que vous en soyez informé : lors de la première exécution, la CLI affiche un avis expliquant les données collectées et comment la désactiver, sans rien envoyer. La collecte ne commence qu’aux exécutions suivantes ; vous avez donc toujours la possibilité de vous y opposer avant que la moindre donnée ne soit collectée.
+
+Chaque événement contient uniquement :
+
+* La commande exécutée (par ex. `local start`) et les noms des options utilisées — jamais les valeurs des options, les arguments positionnels ou toute autre entrée fournie par l’utilisateur. Les requêtes, noms de tables, identifiants et chemins de fichiers ne sont donc jamais collectés.
+* Le code de sortie (par ex. `0`, `1`, `2`, `4`) et le résultat (par ex. `ok`, `error`, `cancelled`)
+* Pour les commandes mal saisies, la suggestion « did you mean » affichée par la CLI — enregistrée uniquement lorsqu’elle correspond exactement au nom d’une commande ou d’une option existante, elle ne peut donc jamais contenir ce que vous avez saisi
+* La version de `clickhousectl`, le système d’exploitation, l’architecture, et si la CLI a été invoquée par un agent d’IA (et lequel) ou dans le cadre de l’intégration continue
+
+La télémétrie est entièrement anonyme : aucune donnée personnelle n’est collectée et aucun identifiant d’appareil ou d’installation n’est utilisé.
+
+Pour désactiver la télémétrie :
+
+* Exécutez `clickhousectl telemetry disable` (réactivez-la avec `enable`, vérifiez son statut avec `status`)
+* Définissez la variable d’environnement `DO_NOT_TRACK=1`
+
+Définissez `CHCTL_TELEMETRY_DEBUG=1` pour afficher la charge utile exacte sur stderr sans rien envoyer.
