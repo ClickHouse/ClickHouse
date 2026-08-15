@@ -24,7 +24,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --allow_experimental_kusto_dialect=1"
 expect ":) "
 
 send -- "/dialect\r"
@@ -41,6 +41,17 @@ expect -- "(prql) :) "
 
 # The argument may be quoted, as in the equivalent SET query.
 send -- "/dialect 'kusto'\r"
+expect -- "(kusto) :) "
+
+# A dialect transition clears KQL let bindings, just like the equivalent SET.
+send -- "let x = 42\r"
+expect -- "(kusto) :) "
+send -- "/dialect clickhouse\r"
+expect -- ":) "
+send -- "/dialect kusto\r"
+expect -- "(kusto) :) "
+send -- "print x\r"
+expect -- "Unknown expression identifier `x`"
 expect -- "(kusto) :) "
 
 # The /language and /lang aliases work; the default dialect is not shown in the prompt.

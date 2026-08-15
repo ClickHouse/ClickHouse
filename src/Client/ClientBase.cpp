@@ -68,6 +68,7 @@
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -3718,7 +3719,11 @@ bool ClientBase::processQueryText(const String & text)
 
             try
             {
+                const Dialect old_dialect = client_context->getSettingsRef()[Setting::dialect];
                 client_context->setSetting("dialect", *dialect_name);
+                const Dialect new_dialect = client_context->getSettingsRef()[Setting::dialect];
+                if (old_dialect != new_dialect && (old_dialect == Dialect::kusto || new_dialect == Dialect::kusto))
+                    kqlLetBindingsClear();
             }
             catch (...)
             {
