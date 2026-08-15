@@ -589,6 +589,16 @@ STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
 declare -a WORKER_PIDS=()
 
+cleanup_worker_codex_auth()
+{
+    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
+
+    local wt
+    for wt in "${WT[@]-}"; do
+        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
+    done
+}
+
 stop_workers()
 {
     local roots own_pgid entry pid pgid
@@ -606,7 +616,7 @@ stop_workers()
     for pid in "${live_jobs[@]}"; do
         [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
     done
-    (( ${#active_workers[@]} )) || return 0
+    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
     roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
@@ -664,6 +674,7 @@ stop_workers()
     if (( ${#active_workers[@]} )); then
         wait "${active_workers[@]}" 2>/dev/null || true
     fi
+    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
@@ -730,10 +741,14 @@ run_continue_pr()
         codex_env=("CODEX_HOME=$codex_home")
         mkdir -p "$codex_home"
         rm -f "$codex_home/auth.json"
-        if ! printf '%s\n' "$API_KEY" | CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1; then
+        now=$(date +%s)
+        remaining=$(( deadline - now ))
+        (( remaining > 0 )) || return 124
+        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
+            ec=$?
             rm -f "$codex_home/auth.json"
-            return 1
-        fi
+            return "$ec"
+        }
     fi
 
     while :; do
