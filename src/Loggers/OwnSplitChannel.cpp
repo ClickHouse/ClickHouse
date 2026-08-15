@@ -14,6 +14,7 @@
 #include <Poco/Message.h>
 
 #include <base/sleep.h>
+#include <base/scope_guard.h>
 
 #if defined(MEMORY_SANITIZER)
 #include <sanitizer/msan_interface.h>
@@ -321,6 +322,16 @@ void OwnAsyncSplitChannel::closeAndJoinThreads()
 {
     is_open = false;
 
+    /// A producer that already saw `is_open` needs to recheck it after registering here. Wait for
+    /// every producer which passed that recheck before the consumers take their final drain.
+    /// Producers arriving after `is_open` became false deliver synchronously instead.
+    size_t active = active_async_loggers.load(std::memory_order_seq_cst);
+    while (active != 0)
+    {
+        active_async_loggers.wait(active, std::memory_order_seq_cst);
+        active = active_async_loggers.load(std::memory_order_seq_cst);
+    }
+
     /// The polling consumers see is_open == false on their own, flush what is left, and exit.
     if (text_log_thread)
     {
@@ -430,14 +441,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        /// While the channel is stopped (before open, during the quiesce window around remapExecutable,
-        /// after close) there is no consumer thread, so deliver synchronously, as OwnSplitChannel does.
-        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
-        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
-        /// unwinding out of Server::main is logged into queues that nobody will ever drain.
-        /// A message that raced with close() into the queue after the final drain is delivered when the
-        /// channel reopens, so the two paths may reorder messages across a stop/start cycle, but none are lost.
-        if (!is_open)
+        auto log_synchronously = [&]
         {
             for (const auto & channel : channels)
             {
@@ -450,9 +454,36 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
                 if (const auto text_log_locked = text_log.lock())
                     logToSystemTextLogQueue(text_log_locked, notification->msg_ext, notification->msg_thread_name);
             }
+        };
 
+        /// While the channel is stopped (before open, during the quiesce window around `remapExecutable`,
+        /// after close) there is no consumer thread, so deliver synchronously, as `OwnSplitChannel` does.
+        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
+        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
+        /// unwinding out of `Server::main` is logged into queues that nobody will ever drain.
+        ///
+        /// Register before the second load so `closeAndJoinThreads` cannot drain and join between that load
+        /// and an async enqueue. If closing wins the race, the second load redirects this message to the
+        /// synchronous path; if this producer wins, closing waits for it before the final drain.
+        if (!is_open)
+        {
+            log_synchronously();
             return;
         }
+
+        active_async_loggers.fetch_add(1, std::memory_order_seq_cst);
+        if (!is_open)
+        {
+            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
+                active_async_loggers.notify_all();
+            log_synchronously();
+            return;
+        }
+
+        SCOPE_EXIT({
+            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
+                active_async_loggers.notify_all();
+        });
 
         for (size_t i = 0; i < queues.size(); i++)
         {
