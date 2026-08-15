@@ -10,10 +10,6 @@ keywords: ['NLP', 'traitement automatique du langage naturel']
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<ExperimentalBadge />
-
-<CloudNotSupportedBadge />
-
 {/* 
   Le contenu des balises ci-dessous est remplacé lors du build du framework de documentation par 
   la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer les balises.
@@ -28,12 +24,16 @@ import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupporte
 
 Introduite dans : v22.2.0
 
-Détecte le jeu de caractères d&#39;une chaîne d&#39;entrée encodée dans un format non UTF8.
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut évoluer de manière imprévisible, avec des changements non rétrocompatibles dans les versions futures.
   Définissez `allow_experimental_nlp_functions = 1` pour l&#39;activer.
 </Warning>
+
+Détecte le jeu de caractères d&#39;une chaîne d&#39;entrée encodée dans un format non UTF8.
 
 **Syntaxe**
 
@@ -67,15 +67,19 @@ WINDOWS-1252
 
 Introduit dans : v22.2.0
 
-Détecte la langue de la chaîne d’entrée encodée en UTF8.
-La fonction utilise la [bibliothèque CLD2](https://github.com/CLD2Owners/cld2) pour la détection et renvoie le code de langue ISO à 2 lettres.
+<ExperimentalBadge />
 
-Plus l’entrée est longue, plus la détection de la langue sera précise.
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut changer de manière imprévisible, avec des modifications non rétrocompatibles, dans de futures versions.
   Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
 </Warning>
+
+Détecte la langue de la chaîne d’entrée encodée en UTF8.
+La fonction utilise la [bibliothèque CLD2](https://github.com/CLD2Owners/cld2) pour la détection et renvoie le code de langue ISO à 2 lettres.
+
+Plus l’entrée est longue, plus la détection de la langue sera précise.
 
 **Syntaxe**
 
@@ -109,12 +113,16 @@ fr
 
 Introduit dans : v22.2.0
 
-Semblable à la fonction [`detectLanguage`](#detectLanguage), `detectLanguageMixed` renvoie une `Map` de codes de langue à 2 lettres associés au pourcentage de chaque langue dans le texte.
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut évoluer de façon imprévisible, avec des changements non rétrocompatibles, dans les futures versions.
   Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
 </Warning>
+
+Semblable à la fonction [`detectLanguage`](#detectLanguage), `detectLanguageMixed` renvoie une `Map` de codes de langue à 2 lettres associés au pourcentage de chaque langue dans le texte.
 
 **Syntaxe**
 
@@ -148,13 +156,17 @@ SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追�
 
 Introduit dans : v22.2.0
 
-Semblable à la fonction [`detectLanguage`](#detectLanguage), à la différence que la fonction detectLanguageUnknown fonctionne avec des chaînes non encodées en UTF8.
-Préférez cette version si votre jeu de caractères est UTF-16 ou UTF-32.
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut évoluer de manière imprévisible, avec des changements non rétrocompatibles, dans les versions futures.
   Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
 </Warning>
+
+Semblable à la fonction [`detectLanguage`](#detectLanguage), à la différence que la fonction detectLanguageUnknown fonctionne avec des chaînes non encodées en UTF8.
+Préférez cette version si votre jeu de caractères est UTF-16 ou UTF-32.
 
 **Syntaxe**
 
@@ -188,18 +200,18 @@ de
 
 Introduit dans : v22.2.0
 
-Détermine le sentiment du texte fourni.
+<ExperimentalBadge />
 
-<Info>
-  **Limitation**
-
-  Dans sa forme actuelle, cette fonction est limitée : elle utilise le dictionnaire émotionnel intégré et ne fonctionne que pour la langue russe.
-</Info>
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut évoluer de façon imprévisible, avec des modifications non rétrocompatibles, dans les versions futures.
   Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
 </Warning>
+
+Détermine le sentiment du texte fourni.
+
+La fonction utilise un dictionnaire émotionnel intégré et ne fonctionne actuellement que pour la langue russe.
 
 **Syntaxe**
 
@@ -236,14 +248,18 @@ SELECT
 
 Introduit dans : v21.9.0
 
-Effectue la lemmatisation d’un mot donné.
-Cette fonction nécessite des dictionnaires pour fonctionner, disponibles sur [GitHub](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
-Pour plus de détails sur le chargement d’un dictionnaire à partir d’un fichier local, consultez la page [&quot;Définition des dictionnaires&quot;](/fr/reference/statements/create/dictionary/sources/local-file).
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   Cette fonction est expérimentale et peut évoluer de façon imprévisible, avec des changements non rétrocompatibles, dans les versions futures.
   Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
 </Warning>
+
+Effectue la lemmatisation d’un mot donné.
+Cette fonction nécessite des dictionnaires pour fonctionner, disponibles sur [GitHub](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+Pour plus de détails sur le chargement d’un dictionnaire à partir d’un fichier local, consultez la page [&quot;Définition des dictionnaires&quot;](/fr/reference/statements/create/dictionary/sources/local-file).
 
 **Syntaxe**
 
@@ -348,6 +364,15 @@ bless
 
 Introduit dans : v21.9.0
 
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Warning>
+  Cette fonction est expérimentale et peut évoluer de façon imprévisible, avec des changements non rétrocompatibles, dans les futures versions.
+  Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
+</Warning>
+
 Trouve les synonymes d’un mot donné.
 
 Il existe deux types d’extensions de synonymes :
@@ -360,11 +385,6 @@ Les mots de cette ligne doivent être séparés par des espaces ou des tabulatio
 
 Avec le type d’extension `wordnet`, vous devez fournir le chemin vers un répertoire contenant le thésaurus WordNet.
 Le thésaurus doit contenir un index des sens WordNet.
-
-<Warning>
-  Cette fonction est expérimentale et peut évoluer de façon imprévisible, avec des changements non rétrocompatibles, dans les futures versions.
-  Définissez `allow_experimental_nlp_functions = 1` pour l’activer.
-</Warning>
 
 **Syntaxe**
 

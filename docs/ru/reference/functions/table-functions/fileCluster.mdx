@@ -32,15 +32,15 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
   ## Аргументы
 </div>
 
-| Аргумент             | Описание                                                                                                                                                                               |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | Имя кластера, используемое для построения набора адресов и параметров подключения к удалённым и локальным серверам.                                                                    |
-| `path`               | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings#user_files_path). Путь к файлу также поддерживает [глоб-шаблоны](#globs-in-path). |
-| `format`             | [Формат](/ru/reference/formats/index) файлов. Тип: [String](/ru/reference/data-types/string).                                                                                                |
-| `structure`          | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и типы. Тип: [String](/ru/reference/data-types/string).                                             |
-| `compression_method` | Метод сжатия. Поддерживаются следующие типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                            |
+| Аргумент             | Описание                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | Имя кластера, используемое для построения набора адресов и параметров подключения к удалённым и локальным серверам.                                                                         |
+| `path`               | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path). Путь к файлу также поддерживает [глоб-шаблоны](#globs-in-path). |
+| `format`             | [Формат](/ru/reference/formats/index) файлов. Тип: [String](/ru/reference/data-types/string).                                                                                                     |
+| `structure`          | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и типы. Тип: [String](/ru/reference/data-types/string).                                                  |
+| `compression_method` | Метод сжатия. Поддерживаются следующие типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                                 |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Возвращаемое значение
 </div>
 
