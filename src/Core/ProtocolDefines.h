@@ -84,14 +84,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-/// Version 7 adds the parallel-replicas flag (bit 8) and its trailing byte on a serialized
+/// Version 8 adds the parallel-replicas flag (bit 8) and its trailing byte on a serialized
 /// `ReadFromTableFunction` step. An older peer would ignore the unknown flag bit, leave the trailing
 /// byte unread and misparse the rest of the plan stream, so the serializer fails closed when the flag
-/// is set towards a peer below version 7.
-/// Version 8 adds the original `Merge` table-expression key to `ReadFromTable` and
+/// is set towards a peer below version 8.
+/// Version 9 adds the original `Merge` table-expression key to `ReadFromTable` and
 /// `ReadFromTableFunction`. It lets a re-planned serialized leaf select its own child-table set
 /// rather than a same-named sibling's set.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 8;
+/// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
+/// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
+/// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -107,10 +110,14 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// First query-plan serialization version that reads the parallel-replicas flag (bit 8) and its
 /// trailing byte on a `ReadFromTableFunction` step. Gates writing them in
 /// `ReadFromTableFunctionStep::serialize`.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS = 7;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS = 8;
 /// First query-plan serialization version that carries the original `Merge` table-expression key
 /// on `ReadFromTable` and `ReadFromTableFunction` steps.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY = 8;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY = 9;
+/// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
+/// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
+/// `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
