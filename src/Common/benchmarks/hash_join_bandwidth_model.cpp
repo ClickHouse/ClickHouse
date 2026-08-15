@@ -1342,8 +1342,8 @@ void printFractionCrossover(const ModelInputs & m)
         /// the measured 2-pass scatter point exactly as the grid predictions do.
         const double scat_b_ns = p0.rp_scatter_sec / d * 1e9;                       /// build-side shuffle per build row
         const double scat_p_ns = (p1.rp_scatter_sec - p0.rp_scatter_sec) / d * 1e9; /// probe-side shuffle per probe row
-        const double d_build_ns = (p0.np_build_sec - p0.rp_build_sec) / d * 1e9;    /// NP build - RP build per build row
-        const double d_pg_ns = (p1.np_probe_sec - p1.rp_probe_sec) / d * 1e9;       /// NP probe - RP probe per probe row
+        const double d_build_ns = (p0.np_build_sec - p0.rp_build_sec) / d * 1e9;
+        const double d_pg_ns = (p1.np_probe_sec - p1.rp_probe_sec) / d * 1e9;
 
         const double gain0 = p0.npTotal() - p0.rpTotal();
         const double slope = (p1.npTotal() - p1.rpTotal()) - gain0; /// net RP gain per unit f
@@ -1927,7 +1927,6 @@ int main(int argc, char ** argv)
 
     WorkerPool pool(cfg.threads);
 
-    /// Shared immutable input blocks (the only memory reused across iterations).
     if (const size_t join_nb = options["join-nb"].as<size_t>())
     {
         const size_t join_np = options["join-np"].as<size_t>() ? options["join-np"].as<size_t>() : join_nb;
@@ -1945,6 +1944,7 @@ int main(int argc, char ** argv)
     }
 
     fmt::print("\ngenerating input blocks...\n");
+    /// Shared immutable input blocks (the only memory reused across iterations).
     auto build_work = generateBlocks(pool, cfg.tuples, cfg.build_payload_columns, "b_", uniqueKeys(cfg.tuples), cfg.seed);
     auto probe_work = generateBlocks(pool, cfg.tuples, cfg.probe_payload_columns, "p_",
                                      probeKeys(cfg.tuples, cfg.threads, cfg.hit_rate, /*per_thread_domain=*/ false), cfg.seed + 1);

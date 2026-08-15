@@ -77,7 +77,6 @@ void accumulateRows(const Block & block, JoinedRows & rows)
         rows.emplace(k[i], probe_id[i], rk[i], build_id[i]);
 }
 
-/// Drains a result to completion, collecting every output row.
 size_t drainResult(IJoinResult & result, JoinedRows & rows)
 {
     size_t drained = 0;
@@ -282,7 +281,6 @@ TEST(RadixHashJoin, ConcurrentJoiningQuantumDoesNotWaitForPreviousWave)
 
     JoinedRows drained_all = drained_a;
     drained_all.insert(drained_b.begin(), drained_b.end());
-    EXPECT_EQ(drained_all.size(), 64u);
     EXPECT_TRUE(drained_all == expected) << "joined output multiset does not match the expected probe x build identity";
 }
 
@@ -465,7 +463,6 @@ TEST(RadixHashJoin, SealedWaveDrainIsClaimableByOtherLanes)
     JoinedRows drained_all = drained_a;
     drained_all.insert(drained_b.begin(), drained_b.end());
     drained_all.insert(drained_delayed.begin(), drained_delayed.end());
-    EXPECT_EQ(drained_all.size(), expected.size());
     EXPECT_TRUE(drained_all == expected) << "joined output multiset does not match the expected probe x build identity";
 }
 
@@ -537,7 +534,6 @@ struct WaveHarness
         return twoColumnBlock("k", "probe_id", keys, ids);
     }
 
-    /// Joins one block on one lane and drains its result to completion.
     size_t joinAndDrain(Block block, size_t lane, JoinedRows & rows)
     {
         auto result = join->joinBlock(std::move(block), lane);

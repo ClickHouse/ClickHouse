@@ -1456,7 +1456,6 @@ void registerFallbackBenchmarks()
 }
 
 
-/// Fill a fixed-width column with random bytes via its raw-insert API.
 MutableColumnPtr fillRandomFixed(MutableColumnPtr column, size_t rows)
 {
     auto raw = column->insertRawUninitialized(rows);
