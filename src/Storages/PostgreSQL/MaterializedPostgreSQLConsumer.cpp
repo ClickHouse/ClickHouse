@@ -444,11 +444,33 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
     };
 
     std::exception_ptr error;
+    std::exception_ptr unrecoverable_error;
     for (Int16 column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         try
         {
             process_column_value(readInt8(message, pos, size), column_idx);
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(log,
+                      "Got error while receiving value for column {}, will insert default value. Error: {}",
+                      column_idx, getCurrentExceptionMessage(true));
+
+            insertDefaultValue(storage_data, column_idx);
+            if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+            {
+                /// An unchanged TOAST replica identity value makes this row unidentifiable. It
+                /// must take precedence over any earlier defaultable conversion error so the
+                /// caller can skip this table and advance the replication stream.
+                unrecoverable_error = std::current_exception();
+            }
+            /// Let's collect only the first exception.
+            /// This delaying of error throw is needed because
+            /// some errors can be ignored and just logged,
+            /// but in this case we need to finish insertion to all columns.
+            else if (!error)
+                error = std::current_exception();
         }
         catch (...)
         {
@@ -457,10 +479,6 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
                       column_idx, getCurrentExceptionMessage(true));
 
             insertDefaultValue(storage_data, column_idx);
-            /// Let's collect only the first exception.
-            /// This delaying of error throw is needed because
-            /// some errors can be ignored and just logged,
-            /// but in this case we need to finish insertion to all columns.
             if (!error)
                 error = std::current_exception();
         }
@@ -504,6 +522,9 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
 
         std::erase_if(buffer.unchanged_toast_values, [row_idx](const auto & value) { return value.row_idx == row_idx; });
     }
+
+    if (unrecoverable_error)
+        std::rethrow_exception(unrecoverable_error);
 
     if (error)
         std::rethrow_exception(error);

@@ -318,7 +318,7 @@ def test_toast_in_replica_identity(started_cluster):
     pg_manager.create_postgres_table(
         table,
         "",
-        """CREATE TABLE "{}" (id text PRIMARY KEY, other text)""",
+        """CREATE TABLE "{}" (bad_value text NOT NULL, id text PRIMARY KEY, other text)""",
     )
     pg_manager.create_postgres_table(
         other_table,
@@ -337,10 +337,11 @@ def test_toast_in_replica_identity(started_cluster):
             "materialized_postgresql_backoff_min_ms = 100",
             "materialized_postgresql_backoff_max_ms = 100",
         ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (bad_value Decimal(10, 2), id String, other String))",
     )
 
     pg_manager.execute(
-        f"INSERT INTO {table} (id, other) VALUES (repeat('k', 2500), 'initial')"
+        f"INSERT INTO {table} (bad_value, id, other) VALUES ('10.5', repeat('k', 2500), 'initial')"
     )
     pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
     check_tables_are_synchronized(
@@ -350,10 +351,11 @@ def test_toast_in_replica_identity(started_cluster):
         order_by="id",
     )
 
-    # The row cannot be identified once its key arrives as an unchanged TOAST
-    # value, so the affected table must be skipped instead of writing a
-    # defaulted key or replaying the same WAL record indefinitely.
-    pg_manager.execute(f"UPDATE {table} SET other = 'updated'")
+    # PostgreSQL sends the replica identity itself as a value, even with
+    # `STORAGE EXTERNAL`. The malformed decimal is a defaultable conversion
+    # error before the unchanged TOAST value in the new tuple; the update and a
+    # subsequent update to another replicated table must both keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET bad_value = '1abc', other = 'updated'")
     pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
     check_tables_are_synchronized(
         instance,
@@ -362,8 +364,8 @@ def test_toast_in_replica_identity(started_cluster):
         order_by="id",
     )
     assert (
-        instance.query(f"SELECT length(id), other FROM test_database.{table}")
-        == "2500\tinitial\n"
+        instance.query(f"SELECT length(id), bad_value, other FROM test_database.{table}")
+        == "2500\t0.00\tupdated\n"
     )
     assert (
         instance.query(f"SELECT other FROM test_database.{other_table}")
