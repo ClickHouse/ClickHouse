@@ -4244,10 +4244,10 @@ struct ToNumberMonotonicity
             || !is_valid_uint64_or_int64_or_null(right))
             return {};
 
-        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool from_is_unsigned = inner_type->isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
-        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_from = inner_type->getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
         const bool left_in_first_half = left.isNull()
