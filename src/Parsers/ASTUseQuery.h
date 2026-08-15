@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -37,6 +38,8 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Use; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

@@ -24,7 +24,7 @@ picture-in-picture"
 Синтаксис:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -63,9 +64,12 @@ Union
 
 * `AST` — Абстрактное синтаксическое дерево.
 * `SYNTAX` — Текст запроса после оптимизаций на уровне AST.
-* `QUERY TREE` — Дерево запроса после оптимизаций на уровне Query Tree.
+* `QUERY TREE` — Дерево запроса после оптимизаций на уровне дерева запроса.
 * `PLAN` — План выполнения запроса.
 * `PIPELINE` — Конвейер выполнения запроса.
+* `ANALYZE` — Выполняет запрос и дополняет план выполнения измеренными метриками времени выполнения.
+* `ESTIMATE` — Оценочное количество строк, меток и частей, которые будут прочитаны из таблиц при обработке запроса.
+* `TABLE OVERRIDE` — Провалидированный результат переопределения таблицы в схеме табличной функции.
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -193,39 +197,49 @@ QUERY id: 0
 * `description` — Выводит описание шага. Значение по умолчанию: 1.
 * `indexes` — Показывает используемые индексы, количество отфильтрованных частей и количество отфильтрованных гранул для каждого применённого индекса. Значение по умолчанию: 0. Поддерживается для таблиц [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Начиная с ClickHouse &gt;= v25.9, этот оператор показывает осмысленный результат только при использовании с `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 * `projections` — Показывает все проанализированные проекции и их влияние на фильтрацию на уровне частей на основе условий по первичному ключу проекции. Для каждой проекции в этом разделе приводится статистика, включая количество частей, строк, меток и диапазонов, оценённых с использованием первичного ключа проекции. Также показывается, сколько частей данных было пропущено благодаря этой фильтрации без чтения из самой проекции. Была ли проекция действительно использована для чтения или только проанализирована для фильтрации, можно определить по полю `description`. Значение по умолчанию: 0. Поддерживается для таблиц [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
-* `actions` — Выводит подробную информацию о действиях шага. Значение по умолчанию: 0.
+* `actions` — Выводит подробную информацию о действиях шага. Значение по умолчанию: 1.
 * `sorting` — Выводит описание сортировки для каждого шага плана, который формирует отсортированный вывод. Значение по умолчанию: 0.
 * `keep_logical_steps` — Сохраняет логические шаги плана для JOIN вместо преобразования их в физические реализации JOIN. Значение по умолчанию: 0.
 * `json` — Выводит шаги плана запроса как строку в формате [JSON](/ru/reference/formats/JSON/JSON). Значение по умолчанию: 0. Чтобы избежать лишнего экранирования, рекомендуется использовать формат [TabSeparatedRaw (TSVRaw)](/ru/reference/formats/TabSeparated/TabSeparatedRaw).
 * `input_headers` — Выводит входные заголовки для шага. Значение по умолчанию: 0. В основном полезно только разработчикам для отладки проблем, связанных с несоответствием входных и выходных заголовков.
 * `column_structure` — Также выводит структуру столбцов в заголовках помимо их имени и типа. Значение по умолчанию: 0. В основном полезно только разработчикам для отладки проблем, связанных с несоответствием входных и выходных заголовков.
-* `distributed` — Показывает планы запроса, выполняемые на удалённых узлах для distributed таблиц или параллельных реплик. Значение по умолчанию: 0.
-* `compact` — Если включено, скрывает из плана шаги выражений и подробную информацию о действиях (входы, функции, псевдонимы и позиции вывода). Действует только при `actions = 1`. Значение по умолчанию: 0.
-* `pretty` — Выводит дерево плана с использованием символов построения линий (├──, └──, │) вместо отступов для наглядного отображения иерархии. Также форматирует свойства шага JOIN в одну строку. Значение по умолчанию: 0.
+* `distributed` — Показывает планы запроса, выполняемые на удалённых узлах для distributed таблиц или параллельных реплик. Не поддерживается вместе с `json`. Значение по умолчанию: 0.
+* `compact` — Если включено, скрывает из плана шаги выражений и подробную информацию о действиях (входы, функции, псевдонимы и позиции вывода). Действует только при `actions = 1`. Значение по умолчанию: 1.
+* `pretty` — Выводит дерево плана с использованием символов построения линий (├──, └──, │) вместо отступов для наглядного отображения иерархии. Также форматирует свойства шага JOIN в одну строку. Значение по умолчанию: 1.
 
-Когда `json=1`, имена шагов будут содержать дополнительный суффикс с уникальным идентификатором шага.
+<Note>
+  По умолчанию `explain_query_plan_default = 'pretty'`, поэтому `actions`, `compact` и `pretty` инициализируются значением `1`, а план отображается в компактном, наглядном виде с аннотациями действий. Явное указание любого из этих параметров в операторе `EXPLAIN` (например, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) всегда переопределяет значение по умолчанию.
+
+  До ClickHouse 26.7 значениями по умолчанию для `actions`, `compact` и `pretty` были `0`. Этот вывод по-прежнему можно получить, установив `explain_query_plan_default = 'legacy'` (глобально или в `SETTINGS` для отдельного запроса) либо задав `compatibility` любой версии старше `26.7`.
+
+  Параметры `json` и `distributed` не включают значения по умолчанию для `pretty` (`actions`, `compact` и `pretty`), даже когда `explain_query_plan_default = 'pretty'`. Чтобы включить подробности о действиях в их вывод, вручную задайте `actions = 1`.
+</Note>
 
 Пример:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   Оценка стоимости шагов и запроса не поддерживается.
 </Note>
 
-Если `json = 1`, план запроса представляется в формате JSON. Каждый узел — это словарь, который всегда содержит ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. В зависимости от типа узла и настроек также могут добавляться другие необязательные ключи.
+При `json = 1` план запроса представляется в формате JSON. Каждый узел — это словарь, который всегда содержит ключи `Node Type`, `Node Id` и `Plans`. `Node Type` — строка с именем шага, а `Node Id` — уникальный идентификатор шага (имя шага с числовым суффиксом, например `Union_10`). `Plans` — массив с описаниями дочерних шагов. В зависимости от типа узла и настроек могут добавляться и другие необязательные ключи.
 
 Пример:
 
@@ -266,7 +280,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-При `description` = 1 к шагу добавляется ключ `Description`:
+При `description` = 1 в шаг добавляется ключ `Description`:
 
 ```json
 {
@@ -374,7 +388,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 * `Name` — Имя проекции.
 * `Condition` — Используемое условие по первичному ключу проекции.
-* `Description` — Описание использования проекции (например, фильтрация на уровне частей).
+* `Description` — Описание того, как используется проекция (например, для фильтрации на уровне частей).
 * `Selected Parts` — Количество частей, выбранных проекцией.
 * `Selected Marks` — Количество выбранных меток.
 * `Selected Ranges` — Количество выбранных диапазонов.
@@ -470,24 +484,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-При `compact = 1` каждый шаг `Expression` удаляется. Кроме того, если задано `actions = 1`, строки `Actions` и `Positions` скрываются, оставляя только описания шагов:
+При `compact = 0` и `actions = 1` отображаются шаги `Expression` вместе с подробной информацией о выражениях:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 При `distributed` = 1 вывод включает не только локальный план запроса, но и планы запросов, которые будут выполняться на удалённых узлах. Это полезно для анализа и отладки распределённых запросов.
+
+<Note>
+  `distributed` отображается только в формате legacy (без `pretty`), поскольку вывод `pretty` не встраивает планы удалённых сегментов в дерево плана. По этой причине включение `distributed` автоматически отключает связанные с `pretty` значения по умолчанию (`actions`, `compact` и `pretty`) независимо от `explain_query_plan_default`. Вы по-прежнему можете задать `actions=1` вручную. Параметр `distributed` также не поддерживается вместе с `json`.
+</Note>
 
 Пример с distributed таблицей:
 
@@ -534,14 +563,14 @@ Expression ((Project names + Projection))
 При `pretty` = 1 дерево плана отображается с использованием символов псевдографики вместо отступов, а для ключевых шагов показывается дополнительная информация:
 
 * **Выходные столбцы запроса** выводятся в верхней части плана.
-* **Выражения** в фильтрах, ключах агрегации, описаниях сортировки и оконных функциях отображаются в понятной SQL-подобной нотации (например, `a + 1 > 5` вместо `greater(plus(a, 1), 5)`). Для наглядности внутренние префиксы идентификаторов столбцов (например, `__table1.`) удаляются.
-* **Шаги источника** (например, `ReadFromMergeTree`) показывают свои выходные столбцы.
-* **Шаги фильтрации** показывают условие фильтрации в SQL-нотации. Если присутствуют runtime-фильтры JOIN, они отображаются отдельно.
-* **Шаги агрегации** показывают ключи и агрегатные функции с их аргументами (например, `sum(c)`, `count()`).
-* **Множества `IN`** из литералов Tuple показывают свои значения (для больших множеств — в усечённом виде), множества на основе подзапросов помечаются как `subquery1`, `subquery2` и т. д., а множества из таблиц с движком `Set` показывают имя таблицы.
-* **Шаги JOIN** показывают отношение JOIN в математической нотации, оценочное количество строк в результате,
-  а также то, какие выходные столбцы приходят с левой и с правой стороны. Для
-  обозначения разных типов JOIN используются следующие символы:
+* **Выражения** в фильтрах, ключах агрегации, описаниях сортировки и оконных функциях отображаются в человекочитаемой SQL-подобной нотации (например, `a + 1 > 5` вместо `greater(plus(a, 1), 5)`). Для наглядности внутренние префиксы идентификаторов столбцов (например, `__table1.`) удаляются.
+* **Исходные шаги** (например, `ReadFromMergeTree`) отображают свои выходные столбцы.
+* **Шаги фильтрации** отображают условие фильтрации в SQL-нотации. Если присутствуют runtime-фильтры JOIN, они показываются отдельно.
+* **Шаги агрегации** отображают ключи и агрегатные функции с их аргументами (например, `sum(c)`, `count()`).
+* **Множества `IN`**, заданные кортежными литералами, показывают свои значения (усечённые для больших множеств), множества на основе подзапросов помечаются как `subquery1`, `subquery2` и т. д., а множества из таблиц с движком `Set` показывают имя таблицы.
+* **Шаги JOIN** отображают отношение JOIN в математической нотации, оценочное количество строк в результате,
+  а также то, какие выходные столбцы поступают с левой, а какие — с правой стороны. Для представления различных типов JOIN
+  используются следующие символы:
 
 | Символ                 | Тип JOIN        |
 | ---------------------- | --------------- |
@@ -561,18 +590,7 @@ Expression ((Project names + Projection))
 
 Параметр `pretty` хорошо работает вместе с `compact = 1`, который скрывает шаги `Expression` и подробную информацию о действиях, делая план более удобным для чтения.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-Более подробный пример с JOIN:
+Подробный пример с JOIN:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -585,24 +603,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -647,6 +669,125 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
+<div id="explain-analyze">
+  ### EXPLAIN ANALYZE
+</div>
+
+`EXPLAIN ANALYZE` действительно выполняет запрос, отбрасывает строки результата и выводит то же дерево плана, что и `EXPLAIN PLAN`, добавляя к каждому шагу сведения о том, что реально произошло во время выполнения.
+
+Настройки:
+
+`EXPLAIN ANALYZE` поддерживает те же параметры отображения, что и `EXPLAIN PLAN` (они описаны в разделе [EXPLAIN PLAN](#explain-plan)).
+
+* `header` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `description` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `projections` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `sorting` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `input_headers` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `column_structure` — см. раздел [EXPLAIN PLAN](#explain-plan).
+* `actions` — см. раздел [EXPLAIN PLAN](#explain-plan). По умолчанию: 1.
+* `indexes` — см. раздел [EXPLAIN PLAN](#explain-plan). По умолчанию: 1.
+* `compact` — см. раздел [EXPLAIN PLAN](#explain-plan). По умолчанию: 1.
+* `pretty` — см. раздел [EXPLAIN PLAN](#explain-plan). По умолчанию: 1.
+* `processors` — для `EXPLAIN ANALYZE` выводит дополнительную строку для каждого этапа с распределением времени выполнения по каждому процессору: `min`, `median`, `max` и `sum`. Это полезно для выявления перекоса нагрузки между параллельными процессорами. По умолчанию: 0.
+
+<Note>
+  Поскольку `EXPLAIN ANALYZE` действительно выполняет обёрнутый запрос, он ведёт себя как
+  этот запрос — и, в отличие от форм `EXPLAIN`, которые не выполняют запрос, — в нескольких отношениях:
+
+  * **Квоты и ограничения.** Он учитывается в тех же [quotas](/ru/concepts/features/configuration/server-config/quotas)
+    и подпадает под те же [limits](/ru/concepts/features/configuration/settings/query-complexity)
+    (например, `query_selects`, `read_rows`), что и при прямом выполнении запроса. Источники, освобождённые от квот на этапе планирования
+    (такие как `system.one`), не учитываются.
+  * **Неуспешные транзакции.** Внутри [transaction](/ru/concepts/features/operations/insert/transactions),
+    которая уже завершилась ошибкой (`ROLLED_BACK`), он отклоняется с `INVALID_TRANSACTION`,
+    так же как и обычный `SELECT` — сначала выполните `ROLLBACK`.
+  * **Потоковые чтения.** При потоковом чтении (`FROM ... STREAM`) он отклоняется с
+    `NOT_IMPLEMENTED`, потому что такое чтение никогда не завершается.
+  * **Распределённые запросы.** Он не поддерживается для запросов, выполняемых в
+    режиме [distributed](/ru/reference/engines/table-engines/special/distributed).
+</Note>
+
+Пример:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+Давайте разберём вывод. Сначала посмотрим на заголовок.
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+* `Time` — общее время, разделённое на этапы планирования (то есть создание плана + оптимизация плана + построение конвейера) и выполнения (запуск конвейера).
+* `Read` — строки и несжатые байты, прочитанные из таблиц, с указанием пропускной способности — те же числа, которые нижний колонтитул обычного запроса показывает как &quot;Processed&quot;.
+* `Peak memory` — пиковое потребление памяти запросом.
+
+Теперь рассмотрим новые строки, которые появляются в плане запроса.
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+Строки и байты указываются один раз для всего шага (строка `I/O`). Время и параллелизм указываются для каждой стадии шага в следующих строках с отступом.
+
+* `rows <in> → <out>` — строки, вошедшие в шаг и вышедшие из него; (`<selectivity>`%) показывает, насколько шаг отфильтровал (`out/in`) или расширил данные; не показывается, если число входных строк равно числу выходных строк или если число входных строк равно `0`.
+* `<bytes_in> → <bytes_out>` — несжатые байты в памяти, проходящие через шаг (не указывается, если оба значения равны нулю).
+* `time <t> (<share>%)` — фактическое время, в течение которого стадия была активна, и её доля от времени выполнения запроса (то есть без времени сборки). Обратите внимание: сумма долей может превышать 100%, потому что стадии и шаги выполняются параллельно.
+* `parallelism <avg>/<max>` — среднее число потоков CPU, одновременно работающих в пределах этой стадии, из максимально возможного числа. Значение, близкое к максимуму, означает, что стадия хорошо распараллелена; близкое к 1 — что она выполнялась в основном последовательно.
+* `Stage (<stage>)` — имя стадии. Для шага с одной стадией строка времени выводится сразу, без метки `Stage (...)`. Для шагов с несколькими стадиями выводится по одной помеченной строке на каждую стадию; например, для `Aggregating` показываются `Stage (partial aggregation)` и `Stage (final aggregation)`, а для hash JOIN — `Stage (build)` и `Stage (probe)`.
+
+<Note>
+  ClickHouse распараллеливает не только выполнение задач внутри шага плана, но и выполнение самих шагов плана. Метрика `parallelism` отражает только работу этого шага. Другие шаги могут выполняться параллельно, поэтому это число не показывает, как параллелизм шага соотносится со всем запросом.
+</Note>
+
+<Note>
+  Максимальное число в `parallelism` вычисляется как минимум из:
+
+  1. общего числа задач внутри шага плана;
+  2. максимального числа потоков обработки запроса, заданного в `max_threads`.
+</Note>
+
+При `processors = 1` под каждой стадией выводится дополнительная строка, показывающая распределение затраченного времени между процессорами этой стадии:
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` — это количество процессоров на стадии. Большой разрыв между `median` и `max` указывает на неравномерное распределение нагрузки между параллельными процессорами.
+
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -672,6 +813,128 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+Оценивает, какую пользу гипотетический индекс пропуска данных может принести запросу `SELECT`, *без* материализации индекса на диске. Задайте один или несколько кандидатов с помощью [`CREATE HYPOTHETICAL INDEX`](/ru/reference/statements/hypothetical-index#create-hypothetical-index), затем выполните `EXPLAIN WHATIF SELECT ...`, чтобы увидеть для каждого кандидата: применимость, оценочное количество прочитанных меток, оценочный объём данных в байтах и коэффициент пропуска.
+
+**Синтаксис**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**Настройки**
+
+* `empirical` — `1` (по умолчанию) запускает индекс в памяти на гранулах, отобранных после базовой фильтрации, чтобы измерить коэффициент пропуска (верхнюю границу). `0` пропускает этот этап. В любом случае, если empirical не даёт результата (отключён или индекс нельзя вычислить в памяти), оценщик переключается на [статистику столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), а затем — на сводку только по применимости, если недоступно ни то, ни другое.
+
+**Вывод**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — как была получена оценка.
+  * `empirical`: индекс строится в памяти по гранулам, оставшимся после базового pruning, и подсчитывается, сколько гранул индекс мог бы пропустить. Это верхняя граница — см. ограничения в [`CREATE HYPOTHETICAL INDEX`](/ru/reference/statements/hypothetical-index#limitations).
+  * `statistical`: вычисляется на основе статистики столбцов. Используется, когда empirical отключён (`empirical = 0`) или empirical не смог дать результат, а для соответствующих столбцов задана статистика.
+  * `applicability_only`: индекс применим к предикату, но ни эмпирическая, ни статистическая оценка не дали результата (например, `empirical = 0` и статистика столбцов не задана). Возвращает `skip_ratio: 0.0%` как консервативную границу.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Показывает, какая доля таблицы осталась после pruning по PK, партициям и существующим индексам, то есть какие данные поступают на вход гипотетическому индексу.
+* `est_bytes` — оценка количества прочитанных байтов, полученная на основе среднего размера строки в таблице, поэтому она приблизительна и зависит от хранилища и сжатия. Строка baseline появляется только тогда, когда запрос читает строки; строка для каждого кандидата — только когда известна базовая оценка объёма в байтах.
+
+Настройка записывается inline между `WHATIF` и `SELECT` — ключевое слово `SETTINGS` отсутствует (это соответствует тому, как другие варианты `EXPLAIN` принимают свои параметры).
+
+Если для таблицы не определены гипотетические индексы, `EXPLAIN WHATIF` возвращает `status: not_applicable` с подсказкой создать индекс.
+
+**Комбинированная строка (несколько кандидатов)**
+
+Когда два или более кандидата оцениваются эмпирически, `EXPLAIN WHATIF` добавляет ещё один блок с именем `(combined: idx_a, idx_b, ...)` после строк отдельных кандидатов. Он показывает совокупную пользу от наличия *всех* этих индексов одновременно: при реальном чтении гранула сохраняется только в том случае, если проходит через *каждый* индекс пропуска данных, поэтому комбинированная оценка представляет собой пересечение гранул, оставшихся после кандидатов. Следовательно, его `skip_ratio` как минимум не ниже, чем у лучшего отдельного кандидата: взаимодополняющие индексы вместе отсекают больше, а избыточные не меняют результат.
+
+Учитываются только кандидаты с `source: empirical`, поскольку объединённая строка формируется путём пересечения их наборов выживания по гранулам. Кандидаты с оценкой `statistical` или `applicability_only` не имеют данных по гранулам и исключаются; соответственно, объединённый блок появляется только тогда, когда как минимум два кандидата дали эмпирическую оценку, и в остальных случаях опускается (например, при `empirical = 0`). Его поля оценки совпадают с полями эмпирического блока отдельного кандидата, за исключением `elapsed_us`, которое равно `0` — объединённая оценка выводится на основе сканирований отдельных кандидатов, а не нового сканирования. Синтетическое имя `(combined: ...)` служит только меткой в отчёте и не может использоваться с `force_data_skipping_indices`.
+
+**Эмпирический пример**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+Гипотетический `minmax` сократил бы число меток со 100 до 1 — `skip_ratio: 99.0%`. (`est_bytes` — это оценка, основанная на среднем размере строки, поэтому точное значение может отличаться.)
+
+**Статистический пример**
+
+Статистика [столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) по умолчанию отключена. Чтобы задействовать вариант `statistical`, сначала задайте её для нужных столбцов и дождитесь завершения мутации `materialize`:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+Затем отключите эмпирический режим, чтобы механизм оценки снова использовал статистику по столбцам:
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+Это число берётся из селективности статистики столбца для `b < 10` (примерно 10 строк из 10000) и приводится как верхняя граница для `skip_ratio`. Значения `sampled_parts` / `sampled_marks` отсутствуют — данные не считывались.
+
+Если ни один из вариантов недоступен (например, `empirical = 0` и статистика столбцов не определена), оценщик возвращает `source: applicability_only` и консервативное значение `skip_ratio: 0.0%`.
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

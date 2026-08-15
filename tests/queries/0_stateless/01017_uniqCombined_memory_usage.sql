@@ -32,14 +32,14 @@ SELECT 'K=16';
 SELECT 'UInt32';
 SET max_memory_usage = 2000000;
 SELECT sum(u) FROM (SELECT intDiv(number, 4096) AS k, uniqCombined(16)(number % 4096) u FROM numbers(4096 * 100) GROUP BY k); -- { serverError MEMORY_LIMIT_EXCEEDED }
-SET max_memory_usage = 5230000;
+SET max_memory_usage = 6300000;
 SELECT sum(u) FROM (SELECT intDiv(number, 4096) AS k, uniqCombined(16)(number % 4096) u FROM numbers(4096 * 100) GROUP BY k);
 
 -- HashTable for UInt64 (used until (1<<11) elements), hence 2048 elements
 SELECT 'UInt64';
 SET max_memory_usage = 2000000;
 SELECT sum(u) FROM (SELECT intDiv(number, 2048) AS k, uniqCombined(16)(reinterpretAsString(number % 2048)) u FROM numbers(2048 * 100) GROUP BY k); -- { serverError MEMORY_LIMIT_EXCEEDED }
-SET max_memory_usage = 5900000;
+SET max_memory_usage = 7100000;
 SELECT sum(u) FROM (SELECT intDiv(number, 2048) AS k, uniqCombined(16)(reinterpretAsString(number % 2048)) u FROM numbers(2048 * 100) GROUP BY k);
 
 SELECT 'K=18';

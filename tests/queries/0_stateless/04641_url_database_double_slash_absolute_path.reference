@@ -1,0 +1,12 @@
+--- absolute path
+1	one
+2	two
+--- absolute path with two leading slashes
+1	one
+2	two
+--- absolute path with three leading slashes
+1	one
+2	two
+--- the same via an explicit URL database with a file:// base
+1	one
+2	two

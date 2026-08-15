@@ -32,8 +32,7 @@ docker pull clickhouse/clickhouse-server
   ### التوافق
 </div>
 
-* تتطلب صورة amd64 دعم [تعليمات SSE3](https://en.wikipedia.org/wiki/SSE3).
-  تكاد جميع معالجات x86 بعد عام 2005 تدعم SSE3.
+* تتطلب صورة amd64 دعم [مستوى البنية الدقيقة x86-64-v3](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) ‏(AVX2 وBMI1 وBMI2 وF16C وFMA وLZCNT وMOVBE وXSAVE). تكاد جميع معالجات x86 بعد عام 2015 تدعم x86-64-v3.
 * تتطلب صورة arm64 دعم [معمارية ARMv8.2-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) و
   بالإضافة إلى ذلك سجل Load-Acquire RCpc. هذا السجل اختياري في الإصدار ARMv8.2-A وإلزامي في
   [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). وهو مدعوم في Graviton &gt;=2، ومثيلات Azure وGCP.

@@ -34,7 +34,7 @@ doc_type: 'reference'
 </div>
 
 将以地理坐标 (经度/纬度) 表示的几何对象投影到由 `zoom`、`tile_x` 和 `tile_y` 标识的
-slippy-map 瓦片局部像素空间中，将其裁剪到瓦片范围内，对齐到整数像素网格，
+slippy-map 瓦片局部像素空间中，对齐到整数像素网格，将其裁剪到瓦片范围内，
 并返回瓦片空间中的几何对象。
 
 该投影采用覆盖完整 `UInt32` 坐标范围的 Web Mercator。返回坐标的原点位于瓦片
@@ -45,6 +45,10 @@ Tile 格式采用的坐标约定，因此结果可直接传给 `MVTEncode`。坐
 启用 `clip` 时 (默认值) ，几何对象会被裁剪到按 `buffer` 像素扩展后的瓦片范围内 (每个轴上的范围为
 `[-buffer, extent + buffer]`) ；完全落在该范围之外的几何对象会变为 `NULL`。这相当于
 PostGIS 的 `ST_AsMVTGeom`。
+
+Polygon 坐标在验证之前会被限制在一个 `2^30` window 内——这恰好是 `zoom` 为 18 且
+`extent` 为 4096 时整个世界的像素跨度——因此对于实际的瓦片，几何对象会被验证但绝不会被裁剪，而这一边界仅会
+影响处于极端 `zoom` 或 `extent` 值下的几何对象。
 
 输出几何类型取决于输入：`Point` 返回 `Point`；`LineString` 或 `MultiLineString` 返回
 `MultiLineString`；`Ring`、`Polygon` 或 `MultiPolygon` 返回 `MultiPolygon` (裁剪可能会将一个几何对象分成
@@ -62,7 +66,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 * `zoom` — Slippy 地图的缩放级别，范围为 `[0, 32]`。[`UInt8`](/zh/reference/data-types/int-uint)。
 * `tile_x` — 瓦片列索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
 * `tile_y` — 瓦片行索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
-* `extent` — 可选的瓦片边长 (每边像素数) ，范围为 `[1, 2147483647]`。默认值为 `4096`，即 Mapbox Vector Tile 的默认值。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `extent` — 可选的瓦片边长 (每边像素数) ，范围为 `[1, 2147483647]`。默认值为 `4096`，即 Mapbox 矢量瓦片 的默认值。[`UInt32`](/zh/reference/data-types/int-uint)。
 * `buffer` — 可选的裁剪缓冲区 (像素) ，范围为 `[0, 2147483647]`。默认值为 `1`。[`UInt32`](/zh/reference/data-types/int-uint)。
 * `clip` — 可选标志；当其为非零值时 (默认如此) ，几何对象会被裁剪到瓦片加缓冲区的范围内。[`UInt8`](/zh/reference/data-types/int-uint)。
 
@@ -322,21 +326,3 @@ SETTINGS allow_suspicious_types_in_group_by = 1
 </div>
 
 * Web Mercator 投影会将纬度限制在 `±85.05112878°`，且不处理跨越反经线的输入。
-
-* **Polygon 裁剪不保证输出是有效的 MVT。** 裁剪会修正环的方向和闭合性，但不会修复自相交。因此，自相交的 (&quot;蝴蝶结形&quot;) 环不会被修复：根据它与瓦片的相交情况，要么原样输出 (仍然无效) ，要么被丢弃为 `NULL`。例如，完全位于瓦片内的蝴蝶结形会被丢弃，而将相同的四个角按简单环的顺序连接时则会被保留：
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-* **Geometry 会先被裁剪，再舍入到整数像素网格。** PostGIS 会先将几何对象贴合到整数像素网格上，再进行裁剪；`MVTEncodeGeom` 则是先裁剪 (在浮点投影坐标上) ，再进行舍入。在靠近瓦片边缘时，这可能会丢掉原本会被舍入到边界像素上的坐标。例如，当 `buffer = 0` 时，位于瓦片边缘正东侧的一个点会被裁剪掉，尽管它会被舍入到边缘像素 `4096`，而先舍入的方法会保留它：
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```
