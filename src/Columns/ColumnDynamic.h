@@ -79,13 +79,10 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
     static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// Per the doc comment above, the underlying variant column may be shared.
-        /// `assumeMutable` here would `chassert(use_count() == 1)` and abort. Bypass via
-        /// `const_cast` + `getPtr` — equivalent to the old `assumeMutable` fast path. The
-        /// result is returned as `Ptr` (immutable), and any mutation must go through
-        /// `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
+        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
+        /// must be deep-unshared here rather than borrowed.
         return ColumnDynamic::create(
-            const_cast<IColumn *>(variant_column_.get())->getPtr(),
+            IColumn::mutate(variant_column_),
             variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 

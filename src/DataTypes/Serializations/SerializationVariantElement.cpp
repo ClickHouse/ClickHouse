@@ -172,6 +172,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         if (!variant_element_state->discriminators || result_column->empty())
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
 
+        /// Sibling variant-element readers may retain the previous state column through the
+        /// substream cache. Keep their accumulated data isolated from this writer.
+        variant_element_state->discriminators = IColumn::mutate(std::move(variant_element_state->discriminators));
+
         size_t prev_size = variant_element_state->discriminators->size();
 
         /// Deserialize discriminators according to serialization mode.

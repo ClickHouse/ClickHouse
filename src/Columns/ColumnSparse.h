@@ -52,8 +52,9 @@ public:
 
     static Ptr create(const ColumnPtr & values_)
     {
-        /// See the rationale above; `values_` may be shared.
-        return Base::create(const_cast<IColumn *>(values_.get())->getPtr());
+        /// The one-argument constructor appends a default value, so unlike the other immutable
+        /// overloads it must not borrow a potentially shared input column.
+        return Base::create(IColumn::mutate(values_));
     }
 
     template <typename TColumnPtr>

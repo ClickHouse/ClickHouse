@@ -595,6 +595,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
+        /// The substream cache and sibling readers can retain this column. Deep-unshare before
+        /// appending or compacting discriminators, then keep the cache entry on the old column.
+        auto & discriminators_ptr = col.getLocalDiscriminatorsPtr();
+        discriminators_ptr = IColumn::mutate(std::move(discriminators_ptr));
         size_t prev_size = col.getLocalDiscriminatorsPtr()->size();
 
         /// Deserialize discriminators according to serialization mode.

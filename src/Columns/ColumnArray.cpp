@@ -39,18 +39,12 @@ namespace
     /// shared with another owner.
     void filterNestedInPlaceOrReplace(ColumnPtr & nested, const IColumn::Filter & filt)
     {
-        if (nested->use_count() > 1)
-        {
-            /// Keep the original pointer intact until the replacement is fully ready,
-            /// so an exception inside `filter` leaves `nested` valid rather than moved-from.
-            auto cloned = IColumn::mutate(nested);
-            cloned->filter(filt);
-            nested = std::move(cloned);
-        }
-        else
-        {
-            const_cast<IColumn *>(nested.get())->filter(filt);
-        }
+        /// A unique wrapper can still have shared subcolumns, so always use the deep COW path.
+        /// Keep the original pointer intact until the replacement is fully ready, so an exception
+        /// inside `filter` leaves `nested` valid rather than moved-from.
+        auto cloned = IColumn::mutate(nested);
+        cloned->filter(filt);
+        nested = std::move(cloned);
     }
 }
 
