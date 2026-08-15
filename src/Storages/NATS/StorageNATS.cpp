@@ -963,8 +963,15 @@ void resolveCredentialSource(
     if (credentials_assigned_by_query && named_collection)
     {
         /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
-        /// file path, but otherwise they are either a same-key override or a new key.
-        const auto * key = named_collection->has("nats_credentials") || !named_collection->has("nats_credential_file")
+        /// file path, but otherwise they are either a same-key override or a new key. The collection
+        /// has already been mutated by the engine-argument override, so use its pre-override state.
+        const auto is_defined_in_collection = [&](const std::string & key)
+        {
+            return named_collection->isQueryOverridden(key)
+                ? named_collection->getValueBeforeQueryOverride(key).has_value()
+                : named_collection->has(key);
+        };
+        const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
             ? "nats_credentials"
             : "nats_credential_file";
         const bool default_value = std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default;
