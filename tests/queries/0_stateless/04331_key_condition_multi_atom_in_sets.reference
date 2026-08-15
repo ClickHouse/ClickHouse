@@ -63,12 +63,14 @@ SELECT count() FROM test_in_main WHERE has([toDateTime('2026-03-31 06:00:00', 'U
 2
 -- Empty sets on the multi-expression key.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+Keys:
+Parts: 0/1
+Granules: 0/24
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 0-element set), and((toYYYYMM(ts) in 0-element set), (ts in 0-element set)))
-Parts: 0/1
-Granules: 0/24
-Search Algorithm: generic exclusion search
+Parts: 0/0
+Granules: 0/0
 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0);
 0
 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

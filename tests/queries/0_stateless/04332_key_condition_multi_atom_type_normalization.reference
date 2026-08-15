@@ -115,12 +115,14 @@ SELECT count() FROM test_tn_int8 WHERE k < 1000 SETTINGS force_primary_key = 1;
 SELECT count() FROM test_tn_int8 WHERE k < 1000 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 11
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tn_int8 WHERE k = 1000) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+Keys:
+Parts: 0/1
+Granules: 0/11
 PrimaryKey
 Keys:
 Condition: (k in [1000, 1000])
-Parts: 0/1
-Granules: 0/11
-Search Algorithm: binary search
+Parts: 0/0
+Granules: 0/0
 SELECT count() FROM test_tn_int8 WHERE k = 1000 SETTINGS force_primary_key = 1;
 0
 SELECT count() FROM test_tn_int8 WHERE k = 1000 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
@@ -284,10 +286,13 @@ ORDER BY toDate(ts64)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_tn_overflow SELECT toDateTime64('2026-03-01 00:00:00', 3, 'UTC') + INTERVAL number DAY FROM numbers(4);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tn_overflow WHERE ts64 > toDateTime64('2200-01-01 00:00:00', 3, 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+Keys:
+Parts: 0/1
+Granules: 0/4
 PrimaryKey
 Condition: true
-Parts: 1/1
-Granules: 4/4
+Parts: 0/0
+Granules: 0/0
 SELECT count() FROM test_tn_overflow WHERE ts64 > toDateTime64('2200-01-01 00:00:00', 3, 'UTC');
 0
 SELECT count() FROM test_tn_overflow WHERE ts64 > toDateTime64('2200-01-01 00:00:00', 3, 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
