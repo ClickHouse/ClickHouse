@@ -93,6 +93,17 @@ expect -- ":) "
 send -- "exit\r"
 expect eof
 
+# `clickhouse-local` also recognizes the command in noninteractive scripts and
+# parses the following SQL chunk with the newly selected dialect.
+set queries_file "$CLICKHOUSE_TMP/$basename.queries"
+set fp [open $queries_file w]
+puts $fp "/dialect prql\nfrom s\"SELECT * FROM numbers(1)\""
+close $fp
+spawn bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_prql_dialect=1 --queries-file=$queries_file"
+expect -- "0"
+expect eof
+file delete $queries_file
+
 # A custom prompt does not have to contain the {display_name} placeholder:
 # the active dialect is appended to it anyway.
 spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --prompt 'custom-prompt>'"

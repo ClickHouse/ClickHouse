@@ -38,6 +38,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/quoteString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
@@ -3596,6 +3597,56 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
+    /// `clickhouse-local` accepts client meta-commands in noninteractive input. Split standalone
+    /// dialect-command lines from a script before feeding the surrounding SQL to the multiquery
+    /// parser, because the latter necessarily parses a whole input chunk with one dialect.
+    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n'))
+    {
+        const auto is_dialect_command = [](std::string_view line)
+        {
+            const auto trimmed_line = trim(String(line), [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+            for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
+            {
+                if (boost::iequals(trimmed_line, prefix)
+                    || (trimmed_line.size() > prefix.size() && boost::istarts_with(trimmed_line, prefix)
+                        && isWhitespaceASCII(trimmed_line[prefix.size()])))
+                    return true;
+            }
+            return false;
+        };
+
+        String sql_chunk;
+        size_t line_begin = 0;
+        while (line_begin < text.size())
+        {
+            const size_t line_end = text.find('\n', line_begin);
+            const size_t line_size = (line_end == String::npos ? text.size() : line_end) - line_begin;
+            const std::string_view line{text.data() + line_begin, line_size};
+
+            if (is_dialect_command(line))
+            {
+                if (!sql_chunk.empty() && !executeMultiQuery(sql_chunk))
+                    return false;
+                sql_chunk.clear();
+
+                if (!processQueryText(String(line)))
+                    return false;
+            }
+            else
+            {
+                sql_chunk.append(line);
+                if (line_end != String::npos)
+                    sql_chunk += '\n';
+            }
+
+            if (line_end == String::npos)
+                break;
+            line_begin = line_end + 1;
+        }
+
+        return sql_chunk.empty() || executeMultiQuery(sql_chunk);
+    }
+
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
     if (exit_strings.contains(trimmed_input))
@@ -3720,7 +3771,13 @@ bool ClientBase::processQueryText(const String & text)
             try
             {
                 const Dialect old_dialect = client_context->getSettingsRef()[Setting::dialect];
-                client_context->setSetting("dialect", *dialect_name);
+                /// Execute the equivalent SQL through the normal query path. Besides validating the
+                /// value, this lets the server enforce query-setting constraints. The normal SET
+                /// bookkeeping persists the setting only after a successful exchange, so a rejected
+                /// command leaves the prompt and parser on the previous dialect.
+                if (!processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name)))
+                    return true;
+
                 const Dialect new_dialect = client_context->getSettingsRef()[Setting::dialect];
                 if (old_dialect != new_dialect && (old_dialect == Dialect::kusto || new_dialect == Dialect::kusto))
                     kqlLetBindingsClear();
