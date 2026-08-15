@@ -19,7 +19,24 @@ def started_cluster():
 
 def test_cache_size(started_cluster):
     table_name = "test_aligned_cache_size_s3"
-    cache_path = '/tmp/s3_aligned_cache'
+
+    def expected_cache_size():
+        block_size = int(
+            node.exec_in_container(
+                ["bash", "-c", "stat -f -c %S /tmp/s3_aligned_cache"],
+                privileged=True,
+                user="root",
+            ).strip()
+        )
+        return int(
+            node.query(
+                f"""
+                    SELECT sum(intDiv(downloaded_size + {block_size} - 1, {block_size}) * {block_size})
+                    FROM system.filesystem_cache
+                    WHERE cache_name = 'aligned_cache'
+                """
+            ).strip()
+        )
 
     # drop full cache to count cache size later correctly
     node.query(
@@ -70,7 +87,7 @@ def test_cache_size(started_cluster):
             SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize';
         """
     )
-    assert int(cache_size) == node.get_cache_size(cache_path)
+    assert int(cache_size) == expected_cache_size()
 
     node.restart_clickhouse()
 
@@ -80,7 +97,7 @@ def test_cache_size(started_cluster):
         """
     )
 
-    assert int(cache_size) == node.get_cache_size(cache_path)
+    assert int(cache_size) == expected_cache_size()
 
 
 def test_aligned_cache_sub_block_write(started_cluster):
