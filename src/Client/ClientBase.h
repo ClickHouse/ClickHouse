@@ -323,7 +323,7 @@ private:
 
     String getPrompt() const;
 
-    void resetOutput();
+    void resetOutput(std::optional<Int32> signals_before_teardown = {});
 
     void updateSuggest(const ASTPtr & ast);
 

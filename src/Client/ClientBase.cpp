@@ -2157,11 +2157,20 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             if (!receiveAndProcessPacket(parsed_query, cancelled))
                 break;
         }
-        catch (const LocalFormatError &)
+        catch (const LocalFormatError & e)
         {
             /// Remember the first exception.
             if (!local_format_error)
                 local_format_error = std::current_exception();
+
+            /// Failing to open the primary INTO OUTFILE sink after an interrupt is a hard local
+            /// cancellation. In particular, with partial_result_on_first_cancel the first signal
+            /// would otherwise only send the stage-one Cancel and onEndOfStream() would still run
+            /// the success epilogue despite there being no result sink left to receive that partial
+            /// result.
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                cancelled = true;
+
             sendCancel(std::current_exception());
         }
     }
@@ -2279,6 +2288,12 @@ void ClientBase::onEndOfStream()
     /// losing its temporary tables, current database and session settings.
     connection_needs_resynchronization = false;
 
+    /// resetOutput() must distinguish an interrupt received while the EndOfStream teardown is
+    /// flushing its footer from an earlier partial-result interrupt. Take this before the first
+    /// teardown write: output_format->finalize() below runs before resetOutput() and can itself
+    /// block on a pager or stdout sink.
+    const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -2310,7 +2325,7 @@ void ClientBase::onEndOfStream()
         }
     }
 
-    resetOutput();
+    resetOutput(signals_before_teardown);
 
     if (is_interactive)
     {
@@ -2444,7 +2459,7 @@ void ClientBase::onProfileEvents(Block & block)
 
 
 /// Flush all buffers.
-void ClientBase::resetOutput()
+void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
 {
     /// When resetOutput() runs as the outer teardown in processParsedSingleQuery(), the interrupt
     /// handler is already stopped (its SCOPE_EXIT in processOrdinaryQuery()/processInsertQuery()
@@ -2524,7 +2539,7 @@ void ClientBase::resetOutput()
     /// Take the baseline of already-received interrupt signals before the flushes start: from here
     /// on, *any* additional signal has to stop the teardown immediately, even when the query is not
     /// fully cancelled yet under `partial_result_on_first_cancel`. See the latch below.
-    const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
+    const Int32 teardown_signal_baseline = signals_before_teardown.value_or(query_interrupt_handler.receivedSignalCount());
     if (std_out)
         armResponsiveOutput(*std_out);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
@@ -2590,7 +2605,7 @@ void ClientBase::resetOutput()
     /// A signal received *during* the teardown counts even when it does not exhaust the signal
     /// budget: the responsive write path already gave up on it, and no stage-one `Cancel` can be
     /// sent from here anymore, so waiting for a second Ctrl+C would leave the client stuck.
-    if (!cancelled && query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown))
+    if (!cancelled && query_interrupt_handler.cancelledOrInterruptedSince(teardown_signal_baseline))
         cancelled = true;
 
     if (pager_cmd)
@@ -2607,7 +2622,7 @@ void ClientBase::resetOutput()
         /// its first iteration, so no separate pre-wait re-check is needed.
         while (!cancelled && !pager_cmd->waitIfProccesTerminated())
         {
-            if (query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown))
+            if (query_interrupt_handler.cancelledOrInterruptedSince(teardown_signal_baseline))
             {
                 cancelled = true;
                 break;

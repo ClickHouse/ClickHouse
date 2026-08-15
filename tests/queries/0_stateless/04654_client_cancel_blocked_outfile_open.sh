@@ -35,6 +35,7 @@ mkfifo "$FIFO"
 QUERY_ID="${CLICKHOUSE_DATABASE}_cancel_blocked_outfile_open"
 
 $CLICKHOUSE_CLIENT --query_id="$QUERY_ID" \
+    --partial_result_on_first_cancel=1 \
     --query "SELECT number, repeat('x', 100) FROM numbers(1000000000)
              INTO OUTFILE '$FIFO' APPEND FORMAT TabSeparated
              SETTINGS max_block_size = 8192, max_threads = 1, max_memory_usage = 0,
