@@ -33,7 +33,7 @@ private:
     datasketches::target_hll_type type;
     /// Whether lg_k / type were given explicitly as parameters. When omitted, the merge must not
     /// silently degrade input sketches to the defaults: precision is preserved by the union and
-    /// the output representation is inferred from the first non-empty input sketch.
+    /// the output representation is inferred deterministically from all non-empty input sketches.
     bool lg_k_explicit;
     bool type_explicit;
 

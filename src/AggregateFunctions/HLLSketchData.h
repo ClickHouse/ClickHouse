@@ -30,7 +30,7 @@ private:
     /// When they were not, the union must not degrade input sketches to the default precision:
     /// it is created with the maximum lg_k (an `hll_union` adapts downward to the smallest lg_k
     /// among its inputs, so this preserves each input sketch's precision), and the output
-    /// representation is inferred from the first non-empty input sketch.
+    /// representation is inferred deterministically from all non-empty input sketches.
     bool lg_k_explicit;
     bool type_explicit;
 
@@ -51,10 +51,7 @@ private:
     void adoptTypeFrom(const datasketches::hll_sketch & sk)
     {
         if (!type_explicit && !sk.is_empty())
-        {
-            type = sk.get_target_type();
-            type_explicit = true;
-        }
+            type = std::max(type, sk.get_target_type());
     }
 
 public:
@@ -78,34 +75,35 @@ public:
         getHLLUpdate()->update(value.data(), value.size());
     }
 
-    void insert(Key value)
+    template <typename Value>
+    void insert(Value value)
     {
         /// DataSketches hll_sketch supports a limited set of primitive overloads.
         /// Types without a DataSketches-compatible encoding (e.g. Int256) are rejected
         /// by `serializedHLL` up front; the raw-bytes branch below remains only for
         /// template instantiations that are never reached from interoperable sketches.
-        if constexpr (std::is_same_v<Key, BFloat16>)
+        if constexpr (std::is_same_v<Value, BFloat16>)
         {
             getHLLUpdate()->update(static_cast<float>(value));
         }
-        else if constexpr (std::is_floating_point_v<Key>)
+        else if constexpr (std::is_floating_point_v<Value>)
         {
             getHLLUpdate()->update(static_cast<double>(value));
         }
-        else if constexpr (std::is_integral_v<Key> && sizeof(Key) <= sizeof(UInt64))
+        else if constexpr (std::is_integral_v<Value> && sizeof(Value) <= sizeof(UInt64))
         {
             /// Dispatch to the width-matching DataSketches overload. This is required for
             /// interoperability: DataSketches hashes uint8/16/32 through the same-width signed
             /// type (sign-extending it to int64), so widening them to UInt64 here would produce
             /// sketches incompatible with native DataSketches producers for values above the
             /// signed range of the type.
-            if constexpr (std::is_signed_v<Key>)
+            if constexpr (std::is_signed_v<Value>)
                 getHLLUpdate()->update(static_cast<Int64>(value));
-            else if constexpr (sizeof(Key) == 1)
+            else if constexpr (sizeof(Value) == 1)
                 getHLLUpdate()->update(static_cast<uint8_t>(value));
-            else if constexpr (sizeof(Key) == 2)
+            else if constexpr (sizeof(Value) == 2)
                 getHLLUpdate()->update(static_cast<uint16_t>(value));
-            else if constexpr (sizeof(Key) == 4)
+            else if constexpr (sizeof(Value) == 4)
                 getHLLUpdate()->update(static_cast<uint32_t>(value));
             else
                 getHLLUpdate()->update(static_cast<uint64_t>(value));
@@ -165,11 +163,8 @@ public:
 
     void merge(const HLLSketchData & rhs)
     {
-        if (!type_explicit && rhs.type_explicit)
-        {
-            type = rhs.type;
-            type_explicit = true;
-        }
+        if (!type_explicit)
+            type = std::max(type, rhs.type);
 
         /// Do not materialize a union when the other state holds no data. Otherwise a group
         /// consisting only of logically empty states would return a serialized empty sketch

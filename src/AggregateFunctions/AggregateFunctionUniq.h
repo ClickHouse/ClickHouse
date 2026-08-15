@@ -369,7 +369,10 @@ struct Adder
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqHLLData>)
         {
             const auto & column = *columns[0];
-            data.set.insertOriginal(column.getDataAt(row_num));
+            if constexpr (std::is_same_v<T, std::string_view>)
+                data.set.insertOriginal(column.getDataAt(row_num));
+            else
+                data.set.insert(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_num));
         }
 #endif
         else
