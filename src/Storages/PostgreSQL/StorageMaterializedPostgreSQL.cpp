@@ -321,6 +321,21 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
 }
 
 
+void StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently() const
+{
+    /// `DETACH TABLE ... PERMANENTLY` is the supported per-table removal operation for a plain
+    /// MaterializedPostgreSQL database. It must pass this pre-shutdown check and is handled by
+    /// `DatabaseMaterializedPostgreSQL::detachTablePermanently` after `flushAndShutdown`.
+    if (!is_coordinated)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+        "(materialized_postgresql_keeper_path is set). "
+        "Recreate the database with an updated materialized_postgresql_tables_list instead");
+}
+
+
 void StorageMaterializedPostgreSQL::checkTableCanBeDropped(ContextPtr /* query_context */) const
 {
     /// In a coordinated MaterializedPostgreSQL database, dropping (or truncating) an individual nested

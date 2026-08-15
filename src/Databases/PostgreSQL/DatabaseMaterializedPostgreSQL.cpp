@@ -845,11 +845,12 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             }
             else
             {
-                /// Degraded fallback: the table is out of replication and the nested table could not be
-                /// dropped. The committed tables-list already matches the publication, so keep it, and
-                /// unpublish the wrapper so the database stops claiming a table that no longer replicates.
-                std::lock_guard tables_lock(tables_mutex);
-                materialized_tables.erase(table_name);
+                /// Keep the wrapper published. The nested table still exists, and removing its wrapper
+                /// would strand it: a subsequent `DETACH TABLE ... PERMANENTLY` could no longer find it,
+                /// while `ATTACH TABLE` would collide with its physical metadata. The tables-list now
+                /// matches the publication, and `removeTableFromReplication` is idempotent when the
+                /// table is already absent from that publication, so after the transient re-add failure
+                /// is resolved the user can retry this detach and remove the nested table cleanly.
             }
 
             e.addMessage("while dropping the nested table of detached table `" + table_name + "`");

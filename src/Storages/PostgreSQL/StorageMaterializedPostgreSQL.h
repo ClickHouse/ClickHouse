@@ -91,6 +91,7 @@ public:
     /// Refuse DETACH here, before `InterpreterDropQuery` calls `flushAndShutdown` on the table, so a
     /// rejected DETACH stays a true no-op and does not stop replication of the nested table.
     void checkTableCanBeDetached() const override;
+    void checkTableCanBeDetachedPermanently() const override;
 
     /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
     /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the
