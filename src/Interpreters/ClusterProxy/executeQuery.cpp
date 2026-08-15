@@ -920,6 +920,22 @@ private:
         if (!storage)
             return;
 
+        if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
+        {
+            /// The same catalog `Merge` table can occur under several table expressions, and each
+            /// expression needs its own snapshot when a serialized plan is re-planned on a replica.
+            /// Freshness checks remain deduplicated below, because they are keyed by child table.
+            merge_child_table_sets.push_back(
+                MergeChildTableSet{mergeChildTableSetKey(table_expression), merge_storage->getChildTableNames(context)});
+
+            if (!visited_storages.insert(storage.get()).second)
+                return;
+
+            auto child_tables = merge_storage->getReplicatedChildTableNames(context);
+            tables.insert(child_tables.begin(), child_tables.end());
+            return;
+        }
+
         /// A view can reference another view; guard against revisiting (and against reference cycles).
         /// The guard is keyed by object identity, not by storage id: every storage created by a table
         /// function carries the same synthetic id (e.g. `_table_function.merge`), so two `merge()`
@@ -928,14 +944,7 @@ private:
         if (!visited_storages.insert(storage.get()).second)
             return;
 
-        if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
-        {
-            auto child_tables = merge_storage->getReplicatedChildTableNames(context);
-            tables.insert(child_tables.begin(), child_tables.end());
-            merge_child_table_sets.push_back(
-                MergeChildTableSet{mergeChildTableSetKey(table_expression), merge_storage->getChildTableNames(context)});
-        }
-        else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
+        if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
         {
             /// Reading from a materialized view reads from its target table.
             visitStorage(materialized_view->tryGetTargetTable(), nullptr);
