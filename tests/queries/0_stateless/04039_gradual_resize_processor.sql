@@ -21,7 +21,11 @@ ORDER BY k;
 
 -- Verify EXPLAIN PIPELINE shows GradualResize processor
 DROP TABLE IF EXISTS test_gradual_resize;
-CREATE TABLE test_gradual_resize (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 256;
+CREATE TABLE test_gradual_resize (k UInt64, v UInt64) ENGINE = MergeTree
+PARTITION BY k
+ORDER BY k
+SETTINGS index_granularity = 256;
+SYSTEM STOP MERGES test_gradual_resize;
 INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(1000000);
 
 SET min_rows_per_stream_for_gradual_resize = 1000;
