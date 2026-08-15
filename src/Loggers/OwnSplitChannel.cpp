@@ -322,17 +322,10 @@ void OwnAsyncSplitChannel::closeAndJoinThreads()
 {
     is_open = false;
 
-    /// A producer that already saw `is_open` needs to recheck it after registering here. Wait for
-    /// every producer which passed that recheck before the consumers take their final drain.
-    /// Producers arriving after `is_open` became false deliver synchronously instead.
-    size_t active = active_async_loggers.load(std::memory_order_seq_cst);
-    while (active != 0)
-    {
-        active_async_loggers.wait(active, std::memory_order_seq_cst);
-        active = active_async_loggers.load(std::memory_order_seq_cst);
-    }
+    waitForActiveAsyncLoggers();
 
-    /// The polling consumers see is_open == false on their own, flush what is left, and exit.
+    /// The polling consumers see is_open == false on their own, wait for the same barrier before
+    /// their final drain, and exit.
     if (text_log_thread)
     {
         text_log_thread->join();
@@ -347,6 +340,19 @@ void OwnAsyncSplitChannel::closeAndJoinThreads()
     }
 
     releaseWaitingFlushers();
+}
+
+void OwnAsyncSplitChannel::waitForActiveAsyncLoggers()
+{
+    /// A producer that already saw `is_open` needs to recheck it after registering here. Wait for
+    /// every producer which passed that recheck before the consumers take their final drain.
+    /// Producers arriving after `is_open` became false deliver synchronously instead.
+    size_t active = active_async_loggers.load(std::memory_order_seq_cst);
+    while (active != 0)
+    {
+        active_async_loggers.wait(active, std::memory_order_seq_cst);
+        active = active_async_loggers.load(std::memory_order_seq_cst);
+    }
 }
 
 void OwnAsyncSplitChannel::releaseWaitingFlushers()
@@ -628,7 +634,12 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     try
     {
-        /// Flush everything before closing and report the drops which were not reported yet
+        /// A producer can have passed the second `is_open` check before close flipped the flag.
+        /// Do not sample the final queue boundary until all such producers have published, or its
+        /// message could be enqueued after this consumer exits.
+        waitForActiveAsyncLoggers();
+
+        /// Flush everything before closing and report the drops which were not reported yet.
         flush_queue();
         report_dropped_messages();
     }
@@ -735,6 +746,10 @@ void OwnAsyncSplitChannel::runTextLog()
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
             return;
+
+        /// See `runChannel`: the final queue boundary must be sampled only after every producer
+        /// which entered the asynchronous path before close has finished publishing.
+        waitForActiveAsyncLoggers();
 
         const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
         flush_queue(text_log_locked);
