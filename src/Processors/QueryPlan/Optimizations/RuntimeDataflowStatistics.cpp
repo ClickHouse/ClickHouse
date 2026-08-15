@@ -374,7 +374,8 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     return counter % 5 == 0 && counter < 25;
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols)
+void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
+    Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes)
 {
     Stopwatch watch;
 
@@ -479,14 +480,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     }
 
     std::lock_guard lock(statistics.mutex);
-    size_t block_bytes = plain_bytes;
+    /// `full_bytes` is an exact size supplied by aggregation, so preserve it over the estimate below.
+    size_t block_bytes = full_bytes.value_or(plain_bytes);
     if (serialize_states)
     {
         statistics.serialized_state_bytes += serialized_state_bytes;
         statistics.serialized_state_rows += num_rows;
-        block_bytes += serialized_state_bytes;
+        if (!full_bytes)
+            block_bytes += serialized_state_bytes;
     }
-    else if (has_aggregate_states)
+    else if (has_aggregate_states && !full_bytes)
     {
         /// Every block of one statistics stream has the same layout, so the block's rows are a sound base
         /// for the per-row figure even when the block holds several aggregate-state columns.
@@ -547,6 +550,17 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
     recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes)
+{
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
