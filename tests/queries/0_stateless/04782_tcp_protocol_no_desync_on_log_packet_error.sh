@@ -68,12 +68,15 @@ ${CLICKHOUSE_CLIENT} -q \
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT tcp_handler_throw_memory_limit_in_table_columns"
 
-echo '1' | ${CLICKHOUSE_CLIENT} --receive_timeout=30 -q \
+# send_logs_level=none: the runner enables server logs by default, and the log packet carrying
+# this same error would match the token below on its own, so the assertion would hold even if the
+# Exception packet never arrived.
+echo '1' | ${CLICKHOUSE_CLIENT} --send_logs_level=none --receive_timeout=30 -q \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.insert_handshake (a) FORMAT CSV" 2>&1 \
     | grep -aoE 'MEMORY_LIMIT_EXCEEDED|CANNOT_PARSE_INPUT_ASSERTION_FAILED|Unrecognized token' | sort -u
 
 # input() takes the other sendTableColumns call site, reached through the query pipeline.
-echo '1' | ${CLICKHOUSE_CLIENT} --receive_timeout=30 -q \
+echo '1' | ${CLICKHOUSE_CLIENT} --send_logs_level=none --receive_timeout=30 -q \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.insert_handshake (a) SELECT * FROM input('a UInt64') FORMAT CSV" 2>&1 \
     | grep -aoE 'MEMORY_LIMIT_EXCEEDED|CANNOT_PARSE_INPUT_ASSERTION_FAILED|Unrecognized token' | sort -u
 
