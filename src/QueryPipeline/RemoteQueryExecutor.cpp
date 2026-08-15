@@ -673,11 +673,23 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             throw;
         }
 
+        bool cancel_delegated_to_reader = false;
         {
             LockAndBlocker lock(was_cancelled_mutex);
             sync_read_in_progress = false;
 
-            if (!drain_requested)
+            /// A hard cancellation cannot send `Cancel` while this thread is inside
+            /// `receivePacket`: `MultiplexedConnections` and `HedgedConnections` hold their
+            /// internal cancel mutex across the blocking receive. `cancelUnlocked` delegates
+            /// that send to us, so perform it after releasing `was_cancelled_mutex` instead of
+            /// making the cancelling thread wait for a remote packet or `receive_timeout`.
+            if (cancel_requested)
+            {
+                cancel_requested = false;
+                cancel_delegated_to_reader = true;
+            }
+
+            if (!cancel_delegated_to_reader && !drain_requested)
             {
                 if (was_cancelled)
                     return ReadResult(Block());
@@ -695,6 +707,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             /// the packet we already hold the way the drain loop would.
             drain_requested = false;
             draining = true;
+        }
+
+        if (cancel_delegated_to_reader)
+        {
+            connections->sendCancel();
+            LOG_TRACE(log, "({}) Cancelling query", connections->dumpAddresses());
+            return ReadResult(Block());
         }
 
         /// `finish` could not send the `Cancel` packet itself: this thread was holding the
@@ -1363,6 +1382,22 @@ void RemoteQueryExecutor::cancelUnlocked()
 
     if (finished || hasThrownException())
         return;
+
+    /// The synchronous `read` path can be blocked in `receivePacket` on another thread. It owns
+    /// the connections' internal cancel mutex for that whole call, so calling `tryCancel` here
+    /// would make the hard-cancelling thread wait for the next packet or `receive_timeout`.
+    /// Delegate only the `Cancel` send to the reader. Unlike `finish`, no drain is requested:
+    /// hard cancellation must return promptly and ignore the remaining packets.
+    if (sync_read_in_progress)
+    {
+        was_cancelled = true;
+
+        if (read_context)
+            read_context->cancel();
+
+        cancel_requested = true;
+        return;
+    }
 
     tryCancel("Cancelling query");
 }

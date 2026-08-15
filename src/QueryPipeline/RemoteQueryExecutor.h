@@ -350,6 +350,14 @@ private:
       */
     bool drain_requested TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
+    /** Set by `cancel` when it observes `sync_read_in_progress`. The `Cancel` send is delegated
+      * to the thread inside `read`, because that thread owns the connections' internal cancel
+      * mutex while blocked in `receivePacket`. Unlike `drain_requested`, this does not start a
+      * drain: a hard cancellation must discard the remaining packets as soon as the pending read
+      * returns.
+      */
+    bool cancel_requested TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
     /** Set by `abortDrain` to make `finish`'s drain loop exit early when a
       * concurrent hard cancellation arrives. The drain loop checks this atomic
       * after each packet so the hard cancel does not have to wait for the full
