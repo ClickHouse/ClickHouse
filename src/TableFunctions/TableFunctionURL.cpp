@@ -475,10 +475,11 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                 filename);
 
-        /// INSERT-time inference must not attempt index-page listing; it falls through to the
-        /// literal-URL probe below instead.
-        if (!is_insert_query
-            && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+        /// No `is_insert_query` condition here: callers overload that flag as "structure is
+        /// required" (e.g. InterpreterDescribeQuery passes true for DESCRIBE), so it cannot
+        /// discriminate real INSERTs. POST is rejected above; GET/PUT inference lists index
+        /// pages exactly as reads do.
+        if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
             && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
