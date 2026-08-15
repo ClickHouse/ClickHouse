@@ -1220,9 +1220,8 @@ try
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
     initClientContext(Context::createCopy(global_context));
-    /// Command-line settings are private to the local client. In particular, format options must not
-    /// become defaults for sessions accepted by `SYSTEM START LISTEN`.
     applyCmdSettings(client_context);
+    makeFormatOptionsPrivateToTheClient();
     if (!query_id.empty())
         client_context->setCurrentQueryId(query_id);
     /// Note, QueryScope will be initialized in the LocalConnection
@@ -1656,6 +1655,15 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
+    /// Command-line parameters can override settings from the default profile.
+    ///
+    /// They must land on the *global* context, not only on `client_context`: `LocalConnection`
+    /// rebuilds the query context from the session (which inherits the global context) for every
+    /// query and deliberately ignores the settings the client passes to `sendQuery`, so a setting
+    /// applied only to `client_context` would never reach `executeQuery`. The format options are
+    /// taken back out below, once `client_context` exists.
+    applyCmdSettings(global_context);
+
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
@@ -1864,6 +1872,26 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 }
 
 
+void LocalServer::makeFormatOptionsPrivateToTheClient()
+{
+    /// `--format` / `--input-format` / `--output-format` (and their config-file equivalents) describe
+    /// how *this* client reads its input and prints its results. They are mirrored into the `format` /
+    /// `input_format` / `output_format` settings so they travel with every query, which is what the
+    /// local client needs - but `global_context` is also inherited by the sessions of the embedded
+    /// protocol listeners (`SYSTEM START LISTEN`), and there they would become strong per-request
+    /// overrides: a remote client asking for `?default_format=JSON` would still be answered in the
+    /// local CLI's format. So keep them on `client_context` only. The local display default is still
+    /// offered to those sessions, but only through the weaker `default_format` fallback that
+    /// `applyCmdOptions` sets.
+    ///
+    /// Only the values this client itself chose are cleared; a `format` inherited from a profile is
+    /// left alone, because there it is a deliberate server-side default.
+    for (std::string_view name : {"format", "input_format", "output_format"})
+        if (cmd_settings->isChanged(name))
+            global_context->setSetting(name, String{});
+}
+
+
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
     /// Set the local display default as the first-class `default_format` *setting*, not the legacy
@@ -1884,6 +1912,11 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// terminal default is only for rendering query results and is applied separately via
     /// `ClientBase::default_output_format`.
     context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+
+    /// This runs before `setDefaultProfiles`, which snapshots the context for the separate Buffer-table
+    /// context, so the command-line settings have to be in place already. They are applied a second
+    /// time after the profiles are loaded, where they get to override them.
+    applyCmdSettings(context);
 }
 
 
