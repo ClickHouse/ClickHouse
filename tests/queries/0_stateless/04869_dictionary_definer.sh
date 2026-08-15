@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database
 
+# Arms asserting on an error message fold stderr into stdout, where the server's forwarded log
+# record of the same error would appear as a second copy of it.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
