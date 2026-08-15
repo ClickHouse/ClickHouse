@@ -159,16 +159,23 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
     /// zlib takes buffer sizes as `uInt`, so feed the page in chunks if it is bigger than that.
     static constexpr size_t max_chunk = std::numeric_limits<uInt>::max();
     const auto * in_end = reinterpret_cast<const unsigned char *>(data) + compressed_size;
-    auto * out_end = reinterpret_cast<unsigned char *>(out) + uncompressed_size;
+    auto * const out_begin = reinterpret_cast<unsigned char *>(out);
+    auto * const out_end = out_begin + uncompressed_size;
+    /// `inflate` requires a non-empty output buffer even for an empty member. Keep a one-byte
+    /// scratch buffer in that case: filling it proves that the page expands to more bytes than
+    /// declared, while leaving it untouched still lets `inflate` validate the gzip trailer.
+    unsigned char empty_out;
+    auto * const zlib_out_begin = uncompressed_size == 0 ? &empty_out : out_begin;
+    auto * const zlib_out_end = uncompressed_size == 0 ? &empty_out + 1 : out_end;
     zstr.next_in = reinterpret_cast<unsigned char *>(const_cast<char *>(data));
-    zstr.next_out = reinterpret_cast<unsigned char *>(out);
+    zstr.next_out = zlib_out_begin;
 
     while (true)
     {
         if (zstr.avail_in == 0)
             zstr.avail_in = static_cast<uInt>(std::min<size_t>(in_end - zstr.next_in, max_chunk));
         if (zstr.avail_out == 0)
-            zstr.avail_out = static_cast<uInt>(std::min<size_t>(out_end - zstr.next_out, max_chunk));
+            zstr.avail_out = static_cast<uInt>(std::min<size_t>(zlib_out_end - zstr.next_out, max_chunk));
 
         const auto * prev_in = zstr.next_in;
         const auto * prev_out = zstr.next_out;
@@ -178,12 +185,15 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
         {
             /// The trailer of this member is verified. If the page produced everything it promised,
             /// whatever is left in it is padding and is not our business.
-            if (zstr.next_out == out_end)
+            if (zstr.next_out == zlib_out_begin + uncompressed_size)
                 return;
+            if (zstr.next_out == zlib_out_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
             if (zstr.next_in == in_end)
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                     "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
-                    uncompressed_size, zstr.next_out - reinterpret_cast<unsigned char *>(out));
+                    uncompressed_size, zstr.next_out - zlib_out_begin);
 
             rc = inflateReset(&zstr);
             if (rc != Z_OK)
@@ -198,12 +208,12 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
         {
             /// No progress: either the output is full while the stream continues, or the page ended
             /// in the middle of a member.
-            if (zstr.next_out == out_end)
+            if (zstr.next_out == zlib_out_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
-                uncompressed_size, zstr.next_out - reinterpret_cast<unsigned char *>(out));
+                uncompressed_size, zstr.next_out - zlib_out_begin);
         }
     }
 }
