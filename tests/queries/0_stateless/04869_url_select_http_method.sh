@@ -184,6 +184,6 @@ $CLICKHOUSE_CLIENT -q "
     WHERE event_date >= yesterday()
       AND type = 'QueryFinish'
       AND current_database = currentDatabase()
-      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}', '${TAG_CACHE}', '${TAG_KVORDER}', '${TAG_METHODALIAS}', '${TAG_ALIASCAP}', '${TAG_WINSERT}')
+      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}', '${TAG_CACHE}', '${TAG_KVORDER}', '${TAG_METHODALIAS}', '${TAG_ALIASCAP}', '${TAG_WINSERT}', '${TAG_CLUSTER}')
     GROUP BY log_comment
     ORDER BY log_comment"
