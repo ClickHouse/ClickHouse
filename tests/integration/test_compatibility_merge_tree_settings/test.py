@@ -190,14 +190,15 @@ def test_optimize_row_order_if_no_order_by_compatibility(started_cluster):
     for table in ("t_compat_default", "t_compat_off", "t_compat_on"):
         node_with_compatibility.query(f"DROP TABLE {table} SYNC")
 
-    # Without any compatibility, the default is on, so the same table optimizes the
-    # row order (matching the explicitly enabled setting, differing from disabled).
+    # Without any compatibility, the default remains off, so the table preserves
+    # insertion order (matching the explicitly disabled setting, differing from
+    # the explicitly enabled optimization).
     _create_row_order_table(node, "t_default")
     _create_row_order_table(node, "t_off", "optimize_row_order_if_no_order_by = 0")
     _create_row_order_table(node, "t_on", "optimize_row_order_if_no_order_by = 1")
 
-    assert _on_disk_order(node, "t_default") == _on_disk_order(node, "t_on")
-    assert _on_disk_order(node, "t_default") != _on_disk_order(node, "t_off")
+    assert _on_disk_order(node, "t_default") == _on_disk_order(node, "t_off")
+    assert _on_disk_order(node, "t_default") != _on_disk_order(node, "t_on")
 
     for table in ("t_default", "t_off", "t_on"):
         node.query(f"DROP TABLE {table} SYNC")
