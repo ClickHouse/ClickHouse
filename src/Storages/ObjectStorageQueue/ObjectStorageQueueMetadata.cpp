@@ -221,7 +221,8 @@ void ObjectStorageQueueMetadata::startup()
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     if (!update_registry_thread)
-        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+        update_registry_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this](){ updateRegistryFunc(); });
 
     startup_called = true;
 }

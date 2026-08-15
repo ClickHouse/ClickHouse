@@ -110,7 +110,8 @@ void ZooKeeperReplicator::startWatchingThread()
     {
         try
         {
-            watching_thread = std::make_unique<ThreadFromGlobalPool>(&ZooKeeperReplicator::runWatchingThread, this);
+            watching_thread = std::make_unique<ThreadFromGlobalPool>(
+                ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ZooKeeperReplicator::runWatchingThread, this);
         }
         catch (...)
         {

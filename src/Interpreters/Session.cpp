@@ -128,7 +128,8 @@ public:
             /// Start the cleanup thread before publishing the session: if the thread cannot be started,
             /// the exception must not leave behind a session that will never be auto-closed.
             if (!thread.joinable())
-                thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
+                thread = ThreadFromGlobalPool{
+                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &NamedSessionsStorage::cleanThread, this};
 
             /// Create a new session from current context.
             it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;

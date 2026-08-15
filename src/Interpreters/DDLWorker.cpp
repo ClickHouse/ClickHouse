@@ -158,8 +158,10 @@ void DDLWorker::startup()
     stop_flag = false;
     try
     {
-        main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
-        cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
+        main_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &DDLWorker::runMainThread, this);
+        cleanup_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &DDLWorker::runCleanupThread, this);
     }
     catch (...)
     {

@@ -176,8 +176,8 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, K
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     try
     {
-        request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-        responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+        request_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { requestThread(); });
+        responses_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { responseThread(); });
     }
     catch (...)
     {

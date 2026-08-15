@@ -99,7 +99,8 @@ void UserDefinedSQLObjectsZooKeeperStorage::startWatchingThread()
     {
         try
         {
-            watching_thread = ThreadFromGlobalPool(&UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue, this);
+            watching_thread = ThreadFromGlobalPool(
+                ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue, this);
         }
         catch (...)
         {

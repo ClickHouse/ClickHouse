@@ -1058,6 +1058,7 @@ void CacheMetadata::startup()
             try
             {
                 download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
                     [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
             }
             catch (...)
@@ -1066,7 +1067,8 @@ void CacheMetadata::startup()
                 throw;
             }
         }
-        cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]{ cleanupThreadFunc(); });
+        cleanup_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]{ cleanupThreadFunc(); });
     }
     catch (...)
     {
@@ -1147,6 +1149,7 @@ bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
             try
             {
                 download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
                     [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
             }
             catch (...)

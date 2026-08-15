@@ -3613,11 +3613,14 @@ Changelog::Changelog(
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
 
-        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>([this] { backgroundChangelogOperationsThread(); });
+        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { backgroundChangelogOperationsThread(); });
 
-        write_thread = std::make_unique<ThreadFromGlobalPool>([this] { writeThread(); });
+        write_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { writeThread(); });
 
-        append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
+        append_completion_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { appendCompletionThread(); });
 
         current_writer = std::make_unique<ChangelogWriter>(
             existing_changelogs,

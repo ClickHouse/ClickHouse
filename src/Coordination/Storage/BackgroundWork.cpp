@@ -41,7 +41,7 @@ BackgroundWork::BackgroundWork(StorageState * storage_)
     {
         const size_t num_flush_threads = settings[DB::CoordinationSetting::flush_threads];
         for (size_t i = 0; i < num_flush_threads; ++i)
-            flush_threads.emplace_back([this]
+            flush_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
                 {
                     try
                     {
@@ -56,7 +56,7 @@ BackgroundWork::BackgroundWork(StorageState * storage_)
 
         const size_t num_merge_threads = settings[DB::CoordinationSetting::merge_threads];
         for (size_t i = 0; i < num_merge_threads; ++i)
-            merge_threads.emplace_back([this]
+            merge_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
                 {
                     try
                     {

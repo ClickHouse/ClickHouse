@@ -76,7 +76,8 @@ void WorkloadEntityKeeperStorage::startWatchingThread()
     {
         try
         {
-            watching_thread = ThreadFromGlobalPool(&WorkloadEntityKeeperStorage::processWatchQueue, this);
+            watching_thread = ThreadFromGlobalPool(
+                ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &WorkloadEntityKeeperStorage::processWatchQueue, this);
         }
         catch (...)
         {
