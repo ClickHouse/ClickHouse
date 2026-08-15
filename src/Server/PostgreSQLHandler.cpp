@@ -747,6 +747,18 @@ void PostgreSQLHandler::run()
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
             if (!tcp_server.isOpen())
                 return;
+
+            /// PostgreSQL requires an extended-protocol error to discard all messages through the next
+            /// `Sync`. Keep the connection alive for that recovery point instead of treating an unsupported
+            /// `Bind` parameter as a fatal socket error.
+            if (ignore_extended_query_messages_until_sync
+                && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::SYNC
+                && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE)
+            {
+                message_transport->dropMessage();
+                continue;
+            }
+
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
@@ -1089,7 +1101,16 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         /// `table_name` is already rendered as valid SQL by the parser (each part of a compound
         /// `database.table` name separately backquoted), so it must not be wrapped in backquotes again.
-        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
+        String table_name = copy_query->table_name;
+        /// The emulated catalog relations are temporary views, which ClickHouse exposes only in the
+        /// current database. Accept PostgreSQL's explicit catalog qualification at the wire boundary and
+        /// resolve it to those views, so discovery and the subsequent COPY use the same relation.
+        if (table_name.starts_with("pg_catalog."))
+            table_name.erase(0, sizeof("pg_catalog.") - 1);
+        else if (table_name.starts_with("`pg_catalog`."))
+            table_name.erase(0, sizeof("`pg_catalog`.") - 1);
+
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
 
         String format = toString(copy_query->format);
@@ -1413,8 +1434,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         /// `COPY (query) TO STDOUT` streams the result of an arbitrary query (this is how libpq/pqxx read
         /// result sets); `COPY table TO STDOUT` streams a whole table.
+        String table_name = copy_query->table_name;
+        /// See the corresponding COPY FROM path above.
+        if (table_name.starts_with("pg_catalog."))
+            table_name.erase(0, sizeof("pg_catalog.") - 1);
+        else if (table_name.starts_with("`pg_catalog`."))
+            table_name.erase(0, sizeof("`pg_catalog`.") - 1);
+
         auto select_query = copy_query->subquery.empty()
-            ? fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name)
+            ? fmt::format("SELECT {} FROM {};", columns_to_select, table_name)
             : copy_query->subquery;
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
@@ -1795,7 +1823,7 @@ void PostgreSQLHandler::processBindQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        ignore_extended_query_messages_until_sync = true;
     }
 }
 
@@ -1935,6 +1963,7 @@ void PostgreSQLHandler::processSyncQuery()
         /// (see `attachBindQuery`), so resetting the single bind slot is
         /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
         prepared_statements_manager.resetBindQuery();
+        ignore_extended_query_messages_until_sync = false;
     }
     catch (const Exception & e)
     {

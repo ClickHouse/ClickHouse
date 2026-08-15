@@ -98,17 +98,17 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
         case 3904: return "int4range";
+        case 3905: return "int4multirange";
         case 3906: return "numrange";
-        case 3908: return "tsrange";
-        case 3910: return "tstzrange";
-        case 3912: return "daterange";
+        case 3907: return "nummultirange";
+        case 3910: return "tsrange";
+        case 3911: return "tsmultirange";
+        case 3912: return "tstzrange";
+        case 3913: return "tstzmultirange";
+        case 3914: return "daterange";
+        case 3915: return "datemultirange";
         case 3926: return "int8range";
-        case 4451: return "int4multirange";
-        case 4532: return "nummultirange";
-        case 4533: return "tsmultirange";
-        case 4534: return "tstzmultirange";
-        case 4535: return "datemultirange";
-        case 4536: return "int8multirange";
+        case 3927: return "int8multirange";
         case 40000: return "mood";
 
         /// Array types (element OID + "[]").

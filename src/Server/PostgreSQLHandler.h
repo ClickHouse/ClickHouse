@@ -56,6 +56,7 @@ private:
     Poco::Net::Context::Usage usage [[maybe_unused]];
     int disabled_protocols = 0;
     bool extended_verification = false;
+    bool ignore_extended_query_messages_until_sync = false;
     bool prefer_server_ciphers = false;
     const Poco::Util::LayeredConfiguration & config [[maybe_unused]];
     String prefix [[maybe_unused]];
