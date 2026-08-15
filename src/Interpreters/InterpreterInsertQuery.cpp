@@ -467,14 +467,14 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     const auto & settings = context->getSettingsRef();
 
-    /// The same guard as in `buildInsertPipeline`: an `Alias` destination hides its target's
-    /// dependent-view graph behind the nested `INSERT` each of its sinks runs, so
-    /// `InsertDependenciesBuilder` sees no views here and would keep the `max_insert_threads`
-    /// fan-out - pushing the hidden views concurrently across sibling sinks even though
-    /// `parallel_view_processing` is disabled. Keep such inserts single-stream; the sole nested
-    /// `INSERT` then observes the same settings and serializes its own view graph.
+    /// The same guard as in `buildInsertPipeline`: forwarding destinations hide their target's
+    /// dependent-view graph behind nested `INSERT`s, so `InsertDependenciesBuilder` sees no views
+    /// here and would keep the `max_insert_threads` fan-out - pushing the hidden views concurrently
+    /// across sibling sinks even though `parallel_view_processing` is disabled. Keep such inserts
+    /// single-stream; the nested `INSERT` then observes the same settings and serializes its own
+    /// view graph.
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
-        && InsertDependenciesBuilder::aliasHidesDependentView(table);
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
