@@ -64,9 +64,9 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers (exported as
-#                         ANTHROPIC_API_KEY or OPENAI_API_KEY according to
-#                         --agent). NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for `claude` workers (exported as
+#                         ANTHROPIC_API_KEY). `codex` workers use their configured
+#                         login and reject this option. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
 #   --api-key-file FILE   Read the custom API key from FILE (not shown
 #                         in `ps`). Default: whatever API key or login the
@@ -198,8 +198,9 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for the worker processes. Export the variable used by the
-# selected agent so every worker inherits it.
+# Custom API key for `claude` worker processes. The Codex CLI reads credentials
+# from `CODEX_HOME/auth.json`, so exporting `OPENAI_API_KEY` would not select the
+# requested account and must not silently fall back to an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
@@ -209,7 +210,8 @@ if [[ -n "$API_KEY" ]]; then
     if [[ "$AGENT" == "claude" ]]; then
         export ANTHROPIC_API_KEY="$API_KEY"
     else
-        export OPENAI_API_KEY="$API_KEY"
+        echo "${S}Error: --api-key and --api-key-file are not supported with --agent codex; configure Codex login first${R}" >&2
+        exit 1
     fi
     CUSTOM_KEY=1
 else
@@ -222,6 +224,7 @@ fi
 # ChatGPT subscription usage is not billed per token.
 CODEX_INPUT_PRICE=""
 CODEX_CACHED_INPUT_PRICE=""
+CODEX_CACHE_WRITE_INPUT_PRICE=""
 CODEX_OUTPUT_PRICE=""
 CODEX_LONG_CONTEXT_PRICING=0
 
@@ -229,11 +232,13 @@ configure_codex_pricing()
 {
     case "$MODEL" in
         gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
-            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
-        gpt-5.6-terra|gpt-5.6-terra-*|gpt-5.4|gpt-5.4-20*)
-            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_CACHE_WRITE_INPUT_PRICE=6.25; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.6-terra|gpt-5.6-terra-*)
+            CODEX_INPUT_PRICE=2; CODEX_CACHED_INPUT_PRICE=0.2; CODEX_CACHE_WRITE_INPUT_PRICE=2.5; CODEX_OUTPUT_PRICE=12; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.6-luna|gpt-5.6-luna-*)
-            CODEX_INPUT_PRICE=1; CODEX_CACHED_INPUT_PRICE=0.1; CODEX_OUTPUT_PRICE=6; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=0.2; CODEX_CACHED_INPUT_PRICE=0.02; CODEX_CACHE_WRITE_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=1.2; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.4|gpt-5.4-20*)
+            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5-pro|gpt-5.5-pro-*|gpt-5.4-pro|gpt-5.4-pro-*)
             CODEX_INPUT_PRICE=30; CODEX_CACHED_INPUT_PRICE=30; CODEX_OUTPUT_PRICE=180; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5|gpt-5.5-20*)
@@ -255,17 +260,17 @@ configure_codex_pricing()
 
 estimate_codex_cost()
 {
-    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3"
+    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3" cache_write_input_tokens="$4"
     [[ -n "$CODEX_INPUT_PRICE" ]] || { printf '0'; return; }
-    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" \
-        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v op="$CODEX_OUTPUT_PRICE" \
+    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" -v cwi="$cache_write_input_tokens" \
+        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v cwip="${CODEX_CACHE_WRITE_INPUT_PRICE:-$CODEX_INPUT_PRICE}" -v op="$CODEX_OUTPUT_PRICE" \
         -v long="$CODEX_LONG_CONTEXT_PRICING" '
         BEGIN {
-            uncached = i - ci;
+            uncached = i - ci - cwi;
             if (uncached < 0) uncached = 0;
             input_multiplier = (long && i > 272000) ? 2 : 1;
             output_multiplier = (long && i > 272000) ? 1.5 : 1;
-            printf "%.9f", ((uncached * ip + ci * cip) * input_multiplier + o * op * output_multiplier) / 1000000;
+            printf "%.9f", ((uncached * ip + ci * cip + cwi * cwip) * input_multiplier + o * op * output_multiplier) / 1000000;
         }'
 }
 
@@ -588,11 +593,15 @@ declare -a WORKER_PIDS=()
 stop_workers()
 {
     local roots own_pgid entry pid pgid
-    local -a targets
+    local -a targets active_workers
     local -A target_groups=()
 
-    (( ${#WORKER_PIDS[@]} )) || return 0
-    roots="${WORKER_PIDS[*]}"
+    # `WORKER_PIDS` retains exited child PIDs until `wait` completes. Resolve
+    # roots through the shell's live job table so a recycled PID can never be
+    # mistaken for a worker and signalled during interrupt handling.
+    mapfile -t active_workers < <(jobs -pr)
+    (( ${#active_workers[@]} )) || return 0
+    roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
     # Snapshot the complete descendant tree before sending any signal. Commands
@@ -646,12 +655,8 @@ stop_workers()
         read -r pid pgid <<< "$entry"
         kill -KILL "$pid" 2>/dev/null || true
     done
-    for pid in "${WORKER_PIDS[@]}"; do
-        kill -KILL "$pid" 2>/dev/null || true
-    done
-
-    if (( ${#WORKER_PIDS[@]} )); then
-        wait "${WORKER_PIDS[@]}" 2>/dev/null || true
+    if (( ${#active_workers[@]} )); then
+        wait "${active_workers[@]}" 2>/dev/null || true
     fi
     WORKER_PIDS=()
 }
@@ -769,11 +774,11 @@ ${STEER_PROMPT} ${build_steer}"
                     [splits("\n") | fromjson?] as $events
                     | [([$events[] | select(.type == "turn.completed") | (.usage.input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.output_tokens // 0)] | add // 0),
-                     0,
+                     ([$events[] | select(.type == "turn.completed") | (.usage.cache_write_input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
                      0] | @tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}")
+                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
                 stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
             fi
             if [[ ! -s "$log.last" ]]; then
