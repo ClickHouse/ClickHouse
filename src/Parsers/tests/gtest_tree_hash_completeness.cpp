@@ -3,6 +3,7 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
