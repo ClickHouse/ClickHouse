@@ -1,10 +1,10 @@
 --- an unsigned classic variable is read as an unsigned type
-unsigned_short\tUInt16
-value\tInt32
+unsigned_short	UInt16
+value	Int32
 1
 2
 65535
 --- every missing_value sentinel is read as NULL
-unsigned_short\tUInt16
-value\tNullable(Int32)
-2\t7
+unsigned_short	UInt16
+value	Nullable(Int32)
+2	7
