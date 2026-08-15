@@ -162,7 +162,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                 {
                     auto table_directory = prefix_directory / table_it->name();
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
-                        [](const String &) { return true; }, backup_name, {disk}, table_directory);
+                        [](const String &) { return true; }, backup_name, {disk}, table_directory, [] {});
                     for (auto & command_result : current_result_info)
                         command_result.command_type = "SYSTEM UNFREEZE";
                     result_info.insert(
@@ -205,7 +205,12 @@ bool Unfreezer::removeFrozenPart(DiskPtr disk, const String & path, const String
     return false;
 }
 
-PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory)
+PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(
+    MergeTreeData::MatcherFn matcher,
+    const String & backup_name,
+    const Disks & disks,
+    const fs::path & table_directory,
+    const std::function<void()> & assert_writable_at_admission_epoch)
 {
     PartitionCommandsResultInfo result;
 
@@ -229,6 +234,9 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
+            /// `UNFREEZE` removes from `shadow/` on the table disk. Do not let a leader that
+            /// lost, then possibly reacquired, its lease continue deleting another epoch's data.
+            assert_writable_at_admission_epoch();
             bool keep_shared = removeFrozenPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{

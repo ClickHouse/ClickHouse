@@ -11654,6 +11654,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     ContextPtr local_context)
 {
     auto settings = getSettings();
+    const UInt64 admission_epoch = currentLeadershipEpoch();
 
     String clickhouse_path = fs::canonical(local_context->getPath());
     String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
@@ -11679,7 +11680,15 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && has_zero_copy_part)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FREEZE PARTITION queries are disabled.");
 
-    String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
+    String backup_name = !with_name.empty() ? escapeForFileName(with_name) : toString(increment);
+    if (with_name.empty())
+    {
+        /// `shadow/increment.txt` is local to a server, while a `leader_election` table's
+        /// `shadow/` directory is shared. Keep the familiar numeric default for ordinary
+        /// tables, but scope automatic names to the server process for shared storage.
+        if (const auto postfix = getPostfixForTempPartName(); !postfix.empty())
+            backup_name += "_" + postfix;
+    }
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
 
@@ -11703,9 +11712,14 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex, admission_epoch]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+
+                /// A `FREEZE` writes into `shadow/` on the table disk. Fence every part to the
+                /// command's admission epoch so a stale leader cannot keep extending a shared
+                /// snapshot after failover (or after it reacquired a newer lease).
+                assertWritableLeaderAtEpoch(admission_epoch);
 
                 auto data_part_storage = part->getDataPartStoragePtr();
                 String backup_part_path = fs::path(backup_path) / relative_data_path;
@@ -11713,8 +11727,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 scope_guard src_flushed_tmp_dir_lock;
                 MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-                auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
+                auto callback = [this, &part, &backup_part_path, admission_epoch](const DiskPtr & disk)
                 {
+                    assertWritableLeaderAtEpoch(admission_epoch);
                     // Store metadata for replicated table.
                     // Do nothing for non-replicated.
                     createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
@@ -11732,6 +11747,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                     local_context->getWriteSettings(),
                     callback,
                     params);
+
+                assertWritableLeaderAtEpoch(admission_epoch);
 
                 part->is_frozen.store(true, std::memory_order_relaxed);
                 {
@@ -11786,13 +11803,19 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::unfreezePartitionsByMatcher");
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
     auto disks = getStoragePolicy()->getDisks();
 
-    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
+    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(
+        matcher,
+        backup_name,
+        disks,
+        backup_path,
+        [this, admission_epoch] { assertWritableLeaderAtEpoch(admission_epoch); });
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
