@@ -30,6 +30,8 @@ $CLICKHOUSE_CLIENT --query "
              min_insert_block_size_rows = 512, min_insert_block_size_bytes = 0
 " 2>&1 | grep -o 'Injected failure' | head -n 1
 echo "staged files left behind: $(staged_files_left staged_set)"
+echo "matching rows immediately after failed insert:"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM numbers(8192) WHERE number IN staged_set"
 
 # The table is still usable, and only the successful insert survives a reattach.
 $CLICKHOUSE_CLIENT --query "INSERT INTO staged_set VALUES (1)"
@@ -49,6 +51,8 @@ $CLICKHOUSE_CLIENT --query "
              min_insert_block_size_rows = 512, min_insert_block_size_bytes = 0
 " 2>&1 | grep -o 'Injected failure' | head -n 1
 echo "staged files left behind: $(staged_files_left staged_join)"
+echo "rows immediately after failed insert:"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM staged_join"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO staged_join VALUES (1, 10)"
 $CLICKHOUSE_CLIENT --query "DETACH TABLE staged_join"
