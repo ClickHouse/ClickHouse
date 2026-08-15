@@ -223,10 +223,9 @@ bool YAMLParser::isScalar(const String & yaml)
         /// A null node (for example, an empty value) is also kept as literal text.
         return node_yml.IsScalar() || node_yml.IsNull();
     }
-    catch (const YAML::ParserException &)
+    catch (const YAML::ParserException & e)
     {
-        /// The value is not valid YAML, so it cannot be a mapping or a sequence; treat it as literal text.
-        return true;
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration from a string, {}", e.what());
     }
 }
 

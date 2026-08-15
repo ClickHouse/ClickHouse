@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <invalid_yaml>
+            <include from_zk="/profile_settings_yaml" />
+        </invalid_yaml>
+    </profiles>
+</clickhouse>
