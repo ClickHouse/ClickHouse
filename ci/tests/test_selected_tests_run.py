@@ -92,7 +92,7 @@ def test_selected_tests_fail_when_previous_failure_lookup_fails(monkeypatch):
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
 
     monkeypatch.setattr(
-        targeter, "get_changed_or_new_tests_with_info", lambda: ([], None)
+        targeter, "get_changed_or_new_tests_with_info", lambda strict=False: ([], None)
     )
 
     def raise_cidb_error():
@@ -102,6 +102,17 @@ def test_selected_tests_fail_when_previous_failure_lookup_fails(monkeypatch):
 
     with pytest.raises(RuntimeError, match="previously failed tests"):
         targeter.get_all_relevant_tests_with_info(include_changed_tests=True)
+
+
+def test_selected_tests_fail_when_changed_file_lookup_fails():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(
+        is_local_run=False,
+        get_changed_files=lambda: None,
+    )
+
+    with pytest.raises(RuntimeError, match="changed files"):
+        targeter.get_changed_or_new_tests_with_info(strict=True)
 
 
 _NO_TESTS_OUTPUT = (

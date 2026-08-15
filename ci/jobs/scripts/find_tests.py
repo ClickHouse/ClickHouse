@@ -274,7 +274,7 @@ class Targeting:
             return False
         return False
 
-    def get_changed_tests(self):
+    def get_changed_tests(self, strict=False):
         # TODO: add support for integration tests
         result = set()
         if hasattr(self, '_diff_text') and self._diff_text:
@@ -290,6 +290,10 @@ class Targeting:
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
+        if strict and changed_files is None:
+            raise RuntimeError(
+                "Failed to get changed files required for test selection"
+            )
         if not changed_files:
             return result
 
@@ -1812,8 +1816,8 @@ class Targeting:
             for tname, (kw_hits, _kw) in sorted_tests
         ]
 
-    def get_changed_or_new_tests_with_info(self):
-        tests = sorted(self.get_changed_tests())
+    def get_changed_or_new_tests_with_info(self, strict=False):
+        tests = sorted(self.get_changed_tests(strict=strict))
         info = f"Found {len(tests)} changed or new tests:\n"
         for test in tests[:200]:
             info += f" - {test}\n"
@@ -2228,7 +2232,9 @@ class Targeting:
         # suite in its job flavor, so there the changed tests must be included -
         # no other job runs them in that flavor.
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
-            changed_tests, result = self.get_changed_or_new_tests_with_info()
+            changed_tests, result = self.get_changed_or_new_tests_with_info(
+                strict=True
+            )
             add_tests(changed_tests)
             results.append(result)
 
