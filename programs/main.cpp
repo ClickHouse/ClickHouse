@@ -39,7 +39,9 @@ int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
 int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
+#if !defined(OS_WINDOWS)
 int mainEntryClickHouseGitImport(int argc, char ** argv);
+#endif
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseOomCanary(int argc, char ** argv);
@@ -179,7 +181,9 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"format", mainEntryClickHouseFormat},
     {"obfuscator", mainEntryClickHouseObfuscator},
     {"oom-canary", mainEntryClickHouseOomCanary},
+#if !defined(OS_WINDOWS)
     {"git-import", mainEntryClickHouseGitImport},
+#endif
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
 #if ENABLE_CLICKHOUSE_SU
     {"su", mainEntryClickHouseSU},
