@@ -34,6 +34,10 @@ set -euo pipefail
 # Usage:
 #   utils/continue-all-prs.sh [--workers N] [options]
 #
+# Two-model example:
+#   utils/continue-all-prs.sh --agent codex \
+#       --triage-model gpt-5.6-luna --model gpt-5.6-sol
+#
 # Options:
 #   --workers N           Number of parallel workers / worktrees (default: 1).
 #   --mine                Select PRs you authored.
@@ -61,6 +65,11 @@ set -euo pipefail
 #                         general-purpose GPT models. For recognized GPT models,
 #                         API cost is estimated from input, cached-input and
 #                         output token usage using the model's published rates.
+#   --triage-model MODEL  Enable two-model mode. MODEL performs the initial PR
+#                         check and handles branch updates or simple mechanical
+#                         conflicts itself. If code changes are needed, it hands
+#                         a task description to the coding model selected by
+#                         --model. Requires --model.
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
@@ -75,12 +84,12 @@ set -euo pipefail
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
 #                         plus the list of PR numbers needing attention). The bar
 #                         is shown by default on a TTY.
-#   --max-continue N      Max agent turns per PR. The worker runs once and is
-#                         then resumed (same session) until it signals it is done
-#                         or this cap is hit (default: 4). The worker is told not
-#                         to run anything in the background and to push before
-#                         ending each turn, so prepared changes don't get stranded
-#                         unpushed.
+#   --max-continue N      Max agent turns per PR (per model in two-model mode).
+#                         The worker runs once and is then resumed (same session)
+#                         until it signals it is done or this cap is hit
+#                         (default: 4). The worker is told not to run anything in
+#                         the background and to push before ending each turn, so
+#                         prepared changes don't get stranded unpushed.
 #   --once                Process every open PR once and exit, instead of
 #                         looping forever in rounds.
 #   --skip-submodules     Create worker worktrees without hardlinking submodules
@@ -137,6 +146,7 @@ CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not pe
 EFFORT="medium"        # reasoning effort passed to each worker
 AGENT="claude"         # agent CLI used by workers: claude or codex
 MODEL=""               # model passed to the selected agent (empty -> its configured default)
+TRIAGE_MODEL=""        # optional first-pass model; MODEL becomes the coding model
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
@@ -164,6 +174,7 @@ while [[ $# -gt 0 ]]; do
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
         --agent)          AGENT="$2"; shift 2 ;;
         --model)          MODEL="$2"; shift 2 ;;
+        --triage-model)   TRIAGE_MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
         --api-key)        API_KEY="$2"; shift 2 ;;
@@ -189,6 +200,11 @@ case "$AGENT" in
     claude|codex) ;;
     *) echo "${S}Error: --agent must be claude or codex${R}" >&2; exit 1 ;;
 esac
+
+if [[ -n "$TRIAGE_MODEL" && -z "$MODEL" ]]; then
+    echo "${S}Error: --triage-model requires --model for the coding handoff${R}" >&2
+    exit 1
+fi
 
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
@@ -227,7 +243,11 @@ CODEX_LONG_CONTEXT_PRICING=0
 
 configure_codex_pricing()
 {
-    case "$MODEL" in
+    CODEX_INPUT_PRICE=""
+    CODEX_CACHED_INPUT_PRICE=""
+    CODEX_OUTPUT_PRICE=""
+    CODEX_LONG_CONTEXT_PRICING=0
+    case "$1" in
         gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
             CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.6-terra|gpt-5.6-terra-*|gpt-5.4|gpt-5.4-20*)
@@ -270,7 +290,7 @@ estimate_codex_cost()
 }
 
 if [[ "$AGENT" == "codex" ]]; then
-    configure_codex_pricing
+    configure_codex_pricing "$MODEL"
 fi
 
 # ----------------------------------------------------------------------------
@@ -667,8 +687,9 @@ cleanup()
 trap cleanup EXIT
 trap 'trap - INT TERM; echo; banner "Interrupted, stopping..."; stop_workers; exit 130' INT TERM
 
-# Marker the worker prints (on its own line) when it considers the PR finished.
+# Markers the worker prints on their own lines when it finishes or hands off.
 DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
+HANDOFF_MARKER='<<<CONTINUE-PR-HANDOFF>>>'
 
 # Added to every worker session. Forbids backgrounding work (the
 # root cause of merges that were prepared but never pushed: the worker started a
@@ -679,54 +700,79 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
+TRIAGE_STEER_PROMPT="You are the triage model in a two-model workflow. Inspect the PR, its merge status, CI failures, and unresolved review feedback, then decide whether completing it requires writing code. You may finish and push the work yourself only when no source, test, or documentation changes are needed beyond merging the latest base branch and resolving simple, mechanical merge conflicts. If any other code change is needed, do not implement it. End with a handoff block containing a line exactly equal to ${HANDOFF_MARKER}, followed by a concise but sufficiently detailed task description for the coding model: include the diagnosis, relevant files or failures, reviewer requirements, work already performed, and the verification still needed. If you fully handle the PR yourself, use ${DONE_MARKER} as usual and do not emit ${HANDOFF_MARKER}."
+
+TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete branch updates and simple mechanical merge conflicts yourself. If any other source, test, or documentation change is needed, stop and hand it to the coding model by emitting ${HANDOFF_MARKER} on its own line followed by a detailed task description. Emit ${DONE_MARKER} only if the PR is fully handled."
+
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
-# across all turns) is exhausted, or the continuation cap (MAX_CONTINUE) is hit.
+# across all turns and models) is exhausted, or the continuation cap
+# (MAX_CONTINUE per model) is hit. In two-model mode, the triage model can emit
+# HANDOFF_MARKER to start a fresh coding-model session in the same worktree.
 # Writes the full transcript to $log and the final turn to $log.last. Returns
 # the exit code of the last turn (124 if the time budget was exhausted).
 run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer prompt usage
+    local sid deadline iter phase_iter ec now remaining build_steer prompt usage
+    local phase active_model system_prompt turn_prompt handoff
     local u_i u_o u_ci u_co u_cost
     local -a model_args
     sid=""
-    if [[ "$AGENT" == "claude" ]]; then
-        sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
-            || uuidgen 2>/dev/null \
-            || python3 -c 'import uuid; print(uuid.uuid4())')
-    fi
-    model_args=()
-    [[ -n "$MODEL" ]] && model_args=(--model "$MODEL")
+    phase="coding"
+    [[ -n "$TRIAGE_MODEL" ]] && phase="triage"
+    handoff=""
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
     deadline=$(( $(date +%s) + TIMEOUT ))
     : > "$log"
     iter=0
+    phase_iter=0
     ec=0
 
     while :; do
         iter=$(( iter + 1 ))
+        phase_iter=$(( phase_iter + 1 ))
         now=$(date +%s)
         remaining=$(( deadline - now ))
         (( remaining > 0 )) || { ec=124; break; }
-        (( iter > MAX_CONTINUE )) && break
+        (( phase_iter > MAX_CONTINUE )) && break
 
-        echo "===== turn $iter (session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
+        if [[ "$phase" == "triage" ]]; then
+            active_model="$TRIAGE_MODEL"
+            system_prompt="$STEER_PROMPT $build_steer $TRIAGE_STEER_PROMPT"
+            turn_prompt="$TRIAGE_NUDGE_PROMPT"
+        else
+            active_model="$MODEL"
+            system_prompt="$STEER_PROMPT $build_steer"
+            turn_prompt="$NUDGE_PROMPT"
+        fi
+        model_args=()
+        [[ -n "$active_model" ]] && model_args=(--model "$active_model")
+
+        echo "===== turn $iter ($phase model ${active_model:-default}, session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
         ec=0
         if [[ "$AGENT" == "claude" ]]; then
-            if (( iter == 1 )); then
+            if (( phase_iter == 1 )); then
+                sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
+                    || uuidgen 2>/dev/null \
+                    || python3 -c 'import uuid; print(uuid.uuid4())')
+                prompt="/continue-pr-auto $url"
+                if [[ -n "$handoff" ]]; then
+                    prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
+                    prompt+="$handoff"
+                fi
                 ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
-                    --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                    "/continue-pr-auto $url"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+                    --session-id "$sid" --append-system-prompt "$system_prompt" \
+                    "$prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
             else
                 ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
-                    --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                    "$NUDGE_PROMPT"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+                    --resume "$sid" --append-system-prompt "$system_prompt" \
+                    "$turn_prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
             fi
 
             # Extract the final message text and accumulate token/cost usage.
@@ -740,10 +786,14 @@ run_continue_pr()
             fi
         else
             rm -f "$log.last"
-            if (( iter == 1 )); then
+            if (( phase_iter == 1 )); then
                 prompt="/continue-pr-auto $url
 
-${STEER_PROMPT} ${build_steer}"
+${system_prompt}"
+                if [[ -n "$handoff" ]]; then
+                    prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
+                    prompt+="$handoff"
+                fi
                 ( cd "$wt" && timeout "$remaining" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
@@ -758,7 +808,7 @@ ${STEER_PROMPT} ${build_steer}"
                 ( cd "$wt" && timeout "$remaining" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
-                    --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
+                    --output-last-message "$log.last" "$sid" - <<< "$turn_prompt" \
                 ) > "$log.json" 2>"$log.err" || ec=$?
             fi
 
@@ -773,6 +823,7 @@ ${STEER_PROMPT} ${build_steer}"
                      ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
                      0] | @tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
+                configure_codex_pricing "$active_model"
                 u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}")
                 stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
             fi
@@ -785,17 +836,40 @@ ${STEER_PROMPT} ${build_steer}"
         fi
         cat "$log.last" >> "$log"
 
-        # Done when the worker emits the marker on its own line; also stop on any
-        # hard failure or timeout of a turn. A `SIGKILL` can affect all concurrent
-        # Codex processes at once (for example, an external resource manager).
-        # Once Codex has reported a session ID, resume that session within the
-        # existing turn and time limits instead of discarding its completed work.
+        # A triage handoff starts a fresh session with the coding model but keeps
+        # the same worktree and deadline. Check it before DONE_MARKER so an
+        # accidental extra completion marker cannot suppress requested coding.
+        if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
+            handoff=$(cat "$log.last")
+            echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
+            phase="coding"
+            phase_iter=0
+            sid=""
+            continue
+        fi
+
+        # Done when the worker emits the marker on its own line; also stop on a
+        # hard failure or timeout. A `SIGKILL` can affect all concurrent Codex
+        # processes at once (for example, an external resource manager). Once
+        # Codex reports a session ID, resume that session within the existing
+        # turn and time limits instead of discarding its completed work.
         grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
         if [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); then
             echo "Codex was killed; resuming session $sid on the next turn." >> "$log"
             continue
         fi
         (( ec != 0 )) && break
+
+        # If triage used its continuation allowance without an explicit marker,
+        # escalate to the coding model rather than misclassifying the PR as
+        # handled. Its last report still provides useful handoff context.
+        if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
+            handoff=$(cat "$log.last")
+            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
+            phase="coding"
+            phase_iter=0
+            sid=""
+        fi
     done
 
     return "$ec"
@@ -1028,12 +1102,34 @@ banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
 (( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
-banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
+if [[ -n "$TRIAGE_MODEL" ]]; then
+    banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns per model)"
+else
+    banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
+fi
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
 banner "Agent:           ${AGENT}"
-[[ -n "$MODEL" ]] && banner "Model:           ${MODEL}"
+if [[ -n "$TRIAGE_MODEL" ]]; then
+    banner "Triage model:    ${TRIAGE_MODEL}"
+    banner "Coding model:    ${MODEL}"
+elif [[ -n "$MODEL" ]]; then
+    banner "Model:           ${MODEL}"
+fi
 if [[ "$AGENT" == "codex" ]]; then
-    if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+    if [[ -n "$TRIAGE_MODEL" ]]; then
+        configure_codex_pricing "$TRIAGE_MODEL"
+        if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+            banner "Triage pricing:  input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
+        else
+            banner "Triage pricing:  unavailable for ${TRIAGE_MODEL}; cost will exclude its usage"
+        fi
+        configure_codex_pricing "$MODEL"
+        if [[ -n "$CODEX_INPUT_PRICE" ]]; then
+            banner "Coding pricing:  input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
+        else
+            banner "Coding pricing:  unavailable for ${MODEL}; cost will exclude its usage"
+        fi
+    elif [[ -n "$CODEX_INPUT_PRICE" ]]; then
         banner "Pricing:         input \$${CODEX_INPUT_PRICE}, cached \$${CODEX_CACHED_INPUT_PRICE}, output \$${CODEX_OUTPUT_PRICE} per MTok"
     else
         banner "Pricing:         unavailable for ${MODEL:-configured default}; cost will exclude Codex usage"
