@@ -1,5 +1,21 @@
 contrib/* linguist-vendored
 *.h linguist-language=C++
+*.inc linguist-language=C++
 tests/queries/0_stateless/data_json/* binary
 tests/queries/0_stateless/*.reference -crlf
+
+# Long append-only lists of independent entries. Two pull requests that each add an entry almost
+# always add it at the same place, and Git reports that as a conflict even though keeping both
+# entries is always the right resolution. `merge=union` does exactly that, so these lists stop
+# producing conflicts on GitHub.
+#
+# A union merge resolves every overlapping region by keeping both sides, which is only safe for
+# a file that is nothing but such a list - hence the `.inc` files, which hold the list and no
+# other code. Do not add `merge=union` for a file that has ordinary code in it.
+#
+# `src/Common/ErrorCodes.cpp` is deliberately absent: an error code is a value in the public
+# protocol, and a union merge there would silently keep two entries with the same number.
 src/Core/SettingsChangesHistory.cpp merge=union
+src/Common/ProfileEventsList.inc merge=union
+src/Common/CurrentMetricsList.inc merge=union
+src/Common/FailPointsList.inc merge=union
