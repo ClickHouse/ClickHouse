@@ -14,6 +14,9 @@ CHANGEABLE_IN_READONLY: OK
 information_schema: OK
 aggregate_function_combinators: OK
 primary_key_bytes_in_memory_allocated: OK
+# clickhouse-client, suggestion limit 1
+primary_key_bytes_in_memory_allocated: FAIL
+concatAssumeInjective: OK
 # clickhouse-local
 concatAssumeInjective: OK
 ReplacingMergeTree: OK
