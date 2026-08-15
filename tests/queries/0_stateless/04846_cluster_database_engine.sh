@@ -120,7 +120,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLUSTER_DB}.new_table (x UInt8) ENG
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLUSTER_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
 # TRUNCATE reaches the proxy storage directly, where it would be a silent no-op of
 # `StorageDistributed`; it must be rejected as well, and the data must stay intact.
-${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE ${CLUSTER_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE ${CLUSTER_DB}.t" 2>&1 | grep -c -m1 "read-through database proxy"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}"
