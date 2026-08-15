@@ -1066,7 +1066,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         {
             fire_signal.push_back(max_watermark);
             max_watermark = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
-            max_watermark_bias = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark_bias = addTimeStrictly(max_watermark, watermark_kind, watermark_num_units, *time_zone);
         }
     }
 
