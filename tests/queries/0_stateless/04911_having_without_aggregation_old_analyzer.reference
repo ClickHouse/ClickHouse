@@ -1,0 +1,13 @@
+-- no aggregation, predicate rewrite off
+-- no aggregation, stateful conjunct blocks the rewrite at default settings
+-- WHERE and HAVING are combined, not replaced
+2
+-- an alias in HAVING resolves to the projection
+6
+-- rowNumberInBlock is numbered over the filtered rows
+-- the predicate reaches the storage and prunes
+1
+-- aggregation keeps HAVING in the aggregation branch
+-- a bare column with an aggregate HAVING is still rejected
+-- a window function in HAVING is still rejected
+-- WITH TOTALS without aggregation is still rejected

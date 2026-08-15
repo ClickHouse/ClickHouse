@@ -1509,6 +1509,20 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
+    /// Without aggregation HAVING is equivalent to WHERE, and only WHERE is applied: a HAVING
+    /// filter is built and executed solely in the aggregation branch. The condition spells out
+    /// `has_aggregation` exactly as ExpressionAnalyzer does. Keep this after getAggregates and
+    /// getWindowFunctions, which reject aggregates in WHERE and window functions in HAVING.
+    if (select_query->having() && result.aggregates.empty() && !select_query->groupBy())
+    {
+        ASTPtr condition = select_query->where()
+            ? makeASTOperator("and", select_query->where(), select_query->having())
+            : select_query->having();
+
+        select_query->setExpression(ASTSelectQuery::Expression::HAVING, {});
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(condition));
+    }
+
     result.collectUsedColumns(query, true);
 
     if (!result.missed_subcolumns.empty())
