@@ -136,7 +136,26 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
             next_required_source = 0;
             Chunk res;
             updateStats(*sources.front().column);
-            res.addColumn(std::move(sources.front().column));
+
+            /// Same dynamic-structure/statistics handling as the source_to_fully_copy case above:
+            /// this bypasses row-by-row gather() too, so it needs the same re-normalization.
+            if (result_column->hasDynamicStructure())
+            {
+                auto col = result_column->cloneEmpty();
+                col->insertRangeFrom(*sources.front().column, 0, sources.front().column->size());
+                res.addColumn(std::move(col));
+            }
+            else if (result_column->hasStatistics())
+            {
+                auto col = IColumn::mutate(std::move(sources.front().column));
+                col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+                res.addColumn(std::move(col));
+            }
+            else
+            {
+                res.addColumn(std::move(sources.front().column));
+            }
+
             sources.front().pos = sources.front().size = 0;
             return Status(std::move(res));
         }
