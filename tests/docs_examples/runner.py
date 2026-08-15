@@ -22,9 +22,10 @@ yet.
 An example whose statements create or change global, server-wide state (users, roles, quotas,
 databases, writes through a table function into a file or external storage) cannot be isolated
 inside the scratch database of its entity, so by default it is skipped and
-reported as `skipped`: the runner can be pointed at an arbitrary existing server, and must not
-touch global state there. Pass `--global-objects` to run these examples too - which is only safe
-against a dedicated server, such as the one the CI job starts for the purpose.
+reported as `skipped`. The runner always creates and drops scratch databases, so it must be pointed
+at a dedicated server and needs permission to create and drop databases. Pass `--global-objects` to
+run these examples too; that additionally permits changes to server-wide state outside the scratch
+database.
 
 Similarly, an example that calls an external service (the `ai*` functions, which send prompts to a
 model provider) is skipped by default: on a server with provider credentials configured, running it
@@ -542,7 +543,7 @@ def indent(text, prefix):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="localhost")
-    parser.add_argument("--port", type=int, default=8123, help="the HTTP port of the server")
+    parser.add_argument("--port", type=int, default=8123, help="the HTTP port of the dedicated server")
     parser.add_argument("--user", default="default")
     parser.add_argument("--password", default="")
     parser.add_argument("--jobs", type=int, default=8, help="how many entities to run in parallel")
@@ -555,7 +556,7 @@ def main():
         action="store_true",
         help="run the examples that create or change global, server-wide state (users, roles,"
         " databases, files written through a table function);"
-        " only safe against a server dedicated to this check",
+        " additionally requires a server dedicated to this check",
     )
     parser.add_argument(
         "--external-calls",
