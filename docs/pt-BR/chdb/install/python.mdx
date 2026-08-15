@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### Funções definidas pelo usuário (UDF)
+  ### Funções Definidas pelo Usuário em Python (UDF)
 </div>
 
-Estenda o SQL com funções Python personalizadas:
-
-<div id="basic-udf-usage">
-  #### Uso básico de UDF
-</div>
+O chDB oferece suporte nativo a UDFs em Python executadas no processo, com argumentos tipados, inferência automática de tipos e tratamento configurável de NULL e exceções.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# Função matemática simples
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# Função de processamento de string
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# Função de processamento de JSON  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# Usar UDFs em consultas
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### UDF avançada com tipos de retorno personalizados
-</div>
-
-```python
-# UDF com tipo de retorno específico
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # Converte cm para metros
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# UDF para validação de dados
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# Uso em consultas complexas
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### Boas práticas de UDF
-</div>
-
-1. **Funções sem estado**: as UDFs devem ser funções puras, sem efeitos colaterais
-2. **Importações dentro das funções**: todos os módulos necessários devem ser importados dentro da UDF
-3. **Entrada/saída de strings**: todos os parâmetros da UDF são strings (formato TabSeparated)
-4. **Tratamento de erros**: inclua blocos try-catch para criar UDFs robustas
-5. **Desempenho**: as UDFs são chamadas para cada linha, portanto otimize o desempenho
-
-```python
-# UDF bem estruturada com tratamento de erros
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# Use com JSON aninhado complexo
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+Para obter o guia completo sobre métodos de registro, sistema de tipos, tratamento de NULL, tratamento de exceções e suporte a DateTime, consulte o [guia de UDFs em Python](/pt-BR/chdb/guides/python-udf). Para a referência completa da API, consulte a [referência da API de UDFs em Python](/pt-BR/chdb/api/python#user-defined-functions). O decorador `@chdb_udf` mais antigo ainda está disponível, mas foi substituído por esta API — consulte a [API legada](/pt-BR/chdb/api/python#legacy-udf).
 
 <div id="streaming-queries">
   ### Processamento de consultas em streaming

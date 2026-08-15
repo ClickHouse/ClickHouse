@@ -46,6 +46,8 @@ namespace Setting
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool query_plan_optimize_count_from_text_index;
+    extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
@@ -58,12 +60,14 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
+    extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool query_plan_read_in_order_through_spilling_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -216,8 +220,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
+    /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
+    /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
+    query_plan_optimize_count_from_text_index = direct_read_from_text_index
+        && from[Setting::query_plan_optimize_count_from_text_index]
+        && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    read_in_order_through_spilling_join = from[Setting::query_plan_read_in_order_through_spilling_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
         && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
 
@@ -267,6 +277,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
