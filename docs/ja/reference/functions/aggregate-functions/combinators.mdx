@@ -303,7 +303,7 @@ FROM
 
 集約関数の動作を変更します。
 
-このコンビネータは、集約関数の結果を [Nullable](/ja/reference/data-types/nullable) データ型に変換します。集約関数に計算する値がない場合は、[NULL](/ja/reference/settings/formats#input_format_null_as_default) を返します。
+このコンビネータは、集約関数の結果を [Nullable](/ja/reference/data-types/nullable) データ型に変換します。集約関数に計算する値がない場合は、[NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) を返します。
 
 `-OrNull` は他のコンビネータと組み合わせて使用できます。
 
@@ -338,7 +338,7 @@ SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE n
 └───────────────────┴───────────────────────────────┘
 ```
 
-また、`-OrNull` はほかの コンビネータ と組み合わせて使用することもできます。これは、aggregate function が空の入力を受け付けない場合に便利です。
+また、`-OrNull` はほかの コンビネータ と組み合わせて使用することもできます。これは、集約関数 が空の入力を受け付けない場合に便利です。
 
 ```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)
