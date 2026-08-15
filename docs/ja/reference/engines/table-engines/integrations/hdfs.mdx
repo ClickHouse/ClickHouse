@@ -265,14 +265,15 @@ libhdfs3 は HDFS NameNode HA をサポートしています。
 * `_file` — ファイル名。型: `LowCardinality(String)`.
 * `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの ETag。型: `LowCardinality(String)`。HDFS にはネイティブの ETag がないため、値はファイルの最終更新時刻とサイズから `<mtime_seconds>_<size>` の形式で生成されます。`libhdfs3` は最終更新時刻を秒単位の精度でしか公開しないため、同じ秒内に同じサイズのまま書き換えると同じ値になります。そのため、この生成された ETag はコンテンツキャッシュのキーとして使用されません。
 
 <div id="storage-settings">
   ## ストレージ設定
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings#hdfs_truncate_on_insert) - insert 前にファイルを切り詰められるようにします。デフォルトでは無効です。
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings#hdfs_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成できるようにします。デフォルトでは無効です。
-* [hdfs&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#hdfs_skip_empty_files) - 読み取り時に空のファイルをスキップできるようにします。デフォルトでは無効です。
+* [hdfs&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - insert 前にファイルを切り詰められるようにします。デフォルトでは無効です。
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成できるようにします。デフォルトでは無効です。
+* [hdfs&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - 読み取り時に空のファイルをスキップできるようにします。デフォルトでは無効です。
 
 **関連項目**
 
