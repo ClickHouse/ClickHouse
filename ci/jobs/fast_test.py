@@ -53,6 +53,7 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/rapidjson",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/yaml-cpp",
@@ -268,6 +269,7 @@ def main():
                 -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
+                -DENABLE_RAPIDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \

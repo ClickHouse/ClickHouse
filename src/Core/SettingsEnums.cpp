@@ -207,6 +207,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
+     {"mongo", Dialect::mongo},
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
      {"clickhouse_json", Dialect::clickhouse_json}})
