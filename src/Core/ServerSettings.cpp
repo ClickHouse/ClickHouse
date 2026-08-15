@@ -31,7 +31,6 @@
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <base/sort.h>
-#include <base/sanitizer_defs.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
 #endif
@@ -63,16 +62,6 @@
 namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
-
-namespace
-{
-#if defined(MEMORY_SANITIZER)
-constexpr UInt64 default_global_profiler_period_ns = 0;
-#else
-constexpr UInt64 default_global_profiler_period_ns = 10000000000;
-#endif
-}
-
 
 namespace CurrentMetrics
 {
@@ -1176,8 +1165,8 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
-    DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
-    DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
+    DECLARE(UInt64, global_profiler_real_time_period_ns, 10000000000, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
+    DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
