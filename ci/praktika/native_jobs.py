@@ -721,6 +721,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         sw_ = Utils.Stopwatch()
         try:
             pr_labels = Info().pr_labels
+            review_threads_pipeline_limited = False
             if Settings.CI_FORCE_ALL_LABEL in pr_labels:
                 print(
                     f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
@@ -737,6 +738,19 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
                             continue
+                review_threads_pipeline_limited = bool(
+                    Info().get_kv_data("unresolved_review_threads")
+                ) and not bool(
+                    Info().get_kv_data("unresolved_review_threads_override")
+                )
+            # Record the decision made by this filtering pass, rather than
+            # reconstructing it later from review-thread state. In particular,
+            # `ci-force-all` does not execute filter hooks and therefore runs
+            # the full pipeline even with unresolved review threads.
+            Info().store_kv_data(
+                "unresolved_review_threads_pipeline_limited",
+                review_threads_pipeline_limited,
+            )
             status = Result.Status.OK
             workflow_config.dump()
             info = ""

@@ -36,6 +36,7 @@ from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
     KV_OVERRIDE,
+    KV_PIPELINE_LIMITED,
     KV_UNRESOLVED_COUNT,
     get_unresolved_review_threads_count,
     merge_gate_verdict,
@@ -112,6 +113,8 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
 
     assert "OVERRIDE_LABEL: ignore-unresolved-threads" in rerun_workflow
     assert "FORCE_ALL_LABEL" not in rerun_workflow
+    assert "api_with_retries" in rerun_workflow
+    assert "|| true" not in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
 
 
@@ -156,11 +159,25 @@ def test_limited_pipeline_keeps_builds_and_preliminary_jobs(fake_info):
         assert not skip, f"{job_name}: {reason}"
 
 
-@pytest.mark.parametrize("label", [Labels.CI_BUILD, Labels.DO_NOT_TEST])
-def test_limited_pipeline_keeps_code_review_with_other_filter_labels(fake_info, label):
+@pytest.mark.parametrize(
+    "label",
+    [
+        Labels.CI_BUILD,
+        Labels.DO_NOT_TEST,
+        Labels.NO_FAST_TESTS,
+        Labels.CI_INTEGRATION,
+    ],
+)
+def test_limited_pipeline_keeps_allowlist_with_other_filter_labels(fake_info, label):
     fake_info.pr_labels.append(label)
-    skip, reason = filter_job.should_skip_job(JobNames.CODE_REVIEW)
-    assert not skip, reason
+    for job_name in (
+        "Build (amd_debug)",
+        "Style check",
+        "Fast test",
+        JobNames.CODE_REVIEW,
+    ):
+        skip, reason = filter_job.should_skip_job(job_name)
+        assert not skip, f"{job_name}: {reason}"
 
 
 def test_limited_pipeline_skips_build_profile_diff(fake_info):
@@ -221,6 +238,20 @@ def test_merge_gate_verdict_truth_table():
         assert blocked == expected, (config_limited, unresolved_now, override_now)
         assert description
         assert len(description) <= STATUS_DESCRIPTION_LIMIT, description
+
+
+def test_forced_full_pipeline_is_not_recorded_as_limited():
+    info = FakeInfo(
+        kv={
+            "changed_files": ["src/Core/Settings.cpp"],
+            KV_UNRESOLVED_COUNT: 3,
+            KV_OVERRIDE: False,
+            KV_PIPELINE_LIMITED: False,
+        },
+        labels=[Labels.CI_FORCE_ALL],
+    )
+    assert not info.get_kv_data(KV_PIPELINE_LIMITED)
+    assert not merge_gate_verdict(info.get_kv_data(KV_PIPELINE_LIMITED), 0, False)[0]
 
 
 def test_merge_gate_descriptions_fit_status_budget():

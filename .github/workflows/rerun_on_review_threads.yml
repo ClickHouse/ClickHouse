@@ -64,6 +64,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          api_with_retries() {
+            local attempt output
+            for attempt in 1 2 3; do
+              if output=$(gh api "$@"); then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              echo "GitHub API request failed (attempt $attempt/3): gh api $*" >&2
+            done
+            return 1
+          }
+
           # --- Resolve the PR number ---
           pr="$PR_NUMBER"
           if [ -z "$pr" ]; then
@@ -72,8 +84,8 @@ jobs:
           if [ -z "$pr" ] && [ -n "$WR_HEAD_SHA" ]; then
             # workflow_run.pull_requests is empty for PRs from forks - find
             # the PR through its head commit instead.
-            pr=$(gh api "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
-              --jq 'map(select(.state == "open")) | .[0].number // empty' || true)
+            pr=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+              --jq 'map(select(.state == "open")) | .[0].number // empty')
           fi
           if [ -z "$pr" ]; then
             echo "No PR associated with the event - nothing to do."
@@ -119,8 +131,8 @@ jobs:
           fi
 
           # --- Recorded verdict: the latest gate commit status on the head ---
-          marker_states=$(gh api "repos/$GH_REPO/commits/$head_sha/statuses" --paginate \
-            --jq ".[] | select(.context == \"$STATUS_NAME\") | .state" || true)
+          marker_states=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses" --paginate \
+            --jq ".[] | select(.context == \"$STATUS_NAME\") | .state")
           marker_state=$(printf '%s\n' "$marker_states" | sed -n 1p)
           marker_state=${marker_state:-none}
           recorded_blocked=false

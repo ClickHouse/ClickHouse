@@ -255,10 +255,10 @@ def should_skip_job(job_name):
             )
         return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"
 
-    # The limited pipeline depends on `Code Review` running: it re-checks the
-    # pushed code and can resolve bot-owned addressed threads. Keep it running
-    # even if a later label filter would otherwise skip it.
-    if limited_by_review_threads and job_name == JobNames.CODE_REVIEW:
+    # The limited pipeline is a fixed allowlist. Do not let other labels turn
+    # it into a smaller pipeline: it must retain the builds, preliminary jobs,
+    # and `Code Review` needed to validate the gate and trigger its re-run.
+    if limited_by_review_threads:
         return False, ""
 
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):

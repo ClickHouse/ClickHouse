@@ -2,12 +2,10 @@ import sys
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
-    KV_OVERRIDE,
-    KV_UNRESOLVED_COUNT,
+    KV_PIPELINE_LIMITED,
     REVIEW_THREADS_STATUS_NAME,
     fetch_thread_state,
     merge_gate_verdict,
-    should_limit_pipeline,
 )
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -49,10 +47,7 @@ def check_review_threads():
     if info.pr_number <= 0:
         return True
 
-    config_limited = should_limit_pipeline(
-        info.get_kv_data(KV_UNRESOLVED_COUNT) or 0,
-        bool(info.get_kv_data(KV_OVERRIDE)),
-    )
+    config_limited = bool(info.get_kv_data(KV_PIPELINE_LIMITED))
     unresolved_now, override_now = fetch_thread_state(info)
     blocked, description = merge_gate_verdict(
         config_limited, unresolved_now, override_now

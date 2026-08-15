@@ -36,6 +36,10 @@ REVIEW_THREADS_STATUS_NAME = "Review Threads"
 
 KV_UNRESOLVED_COUNT = "unresolved_review_threads"
 KV_OVERRIDE = "unresolved_review_threads_override"
+# This is written by the workflow filter after it has made the actual
+# limited/full decision. The config pre-hook cannot determine this by itself:
+# `ci-force-all` bypasses workflow filters altogether.
+KV_PIPELINE_LIMITED = "unresolved_review_threads_pipeline_limited"
 
 
 def get_unresolved_review_threads_count(pr=None, repo=None) -> int:
@@ -127,7 +131,7 @@ if __name__ == "__main__":
         f"'{Labels.IGNORE_UNRESOLVED_THREADS}' label: {override}"
     )
 
-    if should_limit_pipeline(unresolved_count, override):
+    if should_limit_pipeline(unresolved_count, override) and Labels.CI_FORCE_ALL not in info.pr_labels:
         # Immediate feedback on the PR; can_be_merged.py posts the final
         # verdict at finish time.
         GH.post_commit_status(
