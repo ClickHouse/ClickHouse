@@ -1097,7 +1097,15 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Select
     const Float64 left_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_null_non_null / non_null);
     const Float64 right_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_null_non_null / non_null);
 
-    const Float64 true_non_null_rate = left_true_rate + (1.0 - left_true_rate) * right_true_rate;
+    /// Same-polarity predicates on one column are correlated. Until the carrier records enough
+    /// structure to prove overlap or disjointness, use the fully-correlated bound. This is exact
+    /// for implication cases such as startsWith(s, 'ab') OR startsWith(s, 'abc'). Keep the previous
+    /// independence fallback for mixed-polarity predicates, which may be complements.
+    const bool same_polarity = (left_true_rate <= 0.5 && right_true_rate <= 0.5)
+        || (left_true_rate >= 0.5 && right_true_rate >= 0.5);
+    const Float64 true_non_null_rate = same_polarity
+        ? std::max(left_true_rate, right_true_rate)
+        : left_true_rate + (1.0 - left_true_rate) * right_true_rate;
     const Float64 null_non_null_rate = left_null_rate * (1.0 - right_true_rate) + (1.0 - left_null_rate - left_true_rate) * right_null_rate;
 
     const NullTruthValue result_on_null = applyOrToNullTruthValue(null_truth_value(*this), null_truth_value(other));
@@ -1145,7 +1153,15 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Select
     const Float64 left_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_null_non_null / non_null);
     const Float64 right_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_null_non_null / non_null);
 
-    const Float64 true_non_null_rate = left_true_rate * right_true_rate;
+    /// Same-polarity predicates on one column are correlated. Until the carrier records enough
+    /// structure to prove overlap or disjointness, use the fully-correlated bound. This is exact
+    /// for implication cases such as startsWith(s, 'ab') AND startsWith(s, 'abc'). Keep the previous
+    /// independence fallback for mixed-polarity predicates, which may be complements.
+    const bool same_polarity = (left_true_rate <= 0.5 && right_true_rate <= 0.5)
+        || (left_true_rate >= 0.5 && right_true_rate >= 0.5);
+    const Float64 true_non_null_rate = same_polarity
+        ? std::min(left_true_rate, right_true_rate)
+        : left_true_rate * right_true_rate;
     const Float64 null_non_null_rate = left_null_rate * (right_true_rate + right_null_rate) + left_true_rate * right_null_rate;
 
     const NullTruthValue result_on_null = applyAndToNullTruthValue(null_truth_value(*this), null_truth_value(other));
@@ -1182,7 +1198,9 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
     /// disjoint ranges (e.g. IN with many values) on a column with a large NULL share can
     /// produce `true_sel = 1, null_sel = 0.9`, leaving `false_sel = 1 - true_sel - null_sel`
     /// negative — which then breaks `applyAnd` / `applyOr` / `applyNot`.
-    Float64 null_sel = static_cast<Float64>(stats->getNullCount()) / rows;
+    Float64 null_sel = 0.0;
+    if (isNullableOrLowCardinalityNullable(stats->getDataType()))
+        null_sel = clampSelectivity(stats->estimateIsNull());
     Float64 non_null_share = std::max(0.0, 1.0 - null_sel);
     return {std::max(0.0, std::min(non_null_share, selectivity)), null_sel};
 }
@@ -1388,20 +1406,29 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return;
     }
 
-    auto estimate_unknown_ranges = [&](const PlainRanges & ranges) -> Selectivity
+    auto estimate_unknown_ranges = [&](const String & column_name, const PlainRanges & ranges) -> Selectivity
     {
+        Float64 null_sel = 0.0;
+        if (metadata)
+        {
+            if (const auto * column = metadata->getColumns().tryGet(column_name);
+                column && isNullableOrLowCardinalityNullable(column->type))
+                null_sel = default_cond_equal_factor;
+        }
+        const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
             if (range.isInfinite())
-                return Selectivity{1.0, 0.0};
+                return Selectivity{non_null_sel, null_sel};
 
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
-                return Selectivity{default_cond_range_factor, 0};
+                return Selectivity{std::min(default_cond_range_factor, non_null_sel), null_sel};
         }
-        return Selectivity{std::min(equal_selectivity, 1.0), 0};
+        return Selectivity{std::min(equal_selectivity, non_null_sel), null_sel};
     };
 
     auto get_estimator = [&](const String & column_name) -> const ColumnEstimator *
@@ -1437,7 +1464,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             add_column_selectivity(column_name, est->estimateRanges(ranges));
         else
-            add_column_selectivity(column_name, estimate_unknown_ranges(ranges));
+            add_column_selectivity(column_name, estimate_unknown_ranges(column_name, ranges));
     }
 
     for (const auto & [column_name, ranges] : column_not_ranges)
@@ -1446,7 +1473,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
         else
-            not_ranges_selectivity = estimate_unknown_ranges(ranges).applyNot();
+            not_ranges_selectivity = estimate_unknown_ranges(column_name, ranges).applyNot();
 
         add_column_selectivity(column_name, not_ranges_selectivity);
     }

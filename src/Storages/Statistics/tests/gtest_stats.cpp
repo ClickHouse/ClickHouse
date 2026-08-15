@@ -444,6 +444,38 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
+TEST(Statistics, NullableEstimatorFallbackPreservesNullDomain)
+{
+    tryRegisterFunctions();
+
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    auto metadata = makeSingleColumnMetadata("a", nullable_type);
+    auto tdigest_stats = buildNullableInt32Stats({StatisticsType::TDigest}, /*total=*/1000, /*null_every=*/5);
+    ASSERT_FALSE(tdigest_stats->hasNullCount());
+
+    auto check
+        = [&](const ConditionSelectivityEstimatorPtr & estimator, const String & expression, Float64 expected, Float64 eps = 1e-6)
+    {
+        EXPECT_NEAR(estimateRowsFor(estimator, metadata, expression), expected, eps) << "Expression: " << expression;
+    };
+
+    /// TDigest has no NULL count, so the default 1% NULL share must still survive range folding.
+    ConditionSelectivityEstimatorBuilder tdigest_builder(getContext().context);
+    tdigest_builder.addStatistics("a", tdigest_stats);
+    tdigest_builder.incrementRowCount(1000);
+    auto tdigest_estimator = tdigest_builder.getEstimator();
+    check(tdigest_estimator, "a > 0", 990.0);
+    check(tdigest_estimator, "NOT(a > 500 OR a IS NULL)", 390.0);
+
+    /// The no-statistics range fallback must preserve the same NULL domain from metadata.
+    ConditionSelectivityEstimatorBuilder fallback_builder(getContext().context);
+    fallback_builder.addStatistics("other", tdigest_stats);
+    fallback_builder.incrementRowCount(1000);
+    auto fallback_estimator = fallback_builder.getEstimator();
+    check(fallback_estimator, "NOT(a > 0)", 660.0, 1.0);
+    check(fallback_estimator, "NOT(a > 0 OR a IS NULL)", 660.0, 1.0);
+}
+
 TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
@@ -572,6 +604,13 @@ TEST(Statistics, StringPredicateFunctionSelectivity)
     check("not(startsWith(s, 'abc'))", 9843.0);
     check("not(startsWith(s, ''))", 0.0);
 
+    /// Same-column pattern predicates are correlated; prefix implication must not be folded as independence.
+    check("startsWith(s, 'ab') AND startsWith(s, 'abc')", 156.0);
+    check("startsWith(s, 'ab') OR startsWith(s, 'abc')", 625.0);
+    check("startsWith(s, 'ab') AND startsWith(s, 'ab')", 625.0);
+    check("endsWith(s, 'ab') AND endsWith(s, 'cab')", 428.0);
+    check("endsWith(s, 'ab') OR endsWith(s, 'cab')", 1000.0);
+
     /// Nullable(String), 10000 rows, every 4th row NULL: 2500 NULLs and 7500 non-NULLs.
     check("startsWith(ns, '')", 7500.0);
     check("endsWith(ns, '')", 7500.0);
@@ -579,6 +618,10 @@ TEST(Statistics, StringPredicateFunctionSelectivity)
     check("startsWith(ns, 'abc')", 117.0);
     check("endsWithCaseInsensitive(ns, 'xyz')", 321.0);
     check("not(startsWith(ns, 'abc'))", 7382.0);
+    check("startsWith(ns, 'ab') AND startsWith(ns, 'abc')", 117.0);
+    check("startsWith(ns, 'ab') OR startsWith(ns, 'abc')", 468.0);
+    check("(startsWith(ns, 'ab') OR ns IS NULL) AND startsWith(ns, 'abc')", 117.0);
+    check("(startsWith(ns, 'ab') AND ns IS NOT NULL) OR startsWith(ns, 'abc')", 468.0);
     check("startsWith(ns, '') AND ns IS NULL", 0.0);
     check("startsWith(ns, '') OR ns IS NULL", 10000.0);
     check("startsWith(ns, 'abc') OR ns IS NULL", 2617.0);
@@ -675,6 +718,13 @@ TEST(Statistics, LikePatternSelectivityWithMetadata)
     EXPECT_EQ(estimate("a LIKE 'abc%'"), 15u);
     EXPECT_EQ(estimate("a LIKE '%abc'"), 42u);
     EXPECT_EQ(estimate("a LIKE '%abc%'"), 91u);
+
+    /// Same-column LIKE prefixes retain implication and idempotence instead of assuming independence.
+    EXPECT_EQ(estimate("a LIKE 'ab%' AND a LIKE 'abc%'"), 15u);
+    EXPECT_EQ(estimate("a LIKE 'ab%' OR a LIKE 'abc%'"), 62u);
+    EXPECT_EQ(estimate("a LIKE 'ab%' AND a LIKE 'ab%'"), 62u);
+    EXPECT_EQ(estimate_nullable("a LIKE 'ab%' AND a LIKE 'abc%'"), 12u);
+    EXPECT_EQ(estimate_nullable("a LIKE 'ab%' OR a LIKE 'abc%'"), 50u);
 
     /// Complex patterns keep the old fixed fallback while retaining the column's NULL domain.
     EXPECT_EQ(estimate("a LIKE '%a%b%'"), 100u);
