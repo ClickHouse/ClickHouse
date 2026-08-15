@@ -971,7 +971,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     || metadata.add_minmax_index_for_temporal_columns
                     || metadata.add_minmax_index_for_block_number_column
                     || metadata.add_minmax_index_for_block_offset_column;
-                if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                if (using_auto_minmax_index
+                    && storage_settings->isChanged("add_minmax_index_for_numeric_columns")
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);

@@ -1170,6 +1170,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         }
         if (any_mt_setting)
         {
+            /// Preserve the implicit-index policy stored in the table metadata. It can originate
+            /// from a compatibility setting or server configuration and therefore need not be
+            /// present in settings_from_storage. Starting from a fresh MergeTreeSettings here
+            /// must not turn such a table into an implicit-index table on an unrelated ALTER.
+            effective_settings.applyChange({"add_minmax_index_for_numeric_columns", metadata.add_minmax_index_for_numeric_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_string_columns", metadata.add_minmax_index_for_string_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_temporal_columns", metadata.add_minmax_index_for_temporal_columns}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_block_number_column", metadata.add_minmax_index_for_block_number_column}, context, /*is_loading_from_existing_metadata=*/true);
+            effective_settings.applyChange({"add_minmax_index_for_block_offset_column", metadata.add_minmax_index_for_block_offset_column}, context, /*is_loading_from_existing_metadata=*/true);
+
             metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
             metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
             metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];

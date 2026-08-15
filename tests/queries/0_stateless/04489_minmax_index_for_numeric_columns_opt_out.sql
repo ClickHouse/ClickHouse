@@ -33,8 +33,10 @@ WHERE database = currentDatabase() AND table = 't_minmax_readonly' AND creation 
 CREATE TABLE t_minmax_alter_optout (a UInt32, b Int64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS add_minmax_index_for_numeric_columns = 0;
 ALTER TABLE t_minmax_alter_optout MODIFY SETTING merge_max_block_size = 8192;
+-- This takes the metadata-replacement path in `StorageMergeTree::alter`.
+ALTER TABLE t_minmax_alter_optout MODIFY SETTING auto_statistics_types = '';
 
-SELECT 'unrelated alter keeps opt-out', count()
+SELECT 'settings alter keeps opt-out', count()
 FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_minmax_alter_optout' AND creation = 'Implicit';
 
