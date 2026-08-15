@@ -76,12 +76,26 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ## Credential rotation {#credential-rotation}
 
-- **API (HMAC) credentials**: request a fresh enrollment token from your ClickHouse account team, then re-run enrollment with `--force`: `clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force` (add `--target helm` on Kubernetes).
-- **ClickHouse users**: re-provision the connector's read-only users (run with `sudo` on a VM):
+- **API (HMAC) credentials**: request a fresh enrollment token from your ClickHouse account team, then re-run enrollment with `--force`. On Kubernetes, from your workstation: `clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --force`. On a VM, on the host: `sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force`.
+- **ClickHouse users**: re-provision the connector's read-only users per instance. On Kubernetes, from your workstation:
 
 ```bash
-clicklink clctl scraper access provision --force
-clicklink clctl troubleshoot access provision --force
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+clicklink clctl scraper access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+clicklink clctl troubleshoot access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+```
+
+On a VM, on the host:
+
+```bash
+sudo clicklink clctl scraper access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+sudo clicklink clctl troubleshoot access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
 ```
 
 - **Client certificate**: renewal is automatic (see [certificates](#certificates)). To supersede an unexpired certificate immediately, re-run `init` with `--force`.

@@ -70,7 +70,9 @@ sudo clicklink clctl troubleshoot session disable
 The gateway is also available on a VM for callers without root access. It serves self-signed TLS, so each session user pins the gateway's certificate fingerprint once:
 
 ```bash
-clicklink clctl troubleshoot gateway trust --gateway-fingerprint <sha256-fingerprint>
+clicklink clctl troubleshoot gateway trust \
+  --gateway-url https://<vm-host>:8443 \
+  --gateway-fingerprint <sha256-fingerprint>
 ```
 
 The pin is stored in `~/.clicklink/clctl.yaml`, and connections fail closed if the presented certificate does not match it.
