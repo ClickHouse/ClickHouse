@@ -256,6 +256,21 @@ Possible values:
 
 - [min_insert_block_size_bytes](#min_insert_block_size_bytes)
 )", 0) \
+    DECLARE(Float, shrink_over_allocated_columns_min_waste_ratio, 1.0, R"(
+On INSERT, over-allocated columns (whose reserved memory exceeds the used memory, e.g. due to power-of-two growth of variable-length columns) are shrunk to fit before the expensive materialization and part-writing stages, to reduce peak memory usage.
+
+A column is shrunk only when `allocatedBytes() > byteSize() * shrink_over_allocated_columns_min_waste_ratio` and the absolute waste is at least `shrink_over_allocated_columns_min_waste_bytes`.
+
+Possible values:
+
+- Float greater than 1.
+- Value less than or equal to 1 disables the shrinking (the default `1.0` keeps it disabled).
+)", 0) \
+    DECLARE(UInt64, shrink_over_allocated_columns_min_waste_bytes, (16 * 1024 * 1024), R"(
+Minimum absolute amount of wasted (reserved but unused) memory in a column, in bytes, for it to be shrunk to fit on INSERT. See [shrink_over_allocated_columns_min_waste_ratio](#shrink_over_allocated_columns_min_waste_ratio).
+
+Prevents reallocating columns whose over-allocation is small, where the memory saving would not justify the cost.
+)", 0) \
     DECLARE(UInt64, min_external_table_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
 Squash blocks passed to external table to specified size in rows, if blocks are not big enough.
 )", 0) \
@@ -8542,6 +8557,10 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
+If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
+Set to false to force the old full-mutation behavior.
+)", 0) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
