@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class ASTConstraintDeclaration;
 class ASTFunction;
 class ASTFunctionWithKeyValueArguments;
 class ASTStorage;
@@ -50,7 +51,9 @@ private:
     static void visit(const ASTFunction & function, Data & data);
     static void visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data);
     static void visit(const ASTStorage & storage, Data & data);
+    static void visit(const ASTConstraintDeclaration & constraint, Data & data);
 
+    static void addDependenciesOfExecutedSubqueries(const ASTPtr & ast, Data & data);
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };
 
