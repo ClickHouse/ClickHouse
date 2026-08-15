@@ -495,6 +495,14 @@ if server_error_line="$(scan_server_errors \
     # row, and the same one must not re-alert every night.
     SERVER_ERROR_FINGERPRINT="Sanitizer/Fatal: $(server_error_signature "$SERVER_ERROR_REPORT")"
     add_test_result "$SERVER_ERROR_FINGERPRINT" FAIL "$server_error_line" "$SERVER_ERROR_REPORT"
+    # Fold it into the run summary too: it is a finding with no oracle reproducer,
+    # so the counts from the analysis do not include it, and a sanitizer-only run
+    # would otherwise be summarized as "no findings".
+    if [ "$FAILURE_SUMMARY" = "no findings" ]; then
+        FAILURE_SUMMARY="1 server-log finding"
+    else
+        FAILURE_SUMMARY="$FAILURE_SUMMARY; 1 server-log finding"
+    fi
     echo " - server log finding: $server_error_line"
 fi
 

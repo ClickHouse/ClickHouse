@@ -35,7 +35,11 @@ scan_server_errors() {
             | grep -av "For details see https://github.com/google/sanitizers" \
             | head -n 200 || true)"
     fi
-    fatal_hits="$(grep -a '<Fatal>' "$server_log" "$server_err" 2>/dev/null | head -n 50 || true)"
+    # -h: with two files grep prefixes every match with the file name, which would
+    # end up inside the report row name and the alert fingerprint - making the same
+    # fatal re-hash when it moves between stdout and stderr or the workspace path
+    # changes.
+    fatal_hits="$(grep -ha '<Fatal>' "$server_log" "$server_err" 2>/dev/null | head -n 50 || true)"
     [ -n "$sanitizer_hits$fatal_hits" ] || return 1
 
     : > "$report"

@@ -109,7 +109,7 @@ def sql_string(value):
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def slack_blocks(job_name, new_failures, findings, info):
+def slack_blocks(job_name, new_failures, findings, info, extra_failures=0):
     listed = new_failures[:MAX_LISTED]
     lines = []
     for failure in listed:
@@ -160,8 +160,9 @@ def slack_blocks(job_name, new_failures, findings, info):
                 {
                     "type": "mrkdwn",
                     "text": (
-                        f"{findings.get('findings', 0)} finding(s) in "
-                        f"{findings.get('distinct_failures', 0)} distinct failure(s) this run  ·  {info}"
+                        f"{findings.get('findings', 0) + extra_failures} finding(s) in "
+                        f"{findings.get('distinct_failures', 0) + extra_failures} distinct failure(s) "
+                        f"this run  ·  {info}"
                     ),
                 }
             ],
@@ -230,7 +231,11 @@ def main():
         print("All failures are already known - no alert")
         return
 
-    blocks = slack_blocks(args.job_name, new_failures, findings, args.info)
+    # The server-log finding has no oracle reproducer, so findings.json does not
+    # count it - add it to what the message displays, not just to the diff set.
+    blocks = slack_blocks(
+        args.job_name, new_failures, findings, args.info, extra_failures=1 if args.extra_failure else 0
+    )
     webhook = os.getenv(SLACK_WEBHOOK_ENV)
     if args.dry_run or not webhook:
         if not webhook:
