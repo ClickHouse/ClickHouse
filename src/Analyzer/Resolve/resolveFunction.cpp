@@ -44,6 +44,8 @@
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 
+#include <set>
+
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
@@ -201,12 +203,70 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     return false;
 }
 
-bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
+void collectMaskedConstantHashes(
+    const QueryTreeNodePtr & node,
+    std::set<IQueryTreeNode::Hash> & masked_hashes)
+{
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        if (constant->isMasked())
+            masked_hashes.insert(constant->getTreeHash());
+        if (constant->hasSourceExpression())
+            collectMaskedConstantHashes(constant->getSourceExpression(), masked_hashes);
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectMaskedConstantHashes(child, masked_hashes);
+}
+
+void applySecretMasks(
+    const QueryTreeNodePtr & node,
+    const std::set<IQueryTreeNode::Hash> & masked_hashes,
+    std::map<IQueryTreeNode::Hash, size_t> & projection_mask_map)
+{
+    if (auto * constant = node->as<ConstantNode>();
+        constant && masked_hashes.contains(constant->getTreeHash()))
+    {
+        auto mask = projection_mask_map.insert({constant->getTreeHash(), projection_mask_map.size() + 1}).first->second;
+        constant->setMaskId(mask);
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            applySecretMasks(child, masked_hashes, projection_mask_map);
+}
+
+bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, const IdentifierResolveScope & scope)
+{
+    const auto & identifier = identifier_node.getIdentifier();
+    const auto & full_name = identifier.getFullName();
+    const auto & first_name = identifier.front();
+
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->cte_name_to_query_node.contains(full_name)
+            || current_scope->cte_name_to_query_node.contains(first_name)
+            || current_scope->aliases.alias_name_to_table_expression_node.contains(full_name)
+            || current_scope->aliases.alias_name_to_table_expression_node.contains(first_name)
+            || current_scope->global_with_aliases.alias_name_to_table_expression_node.contains(full_name)
+            || current_scope->global_with_aliases.alias_name_to_table_expression_node.contains(first_name))
+            return true;
+    }
+
+    return false;
+}
+
+bool isSafeCountScalarSubqueryForEarlyShortCircuit(
+    const QueryNode & query,
+    const IdentifierResolveScope & scope)
 {
     const auto & join_tree = query.getJoinTreeNode();
     if (!join_tree
         || (join_tree->getNodeType() != QueryTreeNodeType::TABLE
             && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+        || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
+            && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
         || query.hasPrewhere()
@@ -242,11 +302,13 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
     return matcher && matcher->isUnqualified();
 }
 
-bool hasScopeDependentNodesForEarlyShortCircuit(const QueryTreeNodePtr & node)
+bool hasScopeDependentNodesForEarlyShortCircuit(
+    const QueryTreeNodePtr & node,
+    const IdentifierResolveScope & scope)
 {
     const auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY)
-        return !isSafeCountScalarSubqueryForEarlyShortCircuit(node->as<QueryNode &>());
+        return !isSafeCountScalarSubqueryForEarlyShortCircuit(node->as<QueryNode &>(), scope);
     if (node_type == QueryTreeNodeType::UNION)
         return true;
 
@@ -256,7 +318,7 @@ bool hasScopeDependentNodesForEarlyShortCircuit(const QueryTreeNodePtr & node)
         return true;
 
     for (const auto & child : node->getChildren())
-        if (child && hasScopeDependentNodesForEarlyShortCircuit(child))
+        if (child && hasScopeDependentNodesForEarlyShortCircuit(child, scope))
             return true;
 
     return false;
@@ -776,12 +838,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
         if (short_circuit_result
-            && !hasScopeDependentNodesForEarlyShortCircuit(node)
+            && !hasScopeDependentNodesForEarlyShortCircuit(node, scope)
             && !hasUnsafeFunctionForEarlyShortCircuit(node, scope.context, scope))
         {
             /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
             /// which gives the logical expression its real Nullable/Bool result type. It also
             /// discovers aggregates and arrayJoin before they can be erased by the early fold.
+            auto source_expression = node->clone();
             auto node_for_type_inference = node->clone();
 
             /// Speculative resolution must not cache placeholders or leave in-progress stack
@@ -835,9 +898,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
+                std::set<IQueryTreeNode::Hash> masked_hashes;
+                collectMaskedConstantHashes(node_for_type_inference, masked_hashes);
+                applySecretMasks(source_expression, masked_hashes, *scope.projection_mask_map);
+
                 ConstantValue constant_value{ std::move(result_column), std::move(result_type) };
                 node = std::make_shared<ConstantNode>(
-                    std::move(constant_value), std::move(node_for_type_inference), true /*is_deterministic*/);
+                    std::move(constant_value), std::move(source_expression), true /*is_deterministic*/);
                 subquery_counter = type_inference_analyzer.subquery_counter;
                 return type_inference_projection_names;
             }

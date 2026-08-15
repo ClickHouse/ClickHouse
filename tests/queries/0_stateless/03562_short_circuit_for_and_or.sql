@@ -68,6 +68,13 @@ SELECT 'Test column-dependent count subqueries fall back to normal analysis';
 SELECT 1 OR ((SELECT count(*) FROM numbers(1) WHERE number >= 0) > 0);
 SELECT 1 OR ((SELECT count(*) FROM numbers(1) WHERE throwIf(number >= 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
+SELECT 'Test CTE table identifiers are not rebound to catalog tables';
+DROP TABLE IF EXISTS test_03562_bad;
+CREATE TABLE test_03562_bad (x UInt8) ENGINE = Memory;
+WITH test_03562_bad AS (SELECT unknown_column FROM system.one)
+    SELECT 1 OR ((SELECT count() FROM test_03562_bad) > 0); -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE test_03562_bad;
+
 SELECT 'Test live prefix arguments are not skipped';
 SELECT (SELECT throwIf(1)) OR 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT (SELECT throwIf(1)) AND 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
