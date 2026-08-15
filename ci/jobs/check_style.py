@@ -287,7 +287,7 @@ REDIRECT_TO_VAR_RE = re.compile(
 # substitution is handled separately from `$var` because a scratch path such as `$(mktemp)` is
 # fine, while a substitution that itself pulls a server path out of a system table is not - so
 # this pattern only counts when the same line also contains such a query.
-REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>>?\s*\"?\$\(")
+REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>>?\s*\"?(?:\$\(|`)")
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
 )

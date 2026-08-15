@@ -102,6 +102,11 @@ def test_mutation_behind_nested_wrappers_is_flagged(tmp_path):
 
 def test_redirect_into_server_path_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'echo broken > "$path/data.bin"\n')
+    assert _run(
+        tmp_path,
+        'echo broken > `${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
+        " WHERE table = 't' AND active LIMIT 1\"`/data.bin\n",
+    )
 
 
 def test_quoted_hash_payload_is_flagged(tmp_path):
