@@ -1670,7 +1670,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
-        "use_projection_index_in_read_pools": lambda: random.randint(0, 1),
+        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
@@ -1829,6 +1829,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "merge_use_batch_sorting_queue": lambda: random.randint(0, 1),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
         "compress_marks": lambda: random.randint(0, 1),
@@ -2293,6 +2294,23 @@ class TestCase:
     def http_format_settings(settings_list) -> str:
         return urllib.parse.urlencode(settings_list)
 
+    # A `no-<feature>` tag means the test does not work with that feature, so the feature
+    # must be off unless the test itself turns it on.
+    FEATURE_TAG_OVERRIDES = {
+        "no-parallel-replicas": "enable_parallel_replicas",
+        "no-async-insert": "async_insert",
+    }
+
+    def feature_tag_overrides(self) -> str:
+        tags = self.tags or set()
+        return self.cli_format_settings(
+            {
+                setting: 0
+                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+                if tag in tags
+            }
+        )
+
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
@@ -2342,6 +2360,14 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Last, so that it beats an externally supplied --client-option that enabled the
+        # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
+        # or SETTINGS clause inside the test still wins over any command line value.
+        overrides = self.feature_tag_overrides()
+        if overrides:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+            return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
 
@@ -6153,7 +6179,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
@@ -7057,6 +7086,18 @@ if __name__ == "__main__":
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
+
+    if not args.secure:
+        # Tell the client which protocol this run uses instead of letting it choose. A client that is
+        # given neither a port nor a TLS mode probes both the plain and the secure port and uses the one
+        # that answers first, and the test server listens on both, so an unspecified TLS mode would
+        # silently run the suite over an arbitrary protocol - including the tests that assert on the
+        # plain port and on `is_secure`.
+        #
+        # This covers the `.sql` tests; the shell tests get it from `shell_config.sh`. It must not go into
+        # CLICKHOUSE_CLIENT_OPT, which ends up on the command line of a `.sql` test next to this, and
+        # `--no-secure` cannot be specified more than once.
+        args.client += " --no-secure"
 
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
