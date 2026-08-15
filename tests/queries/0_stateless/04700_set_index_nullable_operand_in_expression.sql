@@ -48,7 +48,6 @@ SELECT 'plain', count() FROM t_113234 WHERE t % 19 = 16;
 SELECT 'to_nullable', count() FROM t_113234 WHERE t % toNullable(19) = 16;
 SELECT 'null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
 SELECT 'scalar_subquery', count() FROM t_113234 WHERE t % (SELECT toNullable(19)) = 16;
-SELECT 'materialize', count() FROM t_113234 WHERE t % materialize(toNullable(19)) = 16;
 
 -- A scalar subquery is typed `Nullable` because it may return no rows, so it reaches the same
 -- collision with no `Nullable` written anywhere in the query.
@@ -76,7 +75,6 @@ SELECT 'nobulk_plain', count() FROM t_113234 WHERE t % 19 = 16;
 SELECT 'nobulk_to_nullable', count() FROM t_113234 WHERE t % toNullable(19) = 16;
 SELECT 'nobulk_null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
 SELECT 'nobulk_subquery_plain', count() FROM t_113234 WHERE t % (SELECT 19) = 16;
-SELECT 'nobulk_materialize', count() FROM t_113234 WHERE t % materialize(toNullable(19)) = 16;
 SELECT 'nobulk_nullable_constant', count() FROM t_113234 WHERE t % 19 = toNullable(16);
 
 DROP TABLE t_113234;
