@@ -2961,9 +2961,11 @@ Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equival
 Additionally, exact equality predicates of the form `nullIf(key, sentinel) = const` (where `sentinel != const` and types match exactly) are rewritten to `key = const` so primary key, partition, and skip indexes on `key` can prune granules directly. Range and disjunctive nullIf pruning is not supported.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
-Require an alias for a joined subquery or table function only when an exposed column collides with another join column or a shadowing expression alias. Set to `0` to never require an alias.
+With the analyzer enabled (`enable_analyzer = 1`, the default), require an alias for a joined subquery or table function only when an exposed column collides with another join column or a shadowing expression alias. Set to `0` to never require an alias.
 
 An alias is also required when exposed names cannot be determined before resolution.
+
+The deprecated pre-analyzer path (`enable_analyzer = 0`) keeps the previous strict behavior and requires an alias for every joined subquery and table function.
 )", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
 Return empty result when aggregating without keys on empty set.
