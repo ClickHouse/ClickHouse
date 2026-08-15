@@ -111,25 +111,20 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    std::function<void(const Progress&)> createProgressCallback(
+        ContextMutablePtr query_context,
+        std::atomic<UInt64>& result_rows,
+        std::atomic<UInt64>& written_rows);
+
     UInt64 executeQueryWithTracking(
         String && sql_query,
         ContextMutablePtr query_context,
         PostgreSQLProtocol::Messaging::CommandComplete::Command command);
 
     static bool isEmptyQuery(const String & query);
-    /// Transaction-control statements (BEGIN [READ ONLY], START TRANSACTION, COMMIT, ROLLBACK, ...) that
-    /// ClickHouse does not implement but that libpq/pqxx clients send around every statement. They are
-    /// acknowledged without execution so that such clients (including ClickHouse's own `postgresql` table
-    /// function/engine pointed at another ClickHouse instance) can talk to the PostgreSQL wire protocol.
-    static bool isTransactionControlQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
 
-    /// Lazily creates the emulated `pg_catalog` views on the first statement of the connection, then, before
-    /// any statement that may read them, assigns stable OIDs to databases and tables that appeared since
-    /// (see `refreshCatalogOids`).
-    void prepareSystemTables(ContextMutablePtr query_context, const String & query);
     void initializeSystemTables(ContextMutablePtr query_context);
-    void refreshCatalogOids(ContextMutablePtr query_context);
     bool should_init_system_tables = true;
 };
 

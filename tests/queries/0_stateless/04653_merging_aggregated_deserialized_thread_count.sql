@@ -1,3 +1,7 @@
+-- A `MergingAggregatedStep` that the parallel replicas rewrite builds from a deserialized
+-- `AggregatingStep` must not keep the sentinel thread count 0. The same query without a serialized
+-- plan is the oracle, and two further oracles pin that a plan was really shipped and the rewrite ran.
+
 DROP TABLE IF EXISTS t_merging_aggregated_threads;
 
 CREATE TABLE t_merging_aggregated_threads (a UInt64, k UInt64)

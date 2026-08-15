@@ -1309,6 +1309,18 @@ export const kbIndex = {
       "tags": []
     },
     {
+      "id": "security/set-role-not-persisting-in-sql-console",
+      "title": "Why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console",
+      "description": "Learn why `SET ROLE` does not persist in the ClickHouse Cloud SQL Console and how to assign persistent per-user permissions.",
+      "href": "/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      "category": "Security & access control",
+      "tags": [
+        "Security and Authentication",
+        "Managing Cloud",
+        "Troubleshooting"
+      ]
+    },
+    {
       "id": "data-management/dictionaries-consistent-state",
       "title": "Why can't I see my data in a dictionary in ClickHouse Cloud?",
       "description": "There is an issue where data in dictionaries may not be visible immediately after creation.",
