@@ -205,8 +205,7 @@ namespace
                 return false;
         }
 
-        /// Keep signature and engine validation, plus driver availability, before any filesystem side effects.
-        DriverUtils::validateSignatureTypes(query.arguments_ast, query.return_type_ast);
+        /// Keep engine validation and driver availability before any filesystem side effects.
         const auto driver = UserDefinedExecutableFunctionDriverRegistry::instance().get(query.engine_name);
         formatEngineArguments(query, *driver);
 
@@ -387,6 +386,10 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     auto * create_function_query = updated_query_ptr->as<ASTCreateFunctionWithDriverQuery>();
     if (!create_function_query)
         return std::nullopt;
+
+    /// Validate the types on the initiator before `ON CLUSTER` dispatch. In particular, this
+    /// rejects tuple-element `DEFAULT` expressions, which are allowed only in column declarations.
+    DriverUtils::validateSignatureTypes(create_function_query->arguments_ast, create_function_query->return_type_ast);
 
     /// Read the experimental gate from the live configuration rather than from the startup-time `ServerSettings`
     /// returned by `getServerSettings` (which `SYSTEM RELOAD CONFIG` does not refresh), so that toggling
