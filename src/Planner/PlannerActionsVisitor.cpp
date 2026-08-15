@@ -1011,6 +1011,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const LambdaNode & lambda_node)
 {
     const auto & argument_names = lambda_node.getArguments().getNames();
+    const auto * own_arguments = &lambda_node.getArguments();
     NameSet result;
 
     QueryTreeNodes to_visit{lambda_node.getExpression()};
@@ -1021,12 +1022,19 @@ NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const
 
         if (const auto * column_node = current->as<ColumnNode>())
         {
-            /// Mirrors visitColumn: a column with a non-constant expression is replaced by that
-            /// expression and never looked up under its own name.
+            /// Both tests mirror visitColumn. A column carrying a non-constant expression is
+            /// replaced by that expression and never looked up under its own name, and a column
+            /// sourced from another lambda's arguments is bound there, so an equal name is a
+            /// different binding.
             bool looked_up_by_name = !column_node->hasExpression() || use_column_identifier_as_action_node_name
                 || column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
 
-            if (looked_up_by_name)
+            auto column_source = column_node->getColumnSourceOrNull();
+            bool bound_by_this_scope = !column_source
+                || column_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
+                || column_source.get() == own_arguments;
+
+            if (looked_up_by_name && bound_by_this_scope)
             {
                 const auto & column_name = column_node->getColumnName();
                 if (std::find(argument_names.begin(), argument_names.end(), column_name) != argument_names.end())

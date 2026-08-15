@@ -152,3 +152,11 @@ SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> materialize(plus(x, 1)) + 10, [toUInt
 
 SELECT 'argument named after a generated action name, analyzer disabled';
 SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> plus(x, 1), [toUInt8(2)], [toUInt16(42)]) SETTINGS enable_analyzer = 0;
+
+-- A nested lambda binds its own argument, so an equal name in the outer lambda is a different
+-- binding and must not displace the outer body's own node.
+SELECT 'nested lambda argument named after a generated action name';
+SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> plus(x, 1) + arrayMap(`plus(x, 1_UInt8)` -> `plus(x, 1_UInt8)`, [toUInt8(0)])[1], [toUInt8(2)], [toUInt16(42)]);
+
+SELECT 'nested lambda argument named after a generated action name, analyzer disabled';
+SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> plus(x, 1) + arrayMap(`plus(x, 1_UInt8)` -> `plus(x, 1_UInt8)`, [toUInt8(0)])[1], [toUInt8(2)], [toUInt16(42)]) SETTINGS enable_analyzer = 0;

@@ -82,3 +82,7 @@ argument named after a generated action name, nested use
 [13]
 argument named after a generated action name, analyzer disabled
 [3]
+nested lambda argument named after a generated action name
+[3]
+nested lambda argument named after a generated action name, analyzer disabled
+[3]
