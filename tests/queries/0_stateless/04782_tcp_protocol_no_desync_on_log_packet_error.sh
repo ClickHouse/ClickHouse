@@ -18,6 +18,7 @@ QUERY_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.sql"
 # every later query that asks for logs would lose its log packet.
 trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_limit_mid_block" || true
       ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_limit_after_flush" || true
+      ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT tcp_handler_throw_memory_limit_in_table_columns" || true
       rm -f "${QUERY_FILE:-}"' EXIT
 
 # Both cases below run a query that fails during analysis, so the log packet is the first block
@@ -57,3 +58,26 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT native_writer_throw_memory_lim
 
 # The connection is usable afterwards, whether it was preserved or reopened.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'after', 1"
+
+# 3. The same invariant on the INSERT handshake: TableColumns precedes the schema string, which is
+# materialized under the query memory tracker. Without the rollback the client reads the following
+# Exception packet as the schema and reports CANNOT_PARSE_INPUT_ASSERTION_FAILED instead of 241.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.insert_handshake"
+${CLICKHOUSE_CLIENT} -q \
+    "CREATE TABLE ${CLICKHOUSE_DATABASE}.insert_handshake (a UInt64, b UInt64 DEFAULT a + 1) ENGINE = Memory"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT tcp_handler_throw_memory_limit_in_table_columns"
+
+echo '1' | ${CLICKHOUSE_CLIENT} --receive_timeout=30 -q \
+    "INSERT INTO ${CLICKHOUSE_DATABASE}.insert_handshake (a) FORMAT CSV" 2>&1 \
+    | grep -aoE 'MEMORY_LIMIT_EXCEEDED|CANNOT_PARSE_INPUT_ASSERTION_FAILED|Unrecognized token' | sort -u
+
+# input() takes the other sendTableColumns call site, reached through the query pipeline.
+echo '1' | ${CLICKHOUSE_CLIENT} --receive_timeout=30 -q \
+    "INSERT INTO ${CLICKHOUSE_DATABASE}.insert_handshake (a) SELECT * FROM input('a UInt64') FORMAT CSV" 2>&1 \
+    | grep -aoE 'MEMORY_LIMIT_EXCEEDED|CANNOT_PARSE_INPUT_ASSERTION_FAILED|Unrecognized token' | sort -u
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT tcp_handler_throw_memory_limit_in_table_columns"
+
+${CLICKHOUSE_CLIENT} -q "SELECT 'after insert', count() FROM ${CLICKHOUSE_DATABASE}.insert_handshake"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.insert_handshake"

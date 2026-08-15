@@ -138,6 +138,7 @@ namespace FailPoints
 {
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_throw_memory_limit_in_table_columns[];
 }
 }
 
@@ -3253,22 +3254,41 @@ void TCPHandler::sendLogData(
 
 void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
 {
-    writeVarUInt(Protocol::Server::TableColumns, *out);
+    /// The snapshot is taken before maybe_compressed_out may be created below, so a packet that
+    /// creates it is rolled back on the uncompressed buffer alone, which is where its bytes are.
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
 
-    WriteBuffer * columns_buf = out.get();
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    try
     {
-        initMaybeCompressedOut(state);
-        columns_buf = state.maybe_compressed_out.get();
+        writeVarUInt(Protocol::Server::TableColumns, *out);
+
+        /// The packet type is on the buffer but its two strings are not: the state in which a
+        /// throw leaves a partial packet behind.
+        fiu_do_on(FailPoints::tcp_handler_throw_memory_limit_in_table_columns, {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
+
+        WriteBuffer * columns_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            columns_buf = state.maybe_compressed_out.get();
+        }
+
+        /// Send external table name (empty name is the main table)
+        writeStringBinary("", *columns_buf);
+        writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+
+        columns_buf->next();
+        out->finishChunk();
+        out->next();
     }
-
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
-
-    columns_buf->next();
-    out->finishChunk();
-    out->next();
+    catch (...)
+    {
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out);
+        throw;
+    }
 }
 
 
