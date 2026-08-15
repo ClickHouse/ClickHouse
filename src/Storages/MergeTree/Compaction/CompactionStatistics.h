@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/BufferAllocationPolicy.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
