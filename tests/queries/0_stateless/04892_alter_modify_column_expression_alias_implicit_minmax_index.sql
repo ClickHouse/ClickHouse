@@ -26,6 +26,13 @@ SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase()
 -- name this returned `0`, because the index files still held the `a + 1` value ranges.
 SELECT 'physical values', count() FROM t_04892 WHERE expr_alias = 0;
 
+-- An unrelated settings-only ALTER must not rehydrate the deliberately absent index: its files
+-- still hold the alias-expression values until a rewrite creates replacement files.
+SELECT 'unrelated setting alter';
+ALTER TABLE t_04892 MODIFY SETTING max_parts_in_total = 100000;
+SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_04892' ORDER BY name;
+SELECT 'physical values after unrelated setting alter', count() FROM t_04892 WHERE expr_alias = 0;
+
 SELECT 'physical to expression alias';
 ALTER TABLE t_04892 MODIFY COLUMN expr_alias UInt64 ALIAS a + 1;
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_04892' ORDER BY name;

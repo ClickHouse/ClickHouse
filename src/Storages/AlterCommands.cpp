@@ -1170,6 +1170,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         }
         if (any_mt_setting)
         {
+            const auto changes_implicit_index_policy = [](const SettingChange & change)
+            {
+                return change.name == "add_minmax_index_for_numeric_columns"
+                    || change.name == "add_minmax_index_for_string_columns"
+                    || change.name == "add_minmax_index_for_temporal_columns"
+                    || change.name == "add_minmax_index_for_block_number_column"
+                    || change.name == "add_minmax_index_for_block_offset_column"
+                    || change.name == "enable_block_number_column"
+                    || change.name == "enable_block_offset_column";
+            };
+
+            if (!std::ranges::any_of(settings_changes, changes_implicit_index_policy))
+                return;
+
             /// Preserve the implicit-index policy stored in the table metadata. It can originate
             /// from a compatibility setting or server configuration and therefore need not be
             /// present in settings_from_storage. Starting from a fresh MergeTreeSettings here

@@ -5,6 +5,9 @@ alias values	0
 expression alias to physical
 auto_minmax_index_a
 physical values	100000
+unrelated setting alter
+auto_minmax_index_a
+physical values after unrelated setting alter	100000
 physical to expression alias
 auto_minmax_index_a
 alias values again	0
