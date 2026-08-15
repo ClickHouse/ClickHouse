@@ -1,0 +1,8 @@
+granted x, policy on y, sqp=0 10
+granted x, policy on y, sqp=1 10
+no grant on the leaf, sqp=0 ACCESS_DENIED
+no grant on the leaf, sqp=1 ACCESS_DENIED
+granted y only, selects x, sqp=0 ACCESS_DENIED
+granted y only, selects x, sqp=1 ACCESS_DENIED
+atf nd sqp=1 ONCE
+atf nd sqp=0 ONCE

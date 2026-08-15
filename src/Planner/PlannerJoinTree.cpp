@@ -740,7 +740,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
       * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
       */
     NameSet columns_names_allowed_to_select;
-    if (table_node)
+    if (table_node && !select_query_options.ignore_table_access_check)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
         columns_names_allowed_to_select = checkAccessRights(

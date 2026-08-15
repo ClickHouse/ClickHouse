@@ -55,6 +55,11 @@ struct SelectQueryOptions
     /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
     bool check_subquery_table_access = false;
 
+    /// Skip the column-level SELECT check on a table the query reads directly. Set only where the
+    /// column list is a read list rather than a list of columns the user asked for, so checking it
+    /// would require grants on columns the user never selected.
+    bool ignore_table_access_check = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.

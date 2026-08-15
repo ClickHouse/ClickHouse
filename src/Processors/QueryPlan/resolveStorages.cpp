@@ -263,6 +263,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         auto interpreter_context = context;
         if (needs_row_policy)
         {
+            /// `column_names` is the shipped plan's read list, widened past the columns the query
+            /// selects by the policy the node resolves below. Only the selected columns are the user's
+            /// own, and those were authorized where the plan was built.
+            options.ignore_table_access_check = true;
+
             auto row_policy_context = Context::createCopy(context);
             /// The initiator has already lowered `additional_table_filters` into an explicit filter step
             /// of the shipped plan, so re-resolving the setting here would apply it a second time.
