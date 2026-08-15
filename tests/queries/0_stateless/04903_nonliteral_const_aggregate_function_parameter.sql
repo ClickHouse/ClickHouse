@@ -1,15 +1,19 @@
 -- A non-literal constant aggregate-function parameter (e.g. `0.4 + 0.1`) is evaluated through the
 -- `Field`-returning `evaluateConstantExpression` compatibility bridge (`materializeToField`), which
--- reads the value via the column's `operator[]`. This asserts the parameter value is preserved, so
--- the aggregate behaves exactly as if a folded literal had been passed. See PR #114666.
+-- reads the value from the size-1 result column via `operator[]`. The parameter is routed there by
+-- `getAggregateFunctionParametersArray` -> `evaluateConstantExpressionAsLiteral`, and its value is
+-- directly observable in the query result. See PR #114666.
+--
+-- The default analyzer path always reaches the bridge for a non-literal argument (it never rewrites
+-- the argument back into an `ASTLiteral`, so the literal fast path that skips the bridge does not
+-- apply). The cases below therefore exercise `materializeToField` end to end.
 
--- Float parameter: `quantile` level 0.4 + 0.1 = 0.5 -> median of 0..10.
-SELECT quantile(0.4 + 0.1)(number) FROM numbers(11);
-SELECT quantileExact(0.2 * 5)(number) FROM numbers(11);
+-- Plain arithmetic results (numeric `ColumnVector`).
+SELECT quantile(0.4 + 0.1)(number) FROM numbers(11);   -- level 0.5 -> 5
+SELECT quantileExact(0.2 * 5)(number) FROM numbers(11); -- level 1.0 -> 10
+SELECT groupArray(1 + 1)(number) FROM numbers(10);      -- max size 2 -> [0,1]
 
--- Integer parameter: `groupArray` max size 1 + 1 = 2.
-SELECT groupArray(1 + 1)(number) FROM numbers(10);
-
--- The same holds on the old analyzer.
-SELECT quantile(0.4 + 0.1)(number) FROM numbers(11) SETTINGS enable_analyzer = 0;
-SELECT groupArray(1 + 1)(number) FROM numbers(10) SETTINGS enable_analyzer = 0;
+-- Non-trivial wrapped results also reach the bridge; `operator[]` flattens the wrapper.
+SELECT quantile(toNullable(0.4 + 0.1))(number) FROM numbers(11);     -- Nullable(Float64) -> 5
+SELECT groupArray(toNullable(1 + 1))(number) FROM numbers(10);       -- Nullable -> [0,1]
+SELECT groupArray(toLowCardinality(1 + 1))(number) FROM numbers(10); -- LowCardinality -> [0,1]
