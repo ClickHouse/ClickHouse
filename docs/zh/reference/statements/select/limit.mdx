@@ -176,7 +176,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 **非确定性结果：**如果没有 [`ORDER BY`](/zh/reference/statements/select/order-by) 子句，返回的行可能是任意的，并且在多次执行查询时可能会有所不同。
 
-**服务器端限制：**返回的行数也可能受到 [limit](/zh/reference/settings/session-settings#limit) 设置的影响。
+**服务器端限制：**返回的行数也可能受到 [limit](/zh/reference/settings/session-settings/other#limit) 设置的影响。
 
 <div id="see-also">
   ## 另请参阅
