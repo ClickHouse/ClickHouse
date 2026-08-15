@@ -239,6 +239,10 @@ build_sqlancer() {
     local ref="$1" dest="$2"
     rm -rf "$dest"
     git clone --quiet --depth 1 --branch "$ref" "$SQLANCER_REPO" "$dest" || return 1
+    # Remember what we fetched before anything else can fail: on a broken `main`
+    # this is the only place the offending revision is known, and the run has to
+    # stay attributable exactly there.
+    SQLANCER_FETCHED_COMMIT="$(git -c safe.directory='*' -C "$dest" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
     if ! (
         cd "$dest" &&
         mvn --no-transfer-progress -B package \
@@ -255,6 +259,7 @@ build_sqlancer() {
 
 SQLANCER_DIR="$SQLANCER_BAKED_DIR"
 BUILD_WARNING=""
+SQLANCER_FETCHED_COMMIT=""
 echo "=== Building sqlancer from $SQLANCER_REPO @ $SQLANCER_REF ==="
 if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ]; then
     BUILD_RC=0
@@ -265,7 +270,7 @@ if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ]; then
         BUILD_WARNING="could not fetch or resolve dependencies for $SQLANCER_REF (network?), fell back to the image's build"
         echo "WARNING: $BUILD_WARNING" >&2
     else
-        BUILD_WARNING="$SQLANCER_REF does not build, fell back to the image's build - this run does NOT test current $SQLANCER_REF"
+        BUILD_WARNING="$SQLANCER_REF @ ${SQLANCER_FETCHED_COMMIT:-unknown} does not build, fell back to the image's build - this run does NOT test current $SQLANCER_REF"
         echo "ERROR: $BUILD_WARNING; see $SQLANCER_BUILD_LOG" >&2
         # Fuzz on with the baked build - some coverage beats none - but fail the
         # job: a broken `main` is exactly what this job must not hide.
@@ -560,7 +565,14 @@ if [ "$OVERALL_STATUS" = "OK" ]; then
     add_test_result "SQLancer" OK ""
 fi
 
-RESULT_INFO="sqlancer $SQLANCER_REF @ $SQLANCER_COMMIT; ${QUERY_STATS:-no statistics}; $FAILURE_SUMMARY"
+# Say which revision actually ran. On a fallback the fetched SHA is not the one
+# that produced these findings, and reporting it would misattribute them.
+if [ "$SQLANCER_DIR" = "$SQLANCER_RUN_DIR" ]; then
+    SQLANCER_PROVENANCE="sqlancer $SQLANCER_REF @ $SQLANCER_COMMIT"
+else
+    SQLANCER_PROVENANCE="sqlancer image build @ $SQLANCER_COMMIT (NOT $SQLANCER_REF @ ${SQLANCER_FETCHED_COMMIT:-not fetched})"
+fi
+RESULT_INFO="$SQLANCER_PROVENANCE; ${QUERY_STATS:-no statistics}; $FAILURE_SUMMARY"
 if [ -n "$BUILD_WARNING" ]; then
     RESULT_INFO="$RESULT_INFO; WARNING: $BUILD_WARNING"
 fi
