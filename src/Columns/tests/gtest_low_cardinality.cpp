@@ -676,6 +676,25 @@ TEST(ColumnLowCardinality, TranslateSparseIndexesPromotesDestinationType)
     expectRangeEquals(*destination_uint32, 1, *source, 0, source->size());
 }
 
+TEST(ColumnLowCardinality, TranslateSparseOverlappingIndexesDoesNotPromoteDestinationType)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 201});
+
+    auto destination_uint8 = makeLowCardinalityUInt64Column<UInt8>(255, {1});
+    const size_t dictionary_size_uint8 = destination_uint8->getDictionary().size();
+    destination_uint8->insertRangeFrom(*source, 0, source->size());
+    EXPECT_EQ(destination_uint8->getDictionary().size(), dictionary_size_uint8);
+    EXPECT_EQ(destination_uint8->getSizeOfIndexType(), sizeof(UInt8));
+    expectRangeEquals(*destination_uint8, 1, *source, 0, source->size());
+
+    auto destination_uint16 = makeLowCardinalityUInt64Column<UInt16>(65535, {1});
+    const size_t dictionary_size_uint16 = destination_uint16->getDictionary().size();
+    destination_uint16->insertRangeFrom(*source, 0, source->size());
+    EXPECT_EQ(destination_uint16->getDictionary().size(), dictionary_size_uint16);
+    EXPECT_EQ(destination_uint16->getSizeOfIndexType(), sizeof(UInt16));
+    expectRangeEquals(*destination_uint16, 1, *source, 0, source->size());
+}
+
 TEST(ColumnLowCardinality, TranslateSparseIndexesFromAlternatingDictionaries)
 {
     auto first_source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 5, 200, 130}, 1000);

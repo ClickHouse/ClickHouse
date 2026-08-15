@@ -22,6 +22,7 @@
 #include <base/scope_guard.h>
 #include <base/unaligned.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -65,7 +66,7 @@ public:
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-    MutableColumnPtr uniqueInsertRangeFromDictionary(
+    IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionary(
         const IColumn & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
@@ -247,14 +248,14 @@ private:
         size_t max_dictionary_size);
 
     template <typename SourceIndexType, typename DestinationIndexType>
-    MutableColumnPtr uniqueInsertRangeFromDictionaryImpl(
+    IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionaryImpl(
         const IColumn & src_dictionary,
         const PaddedPODArray<SourceIndexType> & src_indexes,
         size_t start,
         size_t length);
 
     template <typename DestinationIndexType>
-    MutableColumnPtr uniqueInsertRangeFromDictionaryForDestinationType(
+    IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionaryForDestinationType(
         const IColumn & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
@@ -467,7 +468,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 
 template <typename ColumnType>
 template <typename SourceIndexType, typename DestinationIndexType>
-MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
+IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
     const IColumn & src_dictionary,
     const PaddedPODArray<SourceIndexType> & src_indexes,
     size_t start,
@@ -519,10 +520,12 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
         return reverse_index.insert(ref);
     };
 
+    size_t max_destination_index = 0;
     for (size_t i = 0; i < length; ++i)
     {
         const auto source_index = src_indexes[start + i];
         const size_t destination_index = insert_source_index(static_cast<size_t>(source_index));
+        max_destination_index = std::max(max_destination_index, destination_index);
         if (destination_index > std::numeric_limits<DestinationIndexType>::max())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -532,12 +535,12 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
         translated_indexes.push_back(static_cast<DestinationIndexType>(destination_index));
     }
 
-    return translated_column;
+    return {std::move(translated_column), max_destination_index};
 }
 
 template <typename ColumnType>
 template <typename DestinationIndexType>
-MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryForDestinationType(
+IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryForDestinationType(
     const IColumn & src_dictionary,
     const IColumn & src_indexes,
     size_t start,
@@ -562,7 +565,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryForDes
 }
 
 template <typename ColumnType>
-MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionary(
+IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionary(
     const IColumn & src_dictionary,
     const IColumn & src_indexes,
     size_t start,

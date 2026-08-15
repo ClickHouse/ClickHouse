@@ -155,6 +155,53 @@ namespace
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
 
+    template <typename DestinationIndexType, typename SourceIndexType>
+    MutableColumnPtr convertIndexColumn(const PaddedPODArray<SourceIndexType> & source_indexes)
+    {
+        auto result = ColumnVector<DestinationIndexType>::create();
+        auto & result_indexes = result->getData();
+        result_indexes.reserve(source_indexes.size());
+        for (const auto index : source_indexes)
+            result_indexes.push_back(static_cast<DestinationIndexType>(index));
+        return result;
+    }
+
+    template <typename IndexType>
+    MutableColumnPtr narrowIndexColumnForType(
+        MutableColumnPtr indexes, const PaddedPODArray<IndexType> & indexes_data, size_t max_index)
+    {
+        if constexpr (sizeof(IndexType) == sizeof(UInt8))
+            return indexes;
+
+        if (max_index <= std::numeric_limits<UInt8>::max())
+            return convertIndexColumn<UInt8>(indexes_data);
+        if constexpr (sizeof(IndexType) > sizeof(UInt16))
+            if (max_index <= std::numeric_limits<UInt16>::max())
+                return convertIndexColumn<UInt16>(indexes_data);
+        if constexpr (sizeof(IndexType) > sizeof(UInt32))
+            if (max_index <= std::numeric_limits<UInt32>::max())
+                return convertIndexColumn<UInt32>(indexes_data);
+        return indexes;
+    }
+
+    MutableColumnPtr narrowIndexColumn(MutableColumnPtr indexes, size_t max_index)
+    {
+        if (indexes->empty())
+            return indexes;
+        if (const auto * indexes_data = getIndexesData<UInt8>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt16>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt32>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        if (const auto * indexes_data = getIndexesData<UInt64>(*indexes))
+            return narrowIndexColumnForType(std::move(indexes), *indexes_data, max_index);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
+            indexes->getName());
+    }
+
     template <typename SourceIndexType>
     MutableColumnPtr translateSparseIndexesForSourceType(
         const IColumn & source_indexes_column,
@@ -191,10 +238,12 @@ namespace
             0,
             distinct_source_index_count,
             destination_size_upper_bound);
+        translated_distinct_indexes.indexes = narrowIndexColumn(
+            std::move(translated_distinct_indexes.indexes), translated_distinct_indexes.max_index);
 
         if (distinct_source_index_count == length)
-            return translated_distinct_indexes;
-        return IColumn::mutate(translated_distinct_indexes->index(*compact_indexes, 0));
+            return std::move(translated_distinct_indexes.indexes);
+        return IColumn::mutate(translated_distinct_indexes.indexes->index(*compact_indexes, 0));
     }
 
     MutableColumnPtr translateSparseIndexes(
