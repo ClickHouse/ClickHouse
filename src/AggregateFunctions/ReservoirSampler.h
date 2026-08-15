@@ -217,12 +217,10 @@ private:
         }
         else
         {
-            std::array<UInt64, sizeof(NativeType) / sizeof(UInt64)> limbs{};
-            std::memcpy(limbs.data(), &value, sizeof(value));
-
+            /// `items` stores limbs in significance order, independently of the host byte order.
             cpp_int result;
-            for (size_t i = limbs.size(); i-- > 0;)
-                result = (result << 64) | limbs[i];
+            for (size_t i = std::size(value.items); i-- > 0;)
+                result = (result << 64) | value.items[i];
 
             if (value < NativeType{})
                 result -= cpp_int(1) << (sizeof(NativeType) * 8);
@@ -243,15 +241,12 @@ private:
             if (value < 0)
                 value += boost::multiprecision::cpp_int(1) << (sizeof(NativeType) * 8);
 
-            std::array<UInt64, sizeof(NativeType) / sizeof(UInt64)> limbs{};
-            for (UInt64 & limb : limbs)
+            NativeType result{};
+            for (UInt64 & limb : result.items)
             {
                 limb = (value & std::numeric_limits<UInt64>::max()).convert_to<UInt64>();
                 value >>= 64;
             }
-
-            NativeType result{};
-            std::memcpy(&result, limbs.data(), sizeof(result));
             return result;
         }
     }
