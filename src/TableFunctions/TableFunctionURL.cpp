@@ -124,7 +124,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
 void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, getUsedNamedCollectionNameForUpdate()))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 

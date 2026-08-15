@@ -164,7 +164,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    String * used_named_collection_name)
 {
     if (asts.empty())
         return nullptr;
@@ -185,6 +186,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     if (!collection)
         return nullptr;
+
+    if (used_named_collection_name)
+        *used_named_collection_name = *collection_name;
 
     auto collection_copy = collection->duplicate();
 

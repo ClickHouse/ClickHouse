@@ -1382,3 +1382,32 @@ def test_drop_while_used_by_lazily_loaded_table_function(cluster):
     node.query("DROP TABLE lazy_tf_db.t")
     node.query("DROP NAMED COLLECTION lazy_bigquery_collection")
     node.query("DROP DATABASE lazy_tf_db")
+
+
+def test_drop_while_used_by_url_table_function(cluster):
+    """Every named-collection-backed table function records the resolved collection when creating a
+    permanent table. This includes `url`, which does not share the `BigQueryConfiguration` path used
+    by the table-function regression above."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS url_tf_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS url_tf_collection")
+
+    node.query("CREATE DATABASE url_tf_db ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        "CREATE NAMED COLLECTION url_tf_collection AS "
+        "url = 'http://localhost:8123', format = 'CSV', structure = 'x Int64'"
+    )
+    node.query("CREATE TABLE url_tf_db.t (x Int64) AS url(url_tf_collection)")
+
+    # A restart reconstructs the table from its table-function definition, so this also verifies
+    # that the function reports the collection name while loading stored metadata.
+    node.restart_clickhouse()
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION url_tf_collection"
+    )
+
+    node.query("DROP TABLE url_tf_db.t")
+    node.query("DROP NAMED COLLECTION url_tf_collection")
+    node.query("DROP DATABASE url_tf_db")

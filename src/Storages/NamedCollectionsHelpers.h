@@ -30,7 +30,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection = true,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    String * used_named_collection_name = nullptr);
 
 /// The name of the named collection the engine arguments of a table definition reference, if any.
 /// The collection is always the first argument, as in `tryGetNamedCollectionWithOverrides` above, and
