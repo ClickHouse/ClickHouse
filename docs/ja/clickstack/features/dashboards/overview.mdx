@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack の可視化とダッシュボード'
-sidebarTitle: 'ダッシュボード'
+sidebarTitle: '概要'
 description: 'ClickStack の可視化とダッシュボード'
 doc_type: 'guide'
 keywords: ['clickstack', 'ダッシュボード', '可視化', '監視', 'オブザーバビリティ']
@@ -45,30 +45,26 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 
     上部メニューから `Line/Bar` の可視化タイプを選択し、続いて `Traces` データセット ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) を使用している場合は `Demo Traces`) を選択します。次の値を入力してください。
 
-    * Metric: `Average`
-    * Column: `Duration/1000`
+    * メトリクス: `Average`
+    * カラム: `Duration/1000`
     * Where: `<empty>`
     * Group By: `ServiceName`
-    * Alias: `Average Time`
+    * 別名: `Average Time`
 
     <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="シンプルな可視化" size="lg" />
 
     イベントは SQL の `WHERE` 句または Lucene 構文のいずれかを使ってフィルタでき、イベントを可視化する時間範囲も設定できます。複数の系列にも対応しています。
 
-    たとえば、フィルタ `ServiceName:\"frontend\"` を追加して、サービス `frontend` でフィルタします。さらに、`Add Series` をクリックして、エイリアス `Count` を持つ時系列のイベント件数の 2 つ目の系列を追加します。
+    たとえば、フィルタ `ServiceName:\"frontend\"` を追加して、サービス `frontend` でフィルタします。さらに、`Add Series` をクリックして、別名 `Count` を持つ時系列のイベント件数の 2 つ目の系列を追加します。
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="シンプルな可視化 2" size="lg" />
 
-    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
-
-    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
+    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有の別名を付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
 
     <Note>
-      可視化は、メトリクス、トレース、ログなど、任意のデータソースから作成できます。ClickStack はこれらすべてをワイドイベントとして扱います。任意の **numeric column** を時系列でチャート化でき、**string**、**date**、または **numeric** のカラムをグループ化に使用できます。
+      可視化は、メトリクス、トレース、ログなど、任意のデータソースから作成できます。ClickStack はこれらすべてをワイドイベントとして扱います。任意の **numeric カラム** を時系列でチャート化でき、**string**、**date**、または **numeric** のカラムをグループ化に使用できます。
 
       この統一されたアプローチにより、一貫性があり柔軟なモデルを使って、テレメトリーの種類をまたいだダッシュボードを構築できます。
     </Note>
@@ -212,6 +208,14 @@ Number タイルを選択した状態で **Display Settings** を開き、**Back
 
 Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
 
+Table タイルでは **Alternate Row Background** を使って行を交互に色分けできるため、列数の多いテーブルでも確認しやすくなります。これは既定ではオフです。
+
+Table タイルを選択した状態で **Display Settings** を開き、**Alternate Row Background** をオンにします。交互の色分けは見た目だけの設定なので、query-builder と raw SQL の両方のテーブルタイルで機能します。
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Alternate Row Background がオンになったテーブルタイルの Display Settings ドロワー" size="lg" />
+
+テーブルタイルでは、スクロールしてもヘッダー行とデータの間の区切り線が維持されるため、カラム見出しを見分けやすくなります。
+
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索
 </div>
@@ -306,7 +310,7 @@ HyperDX には、すぐに使えるダッシュボードがあらかじめ用意
 <Info>
   **必要なシステムテーブルへのアクセス権**
 
-  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/index) をクエリします。次の権限が必要です。
+  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/overview) をクエリします。次の権限が必要です。
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 
