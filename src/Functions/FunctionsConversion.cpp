@@ -478,8 +478,34 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
 
             if constexpr (IsDataTypeNumber<LeftDataType> || std::is_same_v<LeftDataType, DataTypeTime64>)
             {
-                if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
+                if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType> || std::is_same_v<RightDataType, DataTypeTime64>)
                 {
+                    if constexpr (std::is_same_v<RightDataType, DataTypeTime64>)
+                    {
+                        if (cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                settings,
+                                AccurateConvertStrategyAdditions());
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                settings,
+                                AccurateOrNullConvertStrategyAdditions());
+                        }
+
+                        return true;
+                    }
+
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
 case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
     result_column \
