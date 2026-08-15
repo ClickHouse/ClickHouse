@@ -57,12 +57,15 @@ SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_bl
 -- default 'throw' mode, so the query aborts even though the outer mode is 'break'.
 SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
--- The local plan is disabled only when the leaf timeout is stricter than the initiator's own
--- 'max_execution_time': when the initiator's timeout is at most the leaf timeout, it already bounds the local
--- reading at least as tightly, so the local plan must be kept. (A profile that caps both settings to the same
--- value - like the one used by the Fast test job - must not lose the local plan for every query.)
+-- The local plan is disabled only when the leaf timeout contract is stricter than, or differs from, the
+-- initiator's own timeout contract. Equal timeouts with the same overflow mode already bound the local reading
+-- at least as tightly, so the local plan must be kept. (A profile that caps both settings to the same value -
+-- like the one used by the Fast test job - must not lose the local plan for every query.)
 -- 'parallel_replicas_local_plan' is pinned to 1 here because the test harness randomizes it.
 SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 60);
+-- Equal timeouts with different overflow modes still require remote-only leaf reading: the local replica shares
+-- the initiator's `timeout_overflow_mode`, whereas remote replicas use `timeout_overflow_mode_leaf`.
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, timeout_overflow_mode = 'break', max_execution_time_leaf = 60, timeout_overflow_mode_leaf = 'throw');
 -- A stricter leaf timeout still disables the local plan so that all leaf reading happens on remote replicas
 -- where the leaf timeout is honored.
 SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 1);

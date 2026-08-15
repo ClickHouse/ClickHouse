@@ -743,17 +743,16 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
         /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
         /// 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
-        /// settings). To make the leaf timeout effective when it is stricter than the initiator's own
-        /// 'max_execution_time' (which does bound the local pipeline), skip the local pipeline so that all leaf
-        /// reading happens on remote replicas — the same approach as for SELECT in
+        /// settings). Skip the local pipeline when the leaf timeout contract differs from the initiator's timeout
+        /// contract so that all leaf reading happens on remote replicas — the same approach as for SELECT in
         /// 'updateContextForParallelReplicas'.
         if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
         {
             LOG_TRACE(
                 logger,
-                "Not using the local insert select pipeline because 'max_execution_time_leaf' is stricter than "
-                "'max_execution_time': the local "
-                "pipeline shares the initiator's query status and cannot be bounded by the leaf timeout separately");
+                "Not using the local insert select pipeline because the leaf timeout contract differs from the "
+                "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
+                "timeout separately");
         }
         else
         {
