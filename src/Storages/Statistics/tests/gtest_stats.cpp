@@ -676,8 +676,14 @@ TEST(Statistics, LikePatternSelectivityWithMetadata)
     EXPECT_EQ(estimate("a LIKE '%abc'"), 42u);
     EXPECT_EQ(estimate("a LIKE '%abc%'"), 91u);
 
-    /// Complex patterns keep the old fixed fallback.
+    /// Complex patterns keep the old fixed fallback while retaining the column's NULL domain.
     EXPECT_EQ(estimate("a LIKE '%a%b%'"), 100u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%'"), 80u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%a%b%'"), 720u);
+    EXPECT_EQ(estimate_nullable("a NOT ILIKE '%a%b%'"), 720u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%' AND a IS NULL"), 0u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%a%b%' AND a IS NULL"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%' OR a IS NULL"), 280u);
 
     /// Escaped wildcards and supported custom ESCAPE syntax normalize to exact LIKE.
     EXPECT_EQ(estimate(R"(a LIKE 'a\\%b')"), 10u);

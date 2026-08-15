@@ -614,7 +614,19 @@ bool ConditionSelectivityEstimator::tryExtractLikePredicateAtom(
 
     const LikePatternClassification classification = classifyLikePattern(pattern);
     if (classification.kind == StringPatternKind::Unsupported)
-        return false;
+    {
+        /// Keep the legacy fixed fallback for complex patterns, but retain the column's NULL domain
+        /// so same-column combinations with IS NULL / IS NOT NULL use three-valued logic.
+        const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
+        const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+        Selectivity selectivity{non_null_sel * default_like_factor, null_sel};
+        if (negated)
+            selectivity = selectivity.applyNot();
+
+        out.function = RPNElement::FUNCTION_IN_RANGE;
+        out.column_selectivities.emplace(column_name, selectivity);
+        return true;
+    }
 
     /// Case-sensitive LIKE without wildcards is plain equality, so reuse the range machinery and
     /// per-column statistics. Exact LIKE on FixedString(N) matches all N bytes, so it is equality
