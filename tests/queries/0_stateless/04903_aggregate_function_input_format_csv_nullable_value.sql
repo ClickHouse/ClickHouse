@@ -3,10 +3,10 @@
 SET aggregate_function_input_format = 'value';
 
 SELECT 'nullable uint64', finalizeAggregation(x) IS NULL
-FROM format(CSV, 'x AggregateFunction(any, Nullable(UInt64))', '\"\\\\N\"');
+FROM format(CSV, 'x AggregateFunction(any, Nullable(UInt64))', '\"\\N\"');
 
 SELECT 'nullable string', finalizeAggregation(x) IS NULL
-FROM format(CSV, 'x AggregateFunction(any, Nullable(String))', '\"\\\\N\"');
+FROM format(CSV, 'x AggregateFunction(any, Nullable(String))', '\"\\N\"');
 
 SELECT 'low cardinality nullable string', finalizeAggregation(x) IS NULL
-FROM format(CSV, 'x AggregateFunction(any, LowCardinality(Nullable(String)))', '\"\\\\N\"');
+FROM format(CSV, 'x AggregateFunction(any, LowCardinality(Nullable(String)))', '\"\\N\"');
