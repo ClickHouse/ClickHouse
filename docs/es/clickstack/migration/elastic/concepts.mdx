@@ -191,7 +191,7 @@ En un solo nodo, las vías de ejecución dividen los datos en rangos independien
 La ejecución de consultas se paraleliza aún más mediante:
 
 1. **Vectorización SIMD**: las operaciones sobre datos columnares utilizan [instrucciones SIMD de CPU](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (p. ej., [AVX512](https://en.wikipedia.org/wiki/AVX-512)), lo que permite procesar valores por lotes.
-2. **Paralelismo a nivel de clúster**: en configuraciones distribuidas, cada nodo realiza el procesamiento de consultas localmente. Los [estados parciales de agregación](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) se transmiten al nodo que inicia la consulta y se fusionan. Si las claves de `GROUP BY` de la consulta están alineadas con las claves de sharding, la fusión puede [reducirse al mínimo o evitarse por completo](/es/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **Paralelismo a nivel de clúster**: en configuraciones distribuidas, cada nodo realiza el procesamiento de consultas localmente. Los [estados parciales de agregación](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) se transmiten al nodo que inicia la consulta y se fusionan. Si las claves de `GROUP BY` de la consulta están alineadas con las claves de segmento, la fusión puede [reducirse al mínimo o evitarse por completo](/es/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 
