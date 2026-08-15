@@ -15,6 +15,7 @@
 #include <Functions/indexHint.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Planner/CollectSets.h>
@@ -98,6 +99,32 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     auto execution_context = Context::createCopy(context);
 
+    /// The Analyzer keeps scalar subqueries in the query tree, while the legacy
+    /// `TreeRewriter` executes them before compiling a standalone expression.
+    /// Do the same on a private AST copy: standalone actions have no surrounding
+    /// query plan that would otherwise evaluate a scalar subquery at execution
+    /// time.  In particular, row-policy actions used below a `Merge` read must
+    /// receive the scalar value rather than a set placeholder.
+    ASTPtr expression_ast_for_analysis = expr_list_ast->clone();
+    Scalars scalars;
+    Scalars local_scalars;
+    ExecuteScalarSubqueriesMatcher::Data scalar_subquery_data{
+        WithContext{execution_context},
+        0,
+        scalars,
+        local_scalars,
+        false,
+        false,
+        false,
+        std::nullopt};
+    ExecuteScalarSubqueriesVisitor(scalar_subquery_data).visit(expression_ast_for_analysis);
+
+    if (execution_context->hasQueryContext())
+    {
+        for (const auto & scalar : scalars)
+            execution_context->getQueryContext()->addScalar(scalar.first, scalar.second);
+    }
+
     /// StorageDummy requires at least one column.  When the expression is constant
     /// (e.g. a constant TTL like '2000-10-10'::DateTime), available_columns may be empty.
     auto columns_for_dummy = available_columns;
@@ -127,7 +154,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
-    auto expression_list = buildQueryTree(expr_list_ast, execution_context);
+    auto expression_list = buildQueryTree(expression_ast_for_analysis, execution_context);
 
     query_node->getProjectionNode() = expression_list;
     query_node->getJoinTreeNode() = fake_table_expression;
