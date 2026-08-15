@@ -185,6 +185,13 @@ out2=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FOR
 # Unsupported types are rejected with a clear error.
 $CLICKHOUSE_LOCAL -q "SELECT map('k', 1) AS m FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
 
+# The output type contract is validated from the header before any rows are written. In particular,
+# an unsupported leaf hidden behind NULL, an empty Array, or a zero-row result must not bypass the
+# rejection merely because value serialization never descends to it.
+$CLICKHOUSE_LOCAL --enable_nullable_tuple_type=1 -q "SELECT CAST(NULL AS Nullable(Tuple(Map(String, UInt8)))) FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL -q "SELECT CAST([], 'Array(Map(String, UInt8))') FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL -q "SELECT map('k', 1) WHERE 0 FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+
 # The format writes a single FlexBuffers root for the whole result, so appending a second root to
 # an existing file would corrupt it. The format is marked as not supporting appends, and an insert
 # into a non-empty file target is rejected instead of silently concatenating a second root.

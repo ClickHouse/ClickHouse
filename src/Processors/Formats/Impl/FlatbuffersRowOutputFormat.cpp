@@ -39,10 +39,70 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
+void assertTypeIsSupported(const DataTypePtr & data_type)
+{
+    switch (data_type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            assertTypeIsSupported(assert_cast<const DataTypeNullable &>(*data_type).getNestedType());
+            return;
+        case TypeIndex::Array:
+            assertTypeIsSupported(assert_cast<const DataTypeArray &>(*data_type).getNestedType());
+            return;
+        case TypeIndex::Tuple:
+            for (const auto & nested_type : assert_cast<const DataTypeTuple &>(*data_type).getElements())
+                assertTypeIsSupported(nested_type);
+            return;
+        case TypeIndex::LowCardinality:
+            assertTypeIsSupported(assert_cast<const DataTypeLowCardinality &>(*data_type).getDictionaryType());
+            return;
+        case TypeIndex::Nothing:
+        case TypeIndex::UInt8:
+        case TypeIndex::Date:
+        case TypeIndex::UInt16:
+        case TypeIndex::DateTime:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::IPv4:
+        case TypeIndex::UInt128:
+        case TypeIndex::UInt256:
+        case TypeIndex::Enum8:
+        case TypeIndex::Int8:
+        case TypeIndex::Enum16:
+        case TypeIndex::Int16:
+        case TypeIndex::Date32:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Int128:
+        case TypeIndex::Int256:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::DateTime64:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        case TypeIndex::IPv6:
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+        case TypeIndex::UUID:
+            return;
+        default:
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Flatbuffers output format", data_type->getName());
+    }
+}
+
+}
+
 FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , string_as_string(format_settings_.flatbuffers.output_string_as_string)
 {
+    for (const auto & column : *header_)
+        assertTypeIsSupported(column.type);
 }
 
 void FlatbuffersRowOutputFormat::writePrefix()

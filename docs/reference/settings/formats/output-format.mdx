@@ -133,6 +133,18 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
 
 Use BSON String type instead of Binary for String columns.
 
+## output_format_flatbuffers_string_as_string {#output_format_flatbuffers_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Use the FlexBuffers String type instead of Blob for `String` and `FixedString` columns in the
+`Flatbuffers` output format.
+
+ClickHouse `String` and `FixedString` values are arbitrary byte sequences and can contain invalid
+UTF-8 or embedded zero bytes. By default, the format serializes them as Blob. With this setting,
+the bytes are written verbatim as FlexBuffers String values, so the user is responsible for
+ensuring they are valid UTF-8.
+
 ## output_format_compression_level {#output_format_compression_level}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
