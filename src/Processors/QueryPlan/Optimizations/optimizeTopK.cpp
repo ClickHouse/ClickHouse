@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -34,7 +35,7 @@ namespace DB::QueryPlanOptimizations
 /// sorting key or from a sorting projection the second-pass chooser would select. Runs before that
 /// chooser, so each gate below mirrors one of its gates and an uncertain case must return false.
 static bool readWouldBeInOrderForColumn(
-    const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
+    ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
 {
     const auto & metadata = read_step.getStorageMetadata();
 
@@ -44,6 +45,11 @@ static bool readWouldBeInOrderForColumn(
 
     /// A sorting projection can only serve the read when projection optimization is enabled.
     if (!optimize_projection)
+        return false;
+
+    /// The chooser's own eligibility gate: FINAL, sampled, distributed, unique-key and unsupported
+    /// parallel-replica reads never reach a projection, so the read stays on the base table.
+    if (!canUseProjectionForReadingStep(&read_step))
         return false;
 
     /// A filter lets the chooser reject the projection on cost, so selection is not predictable here.
@@ -84,18 +90,21 @@ static bool readWouldBeInOrderForColumn(
         if (!stores_all_read_columns)
             continue;
 
-        /// A declared projection with no usable part on any read part is dropped by the chooser,
-        /// so the read stays on the base table and is not in order.
-        const bool has_usable_projection_part = std::ranges::any_of(
-            read_step.getParts(),
-            [&](const auto & part_with_ranges)
-            {
-                const auto & created = part_with_ranges.data_part->getProjectionParts();
-                auto it = created.find(projection.name);
-                return it != created.end() && !it->second->is_broken;
-            });
+        /// A part without a usable projection part is read from the base table under a union with
+        /// the projection read, and that branch is not in order. An empty part set is not in order
+        /// either: the chooser drops a candidate that would read nothing.
+        const auto & parts = read_step.getParts();
+        const bool projection_serves_every_part = !parts.empty()
+            && std::ranges::all_of(
+                   parts,
+                   [&](const auto & part_with_ranges)
+                   {
+                       const auto & created = part_with_ranges.data_part->getProjectionParts();
+                       auto it = created.find(projection.name);
+                       return it != created.end() && !it->second->is_broken;
+                   });
 
-        if (has_usable_projection_part)
+        if (projection_serves_every_part)
             return true;
     }
 

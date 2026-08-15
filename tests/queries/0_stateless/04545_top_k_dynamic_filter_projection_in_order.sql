@@ -156,6 +156,65 @@ FROM (
 )
 WHERE explain ILIKE '%InOrder%';
 
+-- With the projection materialized for only some parts, the chooser reads the rest from the base
+-- table under a union, and that branch is not in order: dynamic filtering must still apply
+-- (expected 1). The projection assertion (expected 1) is what keeps the first one honest: without
+-- it the arm also passes when no projection is selected at all, which is a different plan.
+DROP TABLE IF EXISTS t_topk_mixed;
+CREATE TABLE t_topk_mixed (part UInt8, id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree PARTITION BY part ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_mixed SELECT 0, number, number % 128, sipHash64(number), toString(number) FROM numbers(16384);
+INSERT INTO t_topk_mixed SELECT 1, number, number % 128, sipHash64(number + 99), toString(number) FROM numbers(16384);
+OPTIMIZE TABLE t_topk_mixed FINAL;
+ALTER TABLE t_topk_mixed ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS mixed_reads_base_table_branch
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%Union%';
+
+-- A sampled read never reaches a projection, so dynamic filtering must still apply (expected 1)
+-- and the read must not be in order (expected 0).
+DROP TABLE IF EXISTS t_topk_sample;
+CREATE TABLE t_topk_sample (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id) SAMPLE BY id
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_sample SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+OPTIMIZE TABLE t_topk_sample FINAL;
+ALTER TABLE t_topk_sample ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_sample MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_sample SAMPLE 1/2 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS sampled_in_order
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_sample SAMPLE 1/2 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
 DROP TABLE t_topk_unmat;
+DROP TABLE t_topk_mixed;
+DROP TABLE t_topk_sample;
