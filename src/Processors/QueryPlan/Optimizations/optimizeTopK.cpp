@@ -172,9 +172,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
-    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Skip the optimization for them.
+    /// Filtering requires a threshold ordered like the sorter orders the column. The threshold is a
+    /// bare Field, which holds a Dynamic/Variant payload without its discriminator, while
+    /// ColumnVariant::compareAt ranks by discriminator first. Such a type also makes lessOrEquals
+    /// return Nullable(UInt8) rather than UInt8.
+    /// TODO: lift this once the threshold carries the full sort-key representation.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -184,8 +186,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
-        && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type)
+        && !sort_column.type->hasDynamicStructure()
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix

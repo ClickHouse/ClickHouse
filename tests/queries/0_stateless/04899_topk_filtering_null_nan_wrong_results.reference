@@ -80,6 +80,18 @@ tvs ANL ON 	(NULL)	2998
 tvs ANL OFF	('aaa')	0
 tvs ANL OFF	(NULL)	2999
 tvs ANL OFF	(NULL)	2998
+dyord DESC ON 	(1000)	2999
+dyord DESC ON 	(1000)	2998
+dyord DESC OFF	(1000)	2999
+dyord DESC OFF	(1000)	2998
+dyord ASC ON 	(0)	999
+dyord ASC ON 	(0)	998
+dyord ASC OFF	(0)	999
+dyord ASC OFF	(0)	998
+ctl stord DESC ON 	(1000)	2999
+ctl stord DESC ON 	(1000)	2998
+ctl stord DESC OFF	(1000)	2999
+ctl stord DESC OFF	(1000)	2998
 skip1 ON 	nan
 skip1 OFF	nan
 skip0 ON 	nan
@@ -149,8 +161,11 @@ ctl ord ANL OFF	77	2998
 pres arr	1
 pres f64	1
 pres tup	1
-pres tdyn	1
+pres tdyn	0
+pres dyord	0
+pres stord	1
 pres jsub	1
+pres jroot	0
 pres off varlen	0
 pres off master	0
 skipidx f64	0

@@ -111,6 +111,25 @@ INSERT INTO d_tdyn SELECT number, tuple(toFloat64(number + 100)::Dynamic) FROM n
 INSERT INTO d_tdyn SELECT number, tuple(toFloat64(number + 100)::Dynamic) FROM numbers(1000, 1000);
 INSERT INTO d_tdyn SELECT number, if(number % 100 = 0, tuple(nan::Dynamic), tuple(toFloat64(number + 100)::Dynamic)) FROM numbers(2000, 1000);
 
+-- One constant value per part, ascending across parts, so the DESC extremum exists only in the
+-- last part read. All values share one runtime type: the ordering mismatch does not need mixed
+-- alternatives.
+CREATE TABLE d_dyord (id UInt64, v Tuple(Dynamic)) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_dyord;
+INSERT INTO d_dyord SELECT number, tuple(toUInt64(0)::Dynamic) FROM numbers(0, 1000);
+INSERT INTO d_dyord SELECT number + 1000, tuple(toUInt64(100)::Dynamic) FROM numbers(0, 1000);
+INSERT INTO d_dyord SELECT number + 2000, tuple(toUInt64(1000)::Dynamic) FROM numbers(0, 1000);
+
+-- Same shape with a static element type, so a divergence in d_dyord is attributable to Dynamic
+-- rather than to the fixture layout.
+CREATE TABLE d_stord (id UInt64, v Tuple(UInt64)) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES d_stord;
+INSERT INTO d_stord SELECT number, tuple(toUInt64(0)) FROM numbers(0, 1000);
+INSERT INTO d_stord SELECT number + 1000, tuple(toUInt64(100)) FROM numbers(0, 1000);
+INSERT INTO d_stord SELECT number + 2000, tuple(toUInt64(1000)) FROM numbers(0, 1000);
+
 -- ==================== SPARSE fixtures ====================
 
 CREATE TABLE s_arr (id UInt64, v Array(Nullable(UInt64))) ENGINE = MergeTree ORDER BY id
@@ -289,6 +308,16 @@ SELECT 'tvar ANL OFF', v, id FROM s_tvar ORDER BY v ASC NULLS LAST, id DESC LIMI
 SELECT 'tvs ANL ON ', v, id FROM s_tvs ORDER BY v ASC NULLS LAST, id DESC LIMIT 3;
 SELECT 'tvs ANL OFF', v, id FROM s_tvs ORDER BY v ASC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
+-- A Field threshold drops a Dynamic value's discriminator, which ColumnVariant::compareAt ranks
+-- first, so a threshold ordered the wrong way rejects the DESC extremum and the answer loses the
+-- largest value. The static twin must agree in every arm.
+SELECT 'dyord DESC ON ', v, id FROM d_dyord ORDER BY v DESC, id DESC LIMIT 2;
+SELECT 'dyord DESC OFF', v, id FROM d_dyord ORDER BY v DESC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'dyord ASC ON ', v, id FROM d_dyord ORDER BY v ASC, id DESC LIMIT 2;
+SELECT 'dyord ASC OFF', v, id FROM d_dyord ORDER BY v ASC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'ctl stord DESC ON ', v, id FROM d_stord ORDER BY v DESC, id DESC LIMIT 2;
+SELECT 'ctl stord DESC OFF', v, id FROM d_stord ORDER BY v DESC, id DESC LIMIT 2 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+
 -- ==================== skip-index granule ranking ====================
 -- MinMaxGranuleItem::operator< ranks granules with a raw Field comparison, so this half is lost
 -- with the dynamic filter fully off, at either value of use_skip_indexes_on_data_read.
@@ -342,10 +371,18 @@ SELECT 'ctl ord ANL OFF', v, id FROM s_ord ORDER BY v ASC NULLS LAST, id DESC LI
 SELECT 'pres arr', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres f64', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres tup', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM s_tf ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
-SELECT 'pres tdyn', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
+-- A runtime-typed member anywhere in the sort column installs no filter, at any depth, because the
+-- Field threshold cannot carry a discriminator. The static twin below must still install one, or
+-- the guard is rejecting on the fixture shape instead of on the type.
+SELECT 'pres tdyn', count() FROM (EXPLAIN actions = 1 SELECT v FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
+SELECT 'pres dyord', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_dyord ORDER BY v DESC, id DESC LIMIT 2) WHERE explain LIKE '%__topKFilter%';
+SELECT 'pres stord', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_stord ORDER BY v DESC, id DESC LIMIT 2) WHERE explain LIKE '%__topKFilter%';
 -- A dotted sort column reaches the filter only through the alias branch that resolves it to the
--- storage column name; an unresolved name returns before any filter is installed.
+-- storage column name; an unresolved name returns before any filter is installed. The type tested
+-- is the sort column's own: v.f is a static Float64, so it keeps the filter even though the column
+-- it is read from is a JSON. Sorting on the JSON itself does not.
 SELECT 'pres jsub', count() > 0 FROM (EXPLAIN actions = 1 SELECT v.f FROM d_json ORDER BY v.f ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
+SELECT 'pres jroot', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_json ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off varlen', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 0) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0) WHERE explain LIKE '%__topKFilter%';
 
