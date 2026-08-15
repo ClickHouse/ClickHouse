@@ -529,9 +529,12 @@ bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
     static constexpr std::chrono::milliseconds cancellation_check_period{100};
 
     std::chrono::milliseconds remaining = lock_timeout;
+    const bool infinite_lock_timeout = lock_timeout == std::chrono::milliseconds::zero();
     while (true)
     {
-        const auto attempt_timeout = query_status ? std::min(remaining, cancellation_check_period) : remaining;
+        const auto attempt_timeout = query_status
+            ? (infinite_lock_timeout ? cancellation_check_period : std::min(remaining, cancellation_check_period))
+            : remaining;
         try
         {
             info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(attempt_timeout.count() * 1000));
@@ -543,9 +546,12 @@ bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
             if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
                 throw;
 
-            remaining -= attempt_timeout;
-            if (remaining.count() <= 0)
-                throw;
+            if (!infinite_lock_timeout)
+            {
+                remaining -= attempt_timeout;
+                if (remaining.count() <= 0)
+                    throw;
+            }
 
             /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
             /// In the 'break' mode it returns false instead: give up on this table, and the caller

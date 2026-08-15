@@ -3,7 +3,7 @@
 # Tests that a `system.parts` query honors its time limit even while it is waiting for the table
 # share lock in `tryLockTable`: the lock is acquired in short slices with a cancellation check
 # between the attempts, instead of a single uninterruptible wait for the whole
-# `lock_acquire_timeout`.
+# `lock_acquire_timeout`, including its zero-value infinite-wait mode.
 #
 # The setup makes the share-lock request block: a long-running `SELECT` holds a share lock on the
 # table, and a `DROP TABLE` queues for the exclusive lock behind it, so the subsequent share-lock
@@ -16,9 +16,6 @@
 #
 # Only the upper bound is asserted, so concurrently running instances of this test do not affect
 # each other.
-
-# The use of an Ordinary database emits a warning.
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,6 +33,7 @@ INSERT INTO $ORDINARY_DB.t_parts_lock_wait SELECT number FROM numbers(5);
 READER_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_reader_$$"
 DROP_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_drop_$$"
 QUERY_LOG_COMMENT="04869_break_query_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+INFINITE_LOCK_QUERY_LOG_COMMENT="04869_infinite_lock_break_query_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Holds a share lock on the table for about 15 seconds (killed earlier at the end of the test).
 # The table has 5 single-row parts, so the rows arrive in single-row blocks and each block sleeps
@@ -86,6 +84,16 @@ SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', lock_acquire_t
          log_comment = '$QUERY_LOG_COMMENT';
 "
 
+# `lock_acquire_timeout = 0` means to wait indefinitely for the table lock. The query-status
+# polling must still interrupt this infinite overall wait rather than passing zero into a single
+# uninterruptible lock acquisition.
+$CLICKHOUSE_CLIENT --query "
+SELECT name FROM system.parts WHERE database = '$ORDINARY_DB' AND table = 't_parts_lock_wait'
+FORMAT Null
+SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', lock_acquire_timeout = 0,
+         log_comment = '$INFINITE_LOCK_QUERY_LOG_COMMENT';
+"
+
 # Let the DROP TABLE proceed without waiting out the whole reader sleep.
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$READER_QUERY_ID' SYNC FORMAT Null"
 
@@ -97,9 +105,10 @@ wait $reader_pid $drop_pid 2>/dev/null || true
 $CLICKHOUSE_CLIENT --query "
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'break query returned early ' || toString(count() = 1 AND max(query_duration_ms) < 6000)
+SELECT 'break queries returned early ' || toString(count() = 2 AND max(query_duration_ms) < 6000)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '$QUERY_LOG_COMMENT';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('$QUERY_LOG_COMMENT', '$INFINITE_LOCK_QUERY_LOG_COMMENT');
 
 DROP DATABASE $ORDINARY_DB;
 "
