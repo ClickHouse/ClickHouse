@@ -58,9 +58,18 @@ static void extractLiteralTokensImpl(
     if (auto * literal = ast->as<ASTLiteral>())
     {
         /// Null and Bool literals are never recorded by the parser, so always push nullopt.
-        /// This also protects against stale token_map entries from address reuse.
         Field::Types::Which field_type = literal->value.getType();
         if (field_type == Field::Types::Null || field_type == Field::Types::Bool)
+        {
+            result.push_back(std::nullopt);
+            return;
+        }
+
+        /// Only literals actually tokenized from the query carry valid token info. A literal
+        /// synthesized by the parser (e.g. the Tuple/Array slow path, the EXTRACT arithmetic
+        /// operands, casts) has the bit unset, so we must ignore any token_map entry it may have
+        /// inherited from a freed, previously recorded literal that reused its address.
+        if (!literal->hasTokenInfo())
         {
             result.push_back(std::nullopt);
             return;
