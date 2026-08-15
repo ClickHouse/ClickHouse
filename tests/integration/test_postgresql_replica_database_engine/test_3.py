@@ -1274,7 +1274,7 @@ def test_attach_table_with_extended_date_and_time_types_setting_rejected(started
     error = instance.query_and_get_error(
         f"""
         SET allow_experimental_materialized_postgresql_table=1;
-        ATTACH TABLE {table} (key Int32, d Date)
+        ATTACH TABLE {table} UUID '00000000-0000-0000-0000-000000001234' (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
         SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
