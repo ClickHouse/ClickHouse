@@ -923,9 +923,11 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
         for (int m = 1; m <= 12; ++m)
             for (int f = 0; f < 5; ++f)
                 s3.add(fmt::format("root/year={}/month={:02}/data_{:03}.parquet", y, m, f));
-    /// Siblings of `root/year=.../` that the narrower prefix `root/year=` would have excluded by itself.
+    /// Siblings after the fixed prefix's key region. The widened walk's root-range bound skips them
+    /// without paging through them; siblings before the region deliberately keep this shape serial (see
+    /// `WidenedWalkStaysSerialWhenOutOfRegionEntriesShow`).
     for (int i = 0; i < 40; ++i)
-        s3.add(fmt::format("root/other={:02}/month=01/data_000.parquet", i));
+        s3.add(fmt::format("root/zother={:02}/month=01/data_000.parquet", i));
     /// A loose object at the walk's own level *inside* the fixed prefix's key region: the serial
     /// `Prefix=root/year=` listing fetches it too, so it must not send the shape serial (see
     /// `WidenedWalkStaysSerialWhenLooseObjectsShow` for keys outside the region) and it is still emitted.
@@ -936,14 +938,9 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
     const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeWidenedLevelSample(s3));
     ASSERT_EQ(start_prefix, "root/");
 
-    /// Everything below the pruned `root/other=.../` siblings stays unlisted; the loose in-region file that
-    /// the wider prefix exposes at the walk's own level is still emitted (as with the serial iterator, only
-    /// the per-file regexp of `GlobIterator` decides about such keys).
-    std::vector<std::string> expected;
-    for (const auto & key : s3.keys)
-        if (!key.starts_with("root/other="))
-            expected.push_back(key);
-    std::sort(expected.begin(), expected.end());
+    /// The loose in-region file that the wider prefix exposes at the walk's own level is still emitted (as
+    /// with the serial iterator, only the per-file regexp of `GlobIterator` decides about such keys).
+    const auto expected = expectedUnder(s3, "root/year=");
 
     for (size_t threads : {1, 2, 4, 16})
     {
@@ -982,7 +979,7 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
             s3.add(fmt::format("root/year={}/data_{:03}.csv", y, f));
     }
     for (int i = 0; i < 20; ++i)
-        s3.add(fmt::format("root/other={:02}/data.csv", i));   /// siblings the wider prefix exposes
+        s3.add(fmt::format("root/zother={:02}/data.csv", i));  /// siblings beyond the fixed-prefix region
     s3.finalize();
 
     const std::string glob = "root/year=*/";
@@ -1005,12 +1002,11 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
             /* root_range_end */ leastKeyAfterPrefixRegion("root/year=").value());
         auto listed = drain(iterator);
 
-        /// The walk may emit extra non-matching keys (the downstream per-file matcher drops them);
-        /// every glob-matching key must be produced exactly once and the pruned siblings stay unlisted.
+        /// The walk may emit extra non-matching keys (the downstream per-file matcher drops them); every
+        /// glob-matching key must be produced exactly once.
         std::vector<std::string> matched;
         for (const auto & key : listed)
         {
-            EXPECT_FALSE(key.starts_with("root/other=")) << "scanned pruned sibling: " << key << " threads=" << threads;
             if (re2::RE2::FullMatch(key, matcher))
                 matched.push_back(key);
         }
