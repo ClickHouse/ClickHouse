@@ -61,12 +61,23 @@ void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
     pre_columns.clear();
 }
 
-void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges)
+void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges)
 {
     main->updateAllMarkRanges(ranges);
 
     for (auto & reader : prewhere)
         reader->updateAllMarkRanges(ranges);
+
+    if (patches.size() != patches_ranges.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Patches ranges count mismatch, readers: {}, ranges: {}",
+            patches.size(), patches_ranges.size());
+    }
+
+    for (size_t i = 0; i < patches.size(); ++i)
+        patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -87,8 +98,10 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        dataflow_cache_update_cb
-            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
+                                       const NameSet & partially_read_columns,
+                                       size_t read_bytes,
+                                       std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
             const auto & part_columns = info->data_part_info->getColumns();
@@ -96,7 +109,12 @@ MergeTreeReadTask::MergeTreeReadTask(
             static const std::unordered_map<String, ColumnSize> no_column_sizes;
             auto column_sizes = info->data_part_info->getColumnSizes();
             updater->recordInputColumns(
-                columns, part_columns, column_sizes ? *column_sizes : no_column_sizes, read_bytes, should_continue_sampling);
+                columns,
+                partially_read_columns,
+                part_columns,
+                column_sizes ? *column_sizes : no_column_sizes,
+                read_bytes,
+                should_continue_sampling);
         };
     }
 }
@@ -499,7 +517,22 @@ bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
     /// predicate but does not apply the mutations (apply_mutations_on_fly = 0) would wrongly skip
     /// them. The read path already bypasses the cache in this case; this keeps the write path
     /// symmetric.
-    return !info->mutation_steps.empty() || !info->patch_parts.empty();
+    ///
+    /// Only filters that vary between queries count. A materialized lightweight delete does not:
+    /// `_row_exists` is committed part data, so every query reading the part sees the same rows.
+    /// Its step lands in `mutation_steps` too, hence the checks below instead of testing that list.
+    /// (`apply_deleted_mask = 0` is the exception and skips the cache entirely, see
+    /// MergeTreeReaderSettings::createFromContext.)
+    if (!info->patch_parts.empty())
+        return true;
+
+    /// Not `alter_conversions->hasMutations()`: a pending mutation that touches no column this
+    /// query reads produces no step and rewrites nothing the query observes.
+    if (info->has_on_fly_mutation_steps)
+        return true;
+
+    /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time.
+    return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
 }
 
 }

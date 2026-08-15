@@ -57,9 +57,6 @@
         },
         {
           "$ref": "./products/kubernetes-operator/navigation.json"
-        },
-        {
-          "$ref": "./products/clickhouse-private/navigation.json"
         }
       ],
       "tab": "Soluções"
