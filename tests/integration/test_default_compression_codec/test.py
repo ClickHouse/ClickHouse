@@ -1016,7 +1016,10 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     # The due TTL must still be considered after the reload. Its full rewrite materializes every
     # default-coded column with `ZSTD(1)`, after which that codec becomes exact part-wide metadata.
     node5.query("SYSTEM START TTL MERGES codec_provenance_mutation")
-    node5.query("OPTIMIZE TABLE codec_provenance_mutation FINAL")
+    node5.query(
+        "OPTIMIZE TABLE codec_provenance_mutation FINAL",
+        settings={"optimize_throw_if_noop": 1},
+    )
 
     assert (
         node5.query(
