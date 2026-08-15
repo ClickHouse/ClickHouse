@@ -92,24 +92,24 @@ SELECT
 FROM numbers(15);
 
 SELECT 'transform with default - should become LowCardinality';
-SELECT 
+SELECT
     user_id,
     country_code,
     transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany'], 'Unknown') AS country_name, toTypeName(country_name)
 FROM (
-    SELECT 
+    SELECT
         number + 100 AS user_id,
         ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
     FROM numbers(10)
 );
 
 SELECT 'transform with default and NULLs - should become LowCardinality(Nullable(String))';
-SELECT 
+SELECT
     user_id,
     country_code,
     transform(country_code, ['US', 'GB', 'DE', NULL], ['United States', 'United Kingdom', 'Germany', NULL], 'Unknown') AS country_name, toTypeName(country_name)
 FROM (
-    SELECT 
+    SELECT
         number + 100 AS user_id,
         ['US', 'GB', 'DE', 'FR', 'IT', NULL][number % 5 + 1] AS country_code
     FROM numbers(10)
@@ -123,23 +123,23 @@ FROM
 ) SETTINGS enable_analyzer = 1;
 
 SELECT 'transform without default - leave String';
-SELECT 
+SELECT
     user_id,
     country_code,
     transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany']) AS country_name, toTypeName(country_name)
 FROM (
-    SELECT 
+    SELECT
         number + 100 AS user_id,
         ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
     FROM numbers(10)
 );
 
 SELECT 'From 02366_kql_func_dynamic.sql';
-SELECT if((NULL IS NULL) AND 
+SELECT if((NULL IS NULL) AND
    ((extract(toTypeName(['a', 'b', 'c']), 'Array\\((.*)\\)') AS element_type_3315726463) = 'String'),
    defaultValueOfTypeName(
-       if(element_type_3315726463 = 'Nothing', 
-          'Nullable(Nothing)', 
+       if(element_type_3315726463 = 'Nothing',
+          'Nullable(Nothing)',
           element_type_3315726463)
    ),
    NULL) AS fill_value_3315726463;
@@ -164,24 +164,24 @@ SELECT multiIf(number % 2 = 0, 'a', number = 1, 'NUM', 'hello') as col, toTypeNa
 SELECT multiIf(materialize(number % 2 = 0), 'a', number = 1, 'NUM', 'hello') as col, toTypeName(col) FROM numbers(4);
 
 SELECT 'transform with default';
-SELECT 
+SELECT
     user_id,
     country_code,
     transform(country_code, ['US', 'GB', 'DE'], ['United States', 'United Kingdom', 'Germany'], 'Unknown') AS country_name, toTypeName(country_name)
 FROM (
-    SELECT 
+    SELECT
         number + 100 AS user_id,
         ['US', 'GB', 'DE', 'FR', 'IT'][number % 5 + 1] AS country_code
     FROM numbers(10)
 );
 
 SELECT 'transform with default and NULLs';
-SELECT 
+SELECT
     user_id,
     country_code,
     transform(country_code, ['US', 'GB', 'DE', NULL], ['United States', 'United Kingdom', 'Germany', NULL], 'Unknown') AS country_name, toTypeName(country_name)
 FROM (
-    SELECT 
+    SELECT
         number + 100 AS user_id,
         ['US', 'GB', 'DE', 'FR', 'IT', NULL][number % 5 + 1] AS country_code
     FROM numbers(10)
