@@ -265,6 +265,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     {
         if (supportsRuntimeFilter(algorithm))
             break;
+
+        /// Unlike the sorted-merge algorithms below, the full-sorting variants are always selectable.
+        /// If one precedes `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection, so
+        /// the runtime filter must remain enabled for that join.
+        if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            break;
+
         if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
             && optimization_settings.read_in_order
             && join_step->inputsCanBeReadInJoinKeyOrder(node))

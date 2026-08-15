@@ -32,6 +32,13 @@ SELECT 'local_hash_has_runtime_filter', countIf(explain LIKE '%BuildRuntimeFilte
 FROM (EXPLAIN SELECT f.x FROM smjrf_fact AS f INNER JOIN smjrf_dim AS d ON f.id = d.id
       SETTINGS join_algorithm = 'hash', max_threads = 4, enable_parallel_replicas = 0);
 
+-- An earlier `full_sorting_merge` is always selected and makes the later `sorted_merge` unreachable.
+-- It must not suppress the runtime filter merely because the ordered inputs would otherwise make
+-- `sorted_merge` eligible.
+SELECT 'full_sorting_merge_before_sorted_merge_has_runtime_filter', countIf(explain LIKE '%BuildRuntimeFilter%') = 1
+FROM (EXPLAIN SELECT f.x FROM smjrf_fact AS f INNER JOIN smjrf_dim AS d ON f.id = d.id
+      SETTINGS join_algorithm = 'full_sorting_merge,sorted_merge,hash', max_threads = 4, enable_parallel_replicas = 0);
+
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
