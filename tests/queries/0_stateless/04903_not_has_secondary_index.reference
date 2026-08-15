@@ -137,4 +137,6 @@ SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN
 1
 SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3'));
 0
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE NOT notHas(arr, 'w3'));
+1
 DROP TABLE t_not_has_text;

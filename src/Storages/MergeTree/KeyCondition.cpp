@@ -490,7 +490,7 @@ static const std::map<std::string, std::string> inverse_relations =
 /// which drops the index from the useful ones and, for a text index, takes the direct read from it down as well.
 static bool canFoldToInverseRelation(const std::string & name, const ActionsDAG::NodeRawConstPtrs & children)
 {
-    if (name != "has" && name != "notHas")
+    if (name != "has")
         return true;
 
     if (children.size() != 2)

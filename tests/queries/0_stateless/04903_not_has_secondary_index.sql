@@ -5,6 +5,7 @@
 -- `NOT key IN set` into `notIn`. It deliberately does not fold `NOT has(column, needle)`: `KeyCondition` cannot use
 -- that shape anyway, while the text index and the bloom filter index analyzers understand `has` but not `notHas`, so
 -- folding it would cost them the atom - and, for a text index, the direct read from the index.
+-- In the reverse direction, `NOT notHas(column, needle)` does fold back into `has`, preserving the same index path.
 -- These checks pin the secondary index behavior of `NOT has(column, needle)` down outside the primary key path.
 
 SET explain_query_plan_default = 'legacy';
@@ -107,5 +108,6 @@ SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3') AND has(arr, 'w5');
 SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE has(arr, 'w3'));
 SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE NOT has(arr, 'w3'));
 SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3'));
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE NOT notHas(arr, 'w3'));
 
 DROP TABLE t_not_has_text;
