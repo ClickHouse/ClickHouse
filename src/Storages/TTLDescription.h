@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DateLUT.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
@@ -10,8 +11,6 @@
 
 namespace DB
 {
-
-class DateLUTImpl;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
