@@ -2806,6 +2806,11 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     ColumnsDescription old_columns_after_renames = old_metadata.columns;
     for (const auto & [from, to] : renames)
     {
+        /// A rename may target a column added earlier in the same ALTER. It is absent
+        /// from the pre-ALTER metadata, so there is no old expression to rename.
+        if (!old_columns_after_renames.has(from))
+            continue;
+
         old_columns_after_renames.rename(from, to);
         renameColumnInStoredExpressions(old_columns_after_renames, from, to);
     }
