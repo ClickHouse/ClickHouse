@@ -46,7 +46,7 @@ private:
         if constexpr (Impl::always_returns_float64)
             return "(Number) -> Float64";
         else
-            return "(T : NativeFloat) -> T OR (Number) -> Float64";
+            return "(T : Float32 | Float64) -> T OR (Number) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
