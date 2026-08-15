@@ -80,6 +80,7 @@ namespace DB
 {
 namespace FailPoints
 {
+    extern const char storage_url_pause_before_empty_file_probe[];
     extern const char storage_url_pause_between_metadata_probes[];
     extern const char storage_url_pause_before_handling_interrupted_read_error[];
 }
@@ -432,6 +433,12 @@ StorageURLSource::StorageURLSource(
             /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
             /// data anymore: end the stream.
             if (!uri_and_buf.second)
+                return false;
+
+            /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
+            /// arrived after choosing the buffer start that request.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
+            if (cancellation->isCancelled())
                 return false;
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
