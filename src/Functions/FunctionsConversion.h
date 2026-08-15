@@ -1876,6 +1876,30 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
 
         return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
     }
+    else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+    {
+        using ToFieldType = typename ToDataType::FieldType;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            ToFieldType result;
+            bool convert_result = false;
+
+            if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
+            else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
+
+            if (!convert_result)
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
+
+            vec_to[i] = result;
+        }
+
+        return std::forward<ColTo>(col_to);
+    }
     else
     {
         for (size_t i = 0; i < input_rows_count; ++i)

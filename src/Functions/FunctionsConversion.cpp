@@ -425,10 +425,12 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType which(from_type_index);
     TypeIndex to_type_index = to_type->getTypeId();
     WhichDataType to(to_type_index);
+    const auto * to_time64 = checkAndGetDataType<DataTypeTime64>(to_type);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-        && which.isTime64() && (to.isTime() || to.isDateTime());
+        && which.isTime64() && (to.isTime() || to.isDateTime()
+            || (to_time64 && to_time64->getScale() == 0));
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
