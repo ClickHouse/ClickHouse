@@ -13580,11 +13580,39 @@ async function tokenizeWithFallback(text)
 }
 
 /// `ParserInsertQuery` treats everything after `INSERT ... FORMAT <input format>` as inline input
-/// data, including an `INSERT ... SELECT input(...) FORMAT ...`. Stop the request-shaping walks at
-/// that boundary: a row may legitimately begin with SQL words such as `SETTINGS` or `FORMAT`, but
-/// it is not part of the statement grammar.
-function tokensBeforeInlineInsertPayload(tokens)
+/// data, including an `INSERT ... SELECT input(...) FORMAT ...`, except for an optional `SETTINGS`
+/// list when `allow_settings_after_format_in_insert` is enabled. Stop request-shaping walks before
+/// rows, while allowing the framing-setting detector to inspect that real settings list.
+function tokensBeforeInlineInsertPayload(tokens, include_postformat_insert_settings = false)
 {
+    const settingName = (tok) => tok && (tok.type === TT.BareWord || tok.type === TT.QuotedIdentifier);
+    const endOfSettings = (start) => {
+        let j = start;
+        while (settingName(tokens[j])) {
+            ++j;
+            if (tokens[j] && tokens[j].type === TT.Equals) {
+                ++j;
+                if (tokens[j] && (tokens[j].type === TT.Minus || tokens[j].type === TT.Plus)) ++j;
+                if (!tokens[j]) break;
+                if (OPENING_BRACKETS.has(tokens[j].type)) {
+                    let value_depth = 0;
+                    do {
+                        if (OPENING_BRACKETS.has(tokens[j].type)) ++value_depth;
+                        else if (CLOSING_BRACKETS.has(tokens[j].type)) --value_depth;
+                        ++j;
+                    } while (tokens[j] && value_depth > 0);
+                } else {
+                    ++j;
+                }
+            }
+            if (tokens[j] && tokens[j].type === TT.Comma) {
+                ++j;
+                continue;
+            }
+            break;
+        }
+        return j;
+    };
     let depth = 0;
     let saw_insert = false;
     let saw_statement_keyword = false;
@@ -13628,6 +13656,15 @@ function tokensBeforeInlineInsertPayload(tokens)
             && tokens[i + 1]
             && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)) {
             if (saw_select_source && !select_reads_inline_data) return tokens;
+            /// With `allow_settings_after_format_in_insert`, `ParserInsertQuery` consumes a real
+            /// `SETTINGS` list between the input format and rows. Keep that list visible to the
+            /// framing-setting detector, but never expose the following inline data as SQL.
+            if (include_postformat_insert_settings
+                && tokens[i + 2]
+                && tokens[i + 2].type === TT.BareWord
+                && tokens[i + 2].token.toLowerCase() === 'settings') {
+                return tokens.slice(0, endOfSettings(i + 3));
+            }
             return tokens.slice(0, i);
         }
     }
@@ -13673,7 +13710,7 @@ function tokensBeforeInlineInsertPayload(tokens)
 async function detectFramingSetting(query)
 {
     const raw_tokens = await tokenizeWithFallback(query);
-    const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
+    const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant), true);
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
     /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
