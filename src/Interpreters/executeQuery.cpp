@@ -1250,6 +1250,16 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
 
                 auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context, validated_identities);
 
+                /// `resolveStorages` pins all runtime leaves to the storages validated above,
+                /// but expanded views and folded scalar subqueries have no such leaf. Revalidate
+                /// the complete dependency set at this boundary as their semantics are baked into
+                /// the serialized plan and may have changed while materializing its leaves.
+                QueryPlan::ExpectedStorageIdentities materialized_identities;
+                if (!validateQueryPlanCacheEntry(*cached_entry, context, materialized_identities))
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Query plan cache entry became stale while materializing");
+                }
+
                 /// The planner normally records query access info; on a hit it is skipped,
                 /// so restore the info to keep system.query_log populated.
                 addQueryAccessInfoForQueryPlanCacheHit(*cached_entry, context);
