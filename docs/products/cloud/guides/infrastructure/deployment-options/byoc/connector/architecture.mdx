@@ -29,7 +29,7 @@ Every connection the connector makes is outbound. The complete list:
 | Your connector endpoint (command channel) | Outbound | WebSocket over TLS | mTLS client certificate plus HMAC-signed handshake | Troubleshooter command channel; carries commands only while a support session is active |
 | Your enrollment endpoint | Outbound | HTTPS | Single-use enrollment token (redeem) or HMAC (first certificate signing); no mTLS | Token redemption and first certificate issuance during setup |
 | Your ClickHouse clusters | Outbound, inside your environment | ClickHouse native protocol | Dedicated read-only users `pcm_scraper` and `pcm_troubleshooter`, stored as bcrypt hashes | System-table reads for scraping and session diagnostics |
-| Kubernetes API server (Kubernetes installs) | Outbound, inside your environment | HTTPS | ServiceAccounts bound to namespace-scoped Roles | Read-only workload views for the troubleshooter; renewed certificate write-back for the scraper |
+| Kubernetes API server (Kubernetes installs) | Outbound, inside your environment | HTTPS | ServiceAccounts bound to namespace-scoped Roles | Read-only workload views for the troubleshooter; both daemons persist the automatically renewed client certificate back to the mTLS Secret |
 | Your identity provider's JWKS endpoint (only when the gateway is enabled) | Outbound | HTTPS | None (public signing keys) | Validates the OIDC ID tokens presented to the session gateway |
 
 Every API request carries an `Authorization` header with an HMAC-SHA256 signature computed over the method, path, timestamp, and a hash of the body, so requests cannot be replayed or altered in transit even inside the TLS channel.
@@ -42,7 +42,7 @@ The connector authenticates to your endpoint with a client certificate it obtain
 
 - **Enrollment.** `clicklink clctl init` generates a private key locally and a certificate signing request with your organization ID as the common name and your endpoint host as the single DNS SAN. The private key never leaves your environment.
 - **First issuance.** The CSR is submitted to the enrollment signing endpoint at `/v1/pcm/cert/sign`, authenticated with HMAC. If an unexpired certificate already exists for your organization, the endpoint refuses with a 409 and the CLI prints how to complete with the existing certificate or supersede it deliberately with `--force`.
-- **Automatic renewal.** Each daemon checks certificate lifetime every 12 hours and requests a renewed 30-day certificate through `/v1/pcm/cert/renew` (mTLS plus HMAC) once 10 days remain. On Kubernetes the renewed certificate is written back to the `clicklink-mtls` Secret through an exact-name RBAC grant; on a VM the TLS directory is writable by the daemon user. No operator action is needed for renewal.
+- **Automatic renewal.** Each daemon checks certificate lifetime every 12 hours and requests a renewed 30-day certificate through `/v1/pcm/cert/renew` (mTLS plus HMAC) once 10 days remain. On Kubernetes each daemon writes the renewed certificate back to the `clicklink-mtls` Secret through an exact-name RBAC grant; on a VM the TLS directory is writable by the daemon user. No operator action is needed for renewal.
 
 The connector verifies your endpoint's server certificate against the system trust store, or against the CA bundle delivered at enrollment when your endpoint uses a private CA.
 
