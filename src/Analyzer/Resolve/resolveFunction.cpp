@@ -562,7 +562,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    /// Rewrite tuple(x AS a, y AS b) to tuple('a', 'b')(x, y) if setting enabled and all arguments have aliases/identifiers
+    /// Rewrite tuple(x AS a, y AS b) to tuple('a', 'b')(x, y) if setting enabled and all arguments have explicit aliases.
     /// Don't rewrite if the tuple already has parameters (i.e., tuple(names...)(values...) syntax)
     if (function_name == "tuple"
         && scope.context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]
@@ -581,8 +581,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 String name;
                 if (arg->hasAlias())
                     name = arg->getAlias();
-                else if (auto * identifier_node = arg->as<IdentifierNode>())
-                    name = identifier_node->getIdentifier().getFullName();
 
                 if (name.empty() || !isUnquotedIdentifier(name) || !name_set.insert(name).second)
                 {
