@@ -40,6 +40,26 @@
       ]
     },
     {
+      "group": "Connector",
+      "pages": [
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/overview",
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding",
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/architecture",
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions",
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration",
+        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli",
+            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/configuration",
+            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/faq",
+            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
       "group": "Reference",
       "pages": [
         "products/bring-your-own-cloud/reference/network-security",

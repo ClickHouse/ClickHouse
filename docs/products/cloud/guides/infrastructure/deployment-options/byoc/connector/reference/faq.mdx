@@ -1,0 +1,29 @@
+---
+title: 'FAQ'
+sidebarTitle: 'FAQ'
+description: 'Frequently asked questions about the BYOC connector'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'FAQ']
+doc_type: 'reference'
+---
+
+## FAQ {#faq}
+
+### What data leaves my environment? {#what-data-leaves-my-environment}
+
+Operational metadata only, always over outbound connections the connector opens itself. The scraper sends results from a fixed set of system tables (`metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings` by default), health and status heartbeats, instance and backup state, and the connector's own metrics. The default scrape set deliberately excludes `system.query_log`, so raw SQL text, and any literals or personal data inside it, never leaves your boundary unless you explicitly add it. During an active [support session](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions), the troubleshooter additionally returns command output, restricted to an allowlisted table set and passed through redaction (built-in patterns for IPs, credentials, tokens, and keys, plus your own) before it is sent. Your table data, backups, and logs stay in your environment. The complete outbound connection list is on the [privilege model](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/privilege-model) page.
+
+### How do I revoke ClickHouse's access? {#how-do-i-revoke-access}
+
+In escalating order. To end interactive access, run `clicklink clctl troubleshoot session disable`: with no active session the troubleshooter refuses every command, even while connected. To prevent future sessions, empty the operator allowlist (an empty allowlist is closed) or disable the gateway; see the [configuration guide](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration). To cut all connectivity, remove the connector's egress: the connector is outbound-only, so blocking its egress at your network layer (or emptying `networkPolicy.allowEgressCIDRs` under an enforcing CNI) severs it completely, and ClickHouse Cloud has no inbound path to restore it. To revoke credentials, drop the `pcm_scraper` and `pcm_troubleshooter` ClickHouse users and delete the connector's Secrets (Kubernetes) or the files under `/etc/clicklink` (VM). To remove the connector entirely, see [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations).
+
+### Can I run this air-gapped or through my own mirrors? {#air-gapped-and-mirrors}
+
+Yes. Every install-time artifact can come from inside your boundary: mirror the CLI tarball and container image from `releases.clicklink.clickhouse.com` and the public registry, point `image.repository` at your mirror, and pass `--chart` with an `oci://` reference, URL, or local archive (with `--chart-version`; it defaults to the CLI's own version). If your connector API endpoint is served inside your boundary behind a private CA, `--api-private-ca` (Kubernetes) or `api.tls.ca_file` (VM) verifies it against the enrollment bundle's chain. For enrollment without direct connectivity, `init --handoff` consumes a bundle obtained out of band, and `--no-auto-sign` plus `init --signed-cert` completes certificate signing out of band. See [private mirrors](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration) and the air-gapped section of [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding). Note that the connector still needs a route to your org's connector API endpoint at runtime; without one, ClickHouse Cloud receives no telemetry.
+
+### What happens if the connector goes down? {#connector-down}
+
+Your ClickHouse services are unaffected: the connector only reads from them and sits in no data path. The impact is loss of visibility, so ClickHouse Cloud stops receiving telemetry and support sessions become unavailable until it returns. On a VM, the scraper spools scraped data to `/var/lib/clicklink/buffer` (up to 168 hours or 1024 MB by default) whenever the API endpoint is unreachable and delivers it on reconnect, so an endpoint outage does not lose telemetry; a crashed daemon is restarted by systemd, and on Kubernetes by the kubelet. To diagnose, check each component's `/livez` endpoint (the JSON `status` field is the signal, not the HTTP code) and run `clicklink clctl preflight`, which checks configuration, connectivity, ClickHouse reachability, access, and disk in one pass. See [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations); if the connector stays unhealthy, contact ClickHouse Support.
+
+### How are support sessions audited? {#support-session-auditing}
+
+Every gateway call and every troubleshoot command, accepted or blocked, is appended to an audit log at `/var/log/clicklink/troubleshoot-audit.log` as newline-delimited JSON, attributed to the operator email attested by the OIDC token that authenticated the request, not a self-reported name. Sessions themselves are time-boxed (4 hours by default, 24 hours maximum) and each enablement records who enabled it, when it expires, and an optional reason, which `clicklink clctl troubleshoot session status` displays. Read the log with `clicklink clctl troubleshoot audit tail`; on Kubernetes that command is the supported reader (the runtime image has no shell) and the log lives on the troubleshooter's persistent volume, so the trail survives pod rescheduling. Rotation keeps 5 files of up to 128 MB for 168 hours by default; see the [configuration reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/configuration) to adjust it, and [support sessions](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions) for the full trust model.
