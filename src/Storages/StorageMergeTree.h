@@ -338,6 +338,12 @@ private:
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
 
+    /// Retire deduplication entries only while the current leadership epoch remains
+    /// trustworthy. `dropPart` updates its in-memory map incrementally; after a committed
+    /// data retirement, an error must therefore relinquish leadership rather than leave a
+    /// writable table with stale block ids that can silently deduplicate a retry.
+    void dropDeduplicationLogParts(const DataPartsVector & parts);
+
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.

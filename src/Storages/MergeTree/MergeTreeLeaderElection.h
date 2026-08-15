@@ -60,6 +60,11 @@ public:
     /// Stop the background heartbeat task and relinquish leadership.
     void stop();
 
+    /// Immediately stop serving writes while keeping the heartbeat task alive. The lease is
+    /// deliberately not renewed after this transition, so it expires and the normal takeover
+    /// path rebuilds all write-side state before this or another replica serves writes again.
+    void relinquishLeadership();
+
     /// Returns true if this instance currently holds the leader lease
     /// and the heartbeat thread has renewed it recently enough.
     /// Normally the freshness threshold is `2 * heartbeat_interval`, which protects against

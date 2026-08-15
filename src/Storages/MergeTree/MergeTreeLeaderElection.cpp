@@ -121,6 +121,35 @@ void MergeTreeLeaderElection::stop()
     }
 }
 
+void MergeTreeLeaderElection::relinquishLeadership()
+{
+    std::lock_guard lock(leadership_change_mutex);
+
+    /// Match the loss ordering in `run` and `stop`: a concurrent write must observe
+    /// writes disabled before it can observe that the lease was relinquished.
+    writes_enabled.store(false, std::memory_order_release);
+    bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+    if (!was_leader)
+        return;
+
+    LOG_WARNING(log, "Relinquishing leadership for lease at '{}' after a write-side state reconciliation failure", lease_path);
+    ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+    CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+    CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+
+    if (on_leadership_change)
+    {
+        try
+        {
+            on_leadership_change(false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Exception in leadership-loss callback while relinquishing leadership");
+        }
+    }
+}
+
 bool MergeTreeLeaderElection::isLeader() const
 {
     if (!is_leader.load(std::memory_order_acquire))

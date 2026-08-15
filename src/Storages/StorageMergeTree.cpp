@@ -2045,6 +2045,32 @@ void StorageMergeTree::loadDeduplicationLog()
     }
 }
 
+void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
+{
+    if (!deduplication_log)
+        return;
+
+    try
+    {
+        for (const auto & part : parts)
+            deduplication_log->dropPart(part->info);
+    }
+    catch (...)
+    {
+        /// The covering empty parts are already committed at every caller below. A failed
+        /// `dropPart` may have removed only a prefix of the corresponding block ids from the
+        /// in-memory map, so continuing to accept writes can silently deduplicate a retry of
+        /// data that was just retired. Discard the writer and fence all writes until a later
+        /// election epoch reloads and reconciles the log from the committed empty parts.
+        if (leader_election_ptr)
+        {
+            deduplication_log->discard();
+            leader_election_ptr->relinquishLeadership();
+        }
+        throw;
+    }
+}
+
 void StorageMergeTree::loadMutations(bool reloading)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
@@ -3360,9 +3386,7 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     for (auto & part: covered_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
-    if (deduplication_log)
-        for (const auto & part : covered_parts)
-            deduplication_log->dropPart(part->info);
+    dropDeduplicationLogParts(covered_parts);
 }
 
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
@@ -3689,11 +3713,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         }
     }
 
-    if (deduplication_log)
-    {
-        for (const auto & part : parts_to_remove)
-            deduplication_log->dropPart(part->info);
-    }
+    dropDeduplicationLogParts(parts_to_remove);
 
     if (detach)
         LOG_INFO(log, "Detached {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
@@ -4108,9 +4128,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                     /// coverage-based retirements (see `renameAndCommitEmptyParts`).
                     for (const auto & part : covered_parts)
                         part->remove_time.store(0, std::memory_order_relaxed);
-                    if (deduplication_log)
-                        for (const auto & part : covered_parts)
-                            deduplication_log->dropPart(part->info);
+                    dropDeduplicationLogParts(covered_parts);
                 }
                 else
                     removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
