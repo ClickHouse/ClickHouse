@@ -577,9 +577,9 @@ void VortexBlockInputFormat::prepareReader()
         return;
     }
 
-    /// Push the WHERE condition down into the scan, so the library can prune segments by
-    /// statistics and decode only the matching rows. The translation is best-effort, and
-    /// ClickHouse re-applies the full filter on the returned rows anyway.
+    /// Push the WHERE condition down into the scan, so selective queries decode only the
+    /// matching rows. Whole segments are not yet pruned by statistics. The translation is
+    /// best-effort, and ClickHouse re-applies the full filter on the returned rows anyway.
     VortexExpressionPtr filter;
     if (format_settings.vortex.filter_push_down && format_filter_info && format_filter_info->hasFilter())
     {
@@ -811,7 +811,7 @@ SELECT * FROM numbers(3) INTO OUTFILE 'numbers.vortex' FORMAT Vortex;
 
 | Setting                                  | Description                                                          | Default |
 |------------------------------------------|----------------------------------------------------------------------|---------|
-| `input_format_vortex_filter_push_down`   | Push the `WHERE` condition down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics. | `1` |
+| `input_format_vortex_filter_push_down`   | Push the `WHERE` condition down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics. Pushdown currently supports top-level integer, floating-point, and string/binary columns; other predicates are evaluated by ClickHouse after the scan. | `1` |
 
 As in other columnar formats, only the columns used by the query are read from the file, and
 columns missing in the file are filled with default values.
@@ -842,9 +842,11 @@ void registerVortexSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
+                "schema_inference_allow_nullable_tuple_type={};"
                 "allow_geoparquet_parser={}",
                 settings.schema_inference_make_columns_nullable,
+                settings.schema_inference_make_json_columns_nullable,
                 settings.schema_inference_allow_nullable_tuple_type,
                 settings.parquet.allow_geoparquet_parser);
         });
