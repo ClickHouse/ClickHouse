@@ -7856,11 +7856,6 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
     DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
 Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", 0) \
-    DECLARE(Bool, parallel_replicas_ship_prepared_sets, false, R"(
-Materialize `IN (subquery)` sets on the initiator and ship them to the replicas as temporary tables,
-instead of letting every replica re-execute the subquery. Unlike `GLOBAL IN` the predicate keeps its
-`in` form, so PREWHERE and index analysis can still use the set on the replica. Experimental.
-)", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
 )", 0) \

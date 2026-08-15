@@ -88,7 +88,7 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
-    const std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool, bool)> &
+    const std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool)> &
     getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
@@ -101,8 +101,7 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
 
-    std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(
-        const BuiltSetsByHashPtr &, bool /*ship_in_subqueries*/, bool /*defer_materialization*/)>
+    std::function<QueryPlanOptimizationSettings::ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool /*defer_materialization*/)>
         query_plan_with_parallel_replicas_builder;
 };
 

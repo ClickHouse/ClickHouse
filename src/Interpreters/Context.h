@@ -281,8 +281,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-struct BuiltSetsByHash;
-using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
@@ -611,7 +609,6 @@ protected:
     /// Shared with every context derived from this one, so that a plan build several contexts deep can
     /// report back that it skipped materializing a subquery.
     std::shared_ptr<std::atomic_bool> deferred_subquery_materialization;
-    BuiltSetsByHashPtr built_sets_for_shipping;
 
     struct StorageCache
     {
@@ -1960,12 +1957,6 @@ public:
     bool isSubqueryMaterializationDeferred() const;
     void setSubqueryMaterializationDeferred();
     bool wasSubqueryMaterializationDeferred() const;
-
-    /// Sets an earlier plan build already filled. Set on the context used to build the
-    /// parallel-replicas plan so that shipping an `IN` set to the replicas can write the rows straight
-    /// into the temporary table instead of running the subquery again.
-    void setBuiltSetsForShipping(const BuiltSetsByHashPtr & built_sets_);
-    BuiltSetsByHashPtr getBuiltSetsForShipping() const;
 
     ReverseLookupCache & getReverseLookupCache() const;
 

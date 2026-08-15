@@ -8655,16 +8655,6 @@ bool Context::wasSubqueryMaterializationDeferred() const
     return deferred_subquery_materialization && deferred_subquery_materialization->load();
 }
 
-void Context::setBuiltSetsForShipping(const BuiltSetsByHashPtr & built_sets_)
-{
-    built_sets_for_shipping = built_sets_;
-}
-
-BuiltSetsByHashPtr Context::getBuiltSetsForShipping() const
-{
-    return built_sets_for_shipping;
-}
-
 ReverseLookupCache & Context::getReverseLookupCache() const
 {
     auto query_context = getQueryContext();
