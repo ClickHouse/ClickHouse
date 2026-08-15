@@ -55,21 +55,21 @@ Query rewrite rules provide three types of queries:
 
 Rewrite of rule:
 ```sql
-CREATE RULE rule_name AS 
+CREATE RULE rule_name AS
 (
     any_query
-) 
-REWRITE TO 
+)
+REWRITE TO
 (
     any_query
 );
 ```
 Rejection of rule:
 ```sql
-CREATE RULE rule_name AS 
+CREATE RULE rule_name AS
 (
     any_query
-) 
+)
 REJECT WITH 'Message';
 ```
 
@@ -77,21 +77,21 @@ REJECT WITH 'Message';
 
 Rewrite of rule:
 ```sql
-ALTER RULE rule_name AS 
+ALTER RULE rule_name AS
 (
     any_query
-) 
-REWRITE TO 
+)
+REWRITE TO
 (
     any_query
 );
 ```
 Rejection of rule:
 ```sql
-ALTER RULE rule_name AS 
+ALTER RULE rule_name AS
 (
     any_query
-) 
+)
 REJECT WITH 'Message';
 ```
 
@@ -161,19 +161,19 @@ There are three access grants for query rewrite rules, each of these requires se
 
 Creation:
 ```sql
-CREATE RULE rule_1 AS 
+CREATE RULE rule_1 AS
 (
     SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
-) 
-REWRITE TO 
+)
+REWRITE TO
 (
     SELECT date, hits FROM totals WHERE page = {name:String}
 );
 
-CREATE RULE rule_2 AS 
+CREATE RULE rule_2 AS
 (
     SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
-) 
+)
 REJECT WITH 'REJECT';
 
 -- Activate rule_1 for the session (it is applied before normal query processing).
@@ -185,7 +185,7 @@ Alteration:
 ALTER RULE rule_1 AS (
     SELECT date, sum(hits) FROM stats WHERE date = {name2:String} AND page = {name:String} GROUP BY date
 )
-REWRITE TO 
+REWRITE TO
 (
     SELECT date, hits FROM totals WHERE page = {name:String} AND date = {name2:String}
 );

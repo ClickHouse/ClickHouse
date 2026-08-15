@@ -3,18 +3,18 @@
 
 DROP TABLE IF EXISTS totals;
 
-CREATE TABLE totals 
+CREATE TABLE totals
 (
     date String, hits UInt32, page String
-) 
-ENGINE = MergeTree() 
-PRIMARY KEY (date) 
+)
+ENGINE = MergeTree()
+PRIMARY KEY (date)
 ORDER BY (date);
 
-INSERT INTO totals 
+INSERT INTO totals
 (
     date, hits, page
-) 
+)
 VALUES (
     'today', 1337, 'first'
 );
