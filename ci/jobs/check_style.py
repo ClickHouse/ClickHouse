@@ -242,8 +242,7 @@ FETCHES_SERVER_PATH_RE = re.compile(
     r"(?i)(?:\b(?:path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
     r"|\bselect\s+\*[^\"`|;]{0,300}?\bfrom\s+system\."
-    r"(?:parts|detached_parts|projection_parts|tables|disks)\b[^\"`|;]{0,300}?"
-    r"\bformat\s+tsvraw\b)"
+    r"(?:parts|detached_parts|projection_parts|tables|disks)\b)"
 )
 # The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
 # The `value` token is required so that queries that merely inspect the setting without
@@ -273,7 +272,7 @@ MUTATION_CMD_PREFIX = (
 # `case` branch delimiter, or a shell keyword (`if true; then rm ...; fi` compressed onto
 # one line must not slip through), optionally behind benign wrappers and assignments.
 FILE_MUTATION_CMD_RE = re.compile(
-    r"(?:^|[|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
     + MUTATION_CMD_PREFIX
     + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
 )

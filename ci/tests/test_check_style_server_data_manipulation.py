@@ -135,14 +135,20 @@ def test_derived_path_expression_is_flagged(tmp_path):
 
 def test_select_star_from_system_parts_is_flagged(tmp_path):
     # `SELECT *` includes the `path` column and must not bypass the check when a shell
-    # command extracts that field before modifying the part directory.
+    # command extracts that field before modifying the part directory. This includes the
+    # default tab-separated output; it need not spell out `FORMAT TSVRaw`.
     assert _run(
         tmp_path,
         'row=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.parts'
-        " WHERE table = 't' AND active FORMAT TSVRaw\")\n"
+        " WHERE table = 't' AND active\")\n"
         'path=$(printf "%s" "$row" | cut -f22)\n'
         'rm -f "$path/data.bin"\n',
     )
+
+
+def test_mutation_after_negation_is_flagged(tmp_path):
+    # `!` is a shell command introducer, commonly used when a failure is expected.
+    assert _run(tmp_path, FETCH_PART_PATH + '! rm -f "$path/data.bin"\n')
 
 
 def test_server_root_fetch_is_flagged(tmp_path):
