@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
+#include <Common/transformEndianness.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
@@ -7,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <bit>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -91,4 +93,68 @@ TEST(SerializationIPBinaryBulk, IPv4FieldMatchesIColumn)
     serialization->serializeBinary(*col, 0, row_wise, FormatSettings{});
 
     ASSERT_EQ(field_wise.str(), row_wise.str());
+}
+
+/// This machine is little-endian, so `writeBinaryLittleEndian`/`readBinaryLittleEndian` never
+/// actually swap here: `transformEndianness<ToEndian, FromEndian = native>`'s `if constexpr
+/// (ToEndian != FromEndian)` is false at compile time and the `std::byteswap` branch doesn't
+/// exist in this binary. `transformEndianness` takes `FromEndian` as an independent template
+/// argument rather than hard-coding `native`, so passing it explicitly (`<little, big>`) forces
+/// the exact same branch a big-endian host takes by default -- same instantiation, same
+/// std::byteswap call -- letting these branches be verified without big-endian hardware.
+
+TEST(SerializationIPBinaryBulk, IPv4TransformEndiannessMatchesStdByteswap)
+{
+    for (UInt32 raw : {0x01020304u, 0xC0A80001u, 0xFFFFFFFFu, 0x00000000u})
+    {
+        IPv4 addr(raw);
+        transformEndianness<std::endian::little, std::endian::big>(addr);
+        ASSERT_EQ(addr.toUnderType(), std::byteswap(raw));
+    }
+}
+
+TEST(SerializationIPBinaryBulk, IPv4BigEndianHostWireBytesMatchLittleEndianHost)
+{
+    /// What a big-endian host's writeBinaryLittleEndian(addr) would put on the wire: swap addr
+    /// (the branch above), then memcpy its bytes MSB-first (that's what "native" means there).
+    auto bigEndianHostWireBytes = [](UInt32 raw) -> std::string
+    {
+        IPv4 addr(raw);
+        transformEndianness<std::endian::little, std::endian::big>(addr);
+        UInt32 swapped = addr.toUnderType();
+        std::string native_bytes(reinterpret_cast<const char *>(&swapped), sizeof(swapped));
+        /// This host is little-endian, so its own native byte order is the mirror image of the
+        /// big-endian host's; reversing it here yields exactly the bytes a real big-endian
+        /// memcpy would produce, without needing to run on one.
+        return {native_bytes.rbegin(), native_bytes.rend()};
+    };
+
+    ASSERT_EQ(bigEndianHostWireBytes(0x01020304u), (std::string{"\x04\x03\x02\x01", 4}));
+    ASSERT_EQ(bigEndianHostWireBytes(0xC0A80001u), (std::string{"\x01\x00\xA8\xC0", 4}));
+
+    /// Same values, same expected bytes as IPv4WireFormatIsLittleEndian's little-endian-host path.
+    auto type = DataTypeFactory::instance().get("IPv4");
+    auto col = type->createColumn();
+    auto & data = assert_cast<ColumnVector<IPv4> &>(*col).getData();
+    data.push_back(IPv4(0x01020304));
+    data.push_back(IPv4(0xC0A80001));
+    WriteBufferFromOwnString ostr;
+    type->getDefaultSerialization()->serializeBinaryBulk(*col, ostr, 0, 0);
+    ASSERT_EQ(ostr.str(), bigEndianHostWireBytes(0x01020304u) + bigEndianHostWireBytes(0xC0A80001u));
+}
+
+TEST(SerializationIPBinaryBulk, IPv4BigEndianHostReadReconstructsOriginalValue)
+{
+    /// The inverse: readBinaryLittleEndian on a big-endian host first memcpy's the little-endian
+    /// wire bytes MSB-first (producing the byte-reversed value below), then swaps -- reconstructing
+    /// the original. transformEndianness is its own inverse (byteswap undoes byteswap), so the
+    /// same explicit-FromEndian trick applies here too.
+    const std::string wire_bytes{"\x04\x03\x02\x01", 4}; /// wire format for IPv4(0x01020304)
+    std::string be_native_bytes(wire_bytes.rbegin(), wire_bytes.rend());
+    UInt32 be_native_value;
+    memcpy(&be_native_value, be_native_bytes.data(), sizeof(be_native_value));
+
+    IPv4 addr(be_native_value);
+    transformEndianness<std::endian::little, std::endian::big>(addr);
+    ASSERT_EQ(addr, IPv4(0x01020304));
 }
