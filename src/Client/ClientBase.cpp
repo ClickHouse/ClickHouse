@@ -865,8 +865,44 @@ void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
+    connection_needs_resynchronization = true;
     server_exception = std::move(e);
     resetOutput();
+}
+
+
+void ClientBase::resynchronizeConnectionAfterError()
+{
+    connection_needs_resynchronization = false;
+    if (!connection->checkConnected(connection_parameters.timeouts))
+        connect();
+}
+
+
+void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query)
+{
+    /// The query exchange starts here. If it does not complete cleanly, the protocol may be
+    /// desynchronized, and a session that continues after the error has to resynchronize the
+    /// connection with a round trip. The flag is cleared on the clean completion of the exchange
+    /// (see `onEndOfStream` and the callers).
+    connection_needs_resynchronization = true;
+    try
+    {
+        send_query();
+    }
+    catch (...)
+    {
+        /// `sendQuery` can also fail during its local preflight - for example, on the validation
+        /// of `network_compression_method` - before the first byte of the query packet has been
+        /// written. Such a failure leaves the protocol in sync, and resynchronizing it with a
+        /// round trip could time out on a slow server and silently reconnect away the session
+        /// state. A failure after `Connection::sendQuery` has started writing always disconnects
+        /// the connection (see the `SCOPE_EXIT` there), so a connection that is still alive
+        /// means that nothing has been sent.
+        if (connection->isConnected())
+            connection_needs_resynchronization = false;
+        throw;
+    }
 }
 
 
@@ -1673,17 +1709,23 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
-                connection->sendQuery(
-                    connection_parameters.timeouts,
-                    query,
-                    query_parameters,
-                    client_context->getCurrentQueryId(),
-                    query_processing_stage,
-                    settings_to_send,
-                    &client_context->getClientInfo(),
-                    true,
-                    {},
-                    [&](const Progress & progress) { onProgress(progress); });
+                /// A failure before this point is purely local and leaves the connection in
+                /// sync. The flag is cleared on the successful completion of the query
+                /// (see `processParsedSingleQuery`).
+                armResynchronizationAndSendQuery([&]
+                {
+                    connection->sendQuery(
+                        connection_parameters.timeouts,
+                        query,
+                        query_parameters,
+                        client_context->getCurrentQueryId(),
+                        query_processing_stage,
+                        settings_to_send,
+                        &client_context->getClientInfo(),
+                        true,
+                        {},
+                        [&](const Progress & progress) { onProgress(progress); });
+                });
 
                 if (send_external_tables)
                     sendExternalTables(parsed_query);
@@ -1923,6 +1965,17 @@ void ClientBase::onTimezoneUpdate(const String & tz)
 
 void ClientBase::onEndOfStream()
 {
+    /// `EndOfStream` terminates the query exchange with the protocol in sync, whatever happens
+    /// below or afterwards. This also covers the failures that are recovered by draining the
+    /// exchange: a `LocalFormatError` in the middle of a result (`receiveResult` sends `Cancel`
+    /// and keeps receiving until the end of the stream) and a client-side failure while sending
+    /// the data of an `INSERT` (`processInsertQuery` sends `Cancel` and calls
+    /// `receiveEndOfQueryForInsert`). Such a session must not resynchronize the connection with
+    /// a round trip: a `Pong` that does not arrive within `sync_request_timeout` is
+    /// indistinguishable from a closed connection, and the client would silently reconnect,
+    /// losing its temporary tables, current database and session settings.
+    connection_needs_resynchronization = false;
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -2259,17 +2312,21 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     const Settings * settings_to_send
         = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
 
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters,
-        client_context->getCurrentQueryId(),
-        query_processing_stage,
-        settings_to_send,
-        &client_context->getClientInfo(),
-        true,
-        {},
-        [&](const Progress & progress) { onProgress(progress); });
+    /// The query exchange starts here - see the comment at the same place of `processOrdinaryQuery`.
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters,
+            client_context->getCurrentQueryId(),
+            query_processing_stage,
+            settings_to_send,
+            &client_context->getClientInfo(),
+            true,
+            {},
+            [&](const Progress & progress) { onProgress(progress); });
+    });
 
     try
     {
@@ -2776,7 +2833,13 @@ void ClientBase::processParsedSingleQuery(
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
-        if (!connection->checkConnected(connection_parameters.timeouts))
+        /// Deliberately without a round trip: this runs before every query. The only case that needs
+        /// the stronger check is a session that continues after a failed query - the protocol can be
+        /// desynchronized then, and the server can be closing the connection without the client
+        /// having noticed it yet.
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+        else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
@@ -2852,6 +2915,10 @@ void ClientBase::processParsedSingleQuery(
     /// Do not change context (current DB, settings) in case of an exception.
     if (!have_error)
     {
+        /// The query exchange has completed cleanly, so the protocol is in sync
+        /// (the flag was armed when the query was sent).
+        connection_needs_resynchronization = false;
+
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
@@ -3344,6 +3411,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
+                    // `connection_needs_resynchronization` is not set here: it is armed when the
+                    // query exchange starts (see `processOrdinaryQuery`, `processInsertQuery`),
+                    // so a purely local failure before anything has been sent to the server does
+                    // not force a round trip - and a possible reconnection that would lose the
+                    // session state - before the next query.
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -3452,7 +3524,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     }
                 }
 
-                // If the error is expected, force reconnect and ignore it.
+                // If the error is expected, reconnect if needed and ignore it. Only an error of a
+                // query whose exchange with the server has actually started can desynchronize the
+                // protocol; a purely local error leaves the connection in sync.
                 if (have_error && error_matches_hint)
                 {
                     client_exception.reset();
@@ -3461,8 +3535,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     have_error = false;
                     error_code = 0;
 
-                    if (!connection->checkConnected(connection_parameters.timeouts))
-                        connect();
+                    if (connection_needs_resynchronization)
+                        resynchronizeConnectionAfterError();
                 }
 
                 // For INSERTs with inline data: use the end of inline data as
@@ -3812,19 +3886,31 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
+        /// This is a complete query exchange on the shared connection, so it follows the same
+        /// resynchronization discipline as the regular queries: recover from a previous failed
+        /// exchange first, arm the flag for the time of the exchange (so that a transport or
+        /// client failure here does not leave the connection silently desynchronized for the
+        /// next query), and clear it when the exchange terminates in a protocol-consistent way -
+        /// with `EndOfStream` or with a server exception.
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+
         /// Send the query
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query,
-            {},  /// query_parameters
-            "",  /// query_id
-            QueryProcessingStage::Complete,
-            nullptr,  /// settings
-            nullptr,  /// client_info
-            false,    /// with_pending_data
-            {},       /// external_roles
-            {}        /// external_data
-        );
+        armResynchronizationAndSendQuery([&]
+        {
+            connection->sendQuery(
+                connection_parameters.timeouts,
+                query,
+                {},  /// query_parameters
+                "",  /// query_id
+                QueryProcessingStage::Complete,
+                nullptr,  /// settings
+                nullptr,  /// client_info
+                false,    /// with_pending_data
+                {},       /// external_roles
+                {}        /// external_data
+            );
+        });
 
         /// Receive and process results
         while (true)
@@ -3848,10 +3934,18 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                     break;
 
                 case Protocol::Server::EndOfStream:
+                    connection_needs_resynchronization = false;
                     return result;
 
                 case Protocol::Server::Exception:
-                    /// Return empty string on exception
+                    /// Return empty string on exception. The exchange is complete at this point:
+                    /// the query was sent with the terminating empty block (`with_pending_data`
+                    /// is false), and a server exception is the last packet of the exchange - the
+                    /// server drains the data it has not read yet and preserves the connection.
+                    /// The flag is cleared so that the next query of the session does not go
+                    /// through the round-trip resynchronization: its ping could time out on a
+                    /// slow server and silently reconnect away the session state.
+                    connection_needs_resynchronization = false;
                     return "";
 
                 case Protocol::Server::Progress:
@@ -3879,18 +3973,26 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
     const NameToNameMap query_parameters_for_help{{"word", word}};
 
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters_for_help,
-        "", /// query_id
-        QueryProcessingStage::Complete,
-        nullptr, /// settings
-        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
-        false, /// with_pending_data
-        {}, /// external_roles
-        {} /// process_progress_callback
-    );
+    /// See the comment in `executeQueryForSingleString`: this exchange follows the same
+    /// resynchronization discipline as the regular queries.
+    if (connection_needs_resynchronization)
+        resynchronizeConnectionAfterError();
+
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters_for_help,
+            "", /// query_id
+            QueryProcessingStage::Complete,
+            nullptr, /// settings
+            &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
+            false, /// with_pending_data
+            {}, /// external_roles
+            {} /// process_progress_callback
+        );
+    });
 
     Blocks blocks;
     while (true)
@@ -3904,9 +4006,17 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
                     blocks.push_back(std::move(packet.block));
                 continue;
 
-            case Protocol::Server::EndOfStream: return blocks.empty() ? Block{} : concatenateBlocks(blocks);
+            case Protocol::Server::EndOfStream:
+                connection_needs_resynchronization = false;
+                return blocks.empty() ? Block{} : concatenateBlocks(blocks);
 
-            case Protocol::Server::Exception: packet.exception->rethrow(); break; /// unreachable: `rethrow` always throws
+            case Protocol::Server::Exception:
+                /// A server exception terminates the exchange with the protocol in sync (see the
+                /// comment in `executeQueryForSingleString`), so the next query of the session
+                /// must not pay for it with a round-trip resynchronization.
+                connection_needs_resynchronization = false;
+                packet.exception->rethrow();
+                break; /// unreachable: `rethrow` always throws
 
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -4672,7 +4782,23 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
+            /// This is a query exchange on the shared connection, so it follows the same
+            /// resynchronization discipline as the regular queries (see the comment in
+            /// `executeQueryForSingleString`): a failed query of this session may have left the
+            /// protocol desynchronized, and the flag has to stay armed for the time of the
+            /// exchange, because `load` swallows its failures - including a transport failure in
+            /// the middle of the exchange, which the next query of the session would otherwise
+            /// run into. The flag is cleared when the exchange ended with the protocol in sync -
+            /// with `EndOfStream` or with a server exception, which is the terminal packet of
+            /// the exchange, just like in the `help` exchanges. After a mid-exchange transport
+            /// or client failure it stays armed, and the next query resynchronizes the
+            /// connection with a round trip.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            if (suggest->lastExchangeEndedInSync())
+                connection_needs_resynchronization = false;
         }
 
         try
@@ -4691,14 +4817,15 @@ void ClientBase::runInteractive()
             client_exception.reset(e.clone());
         }
 
-        if (client_exception)
+        if (client_exception && connection_needs_resynchronization)
         {
             /// client_exception may have been set above or elsewhere.
-            /// Client-side exception during query execution can result in the loss of
-            /// sync in the connection protocol.
-            /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected(connection_parameters.timeouts))
-                connect();
+            /// A client-side exception in the middle of a query exchange results in the loss of
+            /// sync in the connection protocol, so we reconnect and allow to enter the next query.
+            /// An exception before anything has been sent to the server (the flag is not armed
+            /// then) leaves the connection in sync, and a reconnection would only lose the
+            /// session state.
+            resynchronizeConnectionAfterError();
         }
     }
     while (true);
