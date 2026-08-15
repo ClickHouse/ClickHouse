@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'التصورات ولوحات المعلومات في ClickStack'
-sidebarTitle: 'لوحات المعلومات'
+sidebarTitle: 'نظرة عامة'
 description: 'التصورات ولوحات المعلومات في ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'لوحات المعلومات', 'تصور', 'المراقبة', 'الرصد']
@@ -13,7 +13,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 يدعم ClickStack تصور الأحداث، مع دعم مدمج لإنشاء المخططات في ClickStack UI ‏(HyperDX). ويمكن إضافة هذه المخططات إلى لوحات المعلومات لمشاركتها مع مستخدمين آخرين.
 
-يمكن إنشاء التصورات من التتبعات أو المقاييس أو السجلات أو أي بنى أحداث واسعة يعرّفها المستخدم.
+يمكن إنشاء التصورات من التتبعات أو المقاييس أو السجلات أو أي بنى wide events يعرّفها المستخدم.
 
 <div id="creating-visualizations">
   ## إنشاء التصورات
@@ -35,7 +35,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 <Steps>
   <Step title="الانتقال إلى Chart Explorer" id="navigate-chart-explorer">
-    حدّد `Chart Explorer` من القائمة اليسرى.
+    حدّد `Chart Explorer` من قائمة أيسر.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
   </Step>
@@ -59,11 +59,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="تصور بسيط 2" size="lg" />
 
-    لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك تكرارها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر التكرار في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط" size="lg" />
-
-    لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك تكرارها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر التكرار في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
+    لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك نسخها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر النسخ في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط" size="lg" />
 
@@ -212,6 +208,14 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 تنطبق المخططات الخلفية على بلاطات Number الخاصة بباني الاستعلامات. أما بلاطات Number الخاصة بـ Raw SQL فتُرجع قيمة واحدة من دون بُعد زمني يمكن تجميعه، لذلك يظهر هذا الخيار لكنه يكون معطّلًا لها.
 
+يمكن لبلاطات الجدول تمييز صفوفها بخيار **خلفية الصفوف المتناوبة**، الذي يلوّن كل صف ثانٍ لتسهيل فحص الجداول العريضة. ويكون هذا الخيار معطّلًا افتراضيًا.
+
+بعد تحديد بلاطة جدول، افتح **إعدادات العرض** وفعّل **خلفية الصفوف المتناوبة**. وهذا التمييز بصري فقط، لذا يعمل مع بلاطات الجدول الخاصة بباني الاستعلامات وبلاطات الجدول الخاصة بـ raw SQL على حد سواء.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="درج إعدادات العرض لبلاطة جدول، مع تشغيل خلفية الصفوف المتناوبة" size="lg" />
+
+كما تحتفظ بلاطات الجدول بفاصل بين صف العنوان والبيانات أثناء التمرير، بحيث تظل رؤوس الأعمدة واضحة ومتميزة.
+
 <div id="dashboard-listing-search">
   ## لوحة المعلومات - العرض والبحث
 </div>
@@ -297,7 +301,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   ### لوحة معلومات ClickHouse
 </div>
 
-توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من القائمة اليمنى.
+توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من قائمة أيسر.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="لوحة معلومات ClickHouse" size="lg" />
 
@@ -306,7 +310,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 <Info>
   **وصول مطلوب إلى جداول النظام**
 
-  تستعلم لوحة المعلومات هذه من [جداول النظام](/ar/reference/system-tables/index) في ClickHouse لعرض المقاييس الرئيسية. وتلزم امتيازات الوصول التالية:
+  تستعلم لوحة المعلومات هذه من [جداول النظام](/ar/reference/system-tables/overview) في ClickHouse لعرض المقاييس الرئيسية. وتلزم امتيازات الوصول التالية:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

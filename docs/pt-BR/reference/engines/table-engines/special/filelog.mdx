@@ -44,9 +44,9 @@ Argumentos do motor:
 
 Parâmetros opcionais:
 
-* `poll_timeout_ms` - Timeout para um único poll do arquivo de log. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings#stream_poll_timeout_ms).
-* `poll_max_batch_size` — Quantidade máxima de registros a serem obtidos em um único poll. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
-* `max_block_size` — Tamanho máximo do lote (em registros) para o poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size).
+* `poll_timeout_ms` - Timeout para um único poll do arquivo de log. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `poll_max_batch_size` — Quantidade máxima de registros a serem obtidos em um único poll. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
+* `max_block_size` — Tamanho máximo do lote (em registros) para o poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - Número máximo de threads para analisar arquivos; o padrão é 0, o que significa que o número será max(1, physical&#95;cpu&#95;cores / 4).
 * `poll_directory_watch_events_backoff_init` - Valor inicial de espera para a thread de monitoramento do diretório. Padrão: `500`.
 * `poll_directory_watch_events_backoff_max` - Valor máximo de espera para a thread de monitoramento do diretório. Padrão: `32000`.
