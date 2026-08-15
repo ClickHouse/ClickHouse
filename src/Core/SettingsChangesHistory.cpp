@@ -99,6 +99,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
+            {"radix_join_max_partitions_per_pass", 1024, 1024, "New setting for the `radix_join` algorithm: the maximum fanout of a single radix scatter pass."},
+            {"radix_join_size_tables_by_distinct_estimate", true, true, "New setting for the `radix_join` algorithm: size each leaf hash table from the HyperLogLog distinct-key estimate computed during the build scatter instead of from the row count."},
+            {"radix_join_probe_buffer_fraction", 0.15, 0.15, "New setting for the `radix_join` algorithm: probe-side buffer budget as a fraction of the build side's accumulated bytes."},
+            {"radix_join_probe_buffer_min_bytes", 536870912, 536870912, "New setting for the `radix_join` algorithm: lower bound for the probe buffer budget."},
+            {"radix_join_probe_buffer_max_bytes", 0, 0, "New setting for the `radix_join` algorithm: upper bound for the probe buffer budget (0 means no upper bound)."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

@@ -251,6 +251,12 @@ struct JoinAlgorithmParams
 
     UInt64 parallel_hash_join_threshold;
 
+    UInt64 radix_join_max_partitions_per_pass;
+    bool radix_join_size_tables_by_distinct_estimate;
+    float radix_join_probe_buffer_fraction;
+    UInt64 radix_join_probe_buffer_min_bytes;
+    UInt64 radix_join_probe_buffer_max_bytes;
+
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
 

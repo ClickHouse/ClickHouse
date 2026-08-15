@@ -44,6 +44,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
+#include <Interpreters/RadixHashJoin/RadixHashJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -69,6 +70,11 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsUInt64 radix_join_max_partitions_per_pass;
+    extern const SettingsBool radix_join_size_tables_by_distinct_estimate;
+    extern const SettingsFloat radix_join_probe_buffer_fraction;
+    extern const SettingsUInt64 radix_join_probe_buffer_min_bytes;
+    extern const SettingsUInt64 radix_join_probe_buffer_max_bytes;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
@@ -1173,6 +1179,105 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
+/// True when every column of `header` scatters as raw fixed-width bytes, i.e. its column is
+/// fixed-and-contiguous (`ColumnVector`/`ColumnDecimal`/`ColumnFixedString`). This single check
+/// subsumes Nullable/LowCardinality/String/Array/Tuple — all of which report false — and every
+/// fixed-and-contiguous column supports `insertRawUninitialized`, which the radix scatter uses.
+static bool allColumnsFixedAndContiguous(const SharedHeader & header)
+{
+    for (const auto & column : *header)
+    {
+        if (!column.type->createColumn()->isFixedAndContiguous())
+            return false;
+    }
+    return true;
+}
+
+/// The applicability gate for `radix_join`: a v1 RadixHashJoin requires a single-disjunct inner ALL
+/// equi-join with no special storage, over one or more fixed-width, non-nullable, non-LowCardinality
+/// key columns whose packed width (the sum of the column widths) is a multiple of 4 in [4, 64] — the
+/// scatter granularity (4 bytes) and the leaf-cell template bound — AND all columns of both sides
+/// fixed-width (the whole build side is physically scattered, and each probe window is scattered on
+/// the left columns, so both must scatter as raw bytes). Any other shape (composite key wider than 64
+/// bytes, nullable, low-cardinality, non-fixed-width, a packed width that is not a multiple of 4 such
+/// as a lone `UInt8`/`UInt16`/`Date`/`Enum8`/`Enum16`, or any String/Array/Nullable payload column on
+/// either side) falls back to `parallel_hash`. Coverage beyond all-fixed-width columns comes later.
+static bool radixHashJoinApplicable(
+    const std::shared_ptr<TableJoin> & table_join,
+    const SharedHeader & left_table_expression_header,
+    const SharedHeader & right_table_expression_header)
+{
+    if (!table_join->oneDisjunct())
+        return false;
+    if (table_join->kind() != JoinKind::Inner)
+        return false;
+    /// v1 is ALL inner only; ANY/SEMI/ANTI/ASOF keep their own semantics and would not be bit-identical
+    /// to `hash` under the parallel passthrough.
+    if (table_join->strictness() != JoinStrictness::All)
+        return false;
+    if (table_join->isSpecialStorage())
+        return false;
+
+    const auto & key_names_right = table_join->getOnlyClause().key_names_right;
+    if (key_names_right.empty())
+        return false;
+
+    size_t packed_key_width = 0;
+    for (const auto & key_name : key_names_right)
+    {
+        const auto * key_column = right_table_expression_header->findByName(key_name);
+        if (!key_column)
+            return false;
+
+        const auto & type = key_column->type;
+        if (type->isNullable() || type->lowCardinality())
+            return false;
+        if (!type->haveMaximumSizeOfValue())
+            return false;
+
+        const size_t width = type->getMaximumSizeOfValueInMemory();
+        if (width == 0)
+            return false;
+        packed_key_width += width;
+    }
+
+    if (!(packed_key_width % 4 == 0 && packed_key_width >= 4 && packed_key_width <= 64))
+        return false;
+
+    /// The whole build side and each probe window are physically radix-scattered, so every column of
+    /// both sides must scatter as raw fixed-width bytes.
+    return allColumnsFixedAndContiguous(left_table_expression_header)
+        && allColumnsFixedAndContiguous(right_table_expression_header);
+}
+
+/// Fallback when `radix_join` is requested but its key gate does not hold: prefer `parallel_hash`
+/// (ConcurrentHashJoin) when the join shape allows it, otherwise plain `HashJoin`.
+static std::shared_ptr<IJoin> createRadixHashJoinFallback(
+    const std::shared_ptr<TableJoin> & table_join,
+    SharedHeader & right_table_expression_header,
+    const JoinAlgorithmParams & params)
+{
+    StatsCollectingParams stats_collecting_params{
+        params.hash_table_key_hash,
+        params.collect_hash_table_stats_during_joins,
+        params.max_entries_for_hash_table_stats,
+        params.max_size_to_preallocate_for_joins};
+
+    const auto kind = table_join->kind();
+    const bool parallel_ok = table_join->oneDisjunct()
+        && !table_join->isSpecialStorage()
+        && table_join->strictness() != JoinStrictness::Asof
+        && (kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
+
+    if (parallel_ok)
+        return std::make_shared<ConcurrentHashJoin>(
+            table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
+
+    return std::make_shared<HashJoin>(
+        table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
+        /*use_two_level_maps_=*/false, stats_collecting_params);
+}
+
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -1196,6 +1301,29 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (MergeJoin::isSupported(table_join))
             return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (algorithm == JoinAlgorithm::RADIX_JOIN)
+    {
+        if (radixHashJoinApplicable(table_join, left_table_expression_header, right_table_expression_header))
+            return std::make_shared<RadixHashJoin>(
+                table_join,
+                right_table_expression_header,
+                params.max_threads,
+                params.rhs_size_estimation,
+                params.radix_join_max_partitions_per_pass,
+                params.radix_join_size_tables_by_distinct_estimate,
+                params.radix_join_probe_buffer_fraction,
+                params.radix_join_probe_buffer_min_bytes,
+                params.radix_join_probe_buffer_max_bytes,
+                StatsCollectingParams{
+                    params.hash_table_key_hash,
+                    params.collect_hash_table_stats_during_joins,
+                    params.max_entries_for_hash_table_stats,
+                    params.max_size_to_preallocate_for_joins});
+
+        /// Key gate failed.
+        return createRadixHashJoinFallback(table_join, right_table_expression_header, params);
     }
 
     if (algorithm == JoinAlgorithm::HASH ||
@@ -1349,6 +1477,12 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     hash_table_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
 
+    radix_join_max_partitions_per_pass = settings[Setting::radix_join_max_partitions_per_pass];
+    radix_join_size_tables_by_distinct_estimate = settings[Setting::radix_join_size_tables_by_distinct_estimate];
+    radix_join_probe_buffer_fraction = settings[Setting::radix_join_probe_buffer_fraction];
+    radix_join_probe_buffer_min_bytes = settings[Setting::radix_join_probe_buffer_min_bytes];
+    radix_join_probe_buffer_max_bytes = settings[Setting::radix_join_probe_buffer_max_bytes];
+
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
 
@@ -1377,6 +1511,12 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
+
+    radix_join_max_partitions_per_pass = join_settings.radix_join_max_partitions_per_pass;
+    radix_join_size_tables_by_distinct_estimate = join_settings.radix_join_size_tables_by_distinct_estimate;
+    radix_join_probe_buffer_fraction = join_settings.radix_join_probe_buffer_fraction;
+    radix_join_probe_buffer_min_bytes = join_settings.radix_join_probe_buffer_min_bytes;
+    radix_join_probe_buffer_max_bytes = join_settings.radix_join_probe_buffer_max_bytes;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;

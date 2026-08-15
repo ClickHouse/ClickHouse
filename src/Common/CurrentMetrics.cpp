@@ -162,6 +162,9 @@
     M(ConcurrentHashJoinPoolThreads, "Number of threads in the thread pool for concurrent hash join.") \
     M(ConcurrentHashJoinPoolThreadsActive, "Number of threads in the thread pool for concurrent hash join running a task.") \
     M(ConcurrentHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for concurrent hash join.") \
+    M(RadixHashJoinPoolThreads, "Number of threads in the thread pool for radix hash join.") \
+    M(RadixHashJoinPoolThreadsActive, "Number of threads in the thread pool for radix hash join running a task.") \
+    M(RadixHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for radix hash join.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \

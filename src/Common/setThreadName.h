@@ -135,6 +135,7 @@ namespace DB
     M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
     M(QUERY_PROFILER, "QueryProfiler") \
     M(QUERY_RUNNER, "QueryRunner") \
+    M(RADIX_JOIN, "RadixJoin") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
