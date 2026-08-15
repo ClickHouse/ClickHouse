@@ -20,6 +20,8 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -1525,6 +1527,23 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
         {
             InterpreterCreateQuery::processSQLSecurityOption(
                 context->getQueryContext(), sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, LoadingStrictnessLevel::CREATE);
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+    }
+
+    /// SQL UDF substitution is performed before `getTablePropertiesAndNormalizeCreateQuery`, which reads
+    /// the `AS src` source and populating `SELECT`. Run it on a clone to notice substitutions that fail
+    /// before either source is reached, such as a recursive UDF in a view's `SELECT`.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
+        ASTPtr create_query = create.clone();
+
+        try
+        {
+            UserDefinedSQLFunctionVisitor::visit(create_query, context);
         }
         catch (const Exception &)
         {
