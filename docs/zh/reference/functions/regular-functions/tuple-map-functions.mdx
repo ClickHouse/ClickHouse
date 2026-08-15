@@ -29,7 +29,7 @@ doc_type: 'reference'
 **语法**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **参数**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - 用作键和值之间分隔符的字符。默认为 `:`。 [String](/zh/reference/data-types/string) 或 [FixedString](/zh/reference/data-types/fixedstring)。
 * `pair_delimiters` - 用作键值对之间分隔符的一组字符。默认为 `\space`、`,` 和 `;`。 [String](/zh/reference/data-types/string) 或 [FixedString](/zh/reference/data-types/fixedstring)。
 * `quoting_character` - 用作引号字符的字符。默认为 `"`。 [String](/zh/reference/data-types/string) 或 [FixedString](/zh/reference/data-types/fixedstring)。
-* `unexpected_quoting_character_strategy` - 在 `read_key` 和 `read_value` 阶段，用于处理出现在非预期位置的引号字符的策略。可能的值：`invalid`、`accept` 和 `promote`。`invalid` 会丢弃键/值并切换回 `WAITING_KEY` 状态。`accept` 会将其视为普通字符。`promote` 会切换到 `READ_QUOTED_{KEY/VALUE}` 状态，并从下一个字符开始处理。默认值为 `INVALID`
+* `unexpected_quoting_character_strategy` - 在 `read_key` 和 `read_value` 阶段，用于处理出现在非预期位置的引号字符的策略。可能的值：`invalid`、`accept` 和 `promote`。`invalid` 会丢弃键/值并切换回 `WAITING_KEY` 状态。`accept` 会将其视为普通字符。`promote` 会切换到 `READ_QUOTED_{KEY/VALUE}` 状态，并从下一个字符开始处理。默认值为 `PROMOTE`
 
 **返回值**
 
@@ -144,7 +144,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 └──────────────┘
 ```
 
-**不支持转义序列时的转义写法**
+**不支持转义序列时的转义序列**
 
 ```sql
 arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **语法**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **别名**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **语法**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **参数**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 引入版本：v21.2.0
 
 返回给定 map 的键。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 后，可对此函数进行优化。
+启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，可对此函数进行优化。
 启用该设置后，此函数仅读取 `keys` 子列，而不是整个 map。
 查询 `SELECT mapKeys(m) FROM table` 会被转换为 `SELECT m.keys FROM table`。
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 引入版本：v21.2.0
 
 返回给定 map 的值。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 后，此函数可得到优化。
+启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，此函数可得到优化。
 启用该设置后，该函数只会读取 `values` 子列，而不是整个 map。
 查询 `SELECT mapValues(m) FROM table` 会被转换为 `SELECT m.values FROM table`。
 
