@@ -2,6 +2,8 @@
 #include "config.h"
 #if USE_PARQUET
 
+#include <mutex>
+
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
@@ -23,6 +25,8 @@ public:
 
     void resetParser() override;
 
+    void resetReadBuffer() override;
+
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 
     const BlockMissingValues * getMissingValues() const override;
@@ -43,6 +47,8 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
 
+    /// Protects the optional against concurrent initialization and cancellation.
+    std::mutex reader_mutex;
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
 

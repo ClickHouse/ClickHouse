@@ -78,6 +78,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
+        std::lock_guard lock(reader_mutex);
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
@@ -117,13 +118,30 @@ const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 
 void ParquetV3BlockInputFormat::onCancel() noexcept
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
 
+void ParquetV3BlockInputFormat::resetReadBuffer()
+{
+    {
+        /// Background tasks read through a non-owning pointer to the buffers the base class is
+        /// about to release, so they have to be stopped first. `reader` stays alive:
+        /// getMatchedBuckets() reads row group metadata after the source is exhausted.
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->shutdownTasks();
+    }
+    IInputFormat::resetReadBuffer();
+}
+
 void ParquetV3BlockInputFormat::resetParser()
 {
-    reader.reset();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader.reset();
+    }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
 }
