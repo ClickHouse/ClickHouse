@@ -82,8 +82,8 @@ target_compile_definitions(_pulsar PRIVATE PULSAR_USE_BOOST_REGEX)
 target_compile_definitions(_pulsar PRIVATE HAS_ZSTD HAS_SNAPPY)
 
 # ClickHouse does not have curl (the submodule was removed), so a minimal stub is
-# provided instead. The Pulsar binary protocol (pulsar:// URLs) works normally;
-# HTTP lookup (http:// URLs) and OAuth2 authentication fail at runtime.
+# provided for the client headers. `StoragePulsar` rejects HTTP service URLs before
+# constructing the client; only the Pulsar binary protocol is supported.
 target_include_directories(_pulsar SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/curl-stub")
 
 # Compatibility shims for the deprecated Boost.Asio APIs that were removed in

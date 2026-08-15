@@ -33,11 +33,13 @@ def drop_tables():
     instance.query("DROP TABLE IF EXISTS test.pulsar_reader SYNC")
 
 
-def pulsar_table(name, topic, group, extra_settings=""):
+def pulsar_table(
+    name, topic, group, extra_settings="", service_url="pulsar://pulsar1:6650"
+):
     return f"""
         CREATE TABLE {name} (key UInt64, value UInt64)
         ENGINE = Pulsar
-        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+        SETTINGS pulsar_service_url = '{service_url}',
                  pulsar_topic_list = '{topic}',
                  pulsar_group_name = '{group}',
                  pulsar_format = 'JSONEachRow'{extra_settings}
@@ -524,6 +526,23 @@ def test_batch_size_zero_rejected(pulsar_cluster):
             )
         )
         assert "BAD_ARGUMENTS" in error
+
+
+def test_http_service_url_rejected(pulsar_cluster):
+    # The bundled Pulsar client has no HTTP transport. Reject HTTP lookup URLs
+    # before constructing it instead of retrying an unsupported configuration.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for scheme in ("http", "https"):
+        error = instance.query_and_get_error(
+            pulsar_table(
+                "test.pulsar_reader",
+                "http_service_url_topic",
+                "http_service_url_group",
+                service_url=f"{scheme}://pulsar1:8080",
+            )
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert "pulsar://" in error
 
 
 def test_max_rows_per_message_zero_rejected(pulsar_cluster):

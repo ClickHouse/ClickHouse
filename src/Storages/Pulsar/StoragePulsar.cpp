@@ -164,8 +164,11 @@ void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & con
 {
     /// A service URL is `<scheme>://host[:port]`, optionally listing several brokers as
     /// `pulsar://host1:6650,host2:6650`. The scheme also defines the default port.
+    /// This build deliberately supports only the Pulsar binary protocol. The bundled client has
+    /// no HTTP transport, so accepting `http://` or `https://` here would turn an unsupported
+    /// configuration into a retryable connection failure after the client has been constructed.
     static constexpr std::pair<std::string_view, UInt16> schemes[]
-        = {{"pulsar+ssl://", 6651}, {"pulsar://", 6650}, {"https://", 443}, {"http://", 80}};
+        = {{"pulsar+ssl://", 6651}, {"pulsar://", 6650}};
 
     std::string_view rest{service_url};
     UInt16 default_port = 0;
@@ -184,8 +187,7 @@ void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & con
     if (!scheme_found)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid `pulsar_service_url` '{}': it must start with one of the `pulsar://`, `pulsar+ssl://`, "
-            "`http://`, `https://` schemes",
+            "Invalid `pulsar_service_url` '{}': it must start with `pulsar://` or `pulsar+ssl://`",
             service_url);
 
     /// A trailing path is not a part of the broker address.
@@ -863,7 +865,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
-- `pulsar_service_url` – The Pulsar broker URL, for example, `pulsar://localhost:6650`. Several brokers can be listed as `pulsar://host1:6650,host2:6650`. Every listed host must be allowed by the [remote_url_allow_hosts](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) server setting, otherwise the table is not created and `UNACCEPTABLE_URL` is thrown.
+- `pulsar_service_url` – The Pulsar binary-protocol broker URL, for example, `pulsar://localhost:6650` or `pulsar+ssl://localhost:6651`. Several brokers can be listed as `pulsar://host1:6650,host2:6650`. Every listed host must be allowed by the [remote_url_allow_hosts](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) server setting, otherwise the table is not created and `UNACCEPTABLE_URL` is thrown.
 - `pulsar_group_name` – The subscription name. All consumers sharing the same group name belong to the same subscription.
 - `pulsar_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 - `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.
@@ -872,7 +874,7 @@ Optional parameters:
 
 - `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The value can not exceed the number of CPU cores (but at least `16` is always allowed).
-- `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
+- `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: `max(1, max_insert_block_size / pulsar_num_consumers)`.
 - `pulsar_skip_broken_messages` – Parser tolerance to schema-incompatible messages per block. Default: `0`. If `pulsar_skip_broken_messages = N` then the engine skips *N* Pulsar messages that cannot be parsed (a message equals a row of data).
 - `pulsar_poll_timeout_ms` – Timeout for a single poll from Pulsar. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
 - `pulsar_poll_max_batch_size` – The maximum number of messages to be polled in a single Pulsar poll. Default: [max_block_size](/reference/settings/session-settings/max-block-size#max_block_size).
@@ -883,7 +885,7 @@ Optional parameters:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging). Messages are acknowledged after a direct `SELECT` only when `pulsar_commit_on_select = true`; otherwise they can be read again. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
 1. Use the engine to create a Pulsar consumer and consider it a data stream.
 2. Create a table with the desired structure.
