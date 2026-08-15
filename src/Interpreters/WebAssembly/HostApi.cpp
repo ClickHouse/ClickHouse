@@ -16,10 +16,6 @@ namespace DB::ErrorCodes
     extern const int RESOURCE_NOT_FOUND;
 }
 
-namespace DB::WebAssembly
-{
-}
-
 namespace DB::FailPoints
 {
     extern const char wasm_guest_pause[];

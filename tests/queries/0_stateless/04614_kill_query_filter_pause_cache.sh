@@ -7,7 +7,7 @@
 # Verifies:
 #   1. Cache count is unchanged after a cancelled query.
 #   2. Cache count grows after a successful query with the same filter.
-# no-parallel: filter_transform_pause is a global PAUSEABLE_ONCE failpoint.
+# no-parallel: query_condition_cache_final_flush_pause is a global PAUSEABLE_ONCE failpoint.
 # no-parallel: query_condition_cache is instance-wide, and a parallel table drop clears it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
