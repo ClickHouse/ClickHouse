@@ -80,6 +80,19 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
+    /// The wrapper has exactly the nested function's state layout, so it must not participate in
+    /// state-type normalization. This keeps states produced through a native Variant argument
+    /// interchangeable with byte-compatible states produced through state-transparent combinators.
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_function->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return nested_function->getNormalizedStateType();
+    }
+
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
 
