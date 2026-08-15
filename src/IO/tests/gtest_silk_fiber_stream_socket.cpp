@@ -4,6 +4,7 @@
 
 #if USE_SILK && USE_SSL
 
+#include <IO/SilkFiberJob.h>
 #include <IO/SilkFiberStreamSocketImpl.h>
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
 #include <IO/SocketPeerClosed.h>
@@ -12,6 +13,7 @@
 #include <Common/Exception.h>
 #include <Common/SilkThrottler.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 
 #include <silk/fibers/fiber.h>
@@ -90,14 +92,16 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             const auto throttler = std::make_shared<Silk::Throttler>(/*max_speed_*/ 1'000'000);
             socket.setSendThrottler(throttler);
@@ -125,7 +129,8 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient()},
+        Params{{}, port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -155,15 +160,17 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         std::latch * negative_poll_done;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
@@ -191,7 +198,8 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient(), &negative_poll_done},
+        Params{{}, port, this->policy.makeClient(), &negative_poll_done},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -224,21 +232,24 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             EXPECT_THROW(
                 socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port)),
                 Poco::Net::ConnectionRefusedException);
             return 0;
         },
-        Params{closed_port, this->policy.makeClient()},
+        Params{{}, closed_port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -253,14 +264,16 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
@@ -280,7 +293,8 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient()},
+        Params{{}, port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -307,6 +321,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -317,9 +332,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     DB::SocketState state = DB::SocketState::Closed;
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
@@ -345,7 +361,8 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             socket.close();
             return 0;
         },
-        Params{port, policy.makeClient(), &elapsed_us, &state},
+        Params{{}, port, policy.makeClient(), &elapsed_us, &state},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -380,6 +397,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -390,9 +408,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     int ssl_error = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
             Poco::Net::StreamSocket socket(p->impl);
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
@@ -420,7 +439,8 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             socket.close();
             return 0;
         },
-        Params{port, policy.makeClient(), &elapsed_us, &ssl_error},
+        Params{{}, port, policy.makeClient(), &elapsed_us, &ssl_error},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
