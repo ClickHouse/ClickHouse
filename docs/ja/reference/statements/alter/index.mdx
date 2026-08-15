@@ -1,6 +1,6 @@
 ---
 description: 'ALTER に関するドキュメント'
-sidebarTitle: 'ALTER'
+sidebarTitle: '概要'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,15 +73,37 @@ doc_type: 'reference'
 
 非レプリケートテーブルでは、すべての `ALTER` クエリが同期的に実行されます。レプリケートテーブルでは、クエリは対応する操作の指示を `ZooKeeper` に追加するだけで、操作自体はできるだけ早く実行されます。ただし、クエリはそれらの操作がすべてのレプリカで完了するまで待機できます。
 
-ミューテーションを作成する `ALTER` クエリ (例: `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC` など) については、同期性は [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定によって決まります。
+ミューテーションを作成する `ALTER` クエリ (例: `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC` など) については、同期性は [mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定によって決まります。
 
-メタデータのみを変更するその他の `ALTER` クエリについては、[alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定を使用して待機方法を設定できます。
+メタデータのみを変更するその他の `ALTER` クエリについては、[alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定を使用して待機方法を設定できます。
 
-非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
+非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
   すべての `ALTER` クエリについて、`alter_sync = 2` であり、かつ一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブな場合は、`UNFINISHED` 例外がスローされます。
 </Note>
+
+<div id="concurrent-alter-assignment-on-one-table">
+  ### 1 つのテーブルに対する `ALTER` の同時割り当て
+</div>
+
+レプリケートテーブルでは、同じテーブルに対して複数の個別の `ALTER` ステートメントを短時間に連続して送信すると、`CANNOT_ASSIGN_ALTER` (コード 517) で失敗することがあります。レプリケートパスでは、レプリカが以前の `ALTER` の一部をまだ適用していない場合にこのエラーが発生します (メタデータバージョンが共通メタデータより遅れている状態です。サーバーは、レプリカについて「still not applied some of previous alters」または「Probably too many alters executing concurrently」と表示することがあります) 。以前の `ALTER` がすでに割り当てられた後でも、この状態が続くことがあります。これは **メタデータ `ALTER` とミューテーションの一般的な同時実行状態** であり、ミューテーションのみを行うステートメントに限定されません。通常の同時メタデータ変更 (`ADD` / `DROP` / `MODIFY` など) でも、同じ再試行可能なコードが発生する場合があります (例として、`tests/queries/0_stateless/03518_alter_logical_race.sh` で対象となっている再試行パスを参照してください) 。
+
+競合を回避する方法:
+
+* 文法で許可される場合は、独立したメタデータ操作を **1 つの** 複数句 `ALTER` にまとめます (たとえば、複数の `ADD INDEX` 句) 。
+* `ALTER` ステートメントを直列化し、以前の `ALTER` がレプリカに適用されるまで、コード 517 が発生した場合は再試行します。
+* ミューテーションを生成する `ALTER` では、次の `ALTER` を送信する前に、[`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) や [`system.mutations`](/ja/reference/system-tables/mutations) の `is_done` など、ドキュメント化された確認手段を使用して、以前のミューテーションが完了するのを待ちます。
+
+<div id="combining-materialize-index-clauses">
+  ### `MATERIALIZE INDEX` 句の組み合わせ
+</div>
+
+1 つの `ALTER` に複数の `MATERIALIZE INDEX` 句を含めることができます。ツリー内でテスト対象となっているのは、複数の `ADD INDEX` 句と、それらの新しい索引に対する `MATERIALIZE INDEX` を 1 つのステートメントにまとめるケースです (`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql` を参照) 。この `ADD INDEX` + `MATERIALIZE INDEX` をまとめた形式では、`AlterCommand` セグメントと `MutationCommand` セグメントが混在するため、**`DatabaseReplicated` では `QUERY_IS_PROHIBITED` により拒否されます** (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`) 。通常の (非 `DatabaseReplicated`) データベースでは、`02911` の例は有効です。`DatabaseReplicated` では、メタデータの変更とマテリアライズのミューテーションを別々のステートメントに分けてください。
+
+現在の実装では、各 `MATERIALIZE INDEX` 句はミューテーションの準備時にテーブルのメタデータスナップショットに対して解決されます。そのため、既存の索引に対するマテリアライズのみの複数句形式も同じ準備パスをたどります (ミューテーションのみであるため、1 つのセグメント内に収まります) 。この正確な形式は、まだ専用のステートレステストでカバーされていません。そのようなテストが追加されるまでは、個別に保証された契約ではなく、現在の実装上の動作として扱ってください。
+
+ミューテーションを順序どおりに適用する必要がある場合は、引き続きステートメントごとに 1 つの `MATERIALIZE INDEX` を実行し、[`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) で完了を待機できます。
 
 <div id="related-content">
   ## 関連コンテンツ
