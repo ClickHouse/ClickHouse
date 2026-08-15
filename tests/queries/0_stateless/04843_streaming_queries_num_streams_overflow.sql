@@ -39,4 +39,11 @@ FORMAT Null; -- { serverError PARAMETER_OUT_OF_BOUND }
 SELECT count() FROM (SELECT n FROM t_stream_num_streams STREAM LIMIT 1)
 SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 2, max_streams_for_merge_tree_reading = 0;
 
+-- Async reads increase ordinary reads to `max_streams_for_merge_tree_reading` and resize their
+-- output later. A streaming read creates its sources before that resize, so it keeps the original
+-- requested stream count instead.
+SELECT count() FROM (SELECT n FROM t_stream_num_streams STREAM LIMIT 1)
+SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 2,
+         allow_asynchronous_read_from_io_pool_for_merge_tree = 1, max_streams_for_merge_tree_reading = 100000;
+
 DROP TABLE t_stream_num_streams;

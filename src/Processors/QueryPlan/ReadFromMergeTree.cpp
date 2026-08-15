@@ -509,7 +509,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::max_streams_for_merge_tree_reading])
     {
-        if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
+        if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree] && !query_info.isStream())
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
