@@ -967,6 +967,18 @@ void RemoteQueryExecutor::finish()
     if (!connections || !sent_query || finished)
         return;
 
+    /// `tryCancel` above may have torn the read side down without draining the packet that was in
+    /// flight. The loop below reads from those same connections, and reading from a canceled buffer
+    /// aborts ("ReadBuffer is canceled. Can't read from it."). Disconnect instead of draining, exactly
+    /// as the already-cancelled branch above does and for the same reasons: the read side may be gone
+    /// (#95466), and an out-of-sync connection must not go back to the pool (#93018). `SCOPE_EXIT`
+    /// marks the executor finished on the way out.
+    if (drain_was_skipped)
+    {
+        connections->disconnect();
+        return;
+    }
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
