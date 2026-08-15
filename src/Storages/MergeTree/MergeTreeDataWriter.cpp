@@ -1011,7 +1011,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : recompression_ttl_entries)
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
-    new_data_part->ttl_infos.update(move_ttl_infos);
+    /// `move_ttl_infos` contains only MOVE TTLs. Do not use the generic `update` here: it also
+    /// merges rows-TTL provenance, and an empty auxiliary accumulator would incorrectly make the
+    /// freshly computed rows-TTL fingerprint unknown.
+    for (const auto & [expression, ttl_info] : move_ttl_infos.moves_ttl)
+        new_data_part->ttl_infos.moves_ttl[expression].update(ttl_info);
 
     /// partition / ttl_infos / minmax (and patch source parts) are built above outside any
     /// dedicated-arena scope, so they were allocated in the default arenas. Re-home them into the
