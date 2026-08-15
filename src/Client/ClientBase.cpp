@@ -1988,7 +1988,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     }
                     catch (...)
                     {
-                        /// Preserve the exception from receiveResult(). resetOutput() records
+                        /// Ok: preserve the exception from receiveResult(). resetOutput() records
                         /// its own output error in client_exception when appropriate.
                     }
                     throw;
