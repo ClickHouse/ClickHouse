@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP = 7;
+constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP = 8;
 
 static ITransformingStep::Traits getTraits()
 {
@@ -92,7 +92,7 @@ void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UI
 void RollupStep::serialize(Serialization & ctx) const
 {
     /// A "Rollup" step is only registered under `QueryPlanStepRegistry` since query-plan serialization
-    /// version 7; an older peer does not know the step name and would throw on it. Throw here rather
+    /// version 8; an older peer does not know the step name and would throw on it. Throw here rather
     /// than send bytes the other side cannot read.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

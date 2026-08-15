@@ -12,7 +12,7 @@ ClickHouse 可以自动确定 JSON 数据的结构。这可用于直接查询 JS
   ## 何时使用类型推断
 </div>
 
-* **结构一致** - 用于推断类型的数据应包含你关注的所有键。类型推断基于对数据的采样，最多读取[最大行数](/zh/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference)或[最大字节数](/zh/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference)。样本之后如果出现包含额外列的数据，将被忽略，且无法查询。
+* **结构一致** - 用于推断类型的数据应包含你关注的所有键。类型推断基于对数据的采样，最多读取[最大行数](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference)或[最大字节数](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference)。样本之后如果出现包含额外列的数据，将被忽略，且无法查询。
 * **类型一致** - 特定键的数据类型需要相互兼容，即必须能够将一种类型自动强制转换为另一种类型。
 
 如果你的 JSON 更加动态，会不断加入新键，且同一路径可能出现多种类型，请参阅[“处理半结构化和动态数据”](/zh/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data)。
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **避免使用 NULL 值**
 
-  你可以看到，很多列都被识别为 Nullable。除非绝对必要，否则我们[不建议使用 Nullable](/zh/reference/data-types/nullable#storage-features) 类型。你可以使用 [schema&#95;inference&#95;make&#95;columns&#95;nullable](/zh/reference/settings/formats#schema_inference_make_columns_nullable) 来控制何时应用 Nullable。
+  你可以看到，很多列都被识别为 Nullable。除非绝对必要，否则我们[不建议使用 Nullable](/zh/reference/data-types/nullable#storage-features) 类型。你可以使用 [schema&#95;inference&#95;make&#95;columns&#95;nullable](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) 来控制何时应用 Nullable。
 </Info>
 
 可以看到，大多数列都被自动识别为 `String`，而 `update_date` 列被正确识别为 `Date`。`versions` 列被创建为 `Array(Tuple(created String, version String))`，用于存储对象列表；`authors_parsed` 则被定义为 `Array(Array(String))`，用于表示嵌套数组。
@@ -108,7 +108,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **控制类型检测**
 
-  日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/interfaces/schema-inference#text-formats)查看。
+  日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats/input-format#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats/input-format#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/interfaces/schema-inference#text-formats)查看。
 </Info>
 
 <div id="querying-json">
@@ -165,7 +165,7 @@ schema 推断使我们无需预先指定 schema 即可查询 JSON 文件，从�
   ## 创建表
 </div>
 
-我们可以借助 schema inference 来为表生成 schema。下面的 `CREATE AS EMPTY` 命令会推断出该表的 DDL 并创建该表。此操作不会加载任何数据：
+我们可以借助 schema 推断 来为表生成 schema。下面的 `CREATE AS EMPTY` 命令会推断出该表的 DDL 并创建该表。此操作不会加载任何数据：
 
 ```sql
 CREATE TABLE arxiv
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-上述内容是这份数据的正确 schema。schema inference 基于对数据进行 sampling，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema inference 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats#schema_inference_make_columns_nullable)所述提供提示。
+上述内容是这份数据的正确 schema。schema 推断 基于对数据进行 sampling，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema 推断 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)所述提供提示。
 
 <div id="creating-tables-from-snippets">
   ### 根据片段创建表
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## 处理错误
 </div>
 
-有时，你可能会遇到有问题的数据。例如，某些列的类型不正确，或者 JSON 对象的格式不正确。对此，你可以使用设置 [`input_format_allow_errors_num`](/zh/reference/settings/formats#input_format_allow_errors_num) 和 [`input_format_allow_errors_ratio`](/zh/reference/settings/formats#input_format_allow_errors_ratio)，以便在数据触发插入错误时允许忽略一定数量的行。此外，还可以提供[提示](/zh/reference/settings/formats#schema_inference_hints)来辅助推断。
+有时，你可能会遇到有问题的数据。例如，某些列的类型不正确，或者 JSON 对象的格式不正确。对此，你可以使用设置 [`input_format_allow_errors_num`](/zh/reference/settings/formats/input-format#input_format_allow_errors_num) 和 [`input_format_allow_errors_ratio`](/zh/reference/settings/formats/input-format#input_format_allow_errors_ratio)，以便在数据触发插入错误时允许忽略一定数量的行。此外，还可以提供[提示](/zh/reference/settings/formats/schema-inference#schema_inference_hints)来辅助推断。
 
 <div id="working-with-semi-structured-data">
   ## 处理半结构化和动态数据
@@ -313,7 +313,7 @@ FORMAT PrettyJSONEachRow
 
 ClickHouse 通过专用的 [`JSON`](/zh/reference/data-types/newjson) 类型来处理这种情况。
 
-如果你知道自己的 JSON 非常动态，包含大量唯一键，并且同一个键可能对应多种类型，我们建议不要使用 `JSONEachRow` 的 schema inference 来尝试为每个键推断出一列——即使数据采用的是以换行分隔的 JSON 格式也是如此。
+如果你知道自己的 JSON 非常动态，包含大量唯一键，并且同一个键可能对应多种类型，我们建议不要使用 `JSONEachRow` 的 schema 推断 来尝试为每个键推断出一列——即使数据采用的是以换行分隔的 JSON 格式也是如此。
 
 请看下面这个示例，它来自前述 [Python PyPI dataset](https://clickpy.clickhouse.com/) 数据集的扩展版本。这里我们添加了一个任意的 `tags` 列，其中包含随机的键值对。
 
@@ -339,7 +339,7 @@ ClickHouse 通过专用的 [`JSON`](/zh/reference/data-types/newjson) 类型来�
 ```sql
 DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
 
--- 结果已省略，篇幅所限
+-- result omitted for brevity
 ```
 
 ```response
@@ -362,7 +362,7 @@ SETTINGS describe_compact_output = 1
 │ json │ JSON │
 └──────┴──────┘
 
-1 行，耗时 0.005 秒。
+1 row in set. Elapsed: 0.005 sec.
 ```
 
 当列存在多种无法协调的类型时，这种格式也必不可少。例如，假设有一个 `sample.json` 文件，其内容为以下以换行分隔的 JSON：
@@ -384,13 +384,13 @@ SETTINGS describe_compact_output = 1
 │ a    │ Nullable(String) │
 └──────┴──────────────────┘
 
-1 行，耗时 0.081 秒。
+1 row in set. Elapsed: 0.081 sec.
 ```
 
 <Info>
   **类型强制转换**
 
-  这种类型强制转换可通过多个设置项来控制。上面的示例取决于设置 [`input_format_json_read_numbers_as_strings`](/zh/reference/settings/formats#input_format_json_read_numbers_as_strings)。
+  这种类型强制转换可通过多个设置项来控制。上面的示例取决于设置 [`input_format_json_read_numbers_as_strings`](/zh/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings)。
 </Info>
 
 但是，某些类型彼此不兼容。请看下面的示例：

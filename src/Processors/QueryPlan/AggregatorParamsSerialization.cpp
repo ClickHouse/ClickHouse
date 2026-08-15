@@ -20,6 +20,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_group_by;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_group_by;
+    extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
@@ -87,7 +89,9 @@ Aggregator::Params deserializeAggregatorParams(
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]};
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
 }
 
 }
