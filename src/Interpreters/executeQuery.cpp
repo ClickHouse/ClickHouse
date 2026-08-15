@@ -1356,6 +1356,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// over-collected without analysis ever reading it (e.g. a CTE name that shadows a real
     /// table); the plan does not depend on it, so it only widens invalidation.
     const auto analyzed_identities = planning_identities->get();
+    /// The AST collector additionally walks CTE bodies to cover sources that are folded during
+    /// analysis. It must not turn a CTE reference itself into a dependency when a real table with
+    /// the same name exists: only the analyzer can distinguish lexical CTE scope from a catalog
+    /// lookup. Keep exactly the storages that analysis resolved while building this plan.
+    std::erase_if(*dependencies, [&analyzed_identities](const auto & dep)
+    {
+        return !analyzed_identities.contains({dep.database, dep.table});
+    });
+
     for (const auto & dep : *dependencies)
     {
         auto it = analyzed_identities.find({dep.database, dep.table});

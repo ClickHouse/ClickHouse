@@ -40,6 +40,8 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 
+#include <base/scope_guard.h>
+
 #include <algorithm>
 #include <map>
 #include <set>
@@ -366,8 +368,61 @@ public:
     }
 
 private:
+    bool collectSelectQuery(const ASTSelectQuery & select, const String & default_database, bool inside_scalar_subquery)
+    {
+        cte_scopes.emplace_back();
+        SCOPE_EXIT({ cte_scopes.pop_back(); });
+
+        const auto with = select.with();
+        if (with)
+        {
+            for (const auto & child : with->children)
+            {
+                if (const auto * cte = child->as<ASTWithElement>())
+                    cte_scopes.back().emplace(cte->name, cte);
+            }
+        }
+
+        for (const auto & child : select.children)
+        {
+            if (child == with)
+                continue;
+            if (!collectImpl(*child, default_database, /*in_set_or_table_position=*/ false, inside_scalar_subquery))
+                return false;
+        }
+        return true;
+    }
+
+    const ASTWithElement * findCTE(const StorageID & table_id) const
+    {
+        /// A qualified identifier always names a storage. CTE names are unqualified and shadow
+        /// catalog names only in their lexical query scope.
+        if (!table_id.database_name.empty())
+            return nullptr;
+
+        for (auto it = cte_scopes.rbegin(); it != cte_scopes.rend(); ++it)
+            if (auto cte_it = it->find(table_id.table_name); cte_it != it->end())
+                return cte_it->second;
+        return nullptr;
+    }
+
+    bool collectCTE(const ASTWithElement & cte, const String & default_database, bool inside_scalar_subquery)
+    {
+        /// A CTE body is evaluated in the position where the CTE is referenced. This preserves
+        /// the scalar-subquery access rule for a CTE used only as a scalar, while allowing a
+        /// table CTE to be cached without the scalar-subquery opt-in.
+        if (!visited_ctes.insert({&cte, inside_scalar_subquery}).second)
+            return true;
+
+        return cte.subquery
+            && collectImpl(*cte.subquery, default_database, /*in_set_or_table_position=*/ true, inside_scalar_subquery);
+    }
+
     bool collectImpl(const IAST & ast, const String & default_database, bool in_set_or_table_position, bool inside_scalar_subquery)
     {
+        if (const auto * select = ast.as<ASTSelectQuery>())
+            return collectSelectQuery(*select, default_database, inside_scalar_subquery);
+
         if (const auto * table_expression = ast.as<ASTTableExpression>())
         {
             if (table_expression->table_function)
@@ -447,6 +502,9 @@ private:
             return true;
 
         auto table_id = identifier->getTableId();
+        if (const auto * cte = findCTE(table_id))
+            return collectCTE(*cte, default_database, inside_scalar_subquery);
+
         if (table_id.database_name.empty())
             table_id.database_name = default_database;
 
@@ -507,6 +565,8 @@ private:
     const ContextPtr & context;
     std::vector<QueryPlanCacheDependency> & dependencies;
     bool allow_scalar_subqueries = false;
+    std::vector<std::map<String, const ASTWithElement *>> cte_scopes;
+    std::set<std::pair<const ASTWithElement *, bool>> visited_ctes;
     /// (full table name, was reached inside a scalar subquery) - see `visitTableIdentifier`.
     std::set<std::pair<String, bool>> visited;
 };
@@ -875,10 +935,30 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
         if (dep.is_view)
             query_context->addViewAccessInfo(storage_id.getFullTableName());
         else
-            query_context->addQueryAccessInfo(storage_id, dep.columns);
+        {
+            Names columns = dep.columns;
+            if (dep.columns_unknown)
+            {
+                /// An AST-only dependency (for example, a scalar subquery folded into a
+                /// constant) has no plan leaf from which to recover its exact output columns.
+                /// Do not omit it from query-log metadata: conservatively report every current
+                /// column that was validated for this hit.
+                if (auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context))
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+                    columns = metadata->getColumns().getNames();
+                }
+            }
+            query_context->addQueryAccessInfo(storage_id, columns);
+        }
+
+        /// Cached plans store row-policy expressions, but policy names are audit metadata rather
+        /// than plan semantics. Re-read them on each hit so `system.query_log` reflects a
+        /// same-expression policy rename or replacement that correctly passed validation.
+        if (auto row_policy = context->getRowPolicyFilter(dep.database, dep.table, RowPolicyFilterType::SELECT_FILTER))
+            for (const auto & policy : row_policy->policies)
+                query_context->addUsedRowPolicy(policy->getFullName().toString());
     }
-    for (const auto & row_policy : entry.used_row_policies)
-        query_context->addUsedRowPolicy(row_policy);
 }
 
 QueryPlan materializeCachedQueryPlan(
