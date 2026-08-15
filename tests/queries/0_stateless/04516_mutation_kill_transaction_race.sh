@@ -105,7 +105,7 @@ echo "column_after_metadata_kill $($CLICKHOUSE_CLIENT -q "SELECT name FROM syste
 rep_db="${CLICKHOUSE_DATABASE}_rep"
 rep_zk_path="/test/${CLICKHOUSE_DATABASE}/04516"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${rep_db} SYNC"
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${rep_db} ENGINE = Replicated('${rep_zk_path}', 'shard1', 'replica1')"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${rep_db} ENGINE = Replicated('${rep_zk_path}', 'shard1', 'replica1')" > /dev/null
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${rep_db}.t (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key"
 
 tx 3 "SET throw_on_unsupported_query_inside_transaction=0" > /dev/null
