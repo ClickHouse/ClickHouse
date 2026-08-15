@@ -1,6 +1,7 @@
 ---
 description: 'Documentation for the embedded SQL Console UI served from the ClickHouse HTTP server at `/ui`'
 sidebar_label: 'SQL Console'
+sidebarTitle: 'SQL Console'
 sidebar_position: 23
 slug: /interfaces/sql-console
 title: 'SQL Console'
