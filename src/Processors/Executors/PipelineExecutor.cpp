@@ -295,8 +295,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 
     /// A step-driven executor runs this job on its caller. Keep the reservation scoped to
     /// that job rather than to the executor object's lifetime: one caller can keep several
-    /// executors alive, but it still has only one untracked-memory buffer.
+    /// executors alive, but it still has only one untracked-memory buffer. Flush that buffer
+    /// before releasing the reservation, including on an exception, so the server-wide
+    /// tracker never loses both the speculative charge and the caller's deferred allocations.
     SpeculativeMemoryReservation speculative_memory_reservation;
+    SCOPE_EXIT({ CurrentThread::flushUntrackedMemory(); });
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())
