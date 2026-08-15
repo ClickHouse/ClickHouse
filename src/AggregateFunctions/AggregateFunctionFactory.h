@@ -1,18 +1,18 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/Names.h>
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Names.h>
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <optional>
 
 
 namespace DB
@@ -45,19 +45,12 @@ struct AggregateFunctionWithProperties
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
-    AggregateFunctionWithProperties & operator=(const AggregateFunctionWithProperties &) = default;
+    AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
 
     template <typename Creator>
-    requires(!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(
-        Creator creator_,
-        FunctionDocumentation documentation_,
-        AggregateFunctionProperties properties_ = {},
-        AggregateFunctionCreator window_creator_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_))
-        , window_creator(std::move(window_creator_))
-        , documentation(std::move(documentation_))
-        , properties(std::move(properties_))
+    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
+    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
     {
     }
 };
@@ -72,7 +65,10 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(const String & name, Value creator, Case case_sensitiveness = Case::Sensitive);
+    void registerFunction(
+        const String & name,
+        Value creator,
+        Case case_sensitiveness = Case::Sensitive);
 
     /// Register how to transform from one aggregate function to other based on NullsAction
     /// Registers them both ways:
@@ -214,6 +210,7 @@ private:
     const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
+
 };
 
 struct AggregateUtils

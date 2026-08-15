@@ -1,5 +1,5 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/AggregateFunctionVariantNull.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -25,19 +25,19 @@ namespace DB
 struct Settings;
 namespace Setting
 {
-extern const SettingsBool aggregate_functions_skip_variant_nulls;
-extern const SettingsBool allow_lossy_numeric_supertype;
-extern const SettingsBool log_queries;
+    extern const SettingsBool aggregate_functions_skip_variant_nulls;
+    extern const SettingsBool allow_lossy_numeric_supertype;
+    extern const SettingsBool log_queries;
 }
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_AGGREGATION;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
-extern const int NOT_IMPLEMENTED;
-extern const int TOO_LARGE_STRING_SIZE;
-extern const int UNKNOWN_AGGREGATE_FUNCTION;
+    extern const int ILLEGAL_AGGREGATION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 /// An aggregate-function creator signals "these argument types are not supported" with ILLEGAL_TYPE_OF_ARGUMENT or,
@@ -54,7 +54,8 @@ extern const int UNKNOWN_AGGREGATE_FUNCTION;
 /// meanZTest) now reject them with ILLEGAL_TYPE_OF_ARGUMENT like everybody else.
 static bool isUnsupportedArgumentTypeError(int code)
 {
-    return code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || code == ErrorCodes::NOT_IMPLEMENTED;
+    return code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NOT_IMPLEMENTED;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -65,24 +66,19 @@ const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, Case case_sensitiveness)
 {
     if (creator_with_properties.creator == nullptr)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "AggregateFunctionFactory: "
-            "the aggregate function {} has been provided  a null constructor",
-            name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+            "the aggregate function {} has been provided  a null constructor", name);
 
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
+            name);
 
     if (case_sensitiveness == Case::Insensitive)
     {
         auto key = Poco::toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "AggregateFunctionFactory: "
-                "the case insensitive aggregate function name '{}' is not unique",
-                name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+                "the case insensitive aggregate function name '{}' is not unique", name);
         case_insensitive_name_mapping[key] = name;
     }
 }
@@ -90,12 +86,10 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
 void AggregateFunctionFactory::registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls)
 {
     if (!aggregate_functions.contains(source_ignores_nulls))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found", source_ignores_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found", source_ignores_nulls);
 
     if (!aggregate_functions.contains(target_respect_nulls))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found", target_respect_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found", target_respect_nulls);
 
     if (!respect_nulls.emplace(source_ignores_nulls, target_respect_nulls).second)
         throw Exception(
@@ -130,15 +124,14 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
 
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
     /// If one of the arguments is a Variant, and the requested function does not accept it natively,
     /// we aggregate over the least common supertype of the variants (see AggregateFunctionVariantAdapter).
-    if (std::any_of(
-            types_without_low_cardinality.begin(), types_without_low_cardinality.end(), [](const auto & type) { return isVariant(type); }))
+    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+        [](const auto & type) { return isVariant(type); }))
     {
         auto properties = tryGetProperties(name, action);
         /// Window functions must handle their argument types themselves, so don't adapt them.
@@ -170,40 +163,20 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                 /// resolved function in AggregateFunctionVariantNull (see there), so the NULL rows of the
                 /// Variant are skipped exactly as the adapter's cast to Nullable(supertype) would skip them.
                 if (auto native = tryResolveNatively(
-                        name,
-                        action,
-                        types_without_low_cardinality,
-                        parameters,
-                        out_properties,
-                        state_variant,
-                        /*allow_skipping_variant_nulls=*/!from_declared_simple_aggregate_function,
-                        settings))
+                        name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+                        /*allow_skipping_variant_nulls=*/ !from_declared_simple_aggregate_function, settings))
                     return native;
             }
 
             if (auto adapter = tryGetVariantAdapter(
-                    name,
-                    action,
-                    types_without_low_cardinality,
-                    parameters,
-                    out_properties,
-                    state_variant,
-                    from_declared_state_type,
-                    settings))
+                    name, action, types_without_low_cardinality, parameters, out_properties, state_variant, from_declared_state_type, settings))
                 return adapter;
 
             /// Neither native resolution nor the supertype adapter can handle the Variant argument. Resolve
             /// natively once more so the function's original, specific error is reported unchanged.
             return getWithoutVariantAdapter(
-                name,
-                action,
-                types_without_low_cardinality,
-                parameters,
-                out_properties,
-                state_variant,
-                /*apply_variant_adapter_to_nested=*/false,
-                /*allow_skipping_variant_nulls=*/true,
-                settings);
+                name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+                /*apply_variant_adapter_to_nested=*/ false, /*allow_skipping_variant_nulls=*/ true, settings);
         }
     }
 
@@ -211,15 +184,9 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// type (e.g. sumMerge over AggregateFunction(sum, Variant(...))), in which case the nested function needs the
     /// adapter to reconstruct the matching state layout, so allow it.
     return getWithoutVariantAdapter(
-        name,
-        action,
-        types_without_low_cardinality,
-        parameters,
-        out_properties,
-        state_variant,
-        /*apply_variant_adapter_to_nested=*/true,
-        /*allow_skipping_variant_nulls=*/!from_declared_simple_aggregate_function,
-        settings);
+        name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+        /*apply_variant_adapter_to_nested=*/ true,
+        /*allow_skipping_variant_nulls=*/ !from_declared_simple_aggregate_function, settings);
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
@@ -239,36 +206,23 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
-    if (!is_window_function
-        && std::any_of(
-            types_without_low_cardinality.begin(),
-            types_without_low_cardinality.end(),
-            [](const auto & type) { return type->isNullable(); }))
+    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+        [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot find aggregate function combinator "
-                "to apply a function to Nullable arguments.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find aggregate function combinator "
+                            "to apply a function to Nullable arguments.");
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        bool has_null_arguments = std::any_of(
-            types_without_low_cardinality.begin(), types_without_low_cardinality.end(), [](const auto & type) { return type->onlyNull(); });
+        bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+            [](const auto & type) { return type->onlyNull(); });
 
         AggregateFunctionPtr nested_function = getImpl(
-            name,
-            action,
-            nested_types,
-            nested_parameters,
-            out_properties,
-            has_null_arguments,
-            state_variant,
-            apply_variant_adapter_to_nested,
-            allow_skipping_variant_nulls,
-            settings);
+            name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant,
+            apply_variant_adapter_to_nested, allow_skipping_variant_nulls, settings);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -280,16 +234,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     }
 
     auto with_original_arguments = getImpl(
-        name,
-        action,
-        types_without_low_cardinality,
-        parameters,
-        out_properties,
-        false,
-        state_variant,
-        apply_variant_adapter_to_nested,
-        allow_skipping_variant_nulls,
-        settings);
+        name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant,
+        apply_variant_adapter_to_nested, allow_skipping_variant_nulls, settings);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -309,15 +255,8 @@ AggregateFunctionPtr AggregateFunctionFactory::tryResolveNatively(
     try
     {
         return getWithoutVariantAdapter(
-            name,
-            action,
-            types_without_low_cardinality,
-            parameters,
-            out_properties,
-            state_variant,
-            /*apply_variant_adapter_to_nested=*/false,
-            allow_skipping_variant_nulls,
-            settings);
+            name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+            /*apply_variant_adapter_to_nested=*/ false, allow_skipping_variant_nulls, settings);
     }
     catch (const Exception & e)
     {
@@ -412,7 +351,10 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         /// integers above 2^53 collapse to the same Float64), so they keep reporting the original error when there
         /// is no lossless common supertype. See AggregateFunctionProperties::is_float_promoting. The same applies
         /// to the exact comparison key of the `-ArgMin` / `-ArgMax` combinators, so it is excluded here as well.
-        if (!supertype && allow_lossy_numeric_supertype && is_float_promoting && i != argminmax_key_argument)
+        if (!supertype
+            && allow_lossy_numeric_supertype
+            && is_float_promoting
+            && i != argminmax_key_argument)
             supertype = tryGetLossyNumericSupertype(variants);
         /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
         /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,
@@ -446,7 +388,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     /// Resolve the function over the given argument types, returning nullptr when it rejects them. Any Variant left in
     /// place is one the function accepts natively, so combinators need not (and must not) apply the adapter again.
     auto try_resolve = [&](const DataTypes & nested) -> AggregateFunctionPtr
-    { return tryResolveNatively(name, action, nested, parameters, out_properties, state_variant, true, settings); };
+    {
+        return tryResolveNatively(name, action, nested, parameters, out_properties, state_variant, true, settings);
+    };
 
     /// Adapt every Variant argument by default. Most functions accept a Variant in none of their positions, so this is
     /// the whole story. But some aggregates (argMin / argMax and the *ArgMin / *ArgMax combinators) natively accept a
@@ -509,7 +453,8 @@ std::optional<size_t> AggregateFunctionFactory::getArgMinArgMaxKeyArgument(const
     while (true)
     {
         current_name = getAliasToOrName(current_name);
-        if (aggregate_functions.contains(current_name) || case_insensitive_aggregate_functions.contains(Poco::toLower(current_name)))
+        if (aggregate_functions.contains(current_name)
+            || case_insensitive_aggregate_functions.contains(Poco::toLower(current_name)))
             return {};
 
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(current_name);
@@ -749,8 +694,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
         /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
         /// They should be fixed to preserve their parameters like every other aggregation function.
-        chassert(
-            function && (function->getParameters().empty() || function->getParameters() == parameters),
+        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
 
         return function;
@@ -765,8 +709,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         const std::string & combinator_name = combinator->getName();
 
         if (combinator->isForInternalUsageOnly())
-            throw Exception(
-                ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function combinator '{}' is only for internal usage", combinator_name);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function combinator '{}' is only for internal usage",
+                combinator_name);
 
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
@@ -782,7 +727,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
-            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Nested identical combinator '{}' is not supported", combinator_name);
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
         }
 
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -805,15 +752,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
                 nested_functions.push_back(getWithoutVariantAdapter(
-                    nested_name,
-                    action,
-                    nested_arguments,
-                    nested_parameters,
-                    out_properties,
-                    state_variant,
-                    apply_variant_adapter_to_nested,
-                    allow_skipping_variant_nulls,
-                    settings));
+                    nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant,
+                    apply_variant_adapter_to_nested, allow_skipping_variant_nulls, settings));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -842,11 +782,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             /// adapted: nested Variant arguments stay out of scope -- only top-level Variant arguments are handled, which
             /// keeps the documented "top-level Variant only; nested Array/Tuple Variant still rejected" contract.
             bool consumes_aggregate_state = std::any_of(
-                argument_types.begin(),
-                argument_types.end(),
+                argument_types.begin(), argument_types.end(),
                 [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
-            bool nested_has_variant
-                = std::any_of(nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
+            bool nested_has_variant = std::any_of(
+                nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
 
             /// When a Variant appears among the combinator's own (top-level) arguments, the NULL-skipping must
             /// happen outside the combined function, not in the nested leaf: resolve the nested function with
@@ -876,31 +815,16 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             /// the layout the state was written with. A combinator that merely exposes a nested Variant from
             /// ordinary user data with no Variant among its own arguments (e.g. -Array over Array(Variant))
             /// is unaffected: there the leaf wrapper keeps skipping the NULL elements as before.
-            bool top_level_has_variant
-                = std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); });
+            bool top_level_has_variant = std::any_of(
+                argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); });
 
             /// The Variant here provably comes from an already declared AggregateFunction(...) state type, so the
             /// adapter must reconstruct it exactly as declared, independently of the current query settings.
             AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
-                ? get(nested_name,
-                      action,
-                      nested_types,
-                      nested_parameters,
-                      out_properties,
-                      state_variant,
-                      /*from_declared_state_type=*/true,
-                      /*from_declared_simple_aggregate_function=*/false,
-                      settings)
-                : getWithoutVariantAdapter(
-                      nested_name,
-                      action,
-                      nested_types,
-                      nested_parameters,
-                      out_properties,
-                      state_variant,
-                      apply_variant_adapter_to_nested,
-                      allow_skipping_variant_nulls && !top_level_has_variant,
-                      settings);
+                ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
+                      /*from_declared_state_type=*/ true, /*from_declared_simple_aggregate_function=*/ false, settings)
+                : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
+                      apply_variant_adapter_to_nested, allow_skipping_variant_nulls && !top_level_has_variant, settings);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
 
             if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function)
@@ -912,8 +836,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         }
 
         /// Same invariant as above.
-        chassert(
-            combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
+        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
         return combined_function;
     }
@@ -925,20 +848,15 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Unknown aggregate function {}{}. Maybe you meant: {}",
-            name,
-            extra_info,
-            toString(hints));
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                        "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
 {
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
 
     /// A combinator can make the combined function distinctness-sensitive even when the base function is not
     /// (sumDistinct: sum itself does not key on distinctness, -Distinct does). Collect that from the stripped
@@ -998,8 +916,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name_) const
 {
     if (name_.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
 
     if (aggregate_functions.contains(name_) || isAlias(name_))
         return true;
