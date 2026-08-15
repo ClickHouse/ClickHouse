@@ -24,6 +24,11 @@ TAG_PUT_READ="${CLICKHOUSE_DATABASE}_62352_put_read"
 TAG_ENGINE="${CLICKHOUSE_DATABASE}_62352_engine"
 TAG_INFER="${CLICKHOUSE_DATABASE}_62352_infer"
 TAG_CACHE="${CLICKHOUSE_DATABASE}_62352_cache"
+# Named collections are server-global: derive unique-per-run names to survive the
+# flaky check running this test repeatedly and concurrently.
+NC_MAIN="nc_${CLICKHOUSE_DATABASE}_62352"
+NC_DISP="nc_disp_${CLICKHOUSE_DATABASE}_62352"
+NC_ENGINE="nc_eng_${CLICKHOUSE_DATABASE}_62352"
 TAG_KVORDER="${CLICKHOUSE_DATABASE}_62352_kvorder"
 TAG_METHODALIAS="${CLICKHOUSE_DATABASE}_62352_methodalias"
 TAG_ALIASCAP="${CLICKHOUSE_DATABASE}_62352_aliascap"
@@ -69,33 +74,34 @@ $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE url_wild_put_62352" | grep -c "http_met
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_wild_put_62352"
 # A pre-existing table can carry POST + wildcard (a named collection edited after the table
 # was created): ATTACH keeps loading it, and the read path rejects it at use time.
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS nc_62352"
-$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_62352 AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'POST'"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_62352 (x String) ENGINE = URL(nc_62352)"
-$CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION nc_62352 SET url = 'http://localhost:1/files/*.csv'"
-$CLICKHOUSE_CLIENT -q "DETACH TABLE url_nc_62352"
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_nc_62352"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url_nc_62352" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT -q "DROP TABLE url_nc_62352"
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_62352"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC_MAIN}"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC_MAIN} AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'POST'"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_${NC_MAIN} (x String) ENGINE = URL(${NC_MAIN})"
+$CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION ${NC_MAIN} SET url = 'http://localhost:1/files/*.csv'"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE url_${NC_MAIN}"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_${NC_MAIN}"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_MAIN}"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC_MAIN}"
 # A collection-sourced http_method must not break scheme dispatch (collections could always
 # carry the key with any URL): url(nc) delegates with the key ignored — the error, if any,
 # comes from the delegate backend, never from the http_method guard. The inline key-value
 # argument is new syntax and is still rejected before dispatch.
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS nc_disp_62352"
-$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_disp_62352 AS url = 'file:///nonexistent_62352.csv', format = 'CSV', structure = 'x String', http_method = 'PUT'"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url(nc_disp_62352)" 2>&1 | grep -c 'does not support http_method'
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC_DISP}"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC_DISP} AS url = 'file:///nonexistent_62352.csv', format = 'CSV', structure = 'x String', http_method = 'PUT'"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url(${NC_DISP})" 2>&1 | grep -c 'does not support http_method'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url('file:///nonexistent_62352.csv', 'CSV', 'x String', http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 # A query-time override of a collection is new syntax too — rejected like the inline form
 # (only the value STORED in the collection gets the compatibility exemption above).
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url(nc_disp_62352, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp_62352"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url(${NC_DISP}, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC_DISP}"
 # The engine mirrors the exemption: a fresh CREATE over a collection with a STORED
 # http_method delegates to the scheme backend with the key ignored.
-$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_disp3_62352 AS url = 'file:///nonexistent_62352.csv', format = 'CSV', http_method = 'PUT'"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_file_62352 (x String) ENGINE = URL(nc_disp3_62352)" 2>&1 | grep -c 'does not support http_method'
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC_ENGINE}"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC_ENGINE} AS url = 'file:///nonexistent_62352.csv', format = 'CSV', http_method = 'PUT'"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_file_62352 (x String) ENGINE = URL(${NC_ENGINE})" 2>&1 | grep -c 'does not support http_method'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS url_nc_file_62352"
-$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp3_62352"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${NC_ENGINE}"
 # A full-definition ATTACH is fresh user input: the engine guards apply to it, unlike the
 # short-syntax ATTACH of stored metadata. (Atomic databases require an explicit UUID for
 # the full-definition form; the guard fires before anything is registered under it.)
