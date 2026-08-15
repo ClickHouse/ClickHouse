@@ -2369,8 +2369,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                             "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
                             "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
-                            "tables instead; note that such a policy is not applied to reads shipped with "
-                            "`serialize_query_plan = 1`",
+                            "tables instead",
                             storage->getStorageID().getNameForLogs());
                 }
 
