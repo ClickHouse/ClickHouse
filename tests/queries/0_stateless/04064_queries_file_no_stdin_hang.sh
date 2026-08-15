@@ -23,9 +23,9 @@ SELECT sum(x) FROM test_04064;
 DROP TABLE test_04064;
 EOF
 
-# Run with stdin as an open pipe (no data, no EOF). This state is indistinguishable
-# from a delayed writer, so mixed inline/stdin INSERT input must fail promptly instead
-# of either hanging or silently dropping delayed input. Use a FIFO so stdin never gets EOF.
+# Run with stdin as an open pipe (no data, no EOF). INSERT with inline data must complete
+# promptly: this is the CI/Docker inherited-stdin case that used to hang. Use a FIFO so
+# stdin never gets EOF.
 FIFO="${CLICKHOUSE_TMP}/04064_fifo_$$"
 mkfifo "$FIFO"
 
@@ -33,22 +33,21 @@ mkfifo "$FIFO"
 # Use fd 4 to avoid conflicting with BASH_XTRACEFD (which uses fd 3).
 exec 4<>"$FIFO"
 
-run_ambiguous_stdin_test()
+run_empty_stdin_test()
 {
-    local output_file="${CLICKHOUSE_TMP}/04064_ambiguous_stdin_$$.out"
+    local output_file="${CLICKHOUSE_TMP}/04064_empty_stdin_$$.out"
 
-    if timeout 30 "$@" <&4 > "$output_file" 2>&1
+    if ! timeout 30 "$@" <&4 > "$output_file" 2>&1
     then
-        echo "Expected INSERT with ambiguous stdin to fail" >&2
+        echo "Expected INSERT with an empty inherited stdin to succeed" >&2
         cat "$output_file" >&2
         exit 1
     fi
 
-    grep -Fq "stdin whose availability cannot be determined is not supported" "$output_file"
     rm -f "$output_file"
 }
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
+run_empty_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
 
 # Also test with async_insert enabled — the async insert path has its own
 # stdin check that must not hang on an empty pipe either.
@@ -62,7 +61,7 @@ SELECT sum(x) FROM test_04064_async;
 DROP TABLE test_04064_async;
 EOF
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
+run_empty_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
 
 # Also test with --inline-insert-data — this path has its own stdin check
 # (in `is_inline_insert_data` branch) that must not hang on an empty pipe either.
@@ -74,22 +73,22 @@ SELECT sum(x) FROM test_04064_inline;
 DROP TABLE test_04064_inline;
 EOF
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
+run_empty_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
 
 # Also test the `-q` / `--query` entrypoint with the same open-empty-pipe stdin.
 # The parser/entrypoint differs from `--queries-file`, so cover it explicitly to
 # guard against regressions in either CLI mode.
 QUERY_Q="CREATE TABLE IF NOT EXISTS test_04064_q (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q VALUES (1000), (2000), (3000); SELECT sum(x) FROM test_04064_q; DROP TABLE test_04064_q;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q"
+run_empty_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q"
 
 QUERY_Q_ASYNC="CREATE TABLE IF NOT EXISTS test_04064_q_async (x UInt32) ENGINE = MergeTree ORDER BY x; SET async_insert = 1; SET wait_for_async_insert = 1; INSERT INTO test_04064_q_async VALUES (10000), (20000), (30000); SELECT sum(x) FROM test_04064_q_async; DROP TABLE test_04064_q_async;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
+run_empty_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
 
 QUERY_Q_INLINE="CREATE TABLE IF NOT EXISTS test_04064_q_inline (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q_inline VALUES (100000), (200000), (300000); SELECT sum(x) FROM test_04064_q_inline; DROP TABLE test_04064_q_inline;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
+run_empty_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
 
 exec 4>&-
 rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE"
