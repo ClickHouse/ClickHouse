@@ -125,8 +125,17 @@ INSERT INTO tab_proj SELECT 1, rand(), number, number FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- Projection TopK part-set changes use a fresh QCC key';
-SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1;
+SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1, log_comment = '04658_projection_topk_prime';
+SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1, log_comment = '04658_projection_topk_warm';
 SELECT count() FROM system.query_condition_cache;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT '--- Warm projection TopK read hits QCC';
+SELECT ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04658_projection_topk_warm' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 ALTER TABLE tab_proj DROP PARTITION 0;
 SELECT v1 FROM tab_proj ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1;
