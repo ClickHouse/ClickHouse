@@ -163,7 +163,16 @@ private:
     /// Publishes the current flush request counter as completed and wakes the waiters.
     void releaseWaitingFlushers();
 
+    /// Waits until every producer that entered the asynchronous path before close started has
+    /// either published its message or switched to the synchronous path. Consumers call this
+    /// before taking their final drain boundary.
+    void waitForActiveAsyncLoggers();
+
     std::atomic<bool> is_open = false;
+    /// Producers that have observed an open channel and may still enqueue asynchronously. Closing waits
+    /// for this count to reach zero before draining, preventing a producer from adding a message after the
+    /// final drain.
+    std::atomic<size_t> active_async_loggers = 0;
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it

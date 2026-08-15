@@ -512,19 +512,23 @@ void BaseDaemon::startSignalListener()
     /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
     BlockSignalsScope block_signals(asynchronousHandledSignals());
     signal_listener_thread.start(*signal_listener);
+    signal_listener_thread_started = true;
 #endif
 }
 
 void BaseDaemon::stopSignalListener()
 {
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// The thread exits only when told to, so `isRunning` going false means it was already stopped and joined
-    /// (or never started); a second join would hang on the already-consumed completion event.
-    if (!signal_listener_thread.isRunning())
+    if (!signal_listener_thread_started)
         return;
 
-    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    /// `isRunning` only reports that Poco still has a runnable target. A listener which has already
+    /// returned still has a joinable native thread, so always join a started listener. Only send the
+    /// stop request while it can still consume it.
+    if (signal_listener_thread.isRunning())
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
+    signal_listener_thread_started = false;
 #endif
 }
 
@@ -619,7 +623,7 @@ void BaseDaemon::setupWatchdog()
         /// Temporarily close the logging thread and open it in each process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->close();
+            async_channel->closeAndJoinThreads();
         pid = fork();
 
 #if USE_JEMALLOC

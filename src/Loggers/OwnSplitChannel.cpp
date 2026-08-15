@@ -14,6 +14,7 @@
 #include <Poco/Message.h>
 
 #include <base/sleep.h>
+#include <base/scope_guard.h>
 
 #if defined(MEMORY_SANITIZER)
 #include <sanitizer/msan_interface.h>
@@ -292,9 +293,9 @@ void OwnAsyncSplitChannel::open()
     catch (...)
     {
         /// Fail closed: a partially opened channel would keep accepting messages into queues that no
-        /// consumer drains, silently losing diagnostics. Tear back down - log() delivers synchronously
-        /// while the channel is stopped - and let the caller handle it.
-        close();
+        /// consumer drains, silently losing diagnostics. A failed join must also propagate: unwinding
+        /// with a live async logger could overlap static destruction.
+        closeAndJoinThreads();
         throw;
     }
 }
@@ -321,7 +322,10 @@ void OwnAsyncSplitChannel::closeAndJoinThreads()
 {
     is_open = false;
 
-    /// The polling consumers see is_open == false on their own, flush what is left, and exit.
+    waitForActiveAsyncLoggers();
+
+    /// The polling consumers see is_open == false on their own, wait for the same barrier before
+    /// their final drain, and exit.
     if (text_log_thread)
     {
         text_log_thread->join();
@@ -336,6 +340,19 @@ void OwnAsyncSplitChannel::closeAndJoinThreads()
     }
 
     releaseWaitingFlushers();
+}
+
+void OwnAsyncSplitChannel::waitForActiveAsyncLoggers()
+{
+    /// A producer that already saw `is_open` needs to recheck it after registering here. Wait for
+    /// every producer which passed that recheck before the consumers take their final drain.
+    /// Producers arriving after `is_open` became false deliver synchronously instead.
+    size_t active = active_async_loggers.load(std::memory_order_seq_cst);
+    while (active != 0)
+    {
+        active_async_loggers.wait(active, std::memory_order_seq_cst);
+        active = active_async_loggers.load(std::memory_order_seq_cst);
+    }
 }
 
 void OwnAsyncSplitChannel::releaseWaitingFlushers()
@@ -430,14 +447,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        /// While the channel is stopped (before open, during the quiesce window around remapExecutable,
-        /// after close) there is no consumer thread, so deliver synchronously, as OwnSplitChannel does.
-        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
-        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
-        /// unwinding out of Server::main is logged into queues that nobody will ever drain.
-        /// A message that raced with close() into the queue after the final drain is delivered when the
-        /// channel reopens, so the two paths may reorder messages across a stop/start cycle, but none are lost.
-        if (!is_open)
+        auto log_synchronously = [&]
         {
             for (const auto & channel : channels)
             {
@@ -450,9 +460,36 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
                 if (const auto text_log_locked = text_log.lock())
                     logToSystemTextLogQueue(text_log_locked, notification->msg_ext, notification->msg_thread_name);
             }
+        };
 
+        /// While the channel is stopped (before open, during the quiesce window around `remapExecutable`,
+        /// after close) there is no consumer thread, so deliver synchronously, as `OwnSplitChannel` does.
+        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
+        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
+        /// unwinding out of `Server::main` is logged into queues that nobody will ever drain.
+        ///
+        /// Register before the second load so `closeAndJoinThreads` cannot drain and join between that load
+        /// and an async enqueue. If closing wins the race, the second load redirects this message to the
+        /// synchronous path; if this producer wins, closing waits for it before the final drain.
+        if (!is_open)
+        {
+            log_synchronously();
             return;
         }
+
+        active_async_loggers.fetch_add(1, std::memory_order_seq_cst);
+        if (!is_open)
+        {
+            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
+                active_async_loggers.notify_all();
+            log_synchronously();
+            return;
+        }
+
+        SCOPE_EXIT({
+            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
+                active_async_loggers.notify_all();
+        });
 
         for (size_t i = 0; i < queues.size(); i++)
         {
@@ -598,7 +635,12 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     try
     {
-        /// Flush everything before closing and report the drops which were not reported yet
+        /// A producer can have passed the second `is_open` check before close flipped the flag.
+        /// Do not sample the final queue boundary until all such producers have published, or its
+        /// message could be enqueued after this consumer exits.
+        waitForActiveAsyncLoggers();
+
+        /// Flush everything before closing and report the drops which were not reported yet.
         flush_queue();
         report_dropped_messages();
     }
@@ -705,6 +747,10 @@ void OwnAsyncSplitChannel::runTextLog()
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
             return;
+
+        /// See `runChannel`: the final queue boundary must be sampled only after every producer
+        /// which entered the asynchronous path before close has finished publishing.
+        waitForActiveAsyncLoggers();
 
         const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
         flush_queue(text_log_locked);

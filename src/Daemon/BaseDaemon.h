@@ -163,6 +163,9 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
+    /// `Poco::Thread::isRunning` becomes false before `join` and therefore cannot tell whether its
+    /// native thread handle has already been joined.
+    bool signal_listener_thread_started = false;
     std::unique_ptr<SignalListener> signal_listener;
 
     DB::MapWithMemoryTracking<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
