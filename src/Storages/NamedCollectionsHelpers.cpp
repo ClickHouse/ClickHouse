@@ -85,11 +85,13 @@ namespace
 
     /// A TLS credential can be given either as a path to a file (`ssl_ca`) or as its contents
     /// (`ssl_ca_pem`) - two spellings of one setting. Only the contents form is accepted from a query
-    /// (see `StorageMySQL::getSSLParams`), where it replaces the path inherited from the collection.
+    /// (see `StorageMySQL::getSSLParams` and `StoragePostgreSQL::getSSLParams`), where it replaces the
+    /// path inherited from the collection.
     /// Returns the path key a contents key replaces, if the key is a contents key.
     std::optional<std::string> tlsCredentialsPathKeyFor(const std::string & key)
     {
-        static constexpr std::string_view tls_credentials_path_keys[] = {"ssl_ca", "ssl_cert", "ssl_key"};
+        static constexpr std::string_view tls_credentials_path_keys[]
+            = {"ssl_ca", "ssl_cert", "ssl_key", "sslrootcert", "sslcert", "sslkey"};
 
         for (const auto & path_key : tls_credentials_path_keys)
         {
