@@ -2461,6 +2461,12 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
 {
+    /// Capture the fallback baseline before *any* teardown write. Some exceptional callers enter
+    /// here without an explicit baseline, and both the progress clear below and formatter
+    /// finalization can block on an output sink. A Ctrl+C in that window must be treated as a
+    /// teardown cancellation rather than folded into the baseline.
+    const Int32 teardown_signal_baseline = signals_before_teardown.value_or(query_interrupt_handler.receivedSignalCount());
+
     /// When resetOutput() runs as the outer teardown in processParsedSingleQuery(), the interrupt
     /// handler is already stopped (its SCOPE_EXIT in processOrdinaryQuery()/processInsertQuery()
     /// fires when those return, before this call) and the per-query cancellation hook on tty_buf has
@@ -2536,10 +2542,6 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
     /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
     /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
     ///
-    /// Take the baseline of already-received interrupt signals before the flushes start: from here
-    /// on, *any* additional signal has to stop the teardown immediately, even when the query is not
-    /// fully cancelled yet under `partial_result_on_first_cancel`. See the latch below.
-    const Int32 teardown_signal_baseline = signals_before_teardown.value_or(query_interrupt_handler.receivedSignalCount());
     if (std_out)
         armResponsiveOutput(*std_out);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
