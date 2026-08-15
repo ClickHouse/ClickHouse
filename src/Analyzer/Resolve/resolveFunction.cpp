@@ -44,8 +44,6 @@
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 
-#include <set>
-
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
@@ -203,38 +201,37 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     return false;
 }
 
-void collectMaskedConstantHashes(
-    const QueryTreeNodePtr & node,
-    std::set<IQueryTreeNode::Hash> & masked_hashes)
-{
-    if (const auto * constant = node->as<ConstantNode>())
-    {
-        if (constant->isMasked())
-            masked_hashes.insert(constant->getTreeHash());
-        if (constant->hasSourceExpression())
-            collectMaskedConstantHashes(constant->getSourceExpression(), masked_hashes);
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectMaskedConstantHashes(child, masked_hashes);
-}
-
-void applySecretMasks(
-    const QueryTreeNodePtr & node,
-    const std::set<IQueryTreeNode::Hash> & masked_hashes,
+void copySecretMasksByPosition(
+    QueryTreeNodePtr resolved_node,
+    const QueryTreeNodePtr & source_node,
     std::map<IQueryTreeNode::Hash, size_t> & projection_mask_map)
 {
-    if (auto * constant = node->as<ConstantNode>();
-        constant && masked_hashes.contains(constant->getTreeHash()))
+    while (resolved_node->getNodeType() != source_node->getNodeType())
     {
-        auto mask = projection_mask_map.insert({constant->getTreeHash(), projection_mask_map.size() + 1}).first->second;
-        constant->setMaskId(mask);
+        const auto * resolved_constant = resolved_node->as<ConstantNode>();
+        if (!resolved_constant || !resolved_constant->hasSourceExpression())
+            return;
+        resolved_node = resolved_constant->getSourceExpression();
     }
 
-    for (const auto & child : node->getChildren())
-        if (child)
-            applySecretMasks(child, masked_hashes, projection_mask_map);
+    if (const auto * resolved_constant = resolved_node->as<ConstantNode>(); resolved_constant && resolved_constant->isMasked())
+    {
+        if (auto * source_constant = source_node->as<ConstantNode>())
+        {
+            const auto hash = source_constant->getTreeHash();
+            const auto mask = projection_mask_map.insert({hash, projection_mask_map.size() + 1}).first->second;
+            source_constant->setMaskId(mask);
+        }
+    }
+
+    const auto & resolved_children = resolved_node->getChildren();
+    const auto & source_children = source_node->getChildren();
+    if (resolved_children.size() != source_children.size())
+        return;
+
+    for (size_t i = 0; i < resolved_children.size(); ++i)
+        if (resolved_children[i] && source_children[i])
+            copySecretMasksByPosition(resolved_children[i], source_children[i], projection_mask_map);
 }
 
 bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, const IdentifierResolveScope & scope)
@@ -898,9 +895,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
-                std::set<IQueryTreeNode::Hash> masked_hashes;
-                collectMaskedConstantHashes(node_for_type_inference, masked_hashes);
-                applySecretMasks(source_expression, masked_hashes, *scope.projection_mask_map);
+                copySecretMasksByPosition(node_for_type_inference, source_expression, *scope.projection_mask_map);
 
                 ConstantValue constant_value{ std::move(result_column), std::move(result_type) };
                 node = std::make_shared<ConstantNode>(
