@@ -87,6 +87,10 @@ SELECT z FROM merge(currentDatabase(), '^mt_alias$'), (SELECT 1 AS not_z) AS rhs
 -- with such an alias is unreachable unless the subquery is aliased. The alias is therefore required.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x); -- { serverError ALIAS_REQUIRED }
 
+-- A scalar scope alias cannot resolve a nested path, so it does not shadow a joined column whose
+-- quoted name contains a dot.
+WITH 1 AS n SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`) FORMAT Null;
+
 -- With the subquery aliased, the shadowed column becomes reachable again via qualification.
 WITH 1 AS x SELECT x, rhs.x FROM numbers(1), (SELECT 2 AS x) AS rhs;
 
@@ -95,6 +99,10 @@ SELECT number + 10 AS y FROM numbers(1), (SELECT 2 AS y); -- { serverError ALIAS
 
 -- No collision with the scope alias: still allowed without an alias.
 WITH 1 AS x SELECT x, not_x FROM numbers(1), (SELECT 2 AS not_x);
+
+-- Likewise, a scalar ARRAY JOIN output does not shadow a dotted joined-column name merely because
+-- its alias is a textual prefix of that name.
+SELECT `a.x` FROM numbers(1), (SELECT 2 AS `a.x`) ARRAY JOIN [30] AS a FORMAT Null;
 
 -- ... and the restriction can still be disabled entirely.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS joined_subquery_requires_alias = 0;
@@ -237,8 +245,9 @@ SELECT arr_t.id, rhs.id, elem FROM arr_t ARRAY JOIN arr1 AS elem INNER JOIN (SEL
 -- Disabling the setting keeps the pre-existing permissive behavior for the wrapped case as well.
 SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
 
--- Validation runs after both operands have resolved.
-WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError UNKNOWN_FUNCTION }
+-- A collision with a sibling-independent binder is final, so it is reported before resolving a
+-- later table function with side effects.
+WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError ALIAS_REQUIRED }
 
 -- Without such a collision the verdict does need the sibling columns, so the right operand is resolved
 -- first and its own error is reported.

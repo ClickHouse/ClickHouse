@@ -1101,11 +1101,25 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             if (array_join_alias_names.query_scope != &scope)
                 continue;
 
-            for (const auto & name : array_join_alias_names.names)
-                if (column_name == name || (column_name.starts_with(name) && column_name.size() > name.size() && column_name[name.size()] == '.'))
-                {
+            for (const auto & [name, expression] : array_join_alias_names.name_to_expression)
+            {
+                if (column_name == name)
                     return true;
-                }
+
+                const auto dot_pos = column_name.find('.');
+                if (dot_pos == String::npos || column_name.substr(0, dot_pos) != name)
+                    continue;
+
+                /// A dotted identifier is shadowed only when the ARRAY JOIN output can bind the nested
+                /// path. For example, `ARRAY JOIN [30] AS a` does not shadow a sibling column named
+                /// `a.x`: `a` is a scalar after ARRAY JOIN, so `a.x` falls back to the join tree.
+                auto result_type = expression->getResultType();
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+                    result_type = array_type->getNestedType();
+
+                if (result_type->hasSubcolumn(column_name.substr(dot_pos + 1)))
+                    return true;
+            }
         }
         return false;
     };
@@ -1126,10 +1140,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         auto it = scope.aliases.alias_name_to_expression_node.find(alias_name);
         if (it == scope.aliases.alias_name_to_expression_node.end())
             return false;
-        /// Compound alias lookup resolves the first identifier part first. Thus an alias `n`
-        /// can shadow the subcolumn `n.x` as well.
+        /// Compound alias lookup resolves the first identifier part first, but it shadows `n.x`
+        /// only when the alias value can actually resolve the nested path.
         if (dot_pos != String::npos)
-            return true;
+        {
+            Identifier identifier(column_name);
+            return identifier_resolver.tryResolveIdentifierFromCompoundExpression(
+                identifier, 1 /*identifier_bind_size*/, it->second, {} /* compound_expression_source */,
+                scope, true /* can_be_not_found */) != nullptr;
+        }
         if (const auto * identifier_node = it->second->as<IdentifierNode>())
             return identifier_node->getIdentifier().getFullName() != column_name;
         return true;
@@ -5279,7 +5298,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     {
         const auto & alias = array_join_expression->getAlias();
         if (!alias.empty())
+        {
             array_join_alias_names.names.insert(alias);
+            array_join_alias_names.name_to_expression.emplace(alias, array_join_expression);
+        }
         else if (const auto * identifier_node = array_join_expression->as<IdentifierNode>())
         {
             /// The name an unaliased identifier expression exposes is the name of the column it resolves to,
@@ -5296,6 +5318,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
                     suffix += '.';
                     suffix += parts[j];
                 }
+                array_join_alias_names.name_to_expression.emplace(suffix, array_join_expression);
                 array_join_alias_names.names.insert(std::move(suffix));
             }
         }
@@ -5738,6 +5761,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     auto & join_node_typed = join_node->as<JoinNode &>();
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
+
+    /// Check the left operand against the sibling-independent binders before resolving the right
+    /// table expression, which can execute a table function. Any collision found here is final;
+    /// resolving the right side can only add collisions, never remove one.
+    QueryTreeNodes resolved_left_table_expression{join_node_typed.getLeftTableExpressionNode()};
+    validateJoinTableExpressionWithoutAlias(
+        join_node, join_node_typed.getLeftTableExpressionNode(), resolved_left_table_expression, scope);
 
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpressionNode(), scope, expressions_visitor);
 

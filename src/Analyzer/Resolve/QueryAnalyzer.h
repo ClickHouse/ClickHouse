@@ -329,6 +329,7 @@ private:
     struct EnclosingArrayJoinNames
     {
         NameSet names;
+        std::unordered_map<String, QueryTreeNodePtr> name_to_expression;
         bool all_names_known = true;
         const IdentifierResolveScope * query_scope = nullptr;
     };
