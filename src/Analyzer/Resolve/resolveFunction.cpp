@@ -1161,18 +1161,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// arguments and flattens/validates them again itself.
             /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
             /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple` - so unwrap the wrappers before looking for a tuple,
-            /// matching how `validateInColumnsCountMatch` counts the left operand's key columns.
-            bool left_tuple_compared_as_single_key = false;
+            /// `ColumnTuple`/`DataTypeTuple`. The same is true for `Dynamic` and `Variant`, which
+            /// can hold a tuple value and therefore need the accurate set-key cast as well. Unwrap
+            /// the wrappers before identifying these types.
+            bool left_value_compared_as_single_key = false;
             if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
             {
                 const auto & left_result_type = in_first_argument->getResultType();
-                left_tuple_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_result_type
-                    && typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(left_result_type)).get());
+                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
+                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
+                    && left_key_type
+                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->isDynamic() || left_key_type->isVariant());
             }
 
-            if (in_second_argument->as<QueryNode>() && !left_tuple_compared_as_single_key)
+            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
             {
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
