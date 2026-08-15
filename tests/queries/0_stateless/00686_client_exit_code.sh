@@ -21,8 +21,11 @@ for _ in {0..300}; do
     sleep 0.1
 done
 
+# The first interrupt only cancels the query: dying here would mean the handler was not armed,
+# and the default SIGINT disposition also exits with 130.
 kill -INT $client_pid
 sleep 0.5
+kill -0 $client_pid 2>/dev/null || echo "FAIL: client died on the first interrupt"
 kill -INT $client_pid
 wait $client_pid
 echo $?
