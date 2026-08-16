@@ -400,7 +400,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
     /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
-    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+    if (read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getDeferredPrewhereInfo())
         return false;
 
     /// Not 100% sure but other sort types are likely not what we want

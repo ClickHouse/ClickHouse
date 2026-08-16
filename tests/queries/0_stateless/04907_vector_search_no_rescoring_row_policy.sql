@@ -36,5 +36,18 @@ SETTINGS
     distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0;
 
+-- An explicit PREWHERE is deferred after FINAL before the second optimizer pass.
+SELECT id FROM tab_vec_row_policy FINAL
+PREWHERE length(vec) = 2
+ORDER BY L2Distance(vec, [0., 2.]) ASC
+LIMIT 3
+SETTINGS
+    vector_search_with_rescoring = 0,
+    query_plan_optimize_lazy_materialization = 0,
+    make_distributed_plan = 1,
+    distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0,
+    apply_prewhere_after_final = 1;
+
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 DROP TABLE tab_vec_row_policy;
