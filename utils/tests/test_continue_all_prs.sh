@@ -43,6 +43,17 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
 grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
 
+mkdir -p "${worktree_base}-0"
+if PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
+    "$repo/utils/continue-all-prs.sh" --agent codex --timeout 1 --once \
+        --skip-submodules --no-status --worktree-base "$worktree_base" --color never \
+        > "$scratch/unregistered-worktree.log" 2>&1; then
+    echo 'Expected an unregistered worker path to be rejected' >&2
+    exit 1
+fi
+grep -q 'path exists but is not a registered worktree' "$scratch/unregistered-worktree.log"
+rmdir "${worktree_base}-0"
+
 PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=30 \
     CODEX_TEST_READY="$scratch/login-ready" "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key \
         --timeout 60 --once --skip-submodules --no-status --worktree-base "$worktree_base" --color never \

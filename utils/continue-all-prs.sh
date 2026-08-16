@@ -569,6 +569,8 @@ setup_worktree_submodules()
 }
 
 # Create the worktree for a worker if it does not exist yet, otherwise reuse it.
+# Reusing an arbitrary pre-existing directory would make the worker cleanup
+# sequence operate on state which does not belong to this orchestrator.
 ensure_worktree()
 {
     local wt="$1"
@@ -578,8 +580,8 @@ ensure_worktree()
         return 0
     fi
     if [[ -e "$wt" ]]; then
-        banner "Path exists but is not a registered worktree, reusing as-is: $wt"
-        return 0
+        echo "${S}ERROR: path exists but is not a registered worktree: $wt${R}" >&2
+        return 1
     fi
 
     banner "Creating worktree: $wt"
