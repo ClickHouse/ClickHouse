@@ -300,7 +300,7 @@ struct IMergeTreeIndex
     /// because such a part can still carry the index's granules.
     bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
 
-    /// Union of every checksummed or packed on-disk version present (unlike
+    /// Union of every on-disk version present, including one accounted for by nothing (unlike
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
@@ -425,13 +425,23 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
-/// Check if an index substream file exists for the part. Returns true if the file is listed
-/// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
-/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
-/// the archive check, which is fine for callers that only see standalone per-file layouts.
+/// Which files count as belonging to an index substream.
+enum class IndexFilePresence
+{
+    /// Accounted for: a checksums.txt entry or a member of skp_idx.packed. A file that is on disk
+    /// but in neither is an orphan whose index is already dead, so it is not a readable substream.
+    Accounted,
+    /// Also any file present on disk under that name. Cleanup must see an orphan in order to strip
+    /// it from inherited checksums and keep it out of the hardlink loop.
+    OrDanglingOnDisk,
+};
+
+/// Check if an index substream file exists for the part. Passing a null @storage answers from
+/// checksums.txt alone, which is what callers that only see standalone per-file layouts need.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
     const std::string & extension,
-    const IDataPartStorage * storage = nullptr);
+    const IDataPartStorage * storage = nullptr,
+    IndexFilePresence presence = IndexFilePresence::Accounted);
 }
