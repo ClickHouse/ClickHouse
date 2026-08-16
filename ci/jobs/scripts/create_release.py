@@ -209,13 +209,10 @@ class ReleaseInfo:
     commit_sha: str
     latest: bool
     codename: str
-    # Whether this release is the latest on its branch (controls the floating
-    # minor/major docker tags). `latest` above is whether the branch is the
-    # latest release branch (additionally controls the `latest` docker tag).
-    is_branch_release: bool = False
-    # Whether this run creates a new release (tag/version-bump/changelog). False
-    # when re-publishing artifacts for an already-released or out-of-order ref.
-    create_new_release: bool = False
+    # True once the branch tip has moved past this release (its post-release bump landed, or a newer release advanced it further), so this is no longer the branch's current release.
+    is_bump_landed: bool = True
+    # True once the release tag for this commit has been pushed, so this run re-publishes an existing release rather than creating one.
+    is_tag_pushed: bool = True
     changelog_pr: str = ""
     version_bump_pr: str = ""
     prs_merged: bool = False
@@ -243,26 +240,6 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
-    @staticmethod
-    def _is_empty_patch_release(patch: int, tweak: int) -> bool:
-        """
-        Whether a patch release would be empty and must be refused.
-
-        For a patch release the tweak equals the number of commits since the
-        previous release tag (see `Git.tweak`), so `tweak == 1` means the only
-        commit on top of the previous release is the automated post-release
-        version bump — there is nothing to release (e.g. `v25.8.28.1-lts`).
-
-        The exception is `patch == 1`: that is the first user-facing
-        `stable`/`lts` release of a freshly cut branch. Its previous tag is the
-        non-user-facing `vX.Y.1.1-new`, and the single automated
-        `testing -> stable/lts` version-update commit also yields `tweak == 1`.
-        That release is legitimate and must be allowed. The post-release bump
-        always increments `patch`, so an already-published branch is always at
-        `patch >= 2` on a rerun.
-        """
-        return tweak == 1 and patch != 1
-
     def prepare(
         self, commit_ref: str, release_type: str, dry_run: bool = False
     ) -> "ReleaseInfo":
@@ -280,10 +257,8 @@ class ReleaseInfo:
         release_tag = None
         latest_release = False
         codename = ""
-        # Whether the branch has already moved to a newer release than this one
-        # (set for patch releases from the branch-tip version file). A new
-        # release cuts a fresh minor, so it is always the latest.
-        newer_release_exists = False
+        # A new release starts a fresh minor with no prior bump landed; recomputed for patch below.
+        self.is_bump_landed = False
 
         if release_type == "new":
             if commit_ref != "master":
@@ -318,13 +293,10 @@ class ReleaseInfo:
                 verbose=True,
             )
 
-            # The branch's current version, read from the version file at its tip
-            # (not from release tags). If this commit's version is older than the
-            # branch tip, the branch has already moved to a newer release, so this
-            # ref is behind / superseded.
+            # Branch-tip version (version file, not tags): if it is ahead of this commit, the post-release bump already landed, so this is no longer the branch's current release.
             with checkout(f"origin/{release_branch}"):
                 branch_version = CHVersion.get_current_version()
-            newer_release_exists = version.is_older(branch_version)
+            self.is_bump_landed = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -348,88 +320,42 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Is the branch already developing a newer release than this one? This
-        # release is the latest on its branch unless the branch tip is newer —
-        # controls the floating minor/major Docker tags (recovering the current
-        # release re-applies them; recovering a superseded one does not).
-        self.is_branch_release = not newer_release_exists
-
-        # The operation is decided from the ref and the branch's version:
-        #   * ref is an existing release tag -> recovery: re-publish exactly that
-        #     release (allowed even for a superseded one);
-        #   * ref is a branch/commit that is older than the branch tip -> out of
-        #     order. A branch ref can't reach this (its tip is never older than
-        #     itself), so it is a raw SHA pointing behind the tip; refuse it;
-        #   * ref is a branch/commit whose own release tag already exists at this
-        #     commit -> recovery: a rerun. auto_releases dispatches ref=<commit_sha>
-        #     and GitHub's "Re-run failed jobs" replays the matrix with that same
-        #     SHA while AutoReleaseInfo is not recomputed, so the tag pushed on the
-        #     first attempt already points here — degrade to recovery instead of
-        #     trying to create (and re-merge) the release a second time;
-        #   * otherwise -> create the next release.
-        #
-        # The stale-SHA and superseded-recovery cases both compute the same
-        # existing release_tag; only the ref KIND distinguishes them, so the tag
-        # ref is checked first and the newer-release guard runs before the rerun
-        # case.
-        #
-        # release_job.py defers the patch branch version bump to the very last
-        # step (after publishing), so a rerun after any failure runs while the
-        # branch tip still equals the released commit: newer_release_exists is
-        # False and this reaches the rerun-recovery branch. The branch only moves
-        # ahead once the whole release has succeeded, when no rerun is pending.
-        # That keeps reruns recoverable without consulting release tags here.
-        if Git.tag_exists(commit_ref):
-            recover = True
-            assert release_tag == commit_ref, (
-                f"ref [{commit_ref}] is a release tag but the version at its commit "
-                f"describes [{release_tag}]; refusing to re-publish a different "
-                f"release"
-            )
-        elif newer_release_exists:
-            raise RuntimeError(
-                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-                f"branch [{release_branch}] is already on a newer release. Pass a "
-                f"release tag to recover an existing release, or the branch to "
-                f"release its next commit."
-            )
-        elif Git.tag_exists(release_tag):
+        # Behind the tip and not the release tag itself -> out of order; else an existing release tag (at this commit) is recovery, a missing one is create.
+        self.is_tag_pushed = Git.tag_exists(release_tag)
+        assert not (self.is_bump_landed and commit_ref != release_tag), (
+            f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
+            f"branch [{release_branch}] tip is already ahead of it. Pass a "
+            f"release tag to recover an existing release, or the branch to "
+            f"release its next commit."
+        )
+        if self.is_tag_pushed:
             tagged_sha = Git.get_commit_sha(release_tag)
-            if tagged_sha != commit_sha:
-                # The version computed from the file at this ref describes a
-                # release that already exists at a different commit. This is the
-                # stale-version-file hazard for a branch ref: the post-release
-                # version bump has not been applied to the branch, so the tip
-                # still describes an already-published release. Fail closed with
-                # an actionable message rather than assert or silently mint a
-                # colliding tag. (Detecting the wider "computed release is below
-                # the branch's latest" case would need to scan release tags,
-                # which the release job deliberately does not do — see
-                # 80c722e39ae.)
-                raise RuntimeError(
-                    f"release tag [{release_tag}] already exists at [{tagged_sha}] "
-                    f"but this run targets [{commit_sha}]. The version file at "
-                    f"[{commit_ref}] is stale (it still describes an "
-                    f"already-published release); land the post-release version "
-                    f"bump on the branch, then dispatch its tip, or pass a "
-                    f"release tag to recover an existing release."
-                )
-            recover = True
+            assert tagged_sha == commit_sha, (
+                f"release tag [{release_tag}] already exists at [{tagged_sha}] but this run "
+                f"targets [{commit_sha}]: the version file at [{commit_ref}] is stale (it still "
+                f"describes an already-published release); land the post-release bump and "
+                f"dispatch the tip, or pass the release tag to recover."
+            )
         else:
-            # Creating (not recovering): refuse an empty patch release, where the
-            # only commit since the previous release is the automated version
-            # bump (tweak == 1). The recovery branches above are exempt.
-            if release_type == "patch" and self._is_empty_patch_release(
-                version.patch, version.tweak
-            ):
-                raise RuntimeError(
-                    f"Refusing to create an empty patch release [{release_tag}] "
-                    f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
-                    f"so the only commit since the previous release is the "
-                    f"automated version bump — there is nothing to release."
+            if release_type == "patch":
+                # tweak == 1: the only commit since the previous release is the automated bump — nothing to release.
+                if version.tweak == 1:
+                    raise RuntimeError(
+                        f"Refusing to create an empty patch release [{release_tag}] "
+                        f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
+                        f"so the only commit since the previous release is the "
+                        f"automated version bump — there is nothing to release."
+                    )
+                # A -stable/-lts tag for this exact X.Y.P line means it was already released — refuse creating it again.
+                released = Shell.get_output(
+                    f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*-stable' "
+                    f"'v{version.major}.{version.minor}.{version.patch}.*-lts'"
                 )
-            recover = False
-        self.create_new_release = not recover
+                assert not released, (
+                    f"release line {version.major}.{version.minor}.{version.patch} already has a "
+                    f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
+                    f"superseded release, or there is a bug in the release/versioning logic"
+                )
         self.release_type = release_type
         return self
 
@@ -516,20 +442,34 @@ class ReleaseInfo:
 
         with checkout(self.release_branch):
             if self.release_type == "new":
-                # A freshly cut branch keeps its committed VERSION_GITHASH rather
-                # than repointing it at the release commit.
+                # A freshly cut branch keeps its committed VERSION_GITHASH, not the release commit's.
                 version.githash = CHVersion.get_release_version().githash
             else:
-                version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+                # Update the branch to origin's tip right before the push, so a backport landed during the release is not rejected as non-fast-forward.
+                if not dry_run:
+                    Shell.check(
+                        f"{GIT_PREFIX} fetch --quiet origin {self.release_branch}",
+                        strict=True,
+                        verbose=True,
+                    )
+                    Shell.check(
+                        f"{GIT_PREFIX} reset --hard FETCH_HEAD", strict=True, verbose=True
+                    )
+                # VERSION_GITHASH is the released commit — the baseline the next release's tweak counts from, not the backport-advanced tip.
+                version.githash = self.commit_sha
+                latest_release_version = CHVersion.get_release_version()
+                assert not version.is_older(latest_release_version), (
+                    f"BUG: refusing to write version [{version.string}] onto branch "
+                    f"[{self.release_branch}] whose tip already describes "
+                    f"[{latest_release_version.string}]; the branch version must never move backwards"
+                )
             version.write()
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
                 f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
                 f"-m 'Update autogenerated version to {self.version} and contributors'"
             )
-            # `git diff --quiet` exit codes: 0 = no changes, 1 = changes, >1 = error.
-            # On a rerun the files are already up to date (exit 0), so skip the
-            # commit + push silently. Treat >1 as a hard failure.
+            # `git diff --quiet`: 0 = no changes (rerun, skip), 1 = changes, >1 = error.
             diff_rc = Shell.run(
                 f"git diff --quiet HEAD -- '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
             )
