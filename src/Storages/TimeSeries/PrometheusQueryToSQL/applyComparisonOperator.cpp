@@ -2,8 +2,11 @@
 
 #include <Common/Exception.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -134,6 +137,47 @@ SQLQueryPiece applyComparisonOperator(
 
         /// We filter either values from the left side or from the right side.
         bool filter_left = (left_argument.type == ResultType::INSTANT_VECTOR);
+
+        /// One-step grid vs scalar: drop failing rows with WHERE instead of nulling via arrayMap.
+        {
+            SQLQueryPiece & vector_arg = filter_left ? left_argument : right_argument;
+            const SQLQueryPiece & scalar_arg = filter_left ? right_argument : left_argument;
+
+            bool scalar_is_const = (scalar_arg.store_method == StoreMethod::CONST_SCALAR);
+            bool vector_is_grid = (vector_arg.store_method != StoreMethod::EMPTY);
+            bool single_step = (vector_arg.type == ResultType::INSTANT_VECTOR)
+                && (stepsInTimeSeriesRange(vector_arg.start_time, vector_arg.end_time, vector_arg.step) == 1);
+
+            if (scalar_is_const && vector_is_grid && single_step)
+            {
+                ScalarType scalar_value = scalar_arg.scalar_value;
+
+                SQLQueryPiece gridded = toVectorGrid(std::move(vector_arg), context);
+                context.subqueries.emplace_back(
+                    SQLSubquery{context.subqueries.size(), std::move(gridded.select_query), SQLSubqueryType::TABLE});
+
+                SelectQueryBuilder builder;
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                builder.from_table = context.subqueries.back().name;
+
+                ASTPtr value_at_step = makeASTFunction(
+                    "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
+                ASTPtr scalar_ast = timeSeriesScalarToAST(scalar_value, context.scalar_data_type);
+
+                builder.where = filter_left
+                    ? makeASTFunction(String{impl_info->ch_function_name}, value_at_step, scalar_ast)
+                    : makeASTFunction(String{impl_info->ch_function_name}, scalar_ast, value_at_step);
+
+                SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
+                res.select_query = builder.getSelectQuery();
+                res.start_time = gridded.start_time;
+                res.end_time = gridded.end_time;
+                res.step = gridded.step;
+                res.metric_name_dropped = gridded.metric_name_dropped;
+                return res;
+            }
+        }
 
         /// For example for the ">=" operator and `filter_left == true`
         /// here we build the following expression for filtering:
