@@ -70,9 +70,9 @@ Determine whether the PR branch is in the main repository or in the author's for
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull origin "$HEAD_BRANCH"
+HEAD_REMOTE=origin
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -83,9 +83,9 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull "$REMOTE_NAME" "$HEAD_BRANCH"
+HEAD_REMOTE="$REMOTE_NAME"
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 Immediately after either checkout completes, capture an immutable baseline before
@@ -96,7 +96,8 @@ only authoritative record of the PR surface that existed when the worker began:
 git fetch origin "$BASE_BRANCH"
 mkdir -p tmp
 PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
-INITIAL_PR_HEAD=$(git rev-parse HEAD)
+INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
+test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
 INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
 git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
 git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
@@ -308,7 +309,7 @@ Before every commit and push, run this safety gate. It is a hard stop:
 After the gate succeeds, push with:
 
 ```bash
-git push "$PUSH_REMOTE" "$HEAD_BRANCH"
+git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
 
 Report the result and provide the PR URL.

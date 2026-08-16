@@ -73,9 +73,9 @@ Determine whether the PR branch is in the main repository or in the author's for
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull origin "$HEAD_BRANCH"
+HEAD_REMOTE=origin
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
@@ -86,9 +86,9 @@ Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRep
 REMOTE_NAME="pr-$AUTHOR_LOGIN"
 FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
 git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
-git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
-git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
-git pull "$REMOTE_NAME" "$HEAD_BRANCH"
+HEAD_REMOTE="$REMOTE_NAME"
+git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
+git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
 Immediately after either checkout completes, capture an immutable baseline before
@@ -99,7 +99,8 @@ only authoritative record of the PR surface that existed when the worker began:
 git fetch origin "$BASE_BRANCH"
 mkdir -p tmp
 PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
-INITIAL_PR_HEAD=$(git rev-parse HEAD)
+INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
+test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
 INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
 git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
 git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
@@ -335,12 +336,12 @@ Before every commit and push, run this safety gate. It is a hard stop and overri
    ```
    Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
 
-The automation installs a `pre-push` hook that rejects non-fast-forward updates and branch deletion. Do not bypass it. A hook rejection is a safety failure to report, not an obstacle to work around.
+The automation additionally installs a `pre-push` hook that rejects non-fast-forward updates and branch deletion for ordinary pushes. It is defense in depth: `--no-verify` bypasses Git hooks, so the explicit prohibition and safety gates above remain authoritative. Do not bypass it. A hook rejection is a safety failure to report, not an obstacle to work around.
 
 After the gate succeeds, push with:
 
 ```bash
-git push "$PUSH_REMOTE" "$HEAD_BRANCH"
+git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
 ```
 
 Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.

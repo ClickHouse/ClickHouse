@@ -194,10 +194,11 @@ esac
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
 
-# Enforce fast-forward-only updates from every git process launched by a
-# worker. The hook is applied through command-scope environment configuration,
-# so it also covers branches checked out in linked worktrees without changing
-# the user's repository configuration.
+# Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
+# is applied through command-scope environment configuration, so it also covers
+# branches checked out in linked worktrees without changing the user's repository
+# configuration. `git push --no-verify` bypasses hooks; the worker prompt's
+# explicit prohibition and safety gates remain the authoritative enforcement.
 PUSH_HOOKS_DIR="$(cd "$MAIN_REPO/utils/continue-all-prs-hooks" && pwd -P)"
 [[ -x "$PUSH_HOOKS_DIR/pre-push" ]] \
     || { echo "${S}Error: missing executable pre-push hook: $PUSH_HOOKS_DIR/pre-push${R}" >&2; exit 1; }
