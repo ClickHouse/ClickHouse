@@ -501,9 +501,52 @@ class _EventHiddenOnce:
         return self._observations_after_set > 1
 
 
-def _drive_parent_monitor_loop(worker, stop_testing):
-    saved = _runner.run_tests_process
+class _EventVisibleOnFirstCheck:
+    """A real event whose `is_set()` waits, bounded, for a worker to set it.
+
+    The inverse of `_EventHiddenOnce`: the parent's check at the top of the
+    monitor loop cannot answer False before a worker has signalled, so the
+    in-loop consumer is reached on every run instead of whenever the parent
+    happens to be scheduled before the reap. Every detector claims its cause
+    before setting the event, so a set event means the claim is already visible.
+    A missed handshake raises instead of hanging.
+    """
+
+    def __init__(self, timeout=30.0):
+        self._inner = multiprocessing.Event()
+        self._timeout = timeout
+
+    def set(self):
+        self._inner.set()
+
+    def is_set(self):
+        if not self._inner.wait(timeout=self._timeout):
+            raise RuntimeError(
+                f"handshake missed: no worker signalled a stop within {self._timeout}s"
+            )
+        return True
+
+
+def _drive_parent_monitor_loop(worker, stop_testing, raise_sites=None):
+    """Run the parent monitor loop against a fake worker.
+
+    `raise_sites` collects the line number each `raise_stop_from_carrier` call was
+    made from, which is what distinguishes the in-loop consumer from the post-loop
+    one. The teardown banner cannot: it is printed before the in-loop raise, so it
+    still appears when that raise is deleted.
+    """
+    saved = (_runner.run_tests_process, _runner.raise_stop_from_carrier)
     _runner.run_tests_process = worker
+
+    if raise_sites is not None:
+        real_raise = _runner.raise_stop_from_carrier
+
+        def recording_raise(carrier):
+            raise_sites.append(sys._getframe(1).f_lineno)
+            real_raise(carrier)
+
+        _runner.raise_stop_from_carrier = recording_raise
+
     output = io.StringIO()
     try:
         with contextlib.redirect_stdout(output):
@@ -520,10 +563,31 @@ def _drive_parent_monitor_loop(worker, stop_testing):
     except _runner.StopTesting as e:
         exit_code = e.exit_code
     finally:
-        _runner.run_tests_process = saved
-    # The in-loop consumer announces the teardown; the post-loop one does not.
-    took_in_loop_path = "terminating all processes" in output.getvalue()
-    return exit_code, took_in_loop_path
+        _runner.run_tests_process, _runner.raise_stop_from_carrier = saved
+    took_teardown_path = "terminating all processes" in output.getvalue()
+    return exit_code, took_teardown_path
+
+
+def _carrier_consumer_lines():
+    """The two `raise_stop_from_carrier` call sites in the monitor loop, in source
+    order: the in-loop consumer first, the post-loop one second.
+
+    Derived from the source rather than hardcoded, so a refactor that moves either
+    site keeps working - and one that adds or removes a site fails here loudly
+    instead of silently making the arms below compare against the wrong line.
+    """
+    lines = [
+        number
+        for number, text in enumerate(
+            _CLICKHOUSE_TEST.read_text(encoding="utf-8").splitlines(), start=1
+        )
+        if text.strip() == "raise_stop_from_carrier(stop_exit_code)"
+    ]
+    assert len(lines) == 2, f"expected 2 carrier consumers, found {lines}"
+    return lines
+
+
+_IN_LOOP_CONSUMER, _POST_LOOP_CONSUMER = _carrier_consumer_lines()
 
 
 def _worker_claiming(exit_code):
@@ -538,41 +602,78 @@ def _worker_claiming_nothing(params):
     params[6].set()
 
 
+def _worker_signalling_nothing(params):
+    """Exits without requesting a stop, which leaves the handshake unsatisfiable."""
+
+
 def test_parent_consumes_a_cause_claimed_after_its_last_check():
     """A worker that claims and exits in the gap between the parent's check and
     the reap that ends the loop. Without a post-loop consumer the run reports an
     ordinary set of failures and the verdict is lost."""
-    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
-        _worker_claiming(HUNG_CHECK_EXIT_CODE), _EventHiddenOnce()
+    sites = []
+    exit_code, took_teardown_path = _drive_parent_monitor_loop(
+        _worker_claiming(HUNG_CHECK_EXIT_CODE), _EventHiddenOnce(), raise_sites=sites
     )
     assert exit_code == HUNG_CHECK_EXIT_CODE
-    assert not took_in_loop_path, "the in-loop consumer ran, so the gap was not hit"
+    assert sites == [_POST_LOOP_CONSUMER], sites
+    assert not took_teardown_path, "the in-loop path ran, so the gap was not hit"
 
 
 def test_parent_keeps_the_default_for_a_stop_with_no_claimed_cause():
     """Mirror arm for the test above."""
-    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
-        _worker_claiming_nothing, _EventHiddenOnce()
+    sites = []
+    exit_code, took_teardown_path = _drive_parent_monitor_loop(
+        _worker_claiming_nothing, _EventHiddenOnce(), raise_sites=sites
     )
     assert exit_code == STOP_TESTING_EXIT_CODE
-    assert not took_in_loop_path
+    assert sites == [_POST_LOOP_CONSUMER], sites
+    assert not took_teardown_path
 
 
 def test_parent_still_consumes_a_cause_seen_inside_the_loop():
     """The unhidden path, so the two tests above cannot both pass on an
-    implementation that only ever consumes the carrier after the loop."""
-    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
-        _worker_claiming(HUNG_CHECK_EXIT_CODE), multiprocessing.Event()
+    implementation that only ever consumes the carrier after the loop.
+
+    The observable is which consumer raised, not the teardown banner: that banner
+    is printed before the in-loop raise, so it survives deleting it. The event
+    blocks until the worker has claimed, so the in-loop path is reached on every
+    run rather than whenever the parent is scheduled first.
+    """
+    sites = []
+    exit_code, took_teardown_path = _drive_parent_monitor_loop(
+        _worker_claiming(HUNG_CHECK_EXIT_CODE),
+        _EventVisibleOnFirstCheck(),
+        raise_sites=sites,
     )
     assert exit_code == HUNG_CHECK_EXIT_CODE
-    assert took_in_loop_path
+    assert sites == [_IN_LOOP_CONSUMER], sites
+    assert took_teardown_path
+
+
+def test_the_in_loop_handshake_is_not_vacuous():
+    """`_EventVisibleOnFirstCheck` is only a forcing mechanism if an unmet
+    handshake fails loudly. With a worker that never signals a stop it must raise,
+    not pass and not hang."""
+    try:
+        _drive_parent_monitor_loop(
+            _worker_signalling_nothing, _EventVisibleOnFirstCheck(timeout=1.0)
+        )
+    except RuntimeError as e:
+        assert "no worker signalled a stop" in str(e), e
+    else:
+        raise AssertionError("the driver accepted a run nothing signalled in")
 
 
 # --- Claiming before collecting -----------------------------------------------
 
 
 def _drive_abort_site_with_a_competitor(
-    reason, competitor_code, start_competitor=True, handshake_timeout=30.0
+    reason,
+    competitor_code,
+    start_competitor=True,
+    handshake_timeout=30.0,
+    is_concurrent=False,
+    stop_tests_calls=None,
 ):
     """Drive an abort site with a real stacktrace-collection window.
 
@@ -590,13 +691,18 @@ def _drive_abort_site_with_a_competitor(
     `start_competitor=False` leaves the second handshake unsatisfiable, which is
     how `test_the_competitor_handshake_is_not_vacuous` drives this helper's own
     failure mode.
+
+    Passing a list as `stop_tests_calls` records each `stop_tests()` call instead
+    of discarding it, so a caller can assert whether the site broadcast SIGTERM.
+    The real function is never called: its `killpg` would signal this pytest
+    process.
     """
     carrier = multiprocessing.Value("i", 0)
     collection_started = threading.Event()
     competitor_claimed = threading.Event()
 
     class FakeCase:
-        def __init__(self, suite, case, args, is_concurrent):
+        def __init__(self, suite, case, args, concurrent):
             self.name = case
 
         def run(self, args, suite, client_options):
@@ -621,11 +727,17 @@ def _drive_abort_site_with_a_competitor(
         _runner.try_claim_stop_cause(carrier, competitor_code)
         competitor_claimed.set()
 
+    def record_stop_tests():
+        if stop_tests_calls is not None:
+            stop_tests_calls.append(1)
+
     saved = (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase)
     _runner.print_c_stacktraces = fake_collect
-    _runner.stop_tests = lambda: None
+    _runner.stop_tests = record_stop_tests
     _runner.TestCase = FakeCase
-    thread = threading.Thread(target=competitor, daemon=True) if start_competitor else None
+    thread = (
+        threading.Thread(target=competitor, daemon=True) if start_competitor else None
+    )
     if thread:
         thread.start()
     try:
@@ -635,7 +747,7 @@ def _drive_abort_site_with_a_competitor(
                     ["00001_x"],
                     1,
                     _StubSuite(),
-                    False,
+                    is_concurrent,
                     _runner_args(),
                     multiprocessing.Value("i", 0),
                     multiprocessing.Event(),
@@ -651,7 +763,7 @@ def _drive_abort_site_with_a_competitor(
     except _runner.StopTesting:
         pass
     finally:
-        (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase) = saved
+        _runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase = saved
         if thread:
             thread.join(timeout=handshake_timeout + 5)
     assert collection_started.is_set(), "the collection window did not open"
@@ -696,6 +808,34 @@ def test_liveness_claims_its_cause_before_collecting_stacktraces():
         )
         == HUNG_CHECK_EXIT_CODE
     )
+
+
+def _stop_tests_calls_on_the_liveness_path(is_concurrent):
+    calls = []
+    carrier = _drive_abort_site_with_a_competitor(
+        FailureReason.LIVENESS_CHECK_FAILED,
+        STOP_TESTING_EXIT_CODE,
+        is_concurrent=is_concurrent,
+        stop_tests_calls=calls,
+    )
+    # The claim happens at the same site, above the `stop_tests()` guard, so this
+    # separates "the branch was not taken" from "the site was never reached" - a
+    # count of zero means nothing without it.
+    assert carrier == HUNG_CHECK_EXIT_CODE, carrier
+    return len(calls)
+
+
+def test_only_the_sequential_runner_broadcasts_sigterm_on_the_liveness_path():
+    """`stop_tests()` is called on one side of the `is_concurrent` split only.
+
+    Both sides exit 5, so the exit code cannot see this. The parallel half is the
+    load-bearing one: `stop_tests()` broadcasts SIGTERM to the whole process group
+    via `killpg`, so a parallel worker calling it kills the parent with 143 before
+    it can re-raise, and 143 is itself reported as "Server died". The sequential
+    runner owns the main process, so it must call it to tear its own children down.
+    """
+    assert _stop_tests_calls_on_the_liveness_path(is_concurrent=False) == 1
+    assert _stop_tests_calls_on_the_liveness_path(is_concurrent=True) == 0
 
 
 # --- Reason-string and artifact consumers -------------------------------------
@@ -759,6 +899,17 @@ def _stub_stacktraces(*a, **k):
         import time as _time
         _time.sleep(_stacktrace_seconds)
 ns["print_c_stacktraces"] = _stub_stacktraces
+# Re-arms the deadline on entry to the monitor loop, so the budget measures that
+# loop rather than also covering database creation and worker startup.
+_stop_time_after_setup = float(os.environ.get("STUB_STOP_TIME_AFTER_SETUP", "0"))
+if _stop_time_after_setup:
+    _real_do_run_tests = ns["do_run_tests"]
+    def _do_run_tests(jobs, test_suite, args, *a, **k):
+        import time as _time
+        args.stop_time = _time.time() + _stop_time_after_setup
+        print("stub: re-armed stop_time on entry to do_run_tests")
+        return _real_do_run_tests(jobs, test_suite, args, *a, **k)
+    ns["do_run_tests"] = _do_run_tests
 exec(compile(guard + main_block, runner, "exec"), ns)
 '''
 
@@ -783,6 +934,7 @@ def _run_runner(
     stub_liveness_fails,
     stub_health_check_raises=False,
     stacktrace_seconds=0,
+    stop_time_after_setup=0,
     jobs=2,
     timeout=300,
 ):
@@ -792,6 +944,7 @@ def _run_runner(
     env["STUB_LIVENESS_FAILS"] = "1" if stub_liveness_fails else "0"
     env["STUB_HEALTH_CHECK_RAISES"] = "1" if stub_health_check_raises else "0"
     env["STUB_STACKTRACE_SECONDS"] = str(stacktrace_seconds)
+    env["STUB_STOP_TIME_AFTER_SETUP"] = str(stop_time_after_setup)
     return subprocess.run(
         [
             sys.executable,
@@ -811,6 +964,12 @@ def _run_runner(
         text=True,
         timeout=timeout,
     )
+
+
+# Printed by the shim when it re-arms the deadline. Any arm asserting an ordering
+# between the time limit and another cause must check it: without the re-arm the
+# budget also covers setup, and a slow runner then exits 3 on correct code.
+_STOP_TIME_REARMED = "stub: re-armed stop_time on entry to do_run_tests"
 
 
 def _assert_exit_code(proc, expected):
@@ -862,9 +1021,38 @@ def test_parallel_worker_probe_failure_exits_with_the_hung_check_code(tmp_path):
     assert proc.returncode != 128 + 15, "the parent was SIGTERM-killed by a worker"
 
 
+# `do_run_tests` prints this split before it picks a runner. `-j 1` only narrows
+# the worker count, so the split is the observable that separates the two
+# configurations.
+_ALL_SEQUENTIAL = "Found 0 parallel tests and 2 sequential tests"
+
+
 def test_sequential_worker_probe_failure_exits_with_the_hung_check_code(tmp_path):
     """The other side of the `is_concurrent` split: the sequential runner owns the
-    main process, so it does call `stop_tests()` and must still exit 5."""
+    main process, so it does call `stop_tests()` and must still exit 5.
+
+    `--sequential` is what puts the fixtures on that path: `is_sequential_test`
+    matches its substrings before consulting tags, so an empty `parallel_tests`
+    makes `do_run_tests` skip the worker pool entirely and call `run_tests_array`
+    with `is_concurrent=False`. Asserting the split is not decoration - without it
+    this arm silently degrades into a second copy of the parallel one, which is
+    the state it was found in.
+    """
+    _make_suite(tmp_path, count=2, seconds=1)
+    proc = _run_runner(
+        tmp_path,
+        ["--testname", "--sequential=sleep"],
+        stub_liveness_fails=True,
+        stub_health_check_raises=True,
+        jobs=1,
+    )
+    _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
+    assert _ALL_SEQUENTIAL in proc.stdout, proc.stdout[-2000:]
+
+
+def test_the_parallel_arm_is_not_secretly_sequential(tmp_path):
+    """Negative control for the assertion above: the parallel arm's own
+    configuration must not satisfy it, or it distinguishes nothing."""
     _make_suite(tmp_path, count=2, seconds=1)
     proc = _run_runner(
         tmp_path,
@@ -874,6 +1062,7 @@ def test_sequential_worker_probe_failure_exits_with_the_hung_check_code(tmp_path
         jobs=1,
     )
     _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
+    assert _ALL_SEQUENTIAL not in proc.stdout, proc.stdout[-2000:]
 
 
 def test_responsive_server_finishes_normally(tmp_path):
@@ -918,8 +1107,10 @@ def test_time_limit_does_not_steal_a_cause_recorded_during_collection(tmp_path):
         stub_liveness_fails=True,
         stub_health_check_raises=True,
         stacktrace_seconds=8,
+        stop_time_after_setup=4,
     )
     _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
+    assert _STOP_TIME_REARMED in proc.stdout, proc.stdout[-2000:]
 
 
 def test_parent_time_limit_does_not_steal_a_worker_cause(tmp_path):
@@ -929,8 +1120,10 @@ def test_parent_time_limit_does_not_steal_a_worker_cause(tmp_path):
         tmp_path,
         ["--hung-check", "--global_time_limit", "3"],
         stub_liveness_fails=True,
+        stop_time_after_setup=3,
     )
     _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
+    assert _STOP_TIME_REARMED in proc.stdout, proc.stdout[-2000:]
 
 
 def test_time_limit_still_claims_a_run_with_no_other_cause(tmp_path):
