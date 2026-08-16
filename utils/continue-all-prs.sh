@@ -1024,7 +1024,7 @@ ${STEER_PROMPT} ${build_steer}"
 process_pr()
 {
     local i="$1" wt="$2" number="$3" title="$4"
-    local color ts log ec outcome status mark summary
+    local color ts log ec outcome status mark summary cleanup_failed=0
     local before_sha after pr_state pr_mergeable pr_review after_sha pushed
 
     color=$(pr_color_seq "$number")
@@ -1044,6 +1044,7 @@ process_pr()
             printf 'Worktree cleanup failed before starting PR #%s.\n' "$number" > "$log.last"
             cat "$log.last" >> "$log"
             ec=1
+            cleanup_failed=1
         else
             ec=0
         fi
@@ -1101,6 +1102,7 @@ process_pr()
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
     emit "$color" "            ^- $summary"
+    (( cleanup_failed == 0 ))
 }
 
 worker()
@@ -1130,7 +1132,10 @@ worker()
         [[ -z "$line" ]] && break
 
         IFS=$'\t' read -r number title <<< "$line"
-        process_pr "$i" "$wt" "$number" "$title" || true
+        # A cleanup failure makes this worktree unsafe for another assignment
+        # in the same round. Leave the remaining queue to healthy workers
+        # instead of reporting the same failure for every subsequent PR.
+        process_pr "$i" "$wt" "$number" "$title" || break
     done
 
     exec 9>&-
