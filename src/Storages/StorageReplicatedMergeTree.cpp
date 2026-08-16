@@ -8638,6 +8638,10 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         if (!status.is_done && status.parts_to_do_names.empty())
             continue;
 
+        /// A rewrite of a part may stop short of this mutation's version, in which case it advances
+        /// an earlier mutation only. `parts_in_progress_names` holds the cutoff for this mutation.
+        const auto & in_progress = status.parts_in_progress_names;
+
         UInt64 bytes_to_do = 0;
         Float64 bytes_in_flight_done = 0;
         for (const auto & part_name : status.parts_to_do_names)
@@ -8646,6 +8650,8 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             if (it == part_bytes_on_disk.end())
                 continue;
             bytes_to_do += it->second;
+            if (std::find(in_progress.begin(), in_progress.end(), part_name) == in_progress.end())
+                continue;
             if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(it->second) * progress_it->second;
         }

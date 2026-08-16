@@ -1384,6 +1384,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         auto versions_it = std::lower_bound(
             part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
 
+        Names parts_in_progress_names;
+        for (const auto &[part, future_version] : currently_mutating_part_future_versions)
+        {
+            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version)
+                parts_in_progress_names.push_back(part->name);
+        }
+
         size_t parts_to_do = versions_it - part_versions_with_names.begin();
         Names parts_to_do_names;
         parts_to_do_names.reserve(parts_to_do);
@@ -1394,6 +1401,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             const auto & part_version = part_versions_with_names[i];
             parts_to_do_names.push_back(part_version.name);
             bytes_to_do += part_version.bytes_on_disk;
+            /// A rewrite of this part may stop short of this mutation's version, in which case it
+            /// advances an earlier mutation only. `parts_in_progress_names` holds the right cutoff.
+            if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), part_version.name) == parts_in_progress_names.end())
+                continue;
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
@@ -1403,13 +1414,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             0.0, 1.0);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
-
-        Names parts_in_progress_names;
-        for (const auto &[part, future_version] : currently_mutating_part_future_versions)
-        {
-            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version)
-                parts_in_progress_names.push_back(part->name);
-        }
 
         std::map<String, String> parts_postpone_reasons_map;
         if (!parts_to_do_names.empty())

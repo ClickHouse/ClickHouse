@@ -91,8 +91,10 @@ CREATE VIEW mutation_progress AS
 SELECT
     m.mutation_id AS mutation_id,
     m.parts_to_do AS parts_to_do,
-    formatReadableSize(sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0)))) AS bytes_left,
-    round(1 - sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))) / max2((SELECT sum(bytes_on_disk) FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active), 1), 4) AS progress
+    -- `parts_to_do` = 0 on an unfinished mutation means the remaining work is not
+    -- known yet, so report it as unknown instead of as finished.
+    if(m.parts_to_do = 0, NULL, formatReadableSize(sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))))) AS bytes_left,
+    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))) / max2((SELECT sum(bytes_on_disk) FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active), 1), 4)) AS progress
 FROM
 (
     -- `system.mutations` has one row per mutation command, and every row of a
@@ -101,7 +103,9 @@ FROM
     FROM system.mutations
     WHERE database = {database:String} AND table = {table:String} AND NOT is_done
 ) AS m
-ARRAY JOIN m.parts_to_do_names AS part_name
+-- `LEFT ARRAY JOIN` keeps mutations whose `parts_to_do_names` is empty; a plain
+-- `ARRAY JOIN` would drop them and hide a running mutation entirely.
+LEFT ARRAY JOIN m.parts_to_do_names AS part_name
 LEFT JOIN (SELECT name, bytes_on_disk FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active) AS p ON p.name = part_name
 LEFT JOIN (SELECT arrayJoin(source_part_names) AS name, progress FROM system.merges WHERE database = {database:String} AND table = {table:String} AND is_mutation) AS mg ON mg.name = part_name
 GROUP BY m.mutation_id, m.parts_to_do
@@ -115,8 +119,11 @@ SELECT * FROM mutation_progress(database = 'db', table = 't')
 ```text title="Response"
 ┌─mutation_id─────┬─parts_to_do─┬─bytes_left─┬─progress─┐
 │ mutation_10.txt │           1 │ 21.49 MiB  │    0.298 │
+│ mutation_11.txt │           0 │ ᴺᵁᴸᴸ       │     ᴺᵁᴸᴸ │
 └─────────────────┴─────────────┴────────────┴──────────┘
 ```
+
+Like the built-in `progress` column, the view reports `NULL` rather than a percentage when `parts_to_do` = 0 on a mutation that is not done: the mutation is waiting for an in-flight `INSERT`, and the size of the part it will create is not known before the part is committed.
 
 <Note>
 The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward. `system.parts` and `system.merges` are replica-local, so run the query on the replica executing the mutation. The view reads `system.mutations`, `system.parts`, and `system.merges`, so it requires read access to those tables.
