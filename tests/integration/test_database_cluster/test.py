@@ -190,6 +190,55 @@ def test_nested_cluster_missing_from_config_uses_remote_replica(started_cluster)
             node.query("DROP DATABASE IF EXISTS chain_src")
 
 
+def test_nested_local_cycle_uses_remote_replica(started_cluster):
+    # `cycle_outer` reaches a live local cycle through `cycle_inner`. The cycle is not a property
+    # of `cycle_outer`, so its local replica cannot answer but node2, the other replica of the
+    # outer shard, can. In contrast, querying a database of the cycle itself still reports the
+    # configuration error.
+    node2.query("CREATE DATABASE cycle_src")
+    node2.query("CREATE TABLE cycle_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query("INSERT INTO cycle_src.t VALUES (42)")
+
+    create_cluster_database(
+        node1, "CREATE DATABASE cycle_a ENGINE = Cluster('reloadable', 'cycle_b')"
+    )
+    create_cluster_database(
+        node1,
+        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_a')",
+    )
+    create_cluster_database(
+        node2,
+        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_src')",
+    )
+    create_cluster_database(
+        node1,
+        "CREATE DATABASE cycle_outer ENGINE = Cluster('one_shard_two_replicas', 'cycle_inner')",
+    )
+
+    try:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_NODE2_ONLY)
+        node1.query("SYSTEM RELOAD CONFIG")
+        create_cluster_database(
+            node1, "CREATE DATABASE cycle_b ENGINE = Cluster('reloadable', 'cycle_a')"
+        )
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        assert "INFINITE_LOOP" in node1.query_and_get_error("SELECT * FROM cycle_a.t")
+        assert node1.query("SHOW TABLES FROM cycle_outer") == "t\n"
+        assert node1.query("EXISTS TABLE cycle_outer.t") == "1\n"
+        assert node1.query("SELECT x FROM cycle_outer.t") == "42\n"
+    finally:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+        node1.query("DROP DATABASE IF EXISTS cycle_outer")
+        node1.query("DROP DATABASE IF EXISTS cycle_inner")
+        node2.query("DROP DATABASE IF EXISTS cycle_inner")
+        node1.query("DROP DATABASE IF EXISTS cycle_b")
+        node1.query("DROP DATABASE IF EXISTS cycle_a")
+        node2.query("DROP DATABASE IF EXISTS cycle_src")
+
+
 def test_interserver_secret_cluster(started_cluster):
     # A cluster with an inter-server secret: the connections authenticate with the secret and run
     # under the initial user. The database exists only on node2, so this also checks that the

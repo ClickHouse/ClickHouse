@@ -30,7 +30,8 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
-#include <unordered_set>
+#include <algorithm>
+#include <vector>
 
 namespace DB
 {
@@ -97,8 +98,10 @@ namespace
 /// `throwIfLocalChainRefersBack`), but it can still come into existence later — e.g. a
 /// configuration reload can turn a shard of a `Cluster` database into a local one — so the
 /// databases being traversed are additionally tracked, and re-entry breaks the recursion. The
-/// traversal is synchronous, so a thread-local set suffices.
-thread_local std::unordered_set<const IDatabase *> local_databases_in_traversal;
+/// traversal is synchronous, so a thread-local stack suffices. It also lets an outer proxy tell
+/// whether a detected cycle belongs to its own chain or only to an intermediate proxy.
+thread_local std::vector<const IDatabase *> local_databases_in_traversal;
+thread_local const IDatabase * detected_local_cycle_start = nullptr;
 
 struct LocalTraversalGuard
 {
@@ -113,14 +116,40 @@ struct LocalTraversalGuard
     const bool reentered;
 
     explicit LocalTraversalGuard(const IDatabase * database_)
-        : database(database_), reentered(!local_databases_in_traversal.emplace(database_).second)
+        : database(database_)
+        , reentered(std::find(local_databases_in_traversal.begin(), local_databases_in_traversal.end(), database) != local_databases_in_traversal.end())
     {
+        if (!reentered)
+            local_databases_in_traversal.push_back(database);
     }
 
     ~LocalTraversalGuard()
     {
         if (!reentered)
-            local_databases_in_traversal.erase(database);
+        {
+            if (database == detected_local_cycle_start)
+                detected_local_cycle_start = nullptr;
+            local_databases_in_traversal.pop_back();
+        }
+    }
+
+    void markCycle() const
+    {
+        chassert(reentered);
+        detected_local_cycle_start = database;
+    }
+
+    static bool isInDetectedCycle(const IDatabase * database_)
+    {
+        if (!detected_local_cycle_start)
+            return false;
+
+        const auto cycle_start = std::find(
+            local_databases_in_traversal.begin(),
+            local_databases_in_traversal.end(),
+            detected_local_cycle_start);
+        return cycle_start != local_databases_in_traversal.end()
+            && std::find(cycle_start, local_databases_in_traversal.end(), database_) != local_databases_in_traversal.end();
     }
 };
 
@@ -466,11 +495,14 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(
             /// whole-server scans.
             LocalTraversalGuard guard(this);
             if (guard.reentered)
+            {
+                guard.markCycle();
                 throw Exception(
                     ErrorCodes::INFINITE_LOOP,
                     "A chain of `{}` databases containing {} refers to itself",
                     getEngineName(),
                     backQuoteIfNeed(getDatabaseName()));
+            }
             /// The underlying database may itself be a `Remote` database: `tryGetTable` below has then
             /// already validated the caller's `SHOW_COLUMNS` right on the objects that it proxies in
             /// turn, which live under a different database name, so checking the name of the
@@ -566,7 +598,8 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(
                 /// distinction above is a property of the answering replica, and the answering replica
                 /// is now a remote one.
                 const bool unavailable_intermediate_proxy = dynamic_cast<const NetException *>(&e)
-                    || e.code() == ErrorCodes::CLUSTER_DOESNT_EXIST;
+                    || e.code() == ErrorCodes::CLUSTER_DOESNT_EXIST
+                    || (e.code() == ErrorCodes::INFINITE_LOOP && !LocalTraversalGuard::isInDetectedCycle(this));
                 if (!local_database_is_remote || !clusters.remote_only_cluster || !unavailable_intermediate_proxy)
                     throw;
                 LOG_DEBUG(
