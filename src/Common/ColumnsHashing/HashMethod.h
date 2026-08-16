@@ -59,10 +59,12 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   *
   * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
   * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
-  * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
-  * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
-  * aggregation-side reasoning says nothing about. Only the aggregator reads
-  * `has_cheap_key_holder`.
+  * same hash methods), and by the consecutive-row shortcut in `Set::executeImplCase`, which
+  * bytewise-compares each row with the previous one only for methods where the key calculation
+  * is expensive enough to be worth skipping. It is the stricter "the whole key calculation,
+  * hashing included, is cheap", and is left as it was: the JOIN probe loop has its own cost
+  * balance, which this file's aggregation-side reasoning says nothing about. Only the aggregator
+  * reads `has_cheap_key_holder`.
   */
 
 /// For the case when there is one numeric key.

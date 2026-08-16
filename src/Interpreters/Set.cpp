@@ -615,9 +615,15 @@ void NO_INLINE Set::executeImplCase(
     /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
     /// rows: reuse the previous row's result after a cheap bitwise comparison instead of
     /// hashing the key. Applicable only to POD column layouts, where bitwise equality implies
-    /// key equality.
+    /// key equality, and only to methods with expensive key calculation (`SetMethodHashed`
+    /// hashes every key column through virtual `IColumn` calls; `SetMethodFixedString` hashes
+    /// the whole value). For methods with cheap key calculation (single numbers, packed fixed
+    /// keys) the consecutive-duplicate case is already handled by the last-element cache in
+    /// `HashMethodBase` at the cost of a load and a compare, so the extra bytewise comparison
+    /// would only add per-row work on unclustered data. The cache does not help the expensive
+    /// methods: checking it requires calculating the key first, which is the dominant cost.
     std::vector<std::pair<const char *, size_t>> key_slices;
-    bool can_compare_with_previous = !has_null_map;
+    bool can_compare_with_previous = !has_null_map && !Method::State::has_cheap_key_calculation;
     if (can_compare_with_previous)
     {
         for (const auto * column : key_columns)
