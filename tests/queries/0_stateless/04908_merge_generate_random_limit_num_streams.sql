@@ -10,7 +10,7 @@ CREATE TABLE t_merge_generate_random_limit (n UInt64)
 ENGINE = Merge(currentDatabase(), '^t_generate_random_limit_child$');
 
 SELECT count() FROM (SELECT n FROM t_merge_generate_random_limit LIMIT 100000)
-SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 1073741824, max_block_size = 65536;
+SETTINGS optimize_trivial_count_query = 0, max_threads = 4, max_streams_to_max_threads_ratio = 1073741824, max_block_size = 65536;
 
 DROP TABLE t_merge_generate_random_limit;
 DROP TABLE t_generate_random_limit_child;
