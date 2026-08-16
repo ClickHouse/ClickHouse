@@ -2800,10 +2800,24 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             renames.emplace_back(command.column_name, command.rename_to);
     }
 
+    NameSet dropped_old_names;
+    for (const auto & command : *this)
+    {
+        if (!command.ignore && command.type == AlterCommand::DROP_COLUMN)
+            dropped_old_names.insert(command.column_name);
+    }
+
     /// Metadata loading deliberately keeps old alias-lambda captures attachable. Do not expand
     /// such an unchanged legacy expression while looking for matcher-driven rematerialization:
-    /// that probe must not turn an otherwise unrelated ALTER into a validation failure.
+    /// that probe must not turn an otherwise unrelated ALTER into a validation failure. Project
+    /// out dropped columns before renaming: a live column may be renamed into a dropped name and
+    /// must not inherit the dropped column's tolerated violation.
     ColumnsDescription old_columns_after_renames = old_metadata.columns;
+    for (const auto & name : dropped_old_names)
+    {
+        if (old_columns_after_renames.has(name))
+            old_columns_after_renames.remove(name);
+    }
     for (const auto & [from, to] : renames)
     {
         /// A rename may target a column added earlier in the same ALTER. It is absent
@@ -2830,17 +2844,12 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     /// expression (`AlterCommands::prepare` copies it into the command), so it must not suppress
     /// the rematerialization that a change of the effective expression requires.
     NameSet modified_new_names;
-    NameSet dropped_old_names;
     for (const auto & command : *this)
     {
         if (command.ignore)
             continue;
 
-        if (command.type == AlterCommand::DROP_COLUMN)
-        {
-            dropped_old_names.insert(command.column_name);
-        }
-        else if (command.type == AlterCommand::MODIFY_COLUMN)
+        if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!command.default_expression)
                 continue;

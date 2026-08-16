@@ -34,4 +34,13 @@ local_query "ALTER TABLE db.legacy RENAME COLUMN m TO m2; ALTER TABLE db.legacy 
 local_query "ALTER TABLE db.legacy ADD COLUMN m3 Array(UInt8) MATERIALIZED arrayMap(x -> y2, arr2)" 2>&1 \
     | grep -o "BAD_ARGUMENTS" | head -1
 
+# A dropped legacy violation must not be transferred to a different MATERIALIZED column renamed
+# into the dropped name. The matcher in `m` changes when `b` is added, so the renamed column must
+# be rematerialized instead of keeping the old value from existing parts.
+local_query "CREATE TABLE db.drop_rename (a UInt64, x UInt8, arr Array(UInt8), y UInt8, c Array(UInt8) MATERIALIZED arrayMap(x -> y, arr), m UInt64 MATERIALIZED greatest(COLUMNS('^(a|b)$'))) ENGINE = MergeTree ORDER BY a"
+local_query "INSERT INTO db.drop_rename (a, x, arr, y) VALUES (1, 1, [1], 2)"
+sed -i "s/\\`y\\` UInt8/\\`y\\` UInt8 ALIAS \\`x\\` + 1/" "${WORK_DIR}/metadata/db/drop_rename.sql"
+local_query "ALTER TABLE db.drop_rename DROP COLUMN c, RENAME COLUMN m TO c, ADD COLUMN b UInt64 DEFAULT a + 1000 SETTINGS mutations_sync = 2"
+local_query "SELECT a, b, c FROM db.drop_rename"
+
 rm -rf "${WORK_DIR}"
