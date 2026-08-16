@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
