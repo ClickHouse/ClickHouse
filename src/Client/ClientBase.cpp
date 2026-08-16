@@ -4467,11 +4467,15 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
     /// runs under the defaults of the connection, like before.
     const bool needs_clickhouse_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
-    if (needs_clickhouse_dialect && aiSessionReadonly() == 1)
+#if USE_CLIENT_AI
+    /// This check is specific to the agent. `fetchInternalQueryResult` is also used by
+    /// non-AI commands when the AI client support is disabled.
+    if (from_ai_agent && needs_clickhouse_dialect && aiSessionReadonly() == 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
             "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
+#endif
 
     std::optional<Settings> settings_to_send;
     if (needs_clickhouse_dialect)
