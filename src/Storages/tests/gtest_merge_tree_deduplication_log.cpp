@@ -2909,6 +2909,43 @@ TEST(MergeTreeDeduplicationLog, RecoveredFencedHistoryIsRewrittenWithoutPartWrit
     }
 }
 
+/// A recovered, already-fenced history must also be repaired by the successful
+/// no-write paths. They call `prepareToWrite` for the fail-closed barrier, but leaving
+/// the marker armed until a later real write or shutdown loses committed block IDs if
+/// the process terminates in between.
+TEST(MergeTreeDeduplicationLog, RecoveredFencedHistoryIsRewrittenOnNoWritePath)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    for (const bool duplicate_insert : {false, true})
+    {
+        const std::string work_dir = "tmp/gtest_dedup_log_fenced_no_write_" + std::to_string(duplicate_insert) + "/";
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+        EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+
+        disk->fail_from_flush = std::numeric_limits<size_t>::max();
+        if (duplicate_insert)
+            EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+        else
+            log.dropPart(part("all_9_9_0"));
+
+        EXPECT_FALSE(std::filesystem::exists(marker_path));
+        log.shutdown();
+        std::filesystem::remove_all(work_dir);
+    }
+}
+
 /// Regression test: if the diverged history can be neither rewritten nor fenced off -
 /// the marker cannot be written at all - the log must fail every later operation closed
 /// instead of accepting records it knows the next start would misinterpret. Operations

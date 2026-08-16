@@ -1061,6 +1061,14 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     /// disk recovers succeeds instead of failing once more just to heal the writer.
     if (current_writer && current_writer->isCanceled())
         rotate();
+
+    /// A durable discard marker means that a previous rollback could not keep its
+    /// on-disk history in sync with the authoritative in-memory map. `prepareToWrite`
+    /// also guards successful no-write paths such as a duplicate insert and an empty
+    /// drop. Once their disk access succeeds, use that opportunity to snapshot the
+    /// live state and disarm the marker; otherwise a process exception before a later
+    /// real write or a clean shutdown would still discard committed history on restart.
+    compactIfNeeded();
 }
 
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
