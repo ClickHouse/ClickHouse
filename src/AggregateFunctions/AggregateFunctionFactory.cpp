@@ -827,7 +827,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                       apply_variant_adapter_to_nested, allow_skipping_variant_nulls && !top_level_has_variant, settings);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
 
-            if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function)
+            /// A `-SimpleState` value is stored as a `SimpleAggregateFunction`, whose raw values are re-aggregated
+            /// during a later merge. It must therefore use the same historical Variant NULL behavior as the declared
+            /// type, rather than applying the new wrapper around its producer and producing a value that the stored
+            /// type would not have produced itself.
+            if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function && combinator_name != "SimpleState")
             {
                 const Settings * query_settings = query_context ? &query_context->getSettingsRef() : nullptr;
                 if (!query_settings || (*query_settings)[Setting::aggregate_functions_skip_variant_nulls])
