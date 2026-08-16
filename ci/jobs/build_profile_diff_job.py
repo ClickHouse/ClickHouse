@@ -241,15 +241,17 @@ def master_windows(event_time: str, days_by_name: Dict[str, int]) -> Dict[str, s
 def walk_cutoff(event_time: str, days: int) -> str:
     """The ISO 8601 UTC timestamp the first-parent walk stops at.
 
-    Anchored like the SQL windows so the walk yields exactly the commits they
-    accept; a commit walk has no upper bound to apply.
+    Reaches past the lower bound of the anchored window: that bound is a whole
+    calendar upload day, and an upload lags its commit, so a commit older than
+    the bound can still own a row inside the window.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
     anchor = now
     if event_time:
         parsed = datetime.datetime.fromisoformat(event_time.replace("Z", "+00:00"))
         anchor = min(parsed, now)
-    return (anchor - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
+    return f"{start.isoformat()}T00:00:00Z"
 
 
 @dataclasses.dataclass
@@ -473,7 +475,8 @@ def get_master_shas(info) -> List[str]:
 # `repos/.../commits` interleaves merged PRs' own commits with the master
 # merge commits, so one 100-commit page typically advances the first-parent
 # chain by only ~25-50 commits. ClickHouse master merges up to ~100 commits a
-# day, so 60 fetches cover the TU_BASE_DAYS window with margin.
+# day, so 60 fetches cover the walk's TU_BASE_DAYS + UPLOAD_DELAY_DAYS horizon
+# with margin (measured: 21 fetches for 19 days over 1247 first-parent commits).
 EXTEND_MAX_PAGES = 60
 
 
@@ -553,8 +556,9 @@ def extend_master_shas(master_shas: List[str], cutoff: str, list_page=_list_comm
     master commit and an ancestor of the PR's merge base (a baseline must
     never contain changes the PR does not have).
 
-    `cutoff` comes from the same anchor as the per-TU SQL window, so the walk
-    yields exactly the commits that window accepts.
+    `cutoff` comes from the same anchor as the per-TU SQL window and reaches
+    further back than it, so the returned chain is a superset of the commits
+    that window can return a row for.
 
     Fail-close: a GitHub API failure propagates and fails the job (which is
     `allow_failure`) instead of degrading to the un-extended ~100-sha chain.
