@@ -320,8 +320,21 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Recovery if the release tag exists (must sit on this commit); out-of-order if the ref is behind the tip; else create. Tag check runs first so a superseded release recovers by its tag.
-        if Git.tag_exists(release_tag):
+        # Dispatched by its tag -> recovery; behind the branch tip -> out of order; computed release tag already here -> recovery; else create.
+        self.is_tag_pushed = Git.tag_exists(commit_ref)
+        if self.is_tag_pushed:
+            assert release_tag == commit_ref, (
+                f"ref [{commit_ref}] is a release tag but the version at its commit "
+                f"describes [{release_tag}]; refusing to re-publish a different release"
+            )
+        elif self.is_bump_landed:
+            raise RuntimeError(
+                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
+                f"branch [{release_branch}] tip is already ahead of it. Pass a "
+                f"release tag to recover an existing release, or the branch to "
+                f"release its next commit."
+            )
+        elif Git.tag_exists(release_tag):
             tagged_sha = Git.get_commit_sha(release_tag)
             assert tagged_sha == commit_sha, (
                 f"release tag [{release_tag}] already exists at [{tagged_sha}] but this run "
@@ -330,15 +343,7 @@ class ReleaseInfo:
                 f"dispatch the tip, or pass the release tag to recover."
             )
             self.is_tag_pushed = True
-        elif self.is_bump_landed:
-            raise RuntimeError(
-                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-                f"branch [{release_branch}] tip is already ahead of it. Pass a "
-                f"release tag to recover an existing release, or the branch to "
-                f"release its next commit."
-            )
         else:
-            # Creating (not recovering). The recovery branches above are exempt.
             if release_type == "patch":
                 # tweak == 1: the only commit since the previous release is the automated bump — nothing to release.
                 if version.tweak == 1:
@@ -358,7 +363,6 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
-            self.is_tag_pushed = False
         self.release_type = release_type
         return self
 
