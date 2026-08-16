@@ -3,7 +3,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
-#include <algorithm>
 #include <memory>
 #include <unordered_map>
 
@@ -28,7 +27,7 @@ public:
     class ForeignProcessingObservers
     {
     public:
-        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(std::max<size_t>(max_entries_, 1)) {}
+        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(max_entries_ ? max_entries_ : 10000) {}
 
         void set(const String & path, time_t since);
         time_t get(const String & path) const;
