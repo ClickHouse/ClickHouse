@@ -540,7 +540,7 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
     if (buffer.key_column_indices.empty())
     {
         throw Exception(
-            ErrorCodes::INCORRECT_DATA,
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
             "Cannot preserve unchanged TOAST values for table {} because the replication message has no replica identity columns",
             storage_data.storage->getStorageID().getNameForLogs());
     }
@@ -726,7 +726,7 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
                     if (stored_source == stored_values.end())
                     {
                         throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
+                            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                             "Cannot preserve an unchanged TOAST value for column {} of table {} because the previous row was not found",
                             buffer.sample_block.getByPosition(column_idx).name,
                             storage_data.storage->getStorageID().getNameForLogs());
@@ -1087,10 +1087,28 @@ void MaterializedPostgreSQLConsumer::syncTables()
             {
                 preserveUnchangedToastValues(storage_data, *buffer);
             }
-            catch (...)
+            catch (const Exception & e)
             {
-                storage_data.returnBuffer(std::move(buffer));
-                throw;
+                if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                {
+                    storage_data.returnBuffer(std::move(buffer));
+                    throw;
+                }
+
+                tryLogCurrentException(
+                    log,
+                    fmt::format("Table {} is skipped from replication because an unchanged TOAST value cannot be restored",
+                                table_name));
+
+                for (const auto & [relation_id, relation_name] : relation_id_to_name)
+                {
+                    if (relation_name == table_name)
+                    {
+                        markTableAsSkipped(relation_id, table_name);
+                        break;
+                    }
+                }
+                break;
             }
 
             Block result_rows = buffer->sample_block.cloneWithColumns(std::move(buffer->columns));

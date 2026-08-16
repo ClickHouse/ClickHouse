@@ -375,6 +375,64 @@ def test_toast_in_replica_identity(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_toast_restore_missing_source_row_skips_only_affected_table(started_cluster):
+    table = "test_toast_restore_missing_source_row"
+    other_table = "test_toast_restore_missing_source_row_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id integer PRIMARY KEY, toast_value text, other text)''',
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        '''CREATE TABLE "{}" (id integer PRIMARY KEY, other text)''',
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} VALUES (1, repeat('t', 30000), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # Simulate a table-local replica desynchronization. The PostgreSQL update
+    # below retains `toast_value`, so restoration cannot find the row in the
+    # nested ClickHouse table and must skip only this table.
+    instance.query(
+        f"ALTER TABLE test_database.{table} DELETE WHERE id = 1 SETTINGS mutations_sync = 2"
+    )
+    pg_manager.execute(f"UPDATE {table} SET other = 'unreplicated' WHERE id = 1")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT count() FROM test_database.{table}") == "0\n"
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}")
+        == "updated\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_toast_in_changed_composite_replica_identity(started_cluster):
     table = "test_toast_in_changed_composite_replica_identity"
     pg_manager.create_postgres_table(
