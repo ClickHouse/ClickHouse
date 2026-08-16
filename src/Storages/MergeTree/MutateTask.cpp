@@ -1779,6 +1779,7 @@ struct MutationContext
     ReservationSharedPtr space_reservation;
 
     CompressionCodecPtr compression_codec;
+    bool is_explicit_recompression = false;
 
     std::unique_ptr<CurrentMetrics::Increment> num_mutations;
 
@@ -2205,6 +2206,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->compression_codec,
         ++projection_block_num,
         /*use_selected_codec=*/ ctx->source_part->default_codec_is_approximate,
+        ctx->is_explicit_recompression,
         ctx->context);
 
     tmp_part->finalize();
@@ -2494,7 +2496,7 @@ private:
         auto part_compression_codec = ctx->data->getCompressionCodecForPart(
             ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
         ctx->compression_codec = std::move(part_compression_codec.codec);
-        const bool is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+        ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
         /// Record the chosen codec on the part so that its projections merged by the sub-merge in
         /// `MergeTask` (see the projection branch there) inherit the same codec.
         ctx->new_data_part->default_codec = ctx->compression_codec;
@@ -2765,7 +2767,7 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !is_explicit_recompression);
+            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3077,18 +3079,18 @@ private:
         /// full-rewrite mutation path does. The part-wide codec remains approximate because the
         /// other columns are hardlinked from the source part.
         const bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
-        bool is_explicit_recompression = false;
+        ctx->is_explicit_recompression = false;
         if (codec_is_approximate)
         {
             auto part_compression_codec = ctx->data->getCompressionCodecForPart(
                 ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
             ctx->compression_codec = std::move(part_compression_codec.codec);
-            is_explicit_recompression = part_compression_codec.is_explicit_recompression;
+            ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
         }
         else
         {
             ctx->compression_codec = ctx->source_part->default_codec;
-            is_explicit_recompression = isExplicitRecompression(
+            ctx->is_explicit_recompression = isExplicitRecompression(
                 ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
         }
 
@@ -3154,7 +3156,7 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !is_explicit_recompression);
+                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would

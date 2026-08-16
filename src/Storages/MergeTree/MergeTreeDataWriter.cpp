@@ -1307,6 +1307,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     CompressionCodecPtr compression_codec,
     size_t block_num,
     bool use_selected_codec,
+    bool is_explicit_recompression,
     ContextPtr context)
 {
     const auto & table_settings = data.getSettings();
@@ -1328,7 +1329,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true,
+        /*try_adaptive_codec=*/ !is_explicit_recompression,
         use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;

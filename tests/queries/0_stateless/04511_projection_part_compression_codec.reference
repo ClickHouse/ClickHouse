@@ -1,3 +1,4 @@
 projection parts before merge	0
-parent	ZSTD(1)
-projection	p	ZSTD(1)
+parent	NONE
+projection	p	NONE
+projection data uses NONE	1

@@ -130,6 +130,7 @@ public:
         CompressionCodecPtr compression_codec,
         size_t block_num,
         bool use_selected_codec,
+        bool is_explicit_recompression,
         ContextPtr context);
 
     static Block mergeBlock(
