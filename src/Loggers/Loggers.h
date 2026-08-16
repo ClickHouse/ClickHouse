@@ -57,3 +57,7 @@ Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfi
 
 /// Whether `buildLoggers` gives the split channel a console child for this configuration.
 bool loggerWritesToConsole(const Poco::Util::AbstractConfiguration & config);
+
+/// Whether that console child also admits a `PRIO_FATAL` record. Its level is configurable, so the
+/// child can exist and still discard everything.
+bool loggerConsoleAcceptsFatal(const Poco::Util::AbstractConfiguration & config);

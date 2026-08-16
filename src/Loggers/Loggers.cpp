@@ -106,6 +106,16 @@ bool loggerWritesToConsole(const Poco::Util::AbstractConfiguration & config)
     return !config.getBool("application.runAsDaemon", false) && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO));
 }
 
+bool loggerConsoleAcceptsFatal(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!loggerWritesToConsole(config))
+        return false;
+
+    /// `parseLevel("none")` is 0, which is below every priority.
+    const auto level = config.getString("logger.console_log_level", config.getString("logger.level", "trace"));
+    return Poco::Logger::parseLevel(level) >= Poco::Message::PRIO_FATAL;
+}
+
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)

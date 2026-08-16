@@ -282,7 +282,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 #endif
 }
 
-void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_writes_to_stderr)
+void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_reports_to_stderr)
 {
     if (!fatal_log || !fatal_channel_ptr)
         return;
@@ -296,7 +296,7 @@ void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_write
         fatal_channel_ptr->addChannel(configured);
 
     /// Exactly one route to stderr.
-    if (configured_channel_writes_to_stderr && fatal_console_channel_ptr)
+    if (configured_channel_reports_to_stderr && fatal_console_channel_ptr)
         fatal_channel_ptr->removeChannel(fatal_console_channel_ptr.get());
 
     fatal_log->setChannel(fatal_channel_ptr.get());
