@@ -282,5 +282,21 @@ void ClientApplicationBase::init(int argc, char ** argv)
 #endif
 }
 
+void ClientApplicationBase::restoreFatalLogChannel()
+{
+    if (!fatal_log || !fatal_channel_ptr)
+        return;
+
+    /// Keep whatever destination was configured meanwhile, so a crash report is added to stderr
+    /// rather than moved away from a log file the user asked for.
+    if (auto * configured = fatal_log->getChannel(); configured && configured != fatal_channel_ptr.get())
+        fatal_channel_ptr->addChannel(configured);
+
+    fatal_log->setChannel(fatal_channel_ptr.get());
+    /// Fatal severity only: this channel writes unformatted records straight to stderr, which is
+    /// the program's own output.
+    fatal_log->setLevel(Poco::Message::PRIO_FATAL);
+}
+
 
 }
