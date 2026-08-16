@@ -92,7 +92,11 @@ public:
         return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}};
     }
 
-    MergeTreeIndexFormat getDeserializedFormat(
+    /// This index has only ever been written as `.idx2`, so -- unlike the base implementation --
+    /// there is no legacy `.idx` layout to discover. The read-time usability checks (invalidated
+    /// system columns, part/metadata type compatibility) stay in the non-virtual
+    /// `IMergeTreeIndex::getDeserializedFormat`, which calls this.
+    MergeTreeIndexFormat getPhysicalFormat(
         const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 };
 

@@ -250,13 +250,9 @@ MergeTreeIndexConditionPtr MergeTreeIndexSpatialBbox::createIndexCondition(
 }
 
 
-MergeTreeIndexFormat MergeTreeIndexSpatialBbox::getDeserializedFormat(
+MergeTreeIndexFormat MergeTreeIndexSpatialBbox::getPhysicalFormat(
     const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0 /* unknown */, {}};
-
     if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
     return {0 /* unknown */, {}};
