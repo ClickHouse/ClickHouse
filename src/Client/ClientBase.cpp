@@ -3888,7 +3888,10 @@ void ClientBase::initAIAgent()
     AIAgentHooks hooks;
     hooks.execute_internal = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAI(query, params); };
     hooks.execute_scalar = [this](const String & query, const NameToNameMap & params) { return executeScalarQueryForAI(query, params); };
-    hooks.run_visible = [this](const String & query, bool readonly) { return runQueryForAI(query, readonly); };
+    hooks.run_visible = [this](const String & query, bool readonly, bool allow_schema_access)
+    {
+        return runQueryForAI(query, readonly, allow_schema_access);
+    };
     hooks.confirm_query = [this](const String & query) -> bool
     {
         if (!is_interactive)
@@ -3949,6 +3952,17 @@ bool ClientBase::processAIChat(const String & text_)
     if (!is_interactive)
     {
         error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
+        return true;
+    }
+
+    /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
+    /// pin that both visible and internal assistant queries need, so fail before probing a
+    /// provider or running an internal query that the server would reject anyway.
+    if (aiSessionReadonly() == 1 && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    {
+        error_stream << "The AI chat requires the ClickHouse SQL dialect: `readonly = 1` does not allow changing "
+                        "the `dialect` setting. Run `SET dialect = 'clickhouse'` first."
+                     << std::endl;
         return true;
     }
 
@@ -4075,7 +4089,7 @@ void ClientBase::echoQueryForAI(const String & query)
     std_out->next();
 }
 
-String ClientBase::runQueryForAI(const String & query, bool readonly)
+String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow_schema_access)
 {
     if (!is_interactive)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The AI agent can run queries only in interactive mode");
@@ -4097,7 +4111,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         ASTPtr ast = parseQueryAndMovePosition(
             parser, begin, end, "", /*allow_multi_statements=*/ false,
             settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        validateReadOnlyQueryForAIAgent(*ast);
+        validateReadOnlyQueryForAIAgent(*ast, allow_schema_access);
 
         /// The format-schema settings are interpreted after this validation: with
         /// `format_schema_source = 'query'` the schema is another query, executed through a FORMAT
@@ -4438,8 +4452,20 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// so when the session was switched to another dialect, this query is explicitly pinned
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
     /// runs under the defaults of the connection, like before.
+    const bool needs_clickhouse_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
+#if USE_CLIENT_AI
+    /// `readonly = 1` rejects every setting change, including the dialect pin used by both the
+    /// agent and `help` / `man`. Fail before sending the internal query so users get guidance
+    /// instead of a server setting exception.
+    if (needs_clickhouse_dialect && aiSessionReadonly() == 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
+            "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
+#endif
+
     std::optional<Settings> settings_to_send;
-    if (client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    if (needs_clickhouse_dialect)
     {
         settings_to_send.emplace();
         settings_to_send->set("dialect", "clickhouse");

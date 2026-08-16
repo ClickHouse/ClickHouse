@@ -40,6 +40,19 @@ bool isAllowed(const String & query)
     }
 }
 
+bool isAllowedWithoutSchemaAccess(const String & query)
+{
+    try
+    {
+        validateReadOnlyQueryForAIAgent(*parse(query), /*allow_schema_access=*/ false);
+        return true;
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
+
 bool isReadOnlyStatement(const String & query)
 {
     return isReadOnlyStatementForAIAgent(*parse(query));
@@ -55,6 +68,8 @@ bool changesSettings(const String & query)
 TEST(AIQueryValidation, AllowsReadOnlyStatements)
 {
     EXPECT_TRUE(isAllowed("SELECT count() FROM system.tables"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM default.events"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM v"));
     EXPECT_TRUE(isAllowed("WITH 1 AS x SELECT x"));
     EXPECT_TRUE(isAllowed("SELECT 1 UNION ALL SELECT 2"));
     EXPECT_TRUE(isAllowed("SHOW TABLES FROM system"));
@@ -67,6 +82,15 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("EXISTS TABLE system.tables"));
     EXPECT_TRUE(isAllowed("CHECK TABLE t"));
     EXPECT_TRUE(isAllowed("SHOW GRANTS"));
+}
+
+TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
+{
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("DESCRIBE TABLE system.tables"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW TABLES"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.tables"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.columns"));
 }
 
 TEST(AIQueryValidation, RejectsWritesAndDDL)
@@ -141,6 +165,10 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     /// The scalar functions reading external resources.
     EXPECT_FALSE(isAllowed("SELECT file('/etc/passwd')"));
     EXPECT_FALSE(isAllowed("SELECT catboostEvaluate('/path/model.bin', 1, 2)"));
+    /// Dictionaries may fetch from HTTP, MySQL, ClickHouse, or another external source.
+    EXPECT_FALSE(isAllowed("SELECT dictGet('dictionary', 'value', toUInt64(1))"));
+    EXPECT_FALSE(isAllowed("SELECT dictHas('dictionary', toUInt64(1))"));
+    EXPECT_FALSE(isAllowed("SELECT dictIsIn('dictionary', toUInt64(1))"));
 
     /// Table functions generating data locally are allowed.
     EXPECT_TRUE(isAllowed("SELECT * FROM numbers(10)"));

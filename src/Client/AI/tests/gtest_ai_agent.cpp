@@ -257,7 +257,7 @@ TEST(AIAgent, RefusedQueryIsNeitherConfirmedNorRun)
         return decision;
     };
     hooks.confirm_query = [&asked](const String &) { asked = true; return true; };
-    hooks.run_visible = [&ran](const String &, bool) { ran = true; return "the query ran"; };
+    hooks.run_visible = [&ran](const String &, bool, bool) { ran = true; return "the query ran"; };
 
     AgentWithMock harness(
         {toolCallStep("run_query", ai::JsonValue{{"query", "INSERT INTO t VALUES (1)"}}), textStep("told the user")}, hooks);
@@ -285,7 +285,7 @@ TEST(AIAgent, QueryThatNeedsNoConfirmationRunsThroughTheReadOnlyPath)
         return decision;
     };
     hooks.confirm_query = [&asked](const String &) { asked = true; return true; };
-    hooks.run_visible = [&ran_as_read_only](const String &, bool readonly) { ran_as_read_only = readonly; return "1 row"; };
+    hooks.run_visible = [&ran_as_read_only](const String &, bool readonly, bool) { ran_as_read_only = readonly; return "1 row"; };
 
     AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}}), textStep("done")}, hooks);
     harness.agent->chat("count the rows");

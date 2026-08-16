@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCheckDatabaseQuery.h>
@@ -9,6 +10,7 @@
 #include <Parsers/ASTDescribeCacheQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -163,7 +165,22 @@ bool isDeniedScalarFunction(const String & name)
         "aiembed",
         "aisimilarity",
     };
-    return denied.contains(Poco::toLower(name));
+    const String lowercase_name = Poco::toLower(name);
+    return denied.contains(lowercase_name)
+        || startsWith(lowercase_name, "dictget")
+        || lowercase_name == "dicthas"
+        || lowercase_name == "dictisin";
+}
+
+/// A named table can be a view. Its definition is expanded only on the server, after this
+/// validation, and can hide external table functions or AI functions. The client cannot inspect
+/// the definition without adding another authorization boundary, so unconfirmed queries only
+/// admit the server-owned `system` tables. User tables, views, and CTE names require the
+/// confirmed tool. This is deliberately stricter than `readonly = 1`: it preserves the promise
+/// that the unconfirmed tool cannot reach resources beyond the local server.
+bool isAllowedNamedTable(const ASTTableIdentifier & table)
+{
+    return table.getDatabaseName() == "system";
 }
 
 /// Whether the function is a builtin known to the client. This validation runs on the raw
@@ -204,6 +221,16 @@ void checkNoExternalAccess(const IAST & ast)
                     "so it is not allowed for the read-only tool. Use the run_query tool for this query",
                     function.name);
         }
+        else if (table_expression->database_and_table_name)
+        {
+            const auto & table = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+            if (!isAllowedNamedTable(table))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The table `{}` may be a view whose definition reaches resources outside of the tables of the current "
+                    "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
+                    table.name());
+        }
     }
     else if (const auto * function = ast.as<ASTFunction>())
     {
@@ -243,6 +270,45 @@ void checkNoExternalAccess(const IAST & ast)
 
     for (const auto & child : ast.children)
         checkNoExternalAccess(*child);
+}
+
+void checkNoSchemaAccess(const IAST & ast)
+{
+    if (const auto * table_expression = ast.as<ASTTableExpression>())
+    {
+        if (table_expression->database_and_table_name)
+        {
+            const auto & table = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+            if (table.getDatabaseName() == "system")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+        }
+    }
+
+    for (const auto & child : ast.children)
+        checkNoSchemaAccess(*child);
+}
+
+bool isSchemaExplorationStatement(const IAST & ast)
+{
+    return isAnyOf<
+        ASTDescribeQuery,
+        ASTDescribeCacheQuery,
+        ASTShowTablesQuery,
+        ASTShowColumnsQuery,
+        ASTShowIndexesQuery,
+        ASTShowEnginesQuery,
+        ASTShowFunctionsQuery,
+        ASTShowSettingQuery,
+        ASTExistsDatabaseQuery,
+        ASTExistsTableQuery,
+        ASTExistsViewQuery,
+        ASTExistsDictionaryQuery,
+        ASTShowCreateTableQuery,
+        ASTShowCreateViewQuery,
+        ASTShowCreateDatabaseQuery,
+        ASTShowCreateDictionaryQuery>(ast);
 }
 
 }
@@ -293,7 +359,7 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTShowPrivilegesQuery>(ast);
 }
 
-void validateReadOnlyQueryForAIAgent(const IAST & ast)
+void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
 {
     if (!isReadOnlyStatementForAIAgent(ast))
         throw Exception(
@@ -309,6 +375,14 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast)
 
     checkNoProtectedSettingChanges(ast);
     checkNoExternalAccess(ast);
+    if (!allow_schema_access)
+    {
+        if (isSchemaExplorationStatement(ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+        checkNoSchemaAccess(ast);
+    }
 }
 
 }

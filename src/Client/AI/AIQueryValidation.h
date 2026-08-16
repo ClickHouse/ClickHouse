@@ -12,7 +12,10 @@ class IAST;
 /// override the enforced limits (`readonly`, execution time, memory usage): the limits are
 /// applied client-side, so a SETTINGS clause of the query could undo them before the server
 /// sees the query. Everything else must go through the confirmed query tool.
-void validateReadOnlyQueryForAIAgent(const IAST & ast);
+/// When `allow_schema_access` is false, also reject autonomous access to `system` schema
+/// metadata and schema-exploration statements. Those queries can still be proposed through the
+/// confirmed tool.
+void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access = true);
 
 /// Whether the statement changes a setting: a `SET` statement, or a SETTINGS clause anywhere
 /// inside it. A session with `readonly = 1` rejects the whole query because of it.

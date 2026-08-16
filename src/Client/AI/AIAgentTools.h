@@ -44,7 +44,7 @@ struct AIAgentHooks
     /// connection, and its output is displayed exactly as if the user typed the query.
     /// When `readonly` is set, the query is validated to be read-only and runs under
     /// restrictive limits. Returns a text summary of the outcome for the model.
-    std::function<String(const String & query, bool readonly)> run_visible;
+    std::function<String(const String & query, bool readonly, bool allow_schema_access)> run_visible;
 
     /// Ask the user to confirm running a query. Returns false when declined.
     std::function<bool(const String & query)> confirm_query;
@@ -70,7 +70,8 @@ struct AIAgentHooks
 /// - the embedded documentation from `system.documentation` (like the `help` command);
 /// - read-only query execution without confirmation, under restrictive limits;
 /// - arbitrary query execution with the user's confirmation.
-/// When `enable_schema_access` is false, the internal schema exploration tools are omitted.
+/// When `enable_schema_access` is false, the internal schema exploration tools are omitted and
+/// unconfirmed queries cannot inspect schema metadata.
 /// When `enable_query_log_access` is false, `read_query_log` is omitted. When the hook reports
 /// that access is unsafe, the tool fails closed without querying the log.
 ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks, bool enable_schema_access, bool enable_query_log_access);

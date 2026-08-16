@@ -1,3 +1,4 @@
+#include <Client/AI/AIAgentDisplay.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
 #include <Client/ReplxxLineReader.h>
@@ -574,6 +575,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// the normal "type a command and press Enter" flow.
         if (hintPopupActive() && hint_selection >= 0)
             return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
+        /// AI chat is natural-language input, not SQL. In particular, it has no meaningful SQL
+        /// delimiter, so multiline mode must not turn Enter into a literal newline.
+        if (ai_mode || isAIChatLine(rx.get_state().text()))
+            return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
         /// If we allow multiline and there is already something in the input, start a newline.
         /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
         /// paste support), fold the embedded newline into the same edit buffer instead of
@@ -938,7 +943,7 @@ void ReplxxLineReader::addQueryToHistory(const String & query)
 {
     /// A query of the AI agent is SQL, so it is stored like a typed query - without the `? `
     /// prefix of the AI questions, even though the reader is in AI mode while the agent works.
-    appendHistoryEntry(query, /*is_sql=*/ true);
+    appendHistoryEntry(AIAgentDisplay::sanitizeForTerminal(query), /*is_sql=*/ true);
 }
 
 void ReplxxLineReader::appendHistoryEntry(const String & entry, bool is_sql)

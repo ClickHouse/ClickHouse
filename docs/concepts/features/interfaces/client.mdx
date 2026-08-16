@@ -375,7 +375,7 @@ ClickHouse Client and `clickhouse-local` include a built-in AI assistant that he
 :) ? how many orders did we get per day last week?
 ```
 
-The assistant is agentic: it can inspect the schema, consult the embedded documentation, look at your recent queries, and run queries on your connection to answer the question. It runs read-only queries on its own and asks for confirmation before anything else. Queries it runs are displayed and executed in your terminal exactly as if you typed them, so you see and keep every result.
+The assistant is agentic: it can inspect the schema, consult the embedded documentation, look at your recent queries, and run queries on your connection to answer the question. It runs safe read-only queries on its own and asks for confirmation before anything else. Queries it runs are displayed and executed in your terminal exactly as if you typed them, so you see and keep every result.
 
 The conversation keeps its context between questions in the same session, so you can refine and follow up. Type `? clear` to start a fresh conversation.
 
@@ -386,10 +386,10 @@ To answer a question, the assistant uses a set of tools:
 - **Recent queries** — it is given the last queries you ran in this session, with their results truncated to the first and last rows and any error messages, and it can read further back from the [`system.user_query_log`](/reference/system-tables/user_query_log) table. When you say "my query" or "that error", it knows what you mean.
 - **Schema exploration** — it lists databases and tables and reads `CREATE TABLE` statements instead of guessing column names.
 - **Documentation** — it looks entities up in the embedded documentation (the [`system.documentation`](/operations/system-tables/documentation) table), the same source as the `help` command.
-- **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. Table functions that reach outside of the server's tables (`file`, `url`, `s3`, `remote`, `executable`, ...) are not allowed here. These queries are displayed and executed on your connection without asking.
+- **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. Table functions that reach outside of the server's tables (`file`, `url`, `s3`, `remote`, `executable`, ...) and named user tables or views are not allowed here. These queries are displayed and executed on your connection without asking.
 - **Any query, with confirmation** — for writes, DDL, `SET`, or heavier read queries, it asks you to confirm before running. The query is shown at the prompt before you decide.
 
-The queries the assistant runs on its own — schema exploration, documentation lookups and its read-only queries — are tagged in the query log with `log_comment = 'clickhouse-ai-agent'`, so you can tell them apart from the queries you typed yourself. The assistant also excludes them when it reads the query log back, and a query you confirmed is executed exactly as if you typed it, without the tag.
+When the session allows the client to set `log_comment`, the queries the assistant runs on its own — schema exploration, documentation lookups and its read-only queries — are tagged in the query log with `log_comment = 'clickhouse-ai-agent'`, so you can tell them apart from the queries you typed yourself. The assistant also excludes them when it reads the query log back; in sessions where that marker cannot be set, the query-log tool is unavailable. A query you confirmed is executed exactly as if you typed it, without the tag.
 
 ### Example {#ai-sql-generation-example}
 
@@ -409,6 +409,8 @@ Let me total the revenue per category for last month.
    WHERE o.created_at >= date_trunc('month', now() - INTERVAL 1 MONTH)
      AND o.created_at <  date_trunc('month', now())
    GROUP BY category ORDER BY revenue DESC
+
+Run this query? [Y/n] y
 
    ┌─category────┬───revenue─┐
    │ Electronics │ 184320.50 │
@@ -477,7 +479,7 @@ clickhouse-client
             <!-- Optional: custom API endpoint for OpenAI-compatible services -->
             <!-- <base_url>https://openrouter.ai/api/v1</base_url> -->
 
-            <!-- Let the assistant explore the schema (default: true) -->
+            <!-- Let the assistant use schema tools and unconfirmed schema metadata queries (default: true) -->
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
@@ -510,7 +512,7 @@ clickhouse-client
       # Optional: custom API endpoint for OpenAI-compatible services
       # base_url: https://openrouter.ai/api/v1
 
-      # Let the assistant explore the schema
+      # Let the assistant use schema tools and unconfirmed schema metadata queries
       enable_schema_access: true
 
       # Generation parameters
@@ -569,7 +571,7 @@ ai:
 </Accordion>
 
 <Accordion title="Behavior">
-- `enable_schema_access` - Let the assistant explore database schemas (default: `true`).
+- `enable_schema_access` - Let the assistant explore database schemas without confirmation. When disabled, schema tools and unconfirmed schema metadata queries are unavailable (default: `true`).
 - `max_steps` - Maximum number of model steps (tool-calling rounds) per question (default: `24`).
 - `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens per model call (default: `4096`).
