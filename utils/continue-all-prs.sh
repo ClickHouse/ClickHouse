@@ -873,9 +873,6 @@ run_continue_pr()
         triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number") || return 1
         IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
     fi
-    # Steer the worker to a persistent, ccache-backed build directory in this
-    # worktree so rebuilds are incremental instead of cold each pass.
-    build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
     deadline=$(( $(date +%s) + TIMEOUT ))
     : > "$log"
     iter=0
@@ -952,11 +949,17 @@ run_continue_pr()
         if [[ "$phase" == "triage" ]]; then
             active_model="$TRIAGE_MODEL"
             active_wt="$triage_wt"
+            # The outer worktree is read-only in the Bubblewrap namespace and
+            # does not contain the merge being validated. Keep triage builds
+            # in its writable private clone instead.
+            mkdir -p "$active_wt/build" || return 1
+            build_steer="A persistent, ccache-backed build directory for this worktree is at ${active_wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
             system_prompt="$STEER_PROMPT $build_steer $TRIAGE_STEER_PROMPT"
             turn_prompt="$TRIAGE_NUDGE_PROMPT"
         else
             active_model="$MODEL"
             active_wt="$wt"
+            build_steer="A persistent, ccache-backed build directory for this worktree is at ${active_wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
             system_prompt="$STEER_PROMPT $build_steer"
             turn_prompt="$NUDGE_PROMPT"
         fi
