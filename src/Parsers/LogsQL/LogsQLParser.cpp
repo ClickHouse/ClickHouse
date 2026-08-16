@@ -1909,8 +1909,16 @@ ASTPtr LogsQLParser::parseFilterTime()
 
         /// An inclusive start means the start of the period; an exclusive start skips the whole period.
         /// An inclusive end includes the whole period.
-        const bool same_instant = start_bound.start && start_bound.end && end_bound.start && end_bound.end
-            && start_bound.start == start_bound.end && end_bound.start == end_bound.end && start_bound.start == end_bound.start;
+        /// Separate parseTimeBound calls construct separate AST nodes, including for the same
+        /// instant such as `[now, now]`. Compare the expressions structurally instead of by
+        /// pointer identity so an inclusive instant range is lowered to equality.
+        const auto sameExpression = [](const ASTPtr & lhs, const ASTPtr & rhs)
+        {
+            return lhs && rhs && lhs->formatForErrorMessage() == rhs->formatForErrorMessage();
+        };
+        const bool same_instant = sameExpression(start_bound.start, start_bound.end)
+            && sameExpression(end_bound.start, end_bound.end)
+            && sameExpression(start_bound.start, end_bound.start);
         ASTPtr lower = include_start || same_instant ? start_bound.start : start_bound.end;
         ASTPtr upper = include_end || same_instant ? end_bound.end : end_bound.start;
 

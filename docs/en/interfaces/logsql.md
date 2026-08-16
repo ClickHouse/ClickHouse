@@ -23,8 +23,8 @@ SET dialect = 'logsql';
 The configured table must contain the time and message columns. LogsQL filters,
 stream filters, text and numeric comparisons, time ranges, and pipe operations
 such as `fields`, `stats`, `sort`, `limit`, `format`, `extract`, and `unpack_json`
-are supported. Field values used by text filters are converted to their LogsQL
-string representation, so typed log columns may be searched too.
+are supported. Text filters expect `String`-backed log columns; typed fields can
+be used with numeric comparisons and numeric statistics.
 
 This dialect is experimental and is not a byte-for-byte implementation of
 VictoriaLogs. Unsupported syntax is rejected with `NOT_IMPLEMENTED`; query

@@ -1,5 +1,6 @@
 SET session_timezone = 'UTC';
 
+DROP TABLE IF EXISTS logs_04891;
 CREATE TABLE logs_04891
 (
     `_time` DateTime,
@@ -20,11 +21,14 @@ SET allow_experimental_logsql_dialect = 1;
 SET logsql_table = 'logs_04891';
 SET dialect = 'logsql';
 
--- Text filters stringify typed fields, and a missing Nullable field is empty.
+-- Selected text filters stringify typed fields, and a missing Nullable field is empty.
 size:* | count();
 size:i(""*) | count();
 size:i(*) | count();
 nullable:"" | count();
+
+-- An inclusive range whose endpoints are the same instant matches that instant.
+_time:[2024-01-01T00:00:00Z, 2024-01-01T00:00:00Z] | count();
 
 -- Numeric buckets parse String fields row-by-row instead of doing arithmetic on strings.
 * | stats by (bucket:10) count() | sort by (bucket);
@@ -37,4 +41,5 @@ nullable:"" | count();
 * | extract if (level:error) "id=<size>" | fields size | sort by (_time);
 * | unpack_json from payload fields (size) | fields size | sort by (_time);
 
+SET dialect = 'clickhouse';
 DROP TABLE logs_04891;
