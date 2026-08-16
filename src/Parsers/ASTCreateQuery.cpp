@@ -559,7 +559,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("is_watermark_ascending", is_watermark_ascending);
     w.writeBool("is_watermark_bounded", is_watermark_bounded);
     w.writeBool("allowed_lateness", allowed_lateness);
-    w.writeBool("attach_short_syntax", attach_short_syntax);
+    /// `attach_short_syntax` is interpreter-only state for re-attaching an existing metadata
+    /// file. It has no SQL spelling and must not be exposed through `clickhouse_json`.
     w.writeBool("replace_table", replace_table);
     w.writeBool("create_or_replace", create_or_replace);
     w.writeBool("has_attach_from_path", has_attach_from_path);
@@ -633,25 +634,23 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     is_watermark_ascending = r.getBool("is_watermark_ascending");
     is_watermark_bounded = r.getBool("is_watermark_bounded");
     allowed_lateness = r.getBool("allowed_lateness");
-    attach_short_syntax = r.getBool("attach_short_syntax");
+    if (r.has("attach_short_syntax"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'attach_short_syntax' is internal-only and is not allowed during AST JSON deserialization");
     replace_table = r.getBool("replace_table");
     create_or_replace = r.getBool("create_or_replace");
     has_attach_from_path = r.getBool("has_attach_from_path");
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
-    /// `attach_short_syntax`, `has_attach_from_path` / `attach_from_path`, and `attach_as_replicated`
-    /// are produced only for `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and
-    /// `AS [NOT] REPLICATED` clauses behind `attach`, and `attach_short_syntax` is set only when the
-    /// interpreter re-attaches a detached table. Reject them from non-`ATTACH` JSON so `clickhouse_json`
+    /// `has_attach_from_path` / `attach_from_path` and `attach_as_replicated` are produced only for
+    /// `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and `AS [NOT] REPLICATED` clauses
+    /// behind `attach`. Reject them from non-`ATTACH` JSON so `clickhouse_json`
     /// cannot build a parser-impossible `CREATE TABLE` whose formatting hides attach-only state that
     /// `InterpreterCreateQuery` still consumes (and which would also trip the `attach || !has_attach_from_path`
     /// assertion in `formatImpl`).
     if (!attach)
     {
-        if (attach_short_syntax)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'attach_short_syntax' is only valid for ATTACH queries during AST JSON deserialization");
         if (has_attach_from_path || !attach_from_path.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'attach_from_path' / 'has_attach_from_path' are only valid for ATTACH queries during AST JSON deserialization");

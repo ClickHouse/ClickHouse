@@ -94,7 +94,8 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
 
     w.writeBool("if_exists", if_exists);
     w.writeBool("if_empty", if_empty);
-    w.writeBool("no_ddl_lock", no_ddl_lock);
+    /// `no_ddl_lock` is internal interpreter state and has no SQL spelling, so it must not be
+    /// exposed through `clickhouse_json`.
     w.writeBool("has_all", has_all);
     w.writeBool("has_tables", has_tables);
 
@@ -170,7 +171,9 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
 
     if_exists = r.getBool("if_exists");
     if_empty = r.getBool("if_empty");
-    no_ddl_lock = r.getBool("no_ddl_lock");
+    if (r.has("no_ddl_lock"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'no_ddl_lock' is internal-only and is not allowed during AST JSON deserialization");
     has_all = r.getBool("has_all");
     has_tables = r.getBool("has_tables");
 

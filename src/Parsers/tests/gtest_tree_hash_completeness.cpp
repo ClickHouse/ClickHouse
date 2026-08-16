@@ -35,6 +35,11 @@ IASTHash hashOfJSONRoundTrip(const std::string & query)
     return restored->getTreeHash(/*ignore_aliases=*/ false);
 }
 
+void expectJSONRejected(const String & json)
+{
+    EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
+}
+
 }
 
 TEST(TreeHashCompleteness, ColumnDeclarationMembersAreSignificant)
@@ -440,6 +445,57 @@ TEST(TreeHashCompleteness, AlterSnapshotDescriptionCloneHashEqual)
 
     EXPECT_EQ(cloned->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false));
     EXPECT_EQ(cloned->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine());
+}
+
+TEST(TreeHashCompleteness, JSONRejectsInternalAndHiddenExecutionState)
+{
+    {
+        String json = serializeASTToJSON(*parse("CREATE TABLE t (x UInt8) ENGINE = Memory"));
+        EXPECT_EQ(json.find("\"attach_short_syntax\""), String::npos);
+        const String key = R"("type":"CreateQuery",)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.insert(pos + key.size(), R"("attach_short_syntax":false,)");
+        expectJSONRejected(json);
+    }
+
+    {
+        String json = serializeASTToJSON(*parse("DROP TABLE t"));
+        EXPECT_EQ(json.find("\"no_ddl_lock\""), String::npos);
+        const String key = R"("type":"DropQuery",)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.insert(pos + key.size(), R"("no_ddl_lock":false,)");
+        expectJSONRejected(json);
+    }
+
+    {
+        String json = serializeASTToJSON(*parse("SELECT 1 ORDER BY 1"));
+        const String key = R"("nulls_direction":1)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("nulls_direction":-1)");
+        expectJSONRejected(json);
+    }
+
+    const String query = "SELECT sum(n) OVER (ORDER BY n ROWS BETWEEN CURRENT ROW AND CURRENT ROW) FROM t";
+    {
+        String json = serializeASTToJSON(*parse(query));
+        const String key = R"("frame_begin_preceding":true)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("frame_begin_preceding":false)");
+        expectJSONRejected(json);
+    }
+
+    {
+        String json = serializeASTToJSON(*parse(query));
+        const String key = R"("frame_end_preceding":false)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("frame_end_preceding":true)");
+        expectJSONRejected(json);
+    }
 }
 
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)

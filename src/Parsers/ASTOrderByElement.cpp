@@ -152,6 +152,9 @@ void ASTOrderByElement::readJSON(const Poco::JSON::Object & json)
     nulls_direction = validateOrderByDirection(r.getInt("nulls_direction"), "nulls_direction");
     nulls_direction_was_explicitly_specified = r.getBool("nulls_direction_was_explicitly_specified");
     with_fill = r.getBool("with_fill");
+    if (!nulls_direction_was_explicitly_specified && nulls_direction != direction)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'nulls_direction' must equal 'direction' unless it is explicitly specified during AST JSON deserialization");
     /// `fill_*` are only meaningful (and only formatted) under `WITH FILL`; the parser never attaches
     /// them otherwise, so reject them when `with_fill` is false instead of silently dropping them.
     if (!with_fill && (r.has("fill_from") || r.has("fill_to") || r.has("fill_step") || r.has("fill_staleness")))
