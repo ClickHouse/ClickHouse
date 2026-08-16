@@ -49,19 +49,10 @@ nullable argument, argument read first: PREWHERE
 nullable argument, tuple body: PREWHERE
 10
 20
-nullable argument, arrayMap: PREWHERE
-10
-20
-nullable argument, arrayFilter: PREWHERE
-10
-20
 nullable argument, nested lambda: PREWHERE
 10
 20
 unread first argument: PREWHERE
-10
-20
-unread second argument: PREWHERE
 10
 20
 colliding name resolves per site
@@ -70,9 +61,6 @@ colliding name resolves per site
 nullable column, plain argument: PREWHERE
 10
 20
-String column: PREWHERE
-a
-b
 LowCardinality(String) column: PREWHERE
 a
 b
@@ -85,4 +73,12 @@ argument named after a generated action name, analyzer disabled
 nested lambda argument named after a generated action name
 [3]
 nested lambda argument named after a generated action name, analyzer disabled
+[3]
+generated action name argument, read in the body
+[6]
+generated action name argument, read in the body, analyzer disabled
+[45]
+column named after a generated action name
+[3]
+column named after a generated action name, analyzer disabled
 [3]

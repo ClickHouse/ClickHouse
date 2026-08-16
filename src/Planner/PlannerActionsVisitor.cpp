@@ -734,7 +734,7 @@ private:
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
-    NameSet collectLambdaArgumentNamesUsedByColumns(const LambdaNode & lambda_node);
+    NameSet collectLambdaArgumentNamesToDeclare(const LambdaNode & lambda_node);
 
     NodeNameAndNodeMinLevel makeSetForInFunction(const QueryTreeNodePtr & node);
 
@@ -1008,11 +1008,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {constant_node_name, Levels(0)};
 }
 
-NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const LambdaNode & lambda_node)
+NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesToDeclare(const LambdaNode & lambda_node)
 {
     const auto & argument_names = lambda_node.getArguments().getNames();
     const auto * own_arguments = &lambda_node.getArguments();
-    NameSet result;
+
+    auto is_argument_name = [&](const String & name)
+    { return std::find(argument_names.begin(), argument_names.end(), name) != argument_names.end(); };
+
+    NameSet declared;
+    NameSet contested;
 
     QueryTreeNodes to_visit{lambda_node.getExpression()};
     while (!to_visit.empty())
@@ -1020,26 +1025,40 @@ NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const
         auto current = to_visit.back();
         to_visit.pop_back();
 
-        if (const auto * column_node = current->as<ColumnNode>())
-        {
-            /// Both tests mirror visitColumn. A column carrying a non-constant expression is
-            /// replaced by that expression and never looked up under its own name, and a column
-            /// sourced from another lambda's arguments is bound there, so an equal name is a
-            /// different binding.
-            bool looked_up_by_name = !column_node->hasExpression() || use_column_identifier_as_action_node_name
-                || column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+        auto node_type = current->getNodeType();
 
-            auto column_source = column_node->getColumnSourceOrNull();
+        /// A subquery is planned in its own scope, so no name inside it is looked up here.
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (node_type == QueryTreeNodeType::COLUMN)
+        {
+            const auto & column_node = current->as<ColumnNode &>();
+
+            /// Mirrors visitColumn: a column carrying a non-constant expression is replaced by
+            /// that expression, and one sourced from another lambda's arguments is bound there.
+            bool looked_up_by_name = !column_node.hasExpression() || use_column_identifier_as_action_node_name
+                || column_node.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+            auto column_source = column_node.getColumnSourceOrNull();
             bool bound_by_this_scope = !column_source
                 || column_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
                 || column_source.get() == own_arguments;
 
             if (looked_up_by_name && bound_by_this_scope)
             {
-                const auto & column_name = column_node->getColumnName();
-                if (std::find(argument_names.begin(), argument_names.end(), column_name) != argument_names.end())
-                    result.insert(column_name);
+                auto column_node_name = action_node_name_helper.calculateActionNodeName(current);
+                if (is_argument_name(column_node_name))
+                    declared.insert(column_node_name);
             }
+        }
+        else if (node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::CONSTANT)
+        {
+            /// One name holds one node, so a name the body computes for itself cannot also
+            /// carry an argument.
+            auto contested_name = action_node_name_helper.calculateActionNodeName(current);
+            if (is_argument_name(contested_name))
+                contested.insert(contested_name);
         }
 
         for (const auto & child : current->getChildren())
@@ -1047,7 +1066,10 @@ NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const
                 to_visit.push_back(child);
     }
 
-    return result;
+    for (const auto & contested_name : contested)
+        declared.erase(contested_name);
+
+    return declared;
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
@@ -1073,9 +1095,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     /// A body column named after an argument resolves to the argument's type, so the argument is
     /// declared first. Other names stay undeclared: a body node may legitimately carry them.
-    const auto argument_names_read_as_columns = collectLambdaArgumentNamesUsedByColumns(lambda_node);
+    const auto argument_names_to_declare = collectLambdaArgumentNamesToDeclare(lambda_node);
     for (const auto & lambda_argument : lambda_arguments_names_and_types)
-        if (argument_names_read_as_columns.contains(lambda_argument.name))
+        if (argument_names_to_declare.contains(lambda_argument.name))
             actions_stack.back().addInputColumnIfNecessary(lambda_argument.name, lambda_argument.type);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
