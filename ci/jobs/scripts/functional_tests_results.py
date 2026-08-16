@@ -23,6 +23,13 @@ _clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
 STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
 GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
 MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
+HUNG_CHECK_EXIT_CODE = _clickhouse_test_globals["HUNG_CHECK_EXIT_CODE"]
+
+# Synthetic leaf names for an aborted run, keyed by exit code. The liveness name
+# claims only what its probe establishes - the check failed - because the check
+# also fails on a non-200 *response*.
+ABORTED_RUN_DEFAULT_LEAF = "Server died"
+ABORTED_RUN_LIVENESS_LEAF = "Server liveness check failed"
 
 # Exit codes that mean the run was aborted mid-flight, so per-test results
 # (if any) are incomplete and we cannot trust which test "caused" the
@@ -49,9 +56,13 @@ MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
 # `MAX_FAILURES_EXIT_CODE` is likewise excluded: the run stopped early because
 # too many tests failed, but the server is alive and those failures are real
 # and already attributed - so they must be reported as FAIL, not "Server died".
+# `HUNG_CHECK_EXIT_CODE` IS included: the run was aborted mid-flight exactly as
+# for the other members, so the same demotion applies; only the synthetic leaf's
+# name differs.
 ABORTED_RUN_EXIT_CODES = frozenset(
     {
         STOP_TESTING_EXIT_CODE,
+        HUNG_CHECK_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
@@ -265,7 +276,12 @@ class FTResultsProcessor:
                 # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR
-            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+            leaf = (
+                ABORTED_RUN_LIVENESS_LEAF
+                if runner_exit_code == HUNG_CHECK_EXIT_CODE
+                else ABORTED_RUN_DEFAULT_LEAF
+            )
+            test_results.append(Result(leaf, Result.Status.FAIL, info=leaf))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run

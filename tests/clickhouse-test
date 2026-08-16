@@ -100,6 +100,14 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 # `ci/jobs/scripts/functional_tests_results.py`.
 MAX_FAILURES_EXIT_CODE = 4
 
+# Exit code returned when the run stopped because a `check_server_liveness`
+# probe failed. The probe establishes only that the check failed - it also fails
+# on a non-200 *response* - so this must NOT be conflated with
+# `STOP_TESTING_EXIT_CODE`, which the job side reports as "Server died". Kept in
+# sync with `HUNG_CHECK_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+HUNG_CHECK_EXIT_CODE = 5
+
 USE_JINJA = True
 try:
     import jinja2
@@ -1366,6 +1374,9 @@ class FailureReason(enum.Enum):
     # FAIL reasons
     TIMEOUT = "Timeout!"
     SERVER_DIED = "server died"
+    # Names the observation, not a diagnosis: `check_server_liveness` also fails
+    # on a non-200 response, so neither "died" nor "unresponsive" is established.
+    LIVENESS_CHECK_FAILED = "liveness check failed"
     EXIT_CODE = "return code: "
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
@@ -3367,10 +3378,10 @@ class TestCase:
                     description += debug_log
 
                 # Stop on fatal errors like segmentation fault. They are sent to client via logs.
+                # Mutually exclusive: stderr carrying both signals keeps SERVER_DIED.
                 if " <Fatal> " in stderr:
                     reason = FailureReason.SERVER_DIED
-
-                if (
+                elif (
                     self.testcase_args.stop
                     and (
                         "Connection refused" in stderr
@@ -3379,7 +3390,7 @@ class TestCase:
                     and "Received exception from server" not in stderr
                     and not check_server_liveness(self.args)
                 ):
-                    reason = FailureReason.SERVER_DIED
+                    reason = FailureReason.LIVENESS_CHECK_FAILED
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
@@ -3853,7 +3864,7 @@ class TestCase:
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
-                            FailureReason.SERVER_DIED,
+                            FailureReason.LIVENESS_CHECK_FAILED,
                             0.0,
                             "\nServer does not respond to health check\n",
                         )
@@ -3996,7 +4007,7 @@ class TestCase:
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
-                    FailureReason.SERVER_DIED,
+                    FailureReason.LIVENESS_CHECK_FAILED,
                     total_time,
                     exc_description,
                 )
@@ -4530,9 +4541,10 @@ class StopTesting(Exception):
     `exit_code` so the job side can distinguish the cause: the default
     `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
     (reported as "Server died"), `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
-    benign, expected stop after the time budget was reached, and
+    benign, expected stop after the time budget was reached,
     `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
-    still alive) so the run stopped early.
+    still alive) so the run stopped early, and `HUNG_CHECK_EXIT_CODE` means a
+    `check_server_liveness` probe failed.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -4859,7 +4871,11 @@ def run_tests_array(
             if (
                 test_result
                 and test_result.status == TestStatus.FAIL
-                and test_result.reason != FailureReason.SERVER_DIED
+                and test_result.reason
+                not in (
+                    FailureReason.SERVER_DIED,
+                    FailureReason.LIVENESS_CHECK_FAILED,
+                )
             ):
                 save_random_settings_artifact(
                     args,
@@ -4895,11 +4911,28 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    # Claim before collecting: the sweep below blocks up to 30s per
+                    # server process, and a cause claimed after it loses to any
+                    # cause claimed during it.
+                    try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
                     raise StopTesting(
                         f"ClickHouse server died during test '{test_case.name}'"
+                    )
+                if test_result.reason == FailureReason.LIVENESS_CHECK_FAILED:
+                    try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                    print_c_stacktraces(args)
+                    if not is_concurrent:
+                        # Sequential runner owns the main process, so there is no
+                        # parent to kill. See the --max-failures branch below for
+                        # why a parallel worker must not broadcast SIGTERM.
+                        stop_tests()
+                    stop_testing.set()
+                    raise StopTesting(
+                        f"server liveness check failed during test '{test_case.name}'",
+                        exit_code=HUNG_CHECK_EXIT_CODE,
                     )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
@@ -4912,7 +4945,9 @@ def run_tests_array(
                             # could re-raise with `MAX_FAILURES_EXIT_CODE`. Just
                             # signal the stop; the parent masks SIGTERM and then
                             # terminates the workers in an orderly way.
-                            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
+                            try_claim_stop_cause(
+                                stop_exit_code, MAX_FAILURES_EXIT_CODE
+                            )
                             stop_testing.set()
                             raise StopTesting(
                                 f"reached --max-failures limit ({args.max_failures})",
@@ -4930,7 +4965,7 @@ def run_tests_array(
             # See the --max-failures branch above: skip `stop_tests()` so the
             # worker's SIGTERM broadcast does not kill the parent before it can
             # re-raise with `MAX_FAILURES_EXIT_CODE`.
-            stop_exit_code.value = MAX_FAILURES_EXIT_CODE
+            try_claim_stop_cause(stop_exit_code, MAX_FAILURES_EXIT_CODE)
             stop_testing.set()
             raise StopTesting(
                 f"reached --max-failures-chain limit ({args.max_failures_chain})",
@@ -5252,6 +5287,22 @@ def extract_key(key: str) -> str:
     )[1]
 
 
+def try_claim_stop_cause(stop_exit_code, exit_code: int) -> bool:
+    """Record `exit_code` as the cause the run stops with, first writer wins.
+
+    Returns True if this caller's code was recorded. 0 means unset, so no cause
+    may use it. The read and the write are one locked transition: several workers
+    and the parent can detect different causes concurrently, and an unlocked
+    read-modify-write would let a later detector displace an earlier one.
+    """
+    assert exit_code != 0, "0 means 'no cause recorded'"
+    with stop_exit_code.get_lock():
+        if stop_exit_code.value == 0:
+            stop_exit_code.value = exit_code
+            return True
+        return False
+
+
 def run_tests_process(*args_, **kwargs):
     return run_tests_array(*args_, **kwargs)
 
@@ -5283,11 +5334,11 @@ def do_run_tests(
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     progress_counter = multiprocessing.Value('i', 0)
-    # Exit code a worker wants the whole run to stop with. A worker raises
-    # `StopTesting` inside its own process, so that exception never reaches the
-    # parent; the parent only sees `stop_testing`. The worker records its exit
-    # code here (before setting `stop_testing`) so the parent can re-raise with
-    # the same code instead of defaulting to "Server died". 0 means unset.
+    # Exit code the run stops with. A worker raises `StopTesting` inside its own
+    # process, so that exception never reaches the parent; the parent only sees
+    # `stop_testing`. Every detector claims its code here via
+    # `try_claim_stop_cause` before setting `stop_testing`, so the parent
+    # re-raises with the cause detected first. 0 means unset.
     stop_exit_code = multiprocessing.Value('i', 0)
 
     if test_suite.parallel_tests:
@@ -5366,11 +5417,6 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
-        # Set when the parent stops the run because the global time limit was
-        # reached, so the final `StopTesting` is raised with the benign
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
-        global_time_limit_reached = False
-
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -5403,31 +5449,32 @@ def do_run_tests(
             # Stop the whole run once the global time limit is reached. This is
             # the *expected* stop condition for the flaky and targeted checks,
             # which rerun the selected tests until the time budget is exhausted -
-            # distinct from a server death or a hung check below. Only claim the
-            # time limit if nothing else has already requested a stop, so a real
-            # server death or `--max-failures` abort keeps precedence.
-            if (
-                args.stop_time
-                and time() > args.stop_time
-                and not stop_testing.is_set()
-            ):
-                print("Global time limit reached - stopping all tests gracefully.")
-                # Ignore SIGTERM in the parent for the rest of the run: when we
-                # terminate the workers below, each worker's KeyboardInterrupt
-                # handler re-broadcasts SIGTERM to the whole process group via
-                # `stop_tests()` -> `killpg`. Without this guard that signal
-                # would hit the parent and exit it with 143 instead of the
-                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
-                # timeout back into a "Server died" report).
-                signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                global_time_limit_reached = True
-                stop_testing.set()
+            # distinct from a server death or a hung check below. The claim goes
+            # through the carrier rather than a separate check-then-set, because a
+            # worker can claim its own cause while the event is still clear.
+            if args.stop_time and time() > args.stop_time:
+                if try_claim_stop_cause(
+                    stop_exit_code, GLOBAL_TIME_LIMIT_EXIT_CODE
+                ):
+                    print("Global time limit reached - stopping all tests gracefully.")
+                    # Ignore SIGTERM in the parent for the rest of the run: when we
+                    # terminate the workers below, each worker's KeyboardInterrupt
+                    # handler re-broadcasts SIGTERM to the whole process group via
+                    # `stop_tests()` -> `killpg`. Without this guard that signal
+                    # would hit the parent and exit it with 143 instead of the
+                    # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                    # timeout back into a "Server died" report).
+                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    stop_testing.set()
 
             # Periodically check the server for hangs
             # and stop all processes in this case
-            if args.hung_check:
+            if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
+                    # Claim before collecting: the sweep below can block ~30s per
+                    # server process.
+                    try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
                     print_c_stacktraces(args)
                     stop_testing.set()
 
@@ -5460,19 +5507,12 @@ def do_run_tests(
                         p.join(timeout=5)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
-                if global_time_limit_reached:
-                    raise StopTesting(
-                        "global time limit reached",
-                        exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
-                    )
-                # A worker that hit `--max-failures` or `--max-failures-chain`
-                # recorded its exit code in `stop_exit_code` before setting
-                # `stop_testing`. The server is alive and the failing tests are
-                # real (and already attributed), so report this with the worker's
-                # code, not "Server died".
+                # A worker's own `StopTesting` never reaches here, so the cause
+                # comes from the carrier; without it the job side would report
+                # every stop as "Server died".
                 if stop_exit_code.value != 0:
                     raise StopTesting(
-                        "reached the --max-failures / --max-failures-chain limit",
+                        "test run was stopped (see earlier output for the cause)",
                         exit_code=stop_exit_code.value,
                     )
                 raise StopTesting(

@@ -92,6 +92,7 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Check failed",
         "Check errors",
         "Server died",
+        "Server liveness check failed",
         "Unknown error",
         "Unknown job error",
         "Parse failure error",
