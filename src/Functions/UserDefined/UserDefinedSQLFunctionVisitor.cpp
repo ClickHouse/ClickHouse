@@ -18,7 +18,6 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -38,7 +37,7 @@ extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_, bool qualify_table_names)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
@@ -48,7 +47,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_, boo
             return;
 
         auto * old_ptr = child.get();
-        visit(child, context_, qualify_table_names);
+        visit(child, context_);
         auto * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
@@ -60,7 +59,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_, boo
     if (const auto * function = ast->template as<ASTFunction>())
     {
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_, qualify_table_names);
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)
             ast = replace_result;
     }
@@ -75,7 +74,7 @@ bool isVariadic(const ASTPtr & arg)
 }
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_, bool qualify_table_names)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -178,7 +177,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         {
             if (auto * inner_function = child->as<ASTFunction>())
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_, qualify_table_names);
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
                 if (replace_result)
                     child = replace_result;
             }
@@ -207,16 +206,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
-
-    /// SQL UDFs expanded in `CREATE` queries are persisted and can be interpreted later with a
-    /// different current database. Qualify their table names after normalization, which may
-    /// introduce scalar subquery aliases. UDFs expanded by other query types retain their
-    /// existing resolution.
-    if (qualify_table_names)
-    {
-        AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
-        visitor.visit(function_body_to_update);
-    }
 
     auto function_alias = function.tryGetAlias();
 

@@ -23,10 +23,10 @@ class ASTFunction;
 class UserDefinedSQLFunctionVisitor
 {
 public:
-    static void visit(ASTPtr & ast, ContextPtr context_, bool qualify_table_names = false);
+    static void visit(ASTPtr & ast, ContextPtr context_);
 
 private:
-    static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_, bool qualify_table_names);
+    static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_);
 
 };
 
