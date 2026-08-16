@@ -361,6 +361,19 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
                 key, contents_key);
         }
 
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
         if (value.empty())
             return value;
 
@@ -380,13 +393,6 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
             /// replaced through the contents form either.
             if (!named_collection.isOverridable(key, /* default_value= */ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-
-            /// Empty contents would not replace the configured path with another credential but
-            /// silently drop it, which is the same as overriding the path itself with ''.
-            if (named_collection.getOrDefault<String>(contents_key, "").empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
 
             return String{};
         }
@@ -662,7 +668,7 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the original MySQL table structure:
 
@@ -682,7 +688,7 @@ The table structure can differ from the original MySQL table structure:
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
@@ -723,7 +729,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b F
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
 
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
@@ -773,7 +779,7 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
-Or using [named collections](/operations/named-collections.md):
+Or using [named collections](/concepts/features/configuration/server-config/named-collections):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -900,7 +906,7 @@ SETTINGS enable_compression = 1;
 ## See also {#see-also}
 
 - [The mysql table function](/reference/functions/table-functions/mysql)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
+- [Using MySQL as a dictionary source](/reference/statements/create/dictionary/sources/mysql)
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",
         .related = {"PostgreSQL", "SQLite", "MongoDB"}});
