@@ -38,3 +38,6 @@ eph mat data	zyx	2
 eph mat sorted	1
 future ttl leaves materialized	1
 future group by leaves column ttl materialized	1
+const folded mat seeded	2
+const folded mat set fired	2
+const folded mat recomputed	2	2

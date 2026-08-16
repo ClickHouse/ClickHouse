@@ -868,9 +868,14 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     auto extracting_subcolumns_dag
         = createSubcolumnsExtractionActions(header_after_drop, recompute_dag->getRequiredColumnsNames(), context);
 
-    return ActionsDAG::merge(
+    auto result = ActionsDAG::merge(
         std::move(drop_stale_dag),
         ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*recompute_dag)));
+
+    /// A constant-folded default expression yields a ColumnConst, which the part writer cannot
+    /// serialize.
+    result.addMaterializingOutputActions(/*materialize_sparse=*/false);
+    return result;
 }
 
 SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, const MergeTreeSettings & storage_settings)

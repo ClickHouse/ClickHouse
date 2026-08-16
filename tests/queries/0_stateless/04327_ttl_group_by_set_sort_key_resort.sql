@@ -345,3 +345,23 @@ INSERT INTO t_future_group_by_before_column_ttl (ts, x) VALUES ('2020-01-15 00:0
 ALTER TABLE t_future_group_by_before_column_ttl MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'future group by leaves column ttl materialized', countIf(m = saved_m) = count() FROM t_future_group_by_before_column_ttl;
 DROP TABLE t_future_group_by_before_column_ttl;
+
+-- A recomputed MATERIALIZED column whose expression constant-folds (`isNull` of a non-Nullable
+-- column) yields a ColumnConst, which the part writer cannot serialize. `m` is seeded stale so the
+-- assertions below fail if the recompute silently declines instead of running.
+DROP TABLE IF EXISTS t_const_folded_mat;
+CREATE TABLE t_const_folded_mat (k UInt32, x DateTime, m UInt8 MATERIALIZED isNull(x))
+ENGINE = MergeTree ORDER BY k
+TTL x + toIntervalDay(1) GROUP BY k SET x = max(x) + toIntervalYear(30)
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_const_folded_mat;
+INSERT INTO t_const_folded_mat (k, x, m)
+SETTINGS insert_allow_materialized_columns = 1
+VALUES (1, '2020-01-01 00:00:00', 7), (2, '2020-01-02 00:00:00', 9);
+SELECT 'const folded mat seeded', countIf(m = 7) + countIf(m = 9) FROM t_const_folded_mat;
+SYSTEM START TTL MERGES t_const_folded_mat;
+OPTIMIZE TABLE t_const_folded_mat FINAL;
+-- The SET fired (both rows expired, one group per key), so `m` must be recomputed to 0.
+SELECT 'const folded mat set fired', countIf(toYear(x) = 2050) FROM t_const_folded_mat;
+SELECT 'const folded mat recomputed', count(), countIf(m = 0) FROM t_const_folded_mat;
+DROP TABLE t_const_folded_mat;
