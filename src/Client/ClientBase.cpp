@@ -2451,10 +2451,10 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     bool have_data_in_stdin = false;
     if (!is_interactive && !stdin_is_a_tty)
     {
-        if (parsed_insert_query->infile)
+        if (parsed_insert_query->data || parsed_insert_query->infile)
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
-            if (stdin_state == StdinState::Ambiguous)
+            if (parsed_insert_query->infile && stdin_state == StdinState::Ambiguous)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported");
 
