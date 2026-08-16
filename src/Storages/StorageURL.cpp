@@ -1363,9 +1363,11 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
                 return getFailoverOptions(task->path, max_addresses);
             });
     }
-    else if (is_url_with_globs)
+    else
     {
-        /// Iterate through disclosed globs and make a source for each file
+        /// Iterate through disclosed URLs and make a source for each file. Even a URL
+        /// without globs must go through this iterator: it applies a deferred `_path`
+        /// / `_file` filter before the source opens the URL.
         auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
@@ -1384,17 +1386,6 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         });
 
         num_streams = std::min(num_streams, glob_iterator->size());
-    }
-    else
-    {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
-        {
-            if (done)
-                return StorageURLSource::FailoverOptions{};
-            done = true;
-            return getFailoverOptions(uri, max_addresses);
-        });
-        num_streams = 1;
     }
 }
 
