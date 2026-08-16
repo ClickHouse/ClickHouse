@@ -634,6 +634,15 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         out.push_back(std::move(miss));
     };
 
+    /// A writer-less miss: the executor reads these bytes from source and caches nothing.
+    auto emit_uncacheable_miss = [&](size_t seg_left, size_t seg_end)
+    {
+        ICacheProvider::CacheResolution miss;
+        miss.kind = ICacheProvider::CacheResolution::Kind::Miss;
+        miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
+        out.push_back(std::move(miss));
+    };
+
     while (!got_holder->empty())
     {
         /// One holder per segment; a partial segment's hit reader and miss writer SHARE it, so the
@@ -643,6 +652,15 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         const auto & seg_range = segment.range();
         const size_t seg_left = seg_range.left;
         const size_t seg_end = seg_range.right + 1;
+
+        /// A DETACHED segment is a placeholder outside the cache metadata: it holds no bytes, can
+        /// never accept any, and the downloader role cannot be acquired on it. Serve it from source.
+        if (segment.isDetached())
+        {
+            emit_uncacheable_miss(seg_left, seg_end);
+            continue;
+        }
+
         const size_t committed_end = segmentCommittedEnd(segment);
 
         if (committed_end > seg_left)
