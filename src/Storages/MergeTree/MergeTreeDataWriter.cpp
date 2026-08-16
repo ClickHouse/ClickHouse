@@ -41,6 +41,7 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -118,6 +119,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+}
+
+namespace
+{
+
+bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
+{
+    return settings_changes.tryGet("optimize_row_order") != nullptr;
+}
+
 }
 
 void buildScatterSelector(
@@ -812,11 +823,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    /// An explicitly set `optimize_row_order = 0` opts the table out of row order optimization
+    /// An explicitly set table `optimize_row_order = 0` opts the table out of row order optimization
     /// even when `optimize_row_order_if_no_order_by` would enable it for a table without a sorting key.
+    const bool optimize_row_order_explicitly_set = metadata_snapshot->hasSettingsChanges()
+        && isOptimizeRowOrderExplicitlySet(metadata_snapshot->getSettingsChanges()->as<const ASTSetQuery &>().changes);
     const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
         || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
-            && !data_settings->isChanged("optimize_row_order")
+            && !optimize_row_order_explicitly_set
             && !metadata_snapshot->hasSortingKey());
     if (optimize_row_order_enabled
         && data.merging_params.mode
@@ -1203,11 +1216,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// The `optimize_row_order_if_no_order_by` setting refers to the parent table having no explicit `ORDER BY`,
     /// not to the projection's own (often empty) sorting key. A sorted parent table may have unsorted/aggregate
     /// projections, and we should not broaden the new default to them. Explicit `optimize_row_order` keeps applying
-    /// to projections as before, and an explicitly set `optimize_row_order = 0` opts out here as well.
-    const bool parent_table_has_sorting_key = parent_part->getMetadataSnapshot()->hasSortingKey();
+    /// to projections as before, and an explicitly set table or projection `optimize_row_order = 0` opts out here as well.
+    const auto & table_metadata_snapshot = parent_part->getMetadataSnapshot();
+    const bool parent_table_has_sorting_key = table_metadata_snapshot->hasSortingKey();
+    const bool optimize_row_order_explicitly_set = (table_metadata_snapshot->hasSettingsChanges()
+            && isOptimizeRowOrderExplicitlySet(table_metadata_snapshot->getSettingsChanges()->as<const ASTSetQuery &>().changes))
+        || isOptimizeRowOrderExplicitlySet(projection.settings_changes);
     const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
         || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
-            && !data_settings->isChanged("optimize_row_order")
+            && !optimize_row_order_explicitly_set
             && !parent_table_has_sorting_key);
     if (optimize_row_order_enabled
         && data.merging_params.mode

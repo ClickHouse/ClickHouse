@@ -14,6 +14,9 @@ node_with_compatibility_and_mt_setings = cluster.add_instance(
     main_configs=["configs/mt_settings.xml"],
     user_configs=["configs/compatibility.xml"],
 )
+node_with_optimize_row_order_disabled = cluster.add_instance(
+    "node4", main_configs=["configs/optimize_row_order_disabled.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -202,3 +205,31 @@ def test_optimize_row_order_if_no_order_by_compatibility(started_cluster):
 
     for table in ("t_default", "t_off", "t_on"):
         node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_optimize_row_order_if_no_order_by_overrides_config_opt_out(started_cluster):
+    # A server-level `optimize_row_order = 0` is a default, not a table-local opt-out.
+    # An explicit automatic opt-in must still reorder rows in this case.
+    _create_row_order_table(
+        node_with_optimize_row_order_disabled,
+        "t_config_optimize_row_order_off",
+        "optimize_row_order_if_no_order_by = 1",
+    )
+    _create_row_order_table(
+        node_with_optimize_row_order_disabled,
+        "t_config_optimize_row_order_off_baseline",
+        "optimize_row_order_if_no_order_by = 0",
+    )
+
+    assert _on_disk_order(
+        node_with_optimize_row_order_disabled, "t_config_optimize_row_order_off"
+    ) != _on_disk_order(
+        node_with_optimize_row_order_disabled,
+        "t_config_optimize_row_order_off_baseline",
+    )
+
+    for table in (
+        "t_config_optimize_row_order_off",
+        "t_config_optimize_row_order_off_baseline",
+    ):
+        node_with_optimize_row_order_disabled.query(f"DROP TABLE {table} SYNC")
