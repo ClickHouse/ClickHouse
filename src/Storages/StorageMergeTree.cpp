@@ -2343,6 +2343,8 @@ bool StorageMergeTree::optimize(
     auto txn = local_context->getCurrentTransaction();
 
     PreformattedMessage disable_reason;
+    auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
+
     if (!partition && final)
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
@@ -2394,7 +2396,6 @@ bool StorageMergeTree::optimize(
         /// synchronously on real threads and cannot be postponed like scheduled executor tasks, so
         /// OPTIMIZE FINAL must not spawn more merge threads than the pool has workers, even when the
         /// pool is already busy with background merges.
-        auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
         if (txn == nullptr && merge_mutate_executor && !partition_ids.empty())
         {
@@ -2519,6 +2520,21 @@ bool StorageMergeTree::optimize(
         String partition_id;
         if (partition)
             partition_id = getPartitionIDFromQuery(partition, local_context);
+
+        /// An explicit-partition OPTIMIZE FINAL also executes its foreground merge synchronously.
+        /// Reserve an executor slot first, just as the all-partitions path does, so it cannot
+        /// bypass the configured merge capacity or begin new work after executor shutdown.
+        size_t reserved_merge_slot = 0;
+        if (partition && final && merge_mutate_executor)
+        {
+            reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
+            if (reserved_merge_slot == 0)
+                throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
+        }
+        SCOPE_EXIT({
+            if (reserved_merge_slot)
+                merge_mutate_executor->releaseTaskSlots(reserved_merge_slot);
+        });
 
         if (!merge(
                 true,
