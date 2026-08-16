@@ -1,5 +1,5 @@
 {
-  "settings": 301,
+  "settings": 302,
   "anchorRoutes": {
     "allow_special_bool_values_inside_variant": "/reference/settings/formats/other",
     "bool_false_representation": "/reference/settings/formats/bool",
@@ -289,6 +289,7 @@
     "output_format_trim_fixed_string": "/reference/settings/formats/output-format",
     "output_format_tsv_crlf_end_of_line": "/reference/settings/formats/output-format",
     "output_format_values_escape_quote_with_quote": "/reference/settings/formats/output-format",
+    "output_format_vertical_display_control_characters": "/reference/settings/formats/output-format",
     "output_format_write_statistics": "/reference/settings/formats/output-format",
     "precise_float_parsing": "/reference/settings/formats/other",
     "schema_inference_hints": "/reference/settings/formats/schema-inference",
