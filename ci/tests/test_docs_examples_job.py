@@ -18,4 +18,4 @@ def test_docs_examples_report_info_uses_runner_verdicts():
         {"status": "output", "verdict": "unexpected"},
     ]
 
-    assert report_info(outcomes, ["Function/removed#0"]) == "fixed: 1, known: 1, stale: 1, unstable: 1, unexpected: 1"
+    assert report_info(outcomes, ["Function/removed#0"]) == "fixed: 1, known: 1, stale: 1, unexpected: 1, unstable: 1"
