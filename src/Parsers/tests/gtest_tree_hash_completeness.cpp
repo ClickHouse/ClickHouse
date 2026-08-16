@@ -336,6 +336,7 @@ TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
 
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
+             "WATCH db.t EVENTS LIMIT 5 FORMAT JSONEachRow",
              "OPTIMIZE TABLE t PARTITION 1",
              "OPTIMIZE TABLE t DRY RUN PARTS 'p1'",
              "OPTIMIZE TABLE t DEDUPLICATE BY a",
@@ -385,6 +386,8 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     EXPECT_NE(hashOf("SHOW INDEXES FROM bc FROM a"), hashOf("SHOW INDEXES FROM c FROM ab"));
     EXPECT_NE(hashOf("SHOW INDEXES FROM t"), hashOf("SHOW COLUMNS FROM t"));
     EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIMIT 1"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+    EXPECT_EQ(hashOfJSONRoundTrip("SHOW INDEXES FROM db.t WHERE name = 'i'"),
+              hashOf("SHOW INDEXES FROM db.t WHERE name = 'i'"));
     EXPECT_EQ(hashOfJSONRoundTrip("TRUNCATE TABLES FROM db LIKE ''"), hashOf("TRUNCATE TABLES FROM db LIKE ''"));
     EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIKE ''"), hashOf("SHOW COLUMNS FROM t LIKE ''"));
 

@@ -1,11 +1,19 @@
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTShowIndexesQuery::clone() const
 {
@@ -17,6 +25,28 @@ ASTPtr ASTShowIndexesQuery::clone() const
         res->where_expression = where_expression->clone();
     cloneOutputOptions(*res);
     return res;
+}
+
+void ASTShowIndexesQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ShowIndexesQuery");
+    w.writeBool("extended", extended);
+    w.writeString("database", database);
+    w.writeString("table", table);
+    w.writeChild("where_expression", where_expression);
+    writeOutputOptionsJSON(w);
+}
+
+void ASTShowIndexesQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    extended = r.getBool("extended");
+    database = r.getString("database");
+    table = r.getString("table");
+    if (table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW INDEXES requires a non-empty 'table' field during AST JSON deserialization");
+    where_expression = r.readChild("where_expression");
+    readOutputOptionsJSON(r);
 }
 
 void ASTShowIndexesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

@@ -16,6 +16,8 @@ limitations under the License. */
 #include <Common/quoteString.h>
 
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -45,6 +47,8 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
     {
