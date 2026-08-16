@@ -20,6 +20,8 @@ route_of() {
             FROM system.query_log
             WHERE type = 'QueryFinish' AND NOT is_initial_query
               AND event_date >= yesterday() AND initial_query_id = '$1'
+              -- A secondary query logs current_database = 'default', not the test database.
+              AND current_database IN ['default', currentDatabase()]
         )
         SETTINGS max_rows_to_read = 0"
 }
