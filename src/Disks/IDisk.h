@@ -651,7 +651,7 @@ public:
 /// Return full path to a file on disk.
 inline String fullPath(const DiskPtr & disk, const String & path)
 {
-    return pathToString(fs::path(disk->getPath()) / path);
+    return pathToGenericString(pathFromString(disk->getPath()) / pathFromString(path));
 }
 
 /// Return parent path for the specified path.
@@ -660,20 +660,20 @@ inline String parentPath(const String & path)
     if (path == "/")
         return "/";
     if (path.ends_with('/'))
-        return pathToString(fs::path(path).parent_path().parent_path() / "");
-    return pathToString(fs::path(path).parent_path() / "");
+        return pathToGenericString(pathFromString(path).parent_path().parent_path() / "");
+    return pathToGenericString(pathFromString(path).parent_path() / "");
 }
 
 /// Return file name for the specified path.
 inline String fileName(const String & path)
 {
-    return pathToString(fs::path(path).filename());
+    return pathToGenericString(pathFromString(path).filename());
 }
 
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return pathToString(fs::path(path).parent_path() / "");
+    return pathToGenericString(pathFromString(path).parent_path() / "");
 }
 
 

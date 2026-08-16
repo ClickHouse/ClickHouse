@@ -128,9 +128,9 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , pool(std::move(pool_))
     , disk(disk_)
     , relative_path(relative_path_)
-    , path(pathToGenericString(fs::path(disk->getPath()) / relative_path / ""))
-    , broken_relative_path(pathToGenericString(fs::path(relative_path) / "broken"))
-    , broken_path(pathToGenericString(fs::path(path) / "broken" / ""))
+    , path(pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path) / ""))
+    , broken_relative_path(pathToGenericString(pathFromString(relative_path) / "broken"))
+    , broken_path(pathToGenericString(pathFromString(path) / "broken" / ""))
     , should_batch_inserts(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_batch])
     , split_batch_on_failure(storage.getDistributedSettingsRef()[DistributedSetting::background_insert_split_batch_on_failure])
     , dir_fsync(storage.getDistributedSettingsRef()[DistributedSetting::fsync_directories])
@@ -756,7 +756,7 @@ void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_re
     {
         std::lock_guard status_lock(status_mutex);
         relative_path = new_relative_path;
-        path = pathToGenericString(fs::path(disk->getPath()) / relative_path / "");
+        path = pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path) / "");
     }
     current_batch_file_path = path + "current_batch.txt";
 

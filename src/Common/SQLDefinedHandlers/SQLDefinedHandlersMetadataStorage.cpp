@@ -246,7 +246,7 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::waitUpdate");
-        if (wait_event->tryWait(static_cast<long>(timeout)))
+        if (wait_event->tryWait(static_cast<Int64>(timeout)))
             return true;
 
         std::string res;

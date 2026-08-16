@@ -4,8 +4,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 

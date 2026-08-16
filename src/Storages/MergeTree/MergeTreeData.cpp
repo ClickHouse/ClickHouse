@@ -11018,7 +11018,7 @@ bool MergeTreeData::canUseAdaptiveGranularity() const
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return pathToGenericString(fs::path(disk->getPath()) / relative_data_path);
+    return pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_data_path));
 }
 
 

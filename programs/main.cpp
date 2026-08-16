@@ -199,7 +199,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
     // keeper
-#if ENABLE_CLICKHOUSE_KEEPER
+#if ENABLE_CLICKHOUSE_KEEPER && !defined(OS_WINDOWS)
     {"keeper", mainEntryClickHouseKeeper},
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER

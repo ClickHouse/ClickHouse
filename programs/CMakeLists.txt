@@ -252,7 +252,9 @@ if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
 endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
-    if (NOT BUILD_STANDALONE_KEEPER)
+    # `Keeper` uses `BaseDaemon` and cannot run on Windows. Keep building its libraries when needed,
+    # but do not install the multi-call `clickhouse-keeper` alias there.
+    if (NOT BUILD_STANDALONE_KEEPER AND NOT OS_WINDOWS)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})

@@ -50,8 +50,8 @@ static void assertOutputNotInsideInput(
         /// root mixed with an absolute operand (e.g. `-i /abs/part -o ./out`) would leave one side
         /// relative and the other absolute, and lexically_relative returns empty for such a pair. Anchor
         /// both against the current directory so they are comparable and reflect where files actually land.
-        in = fs::absolute(fs::path(disk_in->getPath()) / normalizePath(input_dir)).lexically_normal();
-        out = fs::absolute(fs::path(disk_out->getPath()) / normalizePath(output_dir)).lexically_normal();
+        in = fs::absolute(pathFromString(disk_in->getPath()) / pathFromString(normalizePath(input_dir))).lexically_normal();
+        out = fs::absolute(pathFromString(disk_out->getPath()) / pathFromString(normalizePath(output_dir))).lexically_normal();
     }
     else
     {
@@ -61,8 +61,8 @@ static void assertOutputNotInsideInput(
         /// Root both paths before comparing so a disk-relative "." (the disk root / current directory)
         /// is treated as the root it names. Comparing raw normalized strings would reduce "." vs "./out"
         /// to "." vs "out" and miss that the output is nested under the input.
-        in = (fs::path("/") / normalizePath(input_dir)).lexically_normal();
-        out = (fs::path("/") / normalizePath(output_dir)).lexically_normal();
+        in = (fs::path("/") / pathFromString(normalizePath(input_dir))).lexically_normal();
+        out = (fs::path("/") / pathFromString(normalizePath(output_dir))).lexically_normal();
     }
 
     /// The output is the same as, or nested under, the input iff the path from input to output does not
