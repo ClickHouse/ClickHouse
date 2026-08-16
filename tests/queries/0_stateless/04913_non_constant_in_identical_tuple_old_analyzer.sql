@@ -36,8 +36,8 @@ SELECT (materialize(toNullable(1)), 2) IN (materialize(toNullable(1)), 2) SETTIN
 SELECT (materialize(1), [1, 2]) IN (materialize(1), [1, 2]) SETTINGS enable_analyzer = 0;
 SELECT (materialize(1), [1, 2]) IN (materialize(1), [1, 2]) SETTINGS enable_analyzer = 1;
 
-SELECT (materialize(1), 2) IN (materialize(1), 2) SETTINGS enable_analyzer = 0, use_variant_as_common_type = 1, allow_experimental_variant_type = 1;
-SELECT (materialize(1), 2) IN (materialize(1), 2) SETTINGS enable_analyzer = 1, use_variant_as_common_type = 1, allow_experimental_variant_type = 1;
+SELECT (materialize(1), 2) IN (materialize(1), 2) SETTINGS enable_analyzer = 0, use_variant_as_common_type = 0;
+SELECT (materialize(1), 2) IN (materialize(1), 2) SETTINGS enable_analyzer = 1, use_variant_as_common_type = 0;
 
 SELECT count() FROM numbers(4) WHERE (number, 2) IN (number, 2) SETTINGS enable_analyzer = 0;
 SELECT count() FROM numbers(4) WHERE (number, 2) IN (number, 2) SETTINGS enable_analyzer = 1;
@@ -59,3 +59,17 @@ SELECT (materialize(1), 2) IN (materialize(9), 2) SETTINGS enable_analyzer = 1;
 
 SELECT (materialize(1), 2) IN (materialize(1), 3) SETTINGS enable_analyzer = 0;
 SELECT (materialize(1), 2) IN (materialize(1), 3) SETTINGS enable_analyzer = 1;
+
+SELECT (SELECT (materialize(1), 2) IN (materialize(1), 2)) SETTINGS enable_analyzer = 0;
+SELECT (SELECT (materialize(1), 2) IN (materialize(1), 2)) SETTINGS enable_analyzer = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE graph = 0, graph = 0, compact = 1
+    SELECT 'null', (SELECT tuple(materialize(NULL), NULL) GLOBAL IN (materialize(NULL), NULL))
+    GROUP BY ALL
+) SETTINGS transform_null_in = 1, enable_analyzer = 0;
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE graph = 0, graph = 0, compact = 1
+    SELECT 'null', (SELECT tuple(materialize(NULL), NULL) GLOBAL IN (materialize(NULL), NULL))
+    GROUP BY ALL
+) SETTINGS transform_null_in = 1, enable_analyzer = 1;

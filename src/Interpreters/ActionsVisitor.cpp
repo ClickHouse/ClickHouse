@@ -1128,8 +1128,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                 break;
                             }
 
-                            /// Visiting a tuple is a no-op once a tuple with the same column name is in the
-                            /// index, so its children are not necessarily there yet.
+                            /// A tuple already in the index is a no-op to visit, so its children may still be unnamed.
                             visit(child, data);
 
                             auto name_and_type = getNameAndTypeFromAST(child, data);
