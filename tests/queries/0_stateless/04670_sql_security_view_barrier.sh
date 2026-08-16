@@ -115,7 +115,7 @@ for analyzer_settings in "--enable_analyzer 0" "--enable_analyzer 1" "--enable_a
     done
 done
 
-prewhere_client="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --enable_parallel_replicas 0
+prewhere_client="${CLICKHOUSE_CLIENT} --user $user --enable_analyzer 1 --enable_parallel_replicas 0
     --optimize_move_to_prewhere 1 --query_plan_optimize_prewhere 1
     --enable_multiple_prewhere_read_steps 1"
 
