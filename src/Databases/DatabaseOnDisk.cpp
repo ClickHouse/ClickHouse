@@ -523,10 +523,17 @@ void DatabaseOnDisk::renameTable(
         if (from_atomic_to_ordinary)
             std::swap(create.uuid, prev_uuid);
 
-        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        if (this != &to_database)
         {
-            target_db->checkMetadataFilenameAvailability(to_table_name);
-            target_db->checkRowsLimit(table, to_table_name);
+            if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+            {
+                target_db->checkMetadataFilenameAvailability(to_table_name);
+                target_db->checkRowsLimit(table, to_table_name);
+            }
+        }
+        else
+        {
+            checkMetadataFilenameAvailability(to_table_name);
         }
 
         /// This place is actually quite dangerous. Since data directory is moved to store/

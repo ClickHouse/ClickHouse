@@ -53,3 +53,10 @@ BAD_ARGUMENTS
 TOO_MANY_ROWS
 da=50 db=0
 50
+-- 20. lazy proxy forwards rows for reporting and cross-database RENAME
+50
+TOO_MANY_ROWS
+1
+-- 21. RENAME inside an over-limit Ordinary database succeeds
+1
+12

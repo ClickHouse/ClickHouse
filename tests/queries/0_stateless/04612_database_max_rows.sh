@@ -181,4 +181,26 @@ $CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | h
 echo "da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
 $CH -q "SELECT count() FROM ${DA}.big"
 
+echo "-- 20. lazy proxy forwards rows for reporting and cross-database RENAME"
+cleanup
+$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+$CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40"
+$CH -q "CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x"
+$CH -q "INSERT INTO ${DA}.big SELECT number FROM numbers(50)"
+$CH -q "DETACH DATABASE ${DA}; ATTACH DATABASE ${DA}"
+# Reading database rows must materialize the proxy and report its active rows.
+db_rows "${DA}"
+$CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
+$CH -q "EXISTS TABLE ${DA}.big"
+
+echo "-- 21. RENAME inside an over-limit Ordinary database succeeds"
+cleanup
+$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 10"
+$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
+# A single batch can exceed the limit. Renaming it inside the database must remain a no-op for accounting.
+$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(12)"
+$CH -q "RENAME TABLE ${DA}.t TO ${DA}.u"
+$CH -q "EXISTS TABLE ${DA}.u"
+db_rows "${DA}"
+
 cleanup
