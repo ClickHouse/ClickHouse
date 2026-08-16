@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -18,6 +19,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -199,6 +201,9 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     const auto function_name = function_node->function_name;
     checkArgumentTypes(function_name, arguments, context);
 
+    /// A fixed @ on the range vector makes the whole call step-invariant in PromQL, so it is evaluated once.
+    const auto * fixed_at_node = getFixedAtModifier(arguments[1]);
+
     arguments[0] = makeVaryingScalarPrecisionSafe(
         function_name, function_node->getArguments()[0], std::move(arguments[0]), context);
 
@@ -226,6 +231,15 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     String varying_phi_subquery_name;
     if (varying_phi)
     {
+        if (fixed_at_node)
+        {
+            /// A fixed @ freezes the samples but not phi, so PromQL still evaluates per step; the varying
+            /// aggregate derives its window from each grid point and cannot express a frozen window.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Function '{}' does not support a time-varying first argument (the quantile) together with "
+                            "a fixed @ modifier on the range vector {}",
+                            function_name, getPromQLText(range_argument, context));
+        }
         context.subqueries.emplace_back(context.subqueries.size(), std::move(phi_source.select_query), SQLSubqueryType::SCALAR);
         varying_phi_subquery_name = context.subqueries.back().name;
     }
@@ -236,6 +250,8 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     auto window = node_range.window;
 
     auto argument = std::move(range_argument);
+
+    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
     SQLQueryPiece res = argument;
     res.node = function_node;
@@ -358,6 +374,7 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     /// Constant/single-row phi: the aggregate's 5th parameter. Varying phi: a 3rd argument instead,
     /// one value per grid point; the edge-case wrapping below also becomes per-point.
     ASTPtr quantile_grid;
+    ASTPtr result_values;
     if (varying_phi)
     {
         /// The grid is Array of either the scalar or (for a time() grid kept at full precision) the timestamp
@@ -369,23 +386,29 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         };
         quantile_grid = addParametersToAggregateFunction(
             makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values), castVaryingPhi()),
-            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type));
-        builder.select_list.push_back(wrapWithVaryingPhiEdgeCases(std::move(quantile_grid), castVaryingPhi(), context));
+        result_values = wrapWithVaryingPhiEdgeCases(std::move(quantile_grid), castVaryingPhi(), context);
     }
     else
     {
         quantile_grid = addParametersToAggregateFunction(
             makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
-            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type),
             makePhiAST(phi_source, context));
-        builder.select_list.push_back(wrapWithPhiEdgeCases(std::move(quantile_grid), phi_source, context));
+        result_values = wrapWithPhiEdgeCases(std::move(quantile_grid), phi_source, context);
     }
+
+    if (fixed_at_node)
+        result_values = repeatFixedAtResultOverGrid(
+            std::move(result_values), aggregation_range, stepsInTimeSeriesRange(start_time, end_time, step));
+
+    builder.select_list.push_back(std::move(result_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)

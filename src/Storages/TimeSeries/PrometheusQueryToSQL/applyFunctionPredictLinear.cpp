@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -83,6 +84,9 @@ SQLQueryPiece applyFunctionPredictLinear(
     const auto function_name = function_node->function_name;
     checkArgumentTypes(function_name, arguments, context);
 
+    /// A fixed @ on the range vector makes the whole call step-invariant in PromQL, so it is evaluated once.
+    const auto * fixed_at_node = getFixedAtModifier(arguments[0]);
+
     /// The second argument (`t`, prediction horizon in seconds) may be a constant, a single-row
     /// scalar subquery, or (e.g. `time()` in a range query) a scalar grid -- one value per grid point.
     auto & scalar_argument = arguments[1];
@@ -103,6 +107,15 @@ SQLQueryPiece applyFunctionPredictLinear(
             break;
 
         case StoreMethod::SCALAR_GRID:
+            if (fixed_at_node)
+            {
+                /// A fixed @ freezes the samples but not the horizon, so PromQL still evaluates per step; the
+                /// varying aggregate derives its window from each grid point and cannot express a frozen window.
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Function '{}' does not support a time-varying second argument (the prediction horizon) "
+                                "together with a fixed @ modifier on the range vector {}",
+                                function_name, getPromQLText(arguments[0], context));
+            }
             varying_predict_offset = true;
             /// A scalar grid is always exactly one row with one Array column (see e.g. fromFunctionTime.cpp),
             /// so it can be registered and referenced the same way as SINGLE_SCALAR above, no JOIN needed.
@@ -130,6 +143,8 @@ SQLQueryPiece applyFunctionPredictLinear(
     auto window = node_range.window;
 
     auto argument = std::move(arguments[0]);
+
+    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
     SQLQueryPiece res = argument;
     res.node = function_node;
@@ -245,26 +260,32 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     /// Constant/single-row horizon: predict_offset is the aggregate's 5th parameter.
     /// Varying horizon: predict_offset is a 3rd argument instead, one value per grid point.
+    ASTPtr aggregate_values;
     if (varying_predict_offset)
     {
-        builder.select_list.push_back(addParametersToAggregateFunction(
+        aggregate_values = addParametersToAggregateFunction(
             makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values), std::move(predict_offset_ast)),
-            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(step, context.timestamp_data_type),
-            timeSeriesDurationToAST(window, context.timestamp_data_type)));
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
+            timeSeriesDurationToAST(window, context.timestamp_data_type));
     }
     else
     {
-        builder.select_list.push_back(addParametersToAggregateFunction(
+        aggregate_values = addParametersToAggregateFunction(
             makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
-            timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(step, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type),
-            std::move(predict_offset_ast)));
+            std::move(predict_offset_ast));
     }
 
+    if (fixed_at_node)
+        aggregate_values = repeatFixedAtResultOverGrid(
+            std::move(aggregate_values), aggregation_range, stepsInTimeSeriesRange(start_time, end_time, step));
+
+    builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
