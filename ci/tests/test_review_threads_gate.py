@@ -71,6 +71,9 @@ class FakeInfo:
     def add_workflow_note(self, message):
         self.notes.append(message)
 
+    def get_report_url(self):
+        return ""
+
 
 @pytest.fixture
 def fake_info():
@@ -129,6 +132,10 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha"' in rerun_workflow
     assert 'review threads: $unresolved unresolved review thread(s)' in rerun_workflow
     assert 'last_pr_conclusion' in rerun_workflow
+    assert 'last_pr_run_id' in rerun_workflow
+    assert 'Failed: Workflow Post Hook' in rerun_workflow
+    assert 'failed_workflow_jobs' in rerun_workflow
+    assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in rerun_workflow
     assert 'actions/runs/$run_id/rerun' in rerun_workflow
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
@@ -301,3 +308,15 @@ def test_merge_gate_descriptions_fit_status_budget():
         for override_now in (False, True):
             _, description = merge_gate_verdict(config_limited, 100000, override_now)
             assert len(description) <= STATUS_DESCRIPTION_LIMIT, description
+
+
+def test_check_review_threads_fails_when_the_status_write_fails(monkeypatch):
+    from ci.jobs.scripts.workflow_hooks import can_be_merged
+
+    info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
+    monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (0, False, False))
+    monkeypatch.setattr(can_be_merged.GH, "post_commit_status", lambda **_: False)
+
+    with pytest.raises(RuntimeError, match="Review Threads"):
+        can_be_merged.check_review_threads()

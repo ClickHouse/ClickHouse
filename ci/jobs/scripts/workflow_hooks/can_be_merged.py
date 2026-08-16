@@ -57,25 +57,19 @@ def check_review_threads():
         f"[{unresolved_now}], override [{override_now}] -> blocked [{blocked}] ({description})"
     )
 
+    status = Result.Status.FAIL if blocked else Result.Status.OK
+    if not GH.post_commit_status(
+        name=REVIEW_THREADS_STATUS_NAME,
+        status=status,
+        description=description,
+        url=info.get_report_url(),
+    ):
+        raise RuntimeError("Failed to post the `Review Threads` commit status")
+
     if blocked:
-        GH.post_commit_status(
-            name=REVIEW_THREADS_STATUS_NAME,
-            status=Result.Status.FAIL,
-            description=description,
-            url=info.get_report_url(),
-        )
         print("WARNING: unresolved review threads, merge not allowed")
         return False
 
-    # Always record the unblocked verdict. A read of the existing statuses can
-    # fail transiently; conditionally posting based on that read could leave a
-    # stale failure from a previous limited run and spuriously re-run CI.
-    GH.post_commit_status(
-        name=REVIEW_THREADS_STATUS_NAME,
-        status=Result.Status.OK,
-        description=description,
-        url=info.get_report_url(),
-    )
     return True
 
 
