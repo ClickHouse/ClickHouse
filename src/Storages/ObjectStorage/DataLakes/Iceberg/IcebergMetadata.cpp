@@ -186,8 +186,13 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
+    const TableStorageIdentity table_identity{
+        .data_source_description = configuration->getDataSourceDescription(),
+        .table_namespace = deriveTableNamespaceForLocationCheck(configuration->getNamespace(), configuration->getRawURI()),
+        .backend_type = configuration->getTypeName(),
+    };
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, configuration->getDataSourceDescription(), CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, table_identity, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
 
     std::optional<String> table_uuid = std::nullopt;
@@ -206,7 +211,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         if (cache_ptr)
         {
             String cached = cache_ptr->tryGetTableMetadata(
-                IcebergMetadataFilesCache::getKey(configuration->getDataSourceDescription(), normalizeUuid(hint), metadata_file_path));
+                IcebergMetadataFilesCache::getKey(table_identity.data_source_description, normalizeUuid(hint), metadata_file_path));
             if (!cached.empty())
             {
                 Poco::JSON::Parser parser;
@@ -225,11 +230,12 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         /// UUID -- an exact match is required, not a suffix match, so a same-named
                         /// key living in a different bucket is correctly rejected.
                         const String & table_root = configuration->getPathForRead().path;
-                        const String table_namespace = deriveTableNamespaceForLocationCheck(
-                            configuration->getNamespace(), configuration->getRawURI());
-                        bool location_ok = !candidate->has(f_location)
-                            || cachedLocationMatchesTableRoot(
-                                candidate->getValue<String>(f_location), table_namespace, table_root, configuration->getTypeName());
+                        bool location_ok = candidate->has(f_location)
+                            && cachedLocationMatchesTableRoot(
+                                candidate->getValue<String>(f_location),
+                                table_identity.table_namespace,
+                                table_root,
+                                table_identity.backend_type);
                         if (location_ok)
                         {
                             /// Hit from a prior validated init: cached JSON belongs to this table.
@@ -294,7 +300,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     /// was already cached (e.g. from a prior init where `table_uuid` matched).
     if (table_uuid && cache_ptr && !content_cache_hit)
     {
-        auto cache_key = IcebergMetadataFilesCache::getKey(configuration->getDataSourceDescription(), *table_uuid, metadata_file_path);
+        auto cache_key = IcebergMetadataFilesCache::getKey(table_identity.data_source_description, *table_uuid, metadata_file_path);
         cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
     }
     auto table_path = configuration->getPathForRead().path;
@@ -307,7 +313,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
-        .data_source_description = configuration->getDataSourceDescription(),
+        .table_identity = table_identity,
     };
 }
 
@@ -323,7 +329,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.data_source_description,
+        persistent_components.table_identity,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
     return getState(context, metadata_file_path, metadata_version, compression_method);
@@ -712,7 +718,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
+        metadata_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.table_identity);
 
     insertRowToLogTable(
         local_context,
@@ -995,7 +1001,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         log,
         getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid,
-        persistent_components.data_source_description);
+        persistent_components.table_identity);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -1044,11 +1050,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         local_context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.data_source_description,
+        persistent_components.table_identity,
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.table_identity);
     /// Not asserting `persistent_components.format_version == metadata_object's format-version` here:
     /// that field is captured once at `IcebergMetadata` construction, but this reused instance can
     /// outlive an external writer's format-version upgrade (e.g. Spark bumping v1 -> v2 between
@@ -1665,7 +1671,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         log,
         getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid,
-        persistent_components.data_source_description);
+        persistent_components.table_identity);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
@@ -1717,7 +1723,7 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
             standard_persistent_components.table_path,
             configuration_ptr->getTypeName(),
             configuration_ptr->getNamespace()),
-        .data_source_description = standard_persistent_components.data_source_description};
+        .table_identity = standard_persistent_components.table_identity};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);
     return metadata;
 }
