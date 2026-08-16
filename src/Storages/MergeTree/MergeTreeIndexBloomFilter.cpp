@@ -772,12 +772,23 @@ static ColumnPtr createColumnFromConstantArray(
 
     const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
 
     for (const auto & f : value_field.safeGet<Array>())
     {
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
+
+        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
+        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
+        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
+        /// index and let the function evaluate normally instead.
+        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
+            && f.safeGet<String>().size() > fixed_string_type->getN())
+        {
+            return nullptr;
+        }
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
