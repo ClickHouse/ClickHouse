@@ -555,6 +555,7 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
     const ContextPtr & context)
 {
     if (!metadata_snapshot->hasPrimaryKey())
@@ -563,7 +564,10 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const auto & group_by_keys = group_by_ttl.group_by_keys;
     const auto & columns_desc = metadata_snapshot->getColumns();
     const auto storage_names = columns_desc.getAllPhysical().getNameSet();
-    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
+    /// Only earlier TTLs that actually fired can have made this TTL's derived columns stale.
+    /// Including every table-level SET target here may recompute an unrelated MATERIALIZED column
+    /// from a later or future TTL while merely refreshing this TTL's key or expiry input.
+    const auto & set_targets = earlier_set_targets;
     const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
     const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, set_targets);
 
@@ -648,7 +652,7 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     /// expression keys from them and the post-`SET` physical columns.
     if (needs_materialized_refresh)
     {
-        auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context);
+        auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context, set_targets);
         if (!affected_materialized_columns.empty())
             result = buildRecomputeMaterializedColumnsDAG(header, affected_materialized_columns, columns_desc, context);
     }
@@ -732,7 +736,6 @@ NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
-    bool force,
     const ContextPtr & context)
 {
     /// Forward pass in TTL order (the same order `TTLTransform` runs the algorithms). A later TTL's
@@ -743,13 +746,10 @@ NameSet getFiringGroupByTTLSetTargets(
     NameSet targets;
     for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
     {
-        bool fires = force;
-        if (!fires)
-        {
-            auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
-            /// Missing info or uninitialized `min` -> conservatively assume it may fire.
-            fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
-        }
+        auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
+        /// Missing info or uninitialized `min` -> conservatively assume it may fire. A forced merge
+        /// does not imply this TTL fired: it may evaluate a future TTL without rewriting any row.
+        bool fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
         if (!fires)
             fires = groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, targets, metadata_snapshot, context);
         if (fires)

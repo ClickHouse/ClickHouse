@@ -157,7 +157,7 @@ TTLTransform::TTLTransform(
         if (affected_by_earlier_set || expiry_affected_by_earlier_set)
         {
             if (auto refresh_dag = buildRefreshGroupByKeysDAG(
-                    getInputPort().getHeader(), metadata_snapshot_, group_by_ttl, context))
+                    getInputPort().getHeader(), metadata_snapshot_, group_by_ttl, earlier_group_by_set_targets, context))
                 key_refresh_actions = std::make_shared<ExpressionActions>(std::move(*refresh_dag));
         }
 
@@ -232,7 +232,7 @@ TTLTransform::TTLTransform(
                 if (expiry_affected_by_earlier_set)
                 {
                     if (auto refresh_dag = buildRefreshGroupByKeysDAG(
-                            getInputPort().getHeader(), metadata_snapshot_, description, context))
+                            getInputPort().getHeader(), metadata_snapshot_, description, earlier_group_by_set_targets, context))
                         expiry_refresh_actions = std::make_shared<ExpressionActions>(std::move(*refresh_dag));
                 }
 

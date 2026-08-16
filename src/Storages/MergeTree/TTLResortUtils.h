@@ -62,6 +62,7 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
     const ContextPtr & context);
 
 /// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
@@ -99,13 +100,13 @@ bool groupByTTLAssignsSortKeyColumn(
 /// warning) on the columns a FIRING `SET` rewrites, rather than "some GROUP BY TTL fired somewhere":
 /// otherwise a part with a firing `TTL1 GROUP BY k SET payload` and a not-yet-expired
 /// `TTL2 GROUP BY ... SET ts` (the only clause touching the sort key) would pay a whole-part re-sort
-/// for a `SET` that never ran. `force` (MATERIALIZE TTL / forced merge) returns all `SET` targets.
-/// `min == 0` (uninitialized info) or a missing info is treated conservatively as "may fire".
+/// for a `SET` that never ran. `min == 0` (uninitialized info) or a missing info is treated
+/// conservatively as "may fire". A forced merge is not proof that a TTL fired: it only requires
+/// row-by-row evaluation, and a future TTL can still leave every row unchanged.
 NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
-    bool force,
     const ContextPtr & context);
 
 /// The MATERIALIZED sort-key storage columns whose source columns are rewritten by a

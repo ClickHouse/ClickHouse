@@ -3450,11 +3450,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// not-yet-expired `GROUP BY ... SET` that is the only clause touching the sort key / a
         /// MATERIALIZED column, run a whole-part `O(n log n)` sort-key re-sort (and the materialized
         /// recompute / warning) for a `SET` that never ran. Gate each repair on the `SET` targets of
-        /// only the FIRING `GROUP BY` TTLs. Forced merges (empty part-level infos) keep the safe
-        /// (repair) path via `force`.
+        /// only the FIRING `GROUP BY` TTLs. Missing or uninitialized part-level info takes the
+        /// conservative repair path; forcing TTL evaluation alone does not prove that a future TTL
+        /// rewrote a row.
         const auto firing_set_targets = getFiringGroupByTTLSetTargets(
-            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, ctx->force_ttl,
-            merge_context);
+            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, merge_context);
 
         /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
         /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and

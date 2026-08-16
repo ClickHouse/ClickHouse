@@ -2707,7 +2707,7 @@ private:
         /// clause could spuriously recompute a non-deterministic MATERIALIZED column.
         const auto firing_set_targets = group_by_ttl_runs
             ? getFiringGroupByTTLSetTargets(
-                ctx->metadata_snapshot, ctx->source_part->ttl_infos, ctx->time_of_mutation, false, ctx->context)
+                ctx->metadata_snapshot, ctx->source_part->ttl_infos, ctx->time_of_mutation, ctx->context)
             : NameSet{};
         const bool resort_after_group_by_ttl
             = group_by_ttl_runs && groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot, ctx->context, firing_set_targets);
