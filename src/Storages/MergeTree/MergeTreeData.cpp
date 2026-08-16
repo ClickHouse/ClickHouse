@@ -6127,7 +6127,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
                     if (identifier && literal && literal->value.getType() == Field::Types::String)
                     {
                         const auto & subcolumn_name = literal->value.safeGet<String>();
-                        if (const auto * source_column = all_columns_with_helpers.tryGetByName(identifier->getColumnName());
+                        if (const auto source_column = all_columns_with_helpers.tryGetByName(identifier->getColumnName());
                             source_column && source_column->type->hasSubcolumn(subcolumn_name))
                         {
                             ast = make_intrusive<ASTIdentifier>(identifier->getColumnName() + "." + subcolumn_name);
