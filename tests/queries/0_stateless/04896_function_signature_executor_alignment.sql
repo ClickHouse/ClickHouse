@@ -9,7 +9,7 @@ SELECT
     toTypeName(sigmoid(materialize(toBFloat16(1)))),
     toTypeName(tanh(materialize(toBFloat16(1))));
 
--- Native floats keep their precision; every other number type widens to `Float64`.
+-- `UnaryFunctionVectorized` returns `Float64` for every numeric argument.
 SELECT
     toTypeName(exp(materialize(toFloat32(1)))),
     toTypeName(exp(materialize(toFloat64(1)))),

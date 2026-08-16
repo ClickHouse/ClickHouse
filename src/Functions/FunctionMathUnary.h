@@ -47,7 +47,7 @@ private:
         if constexpr (Impl::always_returns_float64)
             return "(Number) -> Float64";
         else
-            return "(\"Float32\") -> \"Float32\" OR (\"Float64\") -> \"Float64\" OR (Number) -> Float64";
+            return R"FunctionSignature(("Float32") -> "Float32" OR ("Float64") -> "Float64" OR (Number) -> Float64)FunctionSignature";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
