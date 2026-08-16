@@ -1946,6 +1946,12 @@ bool Aggregator::executeOnBlock(Columns columns,
                 LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
             }
 
+            /// A learning table has no frozen twin to pair with and nothing staged, so unlike the
+            /// frozen one it can join the baseline path for good and spill through the branch below.
+            if (params.max_bytes_before_external_group_by
+                && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+
             if (!adaptive->isBaseline())
             {
                 /// Checking the constraints.
