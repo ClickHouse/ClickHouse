@@ -1806,6 +1806,12 @@ public:
 
     void addStatement(ASTPreparedStatement * statement)
     {
+        /// The unnamed prepared statement is replaceable, but PostgreSQL
+        /// requires clients to close a named statement before parsing another
+        /// statement under the same name.
+        if (!statement->function_name.empty() && statements.contains(statement->function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prepared statement '{}' already exists", statement->function_name);
+
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 

@@ -802,6 +802,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
+                    /// `Flush` is a complete extended-protocol message. Once it
+                    /// has produced an error, discard the remaining messages in
+                    /// the cycle through the matching `Sync`.
+                    ignore_extended_query_messages_until_sync = true;
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
                     is_query_in_progress = true;
@@ -1672,9 +1676,8 @@ void PostgreSQLHandler::processQuery()
     {
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
     }
 }
 

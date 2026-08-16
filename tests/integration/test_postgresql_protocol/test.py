@@ -908,6 +908,73 @@ def test_extended_query_errors_recover_at_sync(started_cluster):
         sock.close()
 
 
+def test_simple_query_error_does_not_close_connection(started_cluster):
+    """A fully received simple query that fails must return an error and leave the connection usable."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        send(b"Q", b"SELECT throwIf(1)\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+
+        send(b"Q", b"SELECT 20260816\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
+def test_flush_error_discards_extended_query_cycle(started_cluster):
+    """An unsupported `Flush` rejects the entire extended-query cycle through `Sync`."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        send(b"P", b"flush_probe\x00SELECT 20260816\x00\x00\x00")
+        send(b"H", b"")
+        send(b"B", b"\x00flush_probe\x00\x00\x00\x00\x00\x00\x00")
+        send(b"E", b"\x00\x00\x00\x00\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+        assert b"D" not in seen, seen
+
+        send(b"Q", b"SELECT 20260816\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
+def test_parse_rejects_duplicate_named_prepared_statement(started_cluster):
+    """Named prepared statements cannot be replaced without an intervening `Close`."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        send(b"P", b"duplicate_probe\x00SELECT 1\x00\x00\x00")
+        send(b"P", b"duplicate_probe\x00SELECT 2\x00\x00\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+
+        send(b"Q", b"SELECT 20260816\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
 def test_extended_query_cycle_does_not_send_ready_before_sync(started_cluster):
     """Every extended-protocol cycle stays active until `Sync`, including `Close` and `Describe`.
     There must be exactly one `ReadyForQuery`, after the matching `Sync`."""
