@@ -2352,9 +2352,15 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
-    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    const auto now = std::chrono::steady_clock::now();
+    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+    /// Avoid overflowing `steady_clock::time_point` for very large settings while preserving the
+    /// microsecond precision of normal `max_execution_time` values.
+    const Int64 max_timeout_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::time_point::max() - now).count();
+    const auto deadline = max_execution_time_us == 0
+        ? std::chrono::steady_clock::time_point::max()
+        : now + std::chrono::microseconds(std::min(max_execution_time_us, max_timeout_us));
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
