@@ -717,8 +717,41 @@ bool isStructuralJSONSubcolumn(
         if (typed_path == object_type.getTypedPaths().end())
             continue;
 
-        DataTypePtr parent_type
-            = resolveJSONStructuralParent(typed_path->second, path, prefix_end, delimiter, array_json_bridges);
+        auto contains_dynamic_type = [](DataTypePtr type)
+        {
+            while (type)
+            {
+                type = removeJSONBloomWrappers(std::move(type));
+                if (isDynamic(type) || isVariant(type))
+                    return true;
+                const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+                type = array_type ? array_type->getNestedType() : nullptr;
+            }
+            return false;
+        };
+
+        DataTypePtr parent_type;
+        for (size_t parent_end = prefix_end;; parent_end = path.find('.', parent_end + 1))
+        {
+            parent_type = resolveJSONStructuralParent(typed_path->second, path, prefix_end, parent_end, array_json_bridges);
+            const auto unwrapped_parent_type = removeJSONBloomWrappers(parent_type);
+            if (typeid_cast<const DataTypeMap *>(unwrapped_parent_type.get()) && parent_end != delimiter)
+                return true;
+            if (const auto * nested_object = typeid_cast<const DataTypeObject *>(unwrapped_parent_type.get()))
+            {
+                std::vector<ArrayJSONBridge> nested_bridges;
+                for (const auto & bridge : array_json_bridges)
+                {
+                    if (bridge.path_end > parent_end)
+                        nested_bridges.push_back({bridge.path_end - parent_end - 1, bridge.array_depth});
+                }
+                return isStructuralJSONSubcolumn(*nested_object, path.substr(parent_end + 1), nested_bridges);
+            }
+            if (contains_dynamic_type(parent_type))
+                return true;
+            if (parent_end == delimiter)
+                break;
+        }
 
         while (parent_type)
         {
@@ -1223,24 +1256,10 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
                 break;
             case RPNElement::FUNCTION_ANY:
             {
-                bool matches = false;
-                if (!element.alternatives.empty())
+                const bool matches = std::ranges::any_of(element.hashes, [&](UInt64 hash)
                 {
-                    matches = std::ranges::any_of(element.alternatives, [&](const auto & alternative)
-                    {
-                        return !alternative.empty() && std::ranges::all_of(alternative, [&](UInt64 hash)
-                        {
-                            return hashMatchesFilter(filter, hash, hash_functions);
-                        });
-                    });
-                }
-                else
-                {
-                    matches = std::ranges::any_of(element.hashes, [&](UInt64 hash)
-                    {
-                        return hashMatchesFilter(filter, hash, hash_functions);
-                    });
-                }
+                    return hashMatchesFilter(filter, hash, hash_functions);
+                });
                 stack.emplace_back(matches, true);
                 break;
             }
