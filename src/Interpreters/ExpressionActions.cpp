@@ -504,6 +504,15 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     for (size_t i = 0; i < actions.size(); ++i)
         for (const auto & argument : actions[i].arguments)
             actions[argument.actions_pos].parents_actions_pos.push_back(i);
+
+    /// An action can be used more than once by the same parent. Keep only one edge here, because adaptive
+    /// profiling propagates an eagerly executed descendant's cost to every ancestor.
+    for (auto & action : actions)
+    {
+        auto & parents = action.parents_actions_pos;
+        std::sort(parents.begin(), parents.end());
+        parents.erase(std::unique(parents.begin(), parents.end()), parents.end());
+    }
 }
 
 

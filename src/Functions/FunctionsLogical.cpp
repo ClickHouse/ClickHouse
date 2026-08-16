@@ -810,9 +810,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
         if constexpr (with_profile)
         {
-            profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
-            auto & arg_profile = profile->argument_profiles.back().second;
-            maskedExecute(arguments[i], mask, mask_info, &arg_profile);
+            FunctionExecutionProfile * arg_profile = nullptr;
+            if (checkAndGetShortCircuitArgument(arguments[i].column))
+            {
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
+                arg_profile = &profile->argument_profiles.back().second;
+            }
+            maskedExecute(arguments[i], mask, mask_info, arg_profile);
         }
         else
             maskedExecute(arguments[i], mask, mask_info, nullptr);
