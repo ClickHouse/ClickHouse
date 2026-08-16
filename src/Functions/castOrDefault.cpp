@@ -177,7 +177,8 @@ public:
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
-        auto source_null_map_column = getSourceNullMap(*non_const_column_to_cast);
+        auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
+        auto source_null_map_column = getSourceNullMap(*source_column_full);
         const auto * source_null_map_data = source_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
             : nullptr;

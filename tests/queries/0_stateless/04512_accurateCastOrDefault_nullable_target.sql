@@ -17,6 +17,10 @@ SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)');
 -- should be replaced with an explicit default.
 SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
 
+-- The source NULL must be preserved when it is encoded in a low-cardinality
+-- nullable column, rather than replaced with the explicit default.
+SELECT accurateCastOrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
+
 -- Dynamic and Variant encode NULL with a discriminator rather than a physical
 -- null map, but it is still a successful cast to a Nullable target.
 SELECT accurateCastOrDefault(CAST(NULL, 'Dynamic'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
@@ -29,3 +33,4 @@ SELECT accurateCastOrDefault(CAST(NULL, 'Dynamic'), 'UInt32');
 SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'UInt32');
 SELECT toUInt32OrDefault(CAST(NULL, 'Dynamic'));
 SELECT toUInt32OrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'));
+SELECT toUInt32OrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'));
