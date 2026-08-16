@@ -91,6 +91,24 @@ git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git ch
 git pull "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
+Immediately after either checkout completes, capture an immutable baseline before
+editing, merging, or running any helper that can modify the branch. This is the
+only authoritative record of the PR surface that existed when the worker began:
+
+```bash
+git fetch origin "$BASE_BRANCH"
+mkdir -p tmp
+PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
+INITIAL_PR_HEAD=$(git rev-parse HEAD)
+INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
+git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
+git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
+git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
+```
+
+Do not modify, stage, or delete this artifact during the session. It must remain
+available through the push safety gate in step 7.
+
 ### 3. Resolve conflicts with the base branch (if any)
 
 Use the PR's actual base branch from metadata (`baseRefName`) instead of hardcoding `master` — this ensures backport PRs targeting other branches are handled correctly.
@@ -291,12 +309,12 @@ Determine where to push based on step 2:
 
 **If the branch is in the main repository:**
 ```bash
-git push origin "$HEAD_BRANCH"
+PUSH_REMOTE=origin
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-git push "$REMOTE_NAME" "$HEAD_BRANCH"
+PUSH_REMOTE="$REMOTE_NAME"
 ```
 
 Before every commit and push, run this safety gate. It is a hard stop and overrides the general requirement to push:
@@ -310,9 +328,20 @@ Before every commit and push, run this safety gate. It is a hard stop and overri
    git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
    ```
    If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
-4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`. Compare it with the PR diff recorded immediately after checkout. Account explicitly for every added path and every removed path. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
+4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
+   ```bash
+   diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
+   diff -u "$PR_BASELINE_DIR/stat" <(git diff --stat "origin/$BASE_BRANCH"...HEAD)
+   ```
+   Account explicitly for every added path and every removed path, including changes that disappeared because they were incorporated through a deliberately merged base branch. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
 
 The automation installs a `pre-push` hook that rejects non-fast-forward updates and branch deletion. Do not bypass it. A hook rejection is a safety failure to report, not an obstacle to work around.
+
+After the gate succeeds, push with:
+
+```bash
+git push "$PUSH_REMOTE" "$HEAD_BRANCH"
+```
 
 Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.
 
