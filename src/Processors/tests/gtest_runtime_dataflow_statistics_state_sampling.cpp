@@ -400,7 +400,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseDefaultStateDoesNotEstablishS
     auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
     const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
 
-    const auto make_sparse = [&](size_t rows, bool with_states)
+    const auto make_sparse = [&](size_t rows, bool with_states) -> ColumnPtr
     {
         MutableColumnPtr values = ColumnAggregateFunction::create(function);
         values->insertDefault();
@@ -424,13 +424,13 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseDefaultStateDoesNotEstablishS
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "sparse_state"});
 
         auto defaults = make_sparse(default_rows, /*with_states=*/false);
-        exact_compressed_bytes += compressedColumnSize({ColumnPtr(defaults), state_type, "sparse_state"});
+        exact_compressed_bytes += compressedColumnSize({defaults, state_type, "sparse_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(defaults)}, default_rows), header);
 
         for (size_t block = 0; block < state_blocks; ++block)
         {
             auto states = make_sparse(state_rows, /*with_states=*/true);
-            exact_compressed_bytes += compressedColumnSize({ColumnPtr(states), state_type, "sparse_state"});
+            exact_compressed_bytes += compressedColumnSize({states, state_type, "sparse_state"});
             updater.recordOutputChunk(Chunk(Columns{std::move(states)}, state_rows), header);
         }
     }
@@ -460,11 +460,11 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedP
     values->insertFrom(*source_state, 0);
     auto offsets = ColumnUInt64::create();
     offsets->insert(0);
-    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*rows=*/1);
-    auto constant = ColumnConst::create(std::move(sparse), rows);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*size_=*/1);
+    ColumnPtr constant = ColumnConst::create(std::move(sparse), rows);
 
     const size_t cache_key = 0x111985 + 10;
-    const auto exact_compressed_bytes = compressedColumnSize({ColumnPtr(constant), state_type, "constant_sparse_state"});
+    const auto exact_compressed_bytes = compressedColumnSize({constant, state_type, "constant_sparse_state"});
     {
         RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
         Block header;

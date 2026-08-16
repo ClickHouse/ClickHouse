@@ -208,7 +208,7 @@ TEST(AggregatorStateSizeEstimate, BitmapBuildPreservesDefaultStateVersion)
     values->insert(1);
     auto offsets = ColumnArray::ColumnOffsets::create();
     offsets->insert(1);
-    auto array = ColumnArray::create(std::move(values), std::move(offsets));
+    ColumnPtr array = ColumnArray::create(std::move(values), std::move(offsets));
     auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
 
     ColumnsWithTypeAndName arguments;
