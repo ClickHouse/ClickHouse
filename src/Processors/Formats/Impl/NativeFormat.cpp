@@ -121,6 +121,8 @@ public:
     /// so a numeric column really is a mismatch for an `IPv4` destination then.
     bool readsNumericValueIntoIPv4Column() const override { return settings.native.allow_types_conversion; }
 
+    bool castsStringSourceColumns() const override { return settings.native.allow_types_conversion; }
+
 private:
     const FormatSettings settings;
 };

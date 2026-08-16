@@ -137,6 +137,8 @@ public:
     /// so a numeric source value is accepted into an `IPv4` column.
     bool readsNumericValueIntoIPv4Column() const override { return true; }
 
+    bool castsStringSourceColumns() const override { return true; }
+
     /// The data carries named columns that the parser maps onto the destination by name.
     bool mapsColumnsByName() const override { return true; }
 

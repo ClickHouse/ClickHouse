@@ -252,6 +252,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_honors_column_name_matching_mode = false;
     bool format_uses_case_insensitive_column_matching = false;
     bool format_reads_numeric_into_ipv4 = false;
+    bool format_casts_string_source_columns = false;
     bool format_reads_numeric_into_bool = true;
     BoolValueIntoNumericColumn format_bool_value_into_numeric = BoolValueIntoNumericColumn::AllNumeric;
     bool format_stores_typed_numeric_values = false;
@@ -289,6 +290,7 @@ String getInsertDataSchemaMismatchDescription(
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_uses_case_insensitive_column_matching = schema_reader->usesCaseInsensitiveColumnMatching();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
+        format_casts_string_source_columns = schema_reader->castsStringSourceColumns();
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
         format_bool_value_into_numeric = schema_reader->readsBoolValueIntoNumericColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
@@ -1053,6 +1055,13 @@ String getInsertDataSchemaMismatchDescription(
         /// cannot be built from a single scalar string (except in the whole-text formats, see below).
         if (which_inferred.isString())
         {
+            /// Columnar formats that cast decoded source columns cannot determine compatibility of a
+            /// `String` source column from its schema alone: values such as `"1"` can cast cleanly
+            /// into scalar and nested destinations. Do not let a valid sibling column make an
+            /// unrelated parse error look like a structure mismatch.
+            if (format_casts_string_source_columns)
+                return true;
+
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
             /// accept only the bare literal tokens (`true` / `false` / `1` / `0`, ...), so a string
             /// value is a genuine structure mismatch even when it holds a quoted numeric (`"1"`) that a

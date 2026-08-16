@@ -50,6 +50,14 @@ $CLICKHOUSE_LOCAL -q "SELECT 'not-a-uuid' AS u, 'abc' AS x FORMAT Native" > "$DA
     cat "$DATA_NATIVE_NESTED"
 } | $CLICKHOUSE_LOCAL 2>&1 | check
 
+echo "-- Native: a valid String cast does not make a sibling UUID parse error a structure mismatch"
+DATA_NATIVE_STRING_CAST=$CLICKHOUSE_TMP/data_04821_string_cast.native
+$CLICKHOUSE_LOCAL -q "SELECT '1' AS x, 'not-a-uuid' AS u FORMAT Native" > "$DATA_NATIVE_STRING_CAST"
+{
+    echo "CREATE TABLE t (x UInt8, u UUID) ENGINE = Memory; INSERT INTO t FORMAT Native"
+    cat "$DATA_NATIVE_STRING_CAST"
+} | $CLICKHOUSE_LOCAL 2>&1 | check
+
 echo "-- Native: with the conversion disabled the type difference is rejected with a conversion error (not a parse error)"
 {
     echo "CREATE TABLE t (ip IPv4, u UUID) ENGINE = Memory; INSERT INTO t SETTINGS input_format_native_allow_types_conversion = 0 FORMAT Native"
@@ -60,4 +68,4 @@ echo "-- Native: with the conversion disabled the type difference is rejected wi
     if echo "$out" | grep -q "$PHRASE"; then echo "explanation present"; else echo "explanation missing"; fi
 }
 
-rm -f "$DATA_AVRO" "$DATA_NATIVE" "$DATA_NATIVE_NESTED"
+rm -f "$DATA_AVRO" "$DATA_NATIVE" "$DATA_NATIVE_NESTED" "$DATA_NATIVE_STRING_CAST"

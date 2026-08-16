@@ -4,6 +4,8 @@ explanation missing
 explanation missing
 -- Native: a genuine structure mismatch is still explained
 explanation present
+-- Native: a valid String cast does not make a sibling UUID parse error a structure mismatch
+explanation missing
 -- Native: with the conversion disabled the type difference is rejected with a conversion error (not a parse error)
 insert failed as expected
 explanation missing

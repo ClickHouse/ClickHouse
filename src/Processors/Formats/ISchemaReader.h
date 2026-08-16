@@ -176,6 +176,12 @@ public:
     /// mismatch regardless of this capability.)
     virtual bool readsNumericValueIntoIPv4Column() const { return false; }
 
+    /// True when the parser casts a decoded source `String` column to the requested destination
+    /// type. For the columnar formats this means the schema reader cannot tell whether a source
+    /// `String` column is a mismatch: individual values may cast cleanly into scalar or nested
+    /// destinations, and another column may be the one that actually caused the parse error.
+    virtual bool castsStringSourceColumns() const { return false; }
+
     /// True when the parser may accept a numeric value other than the literal `0` / `1` into a `Bool`
     /// destination column. The formats that read numeric values by value into the `UInt8`-backed
     /// column — the binary formats that store typed values (`BSONEachRow`, `MsgPack`), `Avro`, and
