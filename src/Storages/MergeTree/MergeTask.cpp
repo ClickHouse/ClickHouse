@@ -923,7 +923,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (!infos.contains(name)
                 && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
             {
-                if (const auto * column = global_ctx->storage_columns.tryGetByName(name))
+                if (const auto column = global_ctx->storage_columns.tryGetByName(name))
                     infos.emplace(name, column->type->createSerializationInfo(info_settings));
             }
         }

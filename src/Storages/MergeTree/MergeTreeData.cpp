@@ -12287,7 +12287,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
             if (!serialization_hints.contains(name)
                 && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
             {
-                if (const auto * column = physical_columns.tryGetByName(name))
+                if (const auto column = physical_columns.tryGetByName(name))
                     serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
             }
         }
