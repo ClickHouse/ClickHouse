@@ -4,6 +4,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -177,6 +179,71 @@ struct LowCardinalityKeyGetterForJoin
     }
 };
 
+template <typename BaseMethod, typename Mapped>
+struct ConsecutiveKeyGetterForJoin
+{
+    using EmplaceResult = typename BaseMethod::EmplaceResult;
+    using FindResult = typename BaseMethod::FindResult;
+
+    static constexpr bool has_cheap_key_calculation = BaseMethod::has_cheap_key_calculation;
+    static constexpr bool has_cheap_key_holder = BaseMethod::has_cheap_key_holder;
+    static constexpr bool has_pre_computed_hashes = BaseMethod::has_pre_computed_hashes;
+
+    static_assert(FindResult::has_offset);
+    static_assert(!std::is_same_v<Mapped, void>);
+
+    BaseMethod base;
+    ColumnsHashing::FixedSizeKeySlices key_slices;
+
+    static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
+    size_t last_row = no_last_row;
+    Mapped * cached_mapped = nullptr;
+    size_t cached_offset = 0;
+    bool cached_found = false;
+
+    ConsecutiveKeyGetterForJoin(
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        const ColumnsHashing::HashMethodContextPtr & context)
+        : base(key_columns, key_sizes, context), key_slices(key_columns)
+    {
+    }
+
+    ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
+    {
+        return base.getKeyHolder(row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        return base.emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
+    {
+        return base.getHash(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if (key_slices.isUsable() && last_row != no_last_row && key_slices.rowsEqual(row, last_row))
+            return FindResult(cached_mapped, cached_found, cached_offset);
+
+        auto result = base.findKey(data, row, pool);
+        if (key_slices.isUsable())
+        {
+            last_row = row;
+            cached_found = result.isFound();
+            cached_mapped = cached_found ? &result.getMapped() : nullptr;
+            cached_offset = cached_found ? result.getOffset() : 0;
+        }
+        return result;
+    }
+};
+
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;
@@ -290,5 +357,24 @@ struct KeyGetterForType
     using Mapped_t = typename Data::mapped_type;
     using Mapped = std::conditional_t<std::is_const_v<Data>, const Mapped_t, Mapped_t>;
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
+
+    static constexpr bool use_consecutive_probe_cache
+        = type == HashJoin::Type::key32
+        || type == HashJoin::Type::key64
+        || type == HashJoin::Type::keys32
+        || type == HashJoin::Type::keys64
+        || type == HashJoin::Type::keys128
+        || type == HashJoin::Type::keys256
+        || type == HashJoin::Type::two_level_key32
+        || type == HashJoin::Type::two_level_key64
+        || type == HashJoin::Type::two_level_keys32
+        || type == HashJoin::Type::two_level_keys64
+        || type == HashJoin::Type::two_level_keys128
+        || type == HashJoin::Type::two_level_keys256;
+
+    using ProbeType = std::conditional_t<
+        use_consecutive_probe_cache,
+        ConsecutiveKeyGetterForJoin<Type, Mapped>,
+        Type>;
 };
 }

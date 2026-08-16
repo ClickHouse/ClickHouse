@@ -349,7 +349,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using MapTypeVal = const typename std::remove_reference_t<decltype(MapsTemplate::TYPE)>::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal>::ProbeType; \
         std::vector<const MapTypeVal *> a_map_type_vector(mapv.size()); \
         std::vector<KeyGetter> key_getter_vector; \
         for (size_t d = 0; d < added_columns.join_on_keys.size(); ++d) \

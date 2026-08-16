@@ -1,0 +1,43 @@
+<test>
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+        <max_threads>1</max_threads>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <!--
+        Compares a fixed-width HashJoin probe with clustered and interleaved keys.
+        The clustered table has long runs of the same key, so the probe can reuse
+        the previous lookup result. The interleaved table is the regression control.
+    -->
+    <create_query>CREATE TABLE hash_join_consecutive_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE hash_join_consecutive_clustered (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE hash_join_consecutive_unclustered (k UInt64, v UInt64) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO hash_join_consecutive_build SELECT number, number FROM numbers(2000)</fill_query>
+
+    <!-- 20M rows, 2000 keys in runs of 10000. -->
+    <fill_query>INSERT INTO hash_join_consecutive_clustered SELECT intDiv(number, 10000), number FROM numbers(20000000)</fill_query>
+
+    <!-- Same rows and values, but consecutive probe keys always differ. -->
+    <fill_query>INSERT INTO hash_join_consecutive_unclustered SELECT number % 2000, number FROM numbers(20000000)</fill_query>
+
+    <query>
+        SELECT count()
+        FROM hash_join_consecutive_clustered AS l
+        INNER JOIN hash_join_consecutive_build AS r ON l.k = r.k
+        SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0
+        FORMAT Null
+    </query>
+    <query>
+        SELECT count()
+        FROM hash_join_consecutive_unclustered AS l
+        INNER JOIN hash_join_consecutive_build AS r ON l.k = r.k
+        SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS hash_join_consecutive_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hash_join_consecutive_clustered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hash_join_consecutive_unclustered</drop_query>
+</test>
