@@ -284,7 +284,7 @@ public:
 
             try
             {
-                if (need_check && !weaklyCanonicalPathStartsWith(file_path.string(), user_files_absolute_path))
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path);
 
                 ReadBufferFromFile in(file_path);
