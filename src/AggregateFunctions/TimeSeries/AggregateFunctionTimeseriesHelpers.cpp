@@ -1222,7 +1222,7 @@ timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, IntervalType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 return std::make_shared<AggregateFunctionTimeseriesPresentToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
             };
@@ -1262,7 +1262,7 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness, p
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, phi");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, IntervalType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
             {
                 const Float64 phi = extractFloatParameter(name, "phi", parameters[4]);
                 return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, phi);
