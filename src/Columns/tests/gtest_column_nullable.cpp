@@ -25,16 +25,19 @@ TEST(ColumnNullable, InsertManyFromNotNullableRepeatsValue)
     auto dst = ColumnNullable::create(std::move(nested), std::move(null_map));
 
     dst->insertManyFromNotNullable(*src, 1, 3);
+    dst->insertManyFromNotNullable(*src, 2, 1);
 
-    ASSERT_EQ(dst->size(), 4);
+    ASSERT_EQ(dst->size(), 5);
     EXPECT_EQ(dst->getNestedColumn().getUInt(0), 7);
     EXPECT_EQ(dst->getNestedColumn().getUInt(1), 20);
     EXPECT_EQ(dst->getNestedColumn().getUInt(2), 20);
     EXPECT_EQ(dst->getNestedColumn().getUInt(3), 20);
+    EXPECT_EQ(dst->getNestedColumn().getUInt(4), 30);
     EXPECT_EQ(dst->getNullMapData()[0], 1);
     EXPECT_EQ(dst->getNullMapData()[1], 0);
     EXPECT_EQ(dst->getNullMapData()[2], 0);
     EXPECT_EQ(dst->getNullMapData()[3], 0);
+    EXPECT_EQ(dst->getNullMapData()[4], 0);
     dst->checkConsistency();
 }
 
