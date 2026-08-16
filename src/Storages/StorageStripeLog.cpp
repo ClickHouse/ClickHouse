@@ -263,16 +263,7 @@ public:
         data_out->finalize();
         data_out_compressed->finalize();
 
-        /// Save the new indices.
-        storage.saveIndices(lock);
-
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
-        /// Save the new file sizes.
-        storage.saveFileSizes(lock);
+        storage.saveIndicesAndFileSizes(lock);
 
         storage.updateTotalRows(lock);
 
@@ -559,10 +550,33 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.update(data_file_path);
-    file_checker.update(index_file_path);
-    file_checker.save();
+    file_checker.updateAndSave({data_file_path, index_file_path});
     total_bytes = file_checker.getTotalSize();
+}
+
+
+void StorageStripeLog::saveIndicesAndFileSizes(const WriteLock & lock)
+{
+    /// The index file is itself one of the files whose size is recorded, so the count of saved indices
+    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
+    size_t num_indices_saved_before = num_indices_saved;
+    try
+    {
+        saveIndices(lock);
+
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
+
+        saveFileSizes(lock);
+    }
+    catch (...)
+    {
+        num_indices_saved = num_indices_saved_before;
+        throw;
+    }
 }
 
 
@@ -723,8 +737,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         }
 
         /// Finish writing.
-        saveIndices(lock);
-        saveFileSizes(lock);
+        saveIndicesAndFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
