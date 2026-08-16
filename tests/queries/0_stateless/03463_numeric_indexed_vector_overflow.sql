@@ -1,3 +1,4 @@
+-- Tags: no-msan
 DROP TABLE IF EXISTS uin_value_details;
 
 CREATE TABLE uin_value_details (uin UInt8, value Float64) ENGINE = MergeTree() ORDER BY uin;

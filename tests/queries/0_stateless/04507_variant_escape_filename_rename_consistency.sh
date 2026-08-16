@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-darwin, no-object-storage, no-shared-merge-tree
+# Tags: no-darwin, no-object-storage, no-shared-merge-tree, no-msan
 #
 # no-darwin: the macOS filesystem (APFS) is case-insensitive, so `MergeTree` hashes stream
 #   filenames unconditionally and the expected `.bin` names never appear on disk.

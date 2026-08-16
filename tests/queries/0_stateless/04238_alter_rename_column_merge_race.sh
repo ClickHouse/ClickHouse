@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

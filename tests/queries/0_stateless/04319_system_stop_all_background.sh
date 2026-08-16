@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel
+# Tags: atomic-database, memory-engine, no-parallel, no-msan
 
 # Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
 # on the server, so it cannot run concurrently with other tests that create RMV

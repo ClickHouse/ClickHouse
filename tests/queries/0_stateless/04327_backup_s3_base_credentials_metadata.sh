@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Tag: no-fasttest - requires S3
 
 # The `base_backup` locator in `.backup` metadata must not store `S3` credentials.

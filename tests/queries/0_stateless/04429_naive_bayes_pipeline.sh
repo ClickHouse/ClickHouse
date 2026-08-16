@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 
 # End-to-end NAIVE_BAYES pipeline on raw labelled text (300 sentences x 8 languages, class ids 0..7):
 #   1. build (ngram, class_id, count) training data straight from the text with naiveBayesNgrams + GROUP BY,

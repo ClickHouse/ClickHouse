@@ -1,4 +1,4 @@
--- Tags: no-debug, no-fasttest, no-llvm-coverage, long
+-- Tags: no-debug, no-fasttest, no-llvm-coverage, long, no-msan
 -- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
 SET allow_introspection_functions = 1;

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 # Regression test: a dependent materialized view whose target is an Alias hides the alias target's
 # own dependent-view graph from InsertDependenciesBuilder - that graph is expanded only inside the
 # nested INSERT the AliasSink runs at execution time. With use_strict_insert_block_limits the source

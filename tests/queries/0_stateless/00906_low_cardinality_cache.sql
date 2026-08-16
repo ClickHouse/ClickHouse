@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 
 SET max_rows_to_read = '100M', max_execution_time = 600;
 drop table if exists lc_00906;

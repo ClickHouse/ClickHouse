@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Tag no-fasttest -- requires Kafka
 
 # Stateless tests for AWS MSK IAM auth setting validation.

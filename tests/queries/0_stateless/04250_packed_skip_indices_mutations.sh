@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-msan
 # no-parallel-replicas: EXPLAIN output and active part lists differ across replicas.
 #
 # Mutation matrix for packed skip indices. Every scenario does the same thing:

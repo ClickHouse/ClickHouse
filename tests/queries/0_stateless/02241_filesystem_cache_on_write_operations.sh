@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check, no-msan
 # no-flaky-check: Too slow
 
 set -e

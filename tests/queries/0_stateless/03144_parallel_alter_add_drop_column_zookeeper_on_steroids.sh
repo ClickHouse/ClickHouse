@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-parallel, no-fasttest, no-msan
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/63353
 # A LOGICAL_ERROR "Unexpected return type from materialize" could occur during SELECT

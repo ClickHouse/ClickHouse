@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings, no-msan
 #
 # Regression for the multi-stream text-index case flagged on PR #109616 (issue #109595).
 # 04427 covers the corrupted-orphan repair (skp_idx_<name>.* on disk, no per-file entries

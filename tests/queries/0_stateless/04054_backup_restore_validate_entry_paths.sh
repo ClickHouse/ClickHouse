@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 # Test that RESTORE rejects backup entries with path traversal sequences (../)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

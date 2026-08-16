@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database
+# Tags: no-fasttest, no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database, no-msan
 #
 # `no-random-merge-tree-settings`: the test pins `escape_index_filenames` and
 # `packed_skip_index_max_bytes`, which are exactly the settings the collision

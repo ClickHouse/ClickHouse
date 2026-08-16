@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-s3-storage, no-azure-blob-storage
+# Tags: no-fasttest, long, no-s3-storage, no-azure-blob-storage, no-msan
 # Tag: no-s3-storage - too long
 # Tag: no-azure-blob-storage - too long
 

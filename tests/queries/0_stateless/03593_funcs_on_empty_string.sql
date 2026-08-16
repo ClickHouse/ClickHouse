@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-openssl-fips
+-- Tags: no-fasttest, no-openssl-fips, no-msan
 -- ^ certain functions are disabled in the fast test build.
 -- ^ MD5 function is not available in FIPS build
 

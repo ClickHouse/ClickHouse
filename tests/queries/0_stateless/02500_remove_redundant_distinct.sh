@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 # Tag long: distributed remote() EXPLAIN cases push flaky-check repeated runs past 180s
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

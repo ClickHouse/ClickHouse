@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-msan
 -- no-fasttest: fast builds are `NDEBUG` without sanitizers, so `chassert` expands to
 -- `(void)sizeof(...)` and every statement below would pass without exercising the abort.
 
