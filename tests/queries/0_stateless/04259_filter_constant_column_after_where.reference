@@ -2,8 +2,6 @@ String, Const(size = 2, String(size = 1))	2	4
 String, String(size = 2)	2	4
 String, Const(size = 1, String(size = 1))	1	2
 hello!	2
-hello1	hello
-hello3	hello
 UInt64, Const(size = 1, UInt64(size = 1))	1
 hello	1	2	1
 String, Const(size = 1, String(size = 1))	1
