@@ -674,6 +674,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
         }
 
         bool cancel_delegated_to_reader = false;
+        bool drain_delegated_to_reader = false;
         {
             LockAndBlocker lock(was_cancelled_mutex);
             sync_read_in_progress = false;
@@ -689,7 +690,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
                 cancel_delegated_to_reader = true;
             }
 
-            if (!cancel_delegated_to_reader && !drain_requested)
+            drain_delegated_to_reader = drain_requested;
+            if (!cancel_delegated_to_reader && !drain_delegated_to_reader)
             {
                 if (was_cancelled)
                     return ReadResult(Block());
@@ -705,8 +707,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             /// A concurrent `finish` delegated the drain to this thread while we were blocked
             /// in `receivePacket` (see `finish`). Take ownership of the drain loop and handle
             /// the packet we already hold the way the drain loop would.
-            drain_requested = false;
-            draining = true;
+            if (drain_delegated_to_reader)
+            {
+                drain_requested = false;
+                draining = true;
+            }
         }
 
         if (cancel_delegated_to_reader)
