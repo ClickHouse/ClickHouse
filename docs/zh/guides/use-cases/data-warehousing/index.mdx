@@ -16,7 +16,7 @@ ClickHouse 支持与开放表格式集成，包括 [Apache Iceberg](/zh/referenc
   ### 就地查询现有数据
 </div>
 
-ClickHouse 可以直接查询对象存储中的开放表格式，而无需复制数据。对于已采用 Iceberg、Delta Lake、Hudi 或 Paimon 作为标准的组织，ClickHouse 可直接指向现有表，并立即使用其 SQL 方言、分析函数以及高效的原生 Parquet 读取器。同时，[clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 和 [chDB](/zh/products/chdb/index) 等工具支持对远程存储中 70 多种文件格式进行探索式临时分析，使用户无需搭建任何基础设施，即可交互式探索数据湖数据集。
+ClickHouse 可以直接查询对象存储中的开放表格式，而无需复制数据。对于已采用 Iceberg、Delta Lake、Hudi 或 Paimon 作为标准的组织，ClickHouse 可直接指向现有表，并立即使用其 SQL 方言、分析函数以及高效的原生 Parquet 读取器。同时，[clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 和 [chDB](/zh/chdb/index) 等工具支持对远程存储中 70 多种文件格式进行探索式临时分析，使用户无需搭建任何基础设施，即可交互式探索数据湖数据集。
 
 用户既可以通过直接读取 (使用[表函数和表引擎](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)) 来实现，也可以通过[连接到数据目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)来实现。
 
@@ -70,6 +70,12 @@ ClickHouse 支持将数据回写到开放表格式，这在以下场景中尤其
 * **反向 ETL** - 用户使用 ClickHouse 中的 materialized views 或定时查询执行转换，并希望将结果持久化到开放表格式中，供数据生态系统中的其他工具使用。
 
 请参阅关于[写入数据湖](/zh/guides/use-cases/data-warehousing/getting-started/writing-data)的入门指南。
+
+<div id="best-practices">
+  ### 最佳实践
+</div>
+
+对于生产环境中的工作负载，请参阅[数据湖最佳实践](/zh/guides/use-cases/data-warehousing/getting-started/best-practices)，了解如何选择表函数、表引擎或目录连接，以及如何调整性能设置和调试数据湖查询。
 
 <div id="next-steps">
   ## 后续步骤

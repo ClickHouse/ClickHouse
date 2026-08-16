@@ -7,11 +7,11 @@ keywords: ['Managed Postgres 업그레이드', 'Postgres 버전', '마이너 업
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
-Managed Postgres는 인스턴스를 안전하고 최신 상태로 유지할 수 있도록 PostgreSQL 버전 업그레이드를 관리합니다. 마이너 버전 업그레이드와 메이저 버전 업그레이드 모두 중단을 최소화하면서 지원됩니다.
+ClickHouse Managed Postgres는 인스턴스를 안전하고 최신 상태로 유지할 수 있도록 PostgreSQL 버전 업그레이드를 관리합니다. 마이너 버전 업그레이드와 메이저 버전 업그레이드 모두 중단을 최소화하면서 지원됩니다.
 
 <div id="maintenance-updates">
   ## 유지 관리 업데이트
@@ -34,11 +34,11 @@ PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
 기본 유지 관리 기간은 일요일 14:00~16:00 UTC입니다.
 예상 중단 시간은 해당 기간 내 1분 미만입니다.
 
-Enterprise Tier 조직에서는 Managed Postgres의 유지 관리 기간을 지원하므로, 업그레이드 및 기타 유지 관리 작업을 워크로드에 미치는 영향이 가장 적은 시간대에 예약할 수 있습니다. 유지 관리 기간 구성을 위한 UI 및 API 지원은 곧 제공될 예정입니다. 그전까지는 인스턴스의 유지 관리 기간을 설정하려면 [support](https://clickhouse.com/support/program)에 문의하십시오.
+Enterprise Tier 조직에서는 ClickHouse Managed Postgres의 유지 관리 기간을 지원하므로, 업그레이드 및 기타 유지 관리 작업을 워크로드에 미치는 영향이 가장 적은 시간대에 예약할 수 있습니다. 유지 관리 기간 구성을 위한 UI 및 API 지원은 곧 제공될 예정입니다. 그전까지는 인스턴스의 유지 관리 기간을 설정하려면 [support](https://clickhouse.com/support/program)에 문의하십시오.
 
 <div id="major-version-upgrades">
   ## 메이저 버전 업그레이드
 </div>
 
 UI 및 API를 통한 메이저 버전 업그레이드(예: 17.x에서 18.x로)는 곧 지원될 예정입니다.
-그때까지는 Managed Postgres 인스턴스를 업그레이드하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.
+그때까지는 ClickHouse Managed Postgres 인스턴스를 업그레이드하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

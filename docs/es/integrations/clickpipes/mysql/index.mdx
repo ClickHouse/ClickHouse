@@ -10,9 +10,10 @@ integration:
    - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -75,11 +76,17 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
 4. Completa los datos de conexión de tu base de datos MySQL de origen que configuraste en el paso de prerrequisitos.
 
 <Info>
-  Antes de empezar a añadir los datos de conexión, asegúrate de haber incluido las direcciones IP de ClickPipes en la lista de permitidos de tu firewall. En la página siguiente puedes encontrar una [lista de direcciones IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips).
+  Antes de empezar a añadir los datos de conexión, asegúrate de haber incluido las direcciones IP de ClickPipes en la lista de permitidos de tu firewall. En la página siguiente puedes encontrar una [lista de direcciones IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips).
   Para obtener más información, consulta las guías de configuración de MySQL de origen enlazadas en [la parte superior de esta página](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Completa los datos de conexión" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Cambiar la configuración de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (Opcional) Configurar el túnel SSH
@@ -98,7 +105,7 @@ Puede especificar los detalles del túnel SSH si su base de datos MySQL de orige
 4. Haga clic en &quot;Verificar conexión&quot; para comprobar la conexión.
 
 <Note>
-  Asegúrese de permitir las [direcciones IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
+  Asegúrese de permitir las [direcciones IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
 </Note>
 
 Una vez completados los datos de la conexión, haga clic en `Next`.
@@ -114,6 +121,7 @@ Puede configurar las opciones avanzadas si es necesario. A continuación, se inc
 * **Tamaño del lote de extracción**: El número de filas que se obtendrán en un solo lote. Esta es una opción de mejor esfuerzo y puede que no se respete en todos los casos.
 * **Número de filas por partición en la instantánea**: Es el número de filas que se obtendrán en cada partición durante la instantánea inicial. Esto resulta útil cuando tiene una gran cantidad de filas en sus tablas y quiere controlar el número de filas obtenidas en cada partición.
 * **Número de tablas en paralelo en la instantánea**: Es el número de tablas que se obtendrán en paralelo durante la instantánea inicial. Esto resulta útil cuando tiene una gran cantidad de tablas y quiere controlar el número de tablas obtenidas en paralelo.
+* **ID del servidor**: Parámetro opcional para establecer el ID del servidor para la replicación del binlog de MySQL. Si no se establece, ClickPipes generará un ID de servidor aleatorio que podría cambiar durante el ciclo de vida de ClickPipe. Úselo para identificar de forma determinista su ClickPipe en el servidor MySQL de origen.
 
 <div id="configure-the-tables">
   ### Configura las tablas

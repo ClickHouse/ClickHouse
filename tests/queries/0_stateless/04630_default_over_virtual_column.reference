@@ -1,0 +1,12 @@
+1	t_dv
+2
+3	t_dv	4
+5	6	10
+6
+real	7
+10
+ok
+from_target	1
+from_target	1
+from_target	2
+legacy attach and unrelated alter ok

@@ -29,7 +29,7 @@ and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the data
 
 <Accordion title="Turning on the full parser">
 You can also turn on the full parser for the data 
-by using the [`input_format_values_interpret_expressions`](/reference/settings/formats#input_format_values_interpret_expressions) setting. 
+by using the [`input_format_values_interpret_expressions`](/reference/settings/formats/input-format#input_format_values_interpret_expressions) setting.
 
 When the aforementioned setting is set to `1`, 
 ClickHouse first tries to parse values with the fast stream parser. 
@@ -37,7 +37,7 @@ If it fails, ClickHouse tries to use the full parser for the data, treating it l
 </Accordion>
 
 The data can have any format. 
-When a query is received, the server calculates no more than [max_query_size](/reference/settings/session-settings#max_query_size) bytes of the request in RAM 
+When a query is received, the server calculates no more than [max_query_size](/reference/settings/session-settings/max#max_query_size) bytes of the request in RAM
 (by default, 1 MB), and the rest is stream parsed.
 This is to allow for avoiding issues with large `INSERT` queries, which is the recommended way to insert your data in ClickHouse.
 
@@ -494,7 +494,7 @@ ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the
 This substitution caused the exception.
 
 <Note>
-You can change this default behavior by setting [prefer_column_name_to_alias](/reference/settings/session-settings#prefer_column_name_to_alias) to `1`.
+You can change this default behavior by setting [prefer_column_name_to_alias](/reference/settings/session-settings/prefer#prefer_column_name_to_alias) to `1`.
 </Note>
 
 ## Asterisk {#asterisk}

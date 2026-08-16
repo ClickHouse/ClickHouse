@@ -183,7 +183,7 @@ CREATE TABLE stackoverflow.posts
   `ParentId` String,
   `CommunityOwnedDate` DateTime64(3, 'UTC'),
   `ClosedDate` DateTime64(3, 'UTC'),
-  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --인덱스 위치
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
@@ -264,6 +264,6 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 </div>
 
 * [데이터 스키핑 인덱스 가이드](/ko/concepts/features/performance/skip-indexes/skipping-indexes)
-* [데이터 스키핑 인덱스 사용 예시](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [데이터 스키핑 인덱스 다루기](/ko/reference/statements/alter/skipping-index)
+* [데이터 스키핑 인덱스 예시](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [데이터 스키핑 인덱스 관리](/ko/reference/statements/alter/skipping-index)
 * [시스템 테이블 정보](/ko/reference/system-tables/data_skipping_indices)
