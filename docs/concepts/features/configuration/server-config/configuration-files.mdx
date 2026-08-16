@@ -318,7 +318,7 @@ The `config.xml` file can specify a separate config with user settings, profiles
 User configuration can be split into separate files similar to `config.xml` and `config.d/`.
 The directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 The directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
-Files in `users.d` are also merged in lexicographical order by file name.
+User configuration fragments are merged in lexicographical order by their full paths. For files in the standard `users.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `users.d`, all its fragments are processed first when both directories exist.
 
 Note that configuration files are first [merged](#merging) taking into account settings, and includes are processed after that.
 

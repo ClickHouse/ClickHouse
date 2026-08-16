@@ -66,3 +66,27 @@ tee "$test_dir/legacy/config.d/00-base.xml" >/dev/null <<'EOF'
 EOF
 
 "$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/legacy/config.xml" --key order
+
+mkdir "$test_dir/legacy_users"
+
+tee "$test_dir/legacy_users/users.xml" >/dev/null <<'EOF'
+<clickhouse>
+    <order>main</order>
+</clickhouse>
+EOF
+
+mkdir "$test_dir/legacy_users/conf.d" "$test_dir/legacy_users/users.d"
+
+tee "$test_dir/legacy_users/conf.d/99-override.xml" >/dev/null <<'EOF'
+<clickhouse>
+    <order replace="1">conf</order>
+</clickhouse>
+EOF
+
+tee "$test_dir/legacy_users/users.d/00-base.xml" >/dev/null <<'EOF'
+<clickhouse>
+    <order replace="1">users</order>
+</clickhouse>
+EOF
+
+"$CLICKHOUSE_BINARY" extract-from-config --config-file "$test_dir/legacy_users/users.xml" --key order
