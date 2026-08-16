@@ -501,6 +501,27 @@ struct ToDateTimeTransform64Signed
     }
 };
 
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransformFromTime64
+{
+    static constexpr auto name = "toDate";
+
+    static UInt16 execute(Int64 seconds, const DateLUTImpl & time_zone)
+    {
+        return ToDateImpl<date_time_overflow_behavior>::execute(seconds, time_zone);
+    }
+};
+
+struct ToDate32TransformFromTime64
+{
+    static constexpr auto name = "toDate32";
+
+    static Int32 execute(Int64 seconds, const DateLUTImpl & time_zone)
+    {
+        return ToDate32Impl::execute(seconds, time_zone);
+    }
+};
+
 
 struct ToDateTime64TransformFromTime
 {
@@ -2285,7 +2306,7 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            using DateTransform = TransformTime64<ToDateImpl<date_time_overflow_behavior>>;
+            using DateTransform = TransformTime64<ToDateTransformFromTime64<date_time_overflow_behavior>>;
             const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, DateTransform(from_scale));
@@ -2293,7 +2314,7 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeDate32>)
         {
-            using DateTransform = TransformTime64<ToDate32Impl>;
+            using DateTransform = TransformTime64<ToDate32TransformFromTime64>;
             const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, DateTransform(from_scale));
