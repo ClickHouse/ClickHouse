@@ -147,10 +147,14 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 query.collection_name,
                 fmt::join(detached_names, ", "));
         }
-    }
 
-    if (!NamedCollectionFactory::instance().removeFromSQLIfNoDependencies(query))
-        throw Exception(ErrorCodes::NAMED_COLLECTION_IS_USED, "Named collection `{}` is used by a table", query.collection_name);
+        if (!NamedCollectionFactory::instance().removeFromSQLIfNoDependencies(query))
+            throw Exception(ErrorCodes::NAMED_COLLECTION_IS_USED, "Named collection `{}` is used by a table", query.collection_name);
+    }
+    else
+    {
+        NamedCollectionFactory::instance().removeFromSQL(query);
+    }
 
     return {};
 }
