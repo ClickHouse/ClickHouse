@@ -3,6 +3,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <gtest/gtest.h>
 
@@ -48,6 +49,43 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<BFloat16>(std::make_shared<DataTypeBFloat16>());
     testLowCardinalityNumberInsert<Float32>(std::make_shared<DataTypeFloat32>());
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
+}
+
+TEST(ColumnLowCardinality, InsertManyFrom)
+{
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto source = low_cardinality_type->createColumn();
+    source->insert(Field("value"));
+
+    auto destination = low_cardinality_type->createColumn();
+    destination->insertManyFrom(*source, source->size(), 0);
+    ASSERT_EQ(destination->size(), 0);
+
+    destination->insertManyFrom(*source, 0, 3);
+    ASSERT_EQ(destination->size(), 3);
+    for (size_t i = 0; i < destination->size(); ++i)
+        ASSERT_EQ((*destination)[i], Field("value"));
+}
+
+TEST(ColumnLowCardinality, InsertManyFromSharedDictionaryExpandsIndex)
+{
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto source = low_cardinality_type->createColumn();
+
+    for (UInt64 i = 0; i <= 256; ++i)
+        source->insert(Field(i));
+
+    const auto & source_low_cardinality = assert_cast<const ColumnLowCardinality &>(*source);
+    auto destination = low_cardinality_type->createColumn();
+    auto & destination_low_cardinality = assert_cast<ColumnLowCardinality &>(*destination);
+    destination_low_cardinality.setSharedDictionary(source_low_cardinality.getDictionaryPtr());
+
+    destination->insertManyFrom(*source, 256, 3);
+
+    ASSERT_EQ(destination->size(), 3);
+    ASSERT_EQ(destination_low_cardinality.getSizeOfIndexType(), sizeof(UInt16));
+    for (size_t i = 0; i < destination->size(); ++i)
+        ASSERT_EQ((*destination)[i], Field(UInt64(256)));
 }
 
 TEST(ColumnLowCardinality, Clone)
