@@ -33,6 +33,7 @@ class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
 public:
     LocalServer() = default;
+    ~LocalServer() override;
 
     void initialize(Poco::Util::Application & self) override;
 
