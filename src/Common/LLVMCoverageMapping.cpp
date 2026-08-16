@@ -153,7 +153,8 @@ std::vector<FilenameTable> parseCovMapFilenames(
                     reinterpret_cast<Bytef *>(uncompressed.data()),
                     &dest_len,
                     fp,
-                    static_cast<uLong>(compressed_len)) != Z_OK)
+                    static_cast<uLong>(compressed_len)) != Z_OK
+                || dest_len != uncompressed_len)
                 continue;
 
             fp += compressed_len;
