@@ -94,10 +94,9 @@ def test_cluster_database(started_cluster):
     assert node1.query("EXISTS TABLE proxy.t") == "1\n"
     assert node1.query("SELECT count(), sum(x) FROM proxy.t") == "2\t3\n"
 
-    # The table is exposed as a re-executable `Distributed` definition over the named cluster,
-    # including the implicit rand() sharding key of a multi-shard database.
-    create_query = node1.query("SHOW CREATE TABLE proxy.t FORMAT TSVRaw").strip()
-    assert "Distributed('two_shards', 'src', 't', rand())" in create_query
+    # The implicit `rand()` key is insert-only in a database proxy, but it would be a read
+    # sharding key in a standalone `Distributed` table, so no equivalent CREATE query exists.
+    assert "THERE_IS_NO_QUERY" in node1.query_and_get_error("SHOW CREATE TABLE proxy.t")
 
     node1.query("INSERT INTO proxy.t VALUES (10)")
     assert node1.query("SELECT sum(x) FROM proxy.t") == "13\n"
@@ -272,25 +271,12 @@ def test_follows_config_reload(started_cluster):
     )
     assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "1\n"
 
-    # The `Cluster` database follows reloads, so the serialized definition must include the
-    # sharding key even while the named cluster has one shard. Replaying it before the reload
-    # must preserve INSERT behavior after the cluster grows to two shards.
-    create_query = node1.query("SHOW CREATE TABLE rel_proxy.t FORMAT TSVRaw").strip()
-    assert "Distributed('reloadable', 'rel_src', 't', rand())" in create_query
-    node1.query(create_query.replace("rel_proxy.t", "rel_recreated", 1))
-
     try:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_TWO_SHARDS)
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "3\n"
-        node1.query("INSERT INTO rel_recreated VALUES (10)")
-        node1.query("DROP TABLE rel_recreated")
-        # The database is now multi-shard, so its proxy tables gain the implicit sharding key.
-        create_query = node1.query(
-            "SHOW CREATE TABLE rel_proxy.t FORMAT TSVRaw"
-        ).strip()
-        assert "Distributed('reloadable', 'rel_src', 't', rand())" in create_query
+        assert "THERE_IS_NO_QUERY" in node1.query_and_get_error("SHOW CREATE TABLE rel_proxy.t")
     finally:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
         node1.query("SYSTEM RELOAD CONFIG")

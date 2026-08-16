@@ -38,9 +38,6 @@ ${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${CLUSTER_DB}"
 echo '-- each table is exposed as a Distributed storage'
 ${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.tables WHERE database = '${CLUSTER_DB}' AND name = 't'"
 
-echo '-- SHOW CREATE TABLE includes a sharding key so it remains valid after a cluster reload'
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.t FORMAT TSVRaw" | grep -c "Distributed('test_shard_localhost', '${CLICKHOUSE_DATABASE}', 't', rand())"
-
 echo '-- DESCRIBE reflects the remote structure'
 ${CLICKHOUSE_CLIENT} --query "DESCRIBE TABLE ${CLUSTER_DB}.t" | cut -f1,2
 
@@ -76,8 +73,8 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "
     SELECT count() FROM ${CLICKHOUSE_DATABASE}.t;
 "
 
-echo '-- the implicit sharding key of a multi-shard database is included in SHOW CREATE TABLE'
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_sharded.t FORMAT TSVRaw" | grep -c "Distributed('test_cluster_two_shards', '${CLICKHOUSE_DATABASE}', 't', rand())"
+echo '-- SHOW CREATE TABLE cannot serialize a multi-shard proxy with an insert-only sharding key'
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_sharded.t" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_sharded"
 
 echo '-- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions'

@@ -938,6 +938,21 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// rejects a multi-shard `INSERT` (`STORAGE_REQUIRES_PARAMETER`), while the live proxy accepts it.
     const bool has_implicit_sharding_key = distributed && distributed->getCluster()->getShardsInfo().size() > 1;
 
+    /// The implicit key is insert-only for a database proxy, whereas a standalone `Remote` table
+    /// uses an explicit key for read shard pruning too. There is no CREATE syntax that preserves
+    /// the proxy behavior, so do not emit a misleading definition.
+    if (has_implicit_sharding_key)
+    {
+        if (throw_on_error)
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_QUERY,
+                "Table {}.{} is a multi-shard `Remote` database proxy whose implicit `rand()` sharding key is used only for INSERT, "
+                "but a standalone `Remote` table would also use it for read shard pruning, so there is no equivalent re-executable CREATE query for it",
+                backQuoteIfNeed(remote_database),
+                backQuoteIfNeed(table_name));
+        return nullptr;
+    }
+
     /// The table is exposed as the `Remote`/`RemoteSecure` table engine, which is the persistent
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by

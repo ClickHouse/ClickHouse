@@ -134,6 +134,23 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         return nullptr;
     }
 
+    /// `StorageDistributed` uses an implicit `rand()` key for a multi-shard proxy only to route
+    /// INSERT rows. A standalone `Distributed` table would use the same key for read shard
+    /// pruning, which changes the behavior of settings such as
+    /// `force_optimize_skip_unused_shards`. The key cannot be marked insert-only in a CREATE
+    /// query, so no standalone table definition is equivalent to a `Cluster` proxy.
+    if (distributed && distributed->getCluster()->getShardsInfo().size() > 1)
+    {
+        if (throw_on_error)
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_QUERY,
+                "Table {}.{} is a multi-shard `Cluster` database proxy whose implicit `rand()` sharding key is used only for INSERT, "
+                "but a standalone `Distributed` table would also use it for read shard pruning, so there is no equivalent re-executable CREATE query for it",
+                backQuoteIfNeed(remote_database),
+                backQuoteIfNeed(table_name));
+        return nullptr;
+    }
+
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
@@ -146,11 +163,6 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
             make_intrusive<ASTLiteral>(cluster_name),
             make_intrusive<ASTLiteral>(remote_database),
             make_intrusive<ASTLiteral>(table_name)};
-        /// A proxy over multiple shards carries an implicit `rand()` sharding key (see
-        /// `DatabaseRemote::fetchTable`). Always serialize it for `Cluster`: a named cluster
-        /// follows configuration reloads, so a definition emitted while it has one shard must
-        /// keep accepting INSERT after it grows to multiple shards.
-        engine_arguments.push_back(makeASTFunction("rand"));
     }
 
     /// Reuse the common serializer with `only_ordinary = false` so that column defaults, aliases and

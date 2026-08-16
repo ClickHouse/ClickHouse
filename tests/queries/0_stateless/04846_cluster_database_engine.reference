@@ -8,8 +8,6 @@ Cluster
 t
 -- each table is exposed as a Distributed storage
 Distributed
--- SHOW CREATE TABLE includes a sharding key so it remains valid after a cluster reload
-1
 -- DESCRIBE reflects the remote structure
 id	UInt64
 s	String
@@ -34,7 +32,7 @@ s	String
 -- a multi-shard database reads from every shard and accepts INSERT queries by default
 8
 5
--- the implicit sharding key of a multi-shard database is included in SHOW CREATE TABLE
+-- SHOW CREATE TABLE cannot serialize a multi-shard proxy with an insert-only sharding key
 1
 -- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions
 ALIAS a + 2
