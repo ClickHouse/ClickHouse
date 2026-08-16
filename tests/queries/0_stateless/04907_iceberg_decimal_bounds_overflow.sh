@@ -32,7 +32,7 @@ mkdir -p "${TABLE_PATH}"
 #   INSERT INTO dec_min SELECT 1, decimal(42.42);
 #
 # repacked here without the Spark checksum files, as `tar czf - . | base64`.
-base64 --decode <<'EOF' | tar -xzf - -C "${TABLE_PATH}"
+base64 --decode <<'EOF' | tar --exclude='._*' -xzf - -C "${TABLE_PATH}"
 H4sIAHiigGoAA+1ce6wcVRnfuxa81raB2l1u9aqHja1t3NnOcx9NMW0EQqEt2FuwUpu9Z2dme4fu
 ziw7s71cmmv4AwyaILYlBCuBGCAh+od/+EhETQpqjIFGLIkVAwkRYqJ/4IOqMcToOXPmcWZ2Znbn
 du8t2j3pvZc9853vdc535ved7yylbQq04LZSncWNYZlaWVZYoVlm5FpVZsSKgLoUgWfKDVjly1yT
