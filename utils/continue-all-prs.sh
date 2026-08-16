@@ -739,7 +739,7 @@ TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-bra
 triage_state_is_safe()
 {
     local wt="$1" start_head="$2" base_head="$3"
-    local head first_parent second_parent extra_parent expected_tree actual_tree
+    local head first_parent second_parent extra_parent merge_base expected_tree actual_tree index
 
     [[ -z "$(git -C "$wt" status --porcelain)" ]] || return 1
     head=$(git -C "$wt" rev-parse HEAD) || return 1
@@ -747,11 +747,19 @@ triage_state_is_safe()
 
     read -r first_parent second_parent extra_parent < <(git -C "$wt" show -s --format='%P' HEAD)
     [[ "$first_parent" == "$start_head" && "$second_parent" == "$base_head" && -z "$extra_parent" ]] || return 1
-    # `--write-tree` was added after Git 2.34, which is still used by the
-    # automation image.  The non-writing form produces the same resulting
-    # tree object for a clean merge and works with that version too.
-    expected_tree=$(git -C "$wt" merge-tree "$start_head" "$base_head" | awk 'NR == 1 { print $1; exit }') || return 1
-    [[ "$expected_tree" =~ ^[0-9a-f]{40,64}$ ]] || return 1
+    # Git 2.34 lacks the two-argument `merge-tree` form with `--write-tree`.
+    # Build the three-tree merge in a private index instead. `write-tree`
+    # rejects unmerged entries, so this only yields a tree for a clean merge.
+    merge_base=$(git -C "$wt" merge-base "$start_head" "$base_head") || return 1
+    mkdir -p "$wt/tmp/continue-all-prs" || return 1
+    index=$(cd "$wt" && mktemp "$PWD/tmp/continue-all-prs/triage-merge-index.XXXXXX") || return 1
+    rm -f "$index"
+    if ! GIT_INDEX_FILE="$index" git -C "$wt" read-tree -m "$merge_base" "$start_head" "$base_head" \
+        || ! expected_tree=$(GIT_INDEX_FILE="$index" git -C "$wt" write-tree); then
+        rm -f "$index"
+        return 1
+    fi
+    rm -f "$index"
     actual_tree=$(git -C "$wt" rev-parse "$head^{tree}") || return 1
     [[ "$actual_tree" == "$expected_tree" ]]
 }
@@ -852,9 +860,9 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home
+    local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home last_message
     local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_home
-    local -a codex_env
+    local -a codex_env active_codex_env
     local u_i u_o u_ci u_co u_cost triage_cost coding_cost
     local -a model_args triage_git_args triage_sandbox_args
     sid=""
@@ -931,8 +939,16 @@ run_continue_pr()
         [[ ! -e "$HOME/.git-credentials" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.git-credentials")
         [[ ! -e "$HOME/.netrc" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.netrc")
         if [[ "$AGENT" == "codex" ]]; then
-            triage_agent_home="${CODEX_HOME:-$HOME/.codex}"
-            [[ ! -d "$triage_agent_home" ]] || triage_sandbox_args+=(--bind "$triage_agent_home" "$triage_agent_home")
+            if [[ "$CUSTOM_KEY" == 1 ]]; then
+                triage_agent_home="$codex_home"
+            else
+                triage_agent_home="${CODEX_HOME:-$HOME/.codex}"
+            fi
+            # Codex uses `HOME/.codex` when `CODEX_HOME` is unset. Preserve
+            # its configured state at that location inside the empty sandbox
+            # home and set `CODEX_HOME` explicitly for both login modes.
+            [[ ! -d "$triage_agent_home" ]] || triage_sandbox_args+=(--bind "$triage_agent_home" "$triage_home/.codex")
+            triage_sandbox_args+=(--setenv CODEX_HOME "$triage_home/.codex")
         fi
     else
         triage_sandbox_args=()
@@ -965,9 +981,16 @@ run_continue_pr()
         fi
         model_args=()
         [[ -n "$active_model" ]] && model_args=(--model "$active_model")
+        active_codex_env=("${codex_env[@]}")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
             triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u SSH_AUTH_SOCK -u GIT_CONFIG)
+            # Bubblewrap supplies the private `CODEX_HOME`; do not override it
+            # with the host-side custom-key directory after entering the sandbox.
+            active_codex_env=()
+            last_message="$active_wt/.continue-pr-last-message"
+        else
+            last_message="$log.last"
         fi
 
         echo "===== turn $iter ($phase model ${active_model:-default}, session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
@@ -1006,7 +1029,7 @@ run_continue_pr()
                 cat "$log.err" 2>/dev/null > "$log.last" || true
             fi
         else
-            rm -f "$log.last"
+            rm -f "$last_message"
             if (( phase_iter == 1 )); then
                 prompt="/continue-pr-auto $url
 
@@ -1015,10 +1038,10 @@ ${system_prompt}"
                     prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
                     prompt+="$handoff"
                 fi
-                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec \
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${active_codex_env[@]}" timeout "$remaining" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
-                    --output-last-message "$log.last" - <<< "$prompt" \
+                    --output-last-message "$last_message" - <<< "$prompt" \
                 ) > "$log.json" 2>"$log.err" || ec=$?
                 sid=$(jq -Rrs '[splits("\n") | fromjson? | select(.type == "thread.started") | .thread_id][0] // empty' "$log.json" 2>/dev/null || true)
                 if [[ -z "$sid" ]] && (( ec == 0 )); then
@@ -1026,10 +1049,10 @@ ${system_prompt}"
                     ec=1
                 fi
             else
-                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec resume \
+                ( cd "$active_wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${active_codex_env[@]}" timeout "$remaining" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
-                    --output-last-message "$log.last" "$sid" - <<< "$turn_prompt" \
+                    --output-last-message "$last_message" "$sid" - <<< "$turn_prompt" \
                 ) > "$log.json" 2>"$log.err" || ec=$?
             fi
 
@@ -1050,6 +1073,9 @@ ${system_prompt}"
                 coding_cost=0
                 if [[ "$phase" == "triage" ]]; then triage_cost="${u_cost:-0}"; else coding_cost="${u_cost:-0}"; fi
                 stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "$triage_cost" "$coding_cost"
+            fi
+            if [[ "$phase" == "triage" && -f "$last_message" ]]; then
+                cp "$last_message" "$log.last" || return 1
             fi
             if [[ ! -s "$log.last" ]]; then
                 {
