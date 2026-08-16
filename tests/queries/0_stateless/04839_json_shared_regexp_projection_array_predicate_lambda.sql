@@ -4,11 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS array_predicate_provenance_04839;
 
--- collectValueCarryingIdentifierNames must not treat an identifier referenced only inside a
--- predicate/comparator lambda (arrayFilter, arraySort, ...) as value-carrying: the lambda's
--- return value never becomes part of such a function's output, only the array argument's own
--- elements do (see 04839_json_shared_regexp_projection_condition_only_identifier.sql for the
--- analogous if()/multiIf() case).
+-- A predicate lambda (arrayFilter, arraySort, ...) never contributes its own return value to the
+-- output, so an identifier used only inside it must not donate its SHARED REGEXP policy.
 CREATE TABLE array_predicate_provenance_04839
 (
     id UInt64,
