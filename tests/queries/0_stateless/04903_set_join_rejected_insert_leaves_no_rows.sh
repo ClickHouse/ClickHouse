@@ -60,3 +60,18 @@ $CLICKHOUSE_CLIENT --query "ATTACH TABLE staged_join"
 echo "rows after reattach:"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM staged_join"
 $CLICKHOUSE_CLIENT --query "DROP TABLE staged_join"
+
+echo "-- Join limit"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS limited_join"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE limited_join (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent = 1, max_rows_in_join = 1, join_overflow_mode = 'throw'"
+
+# `HashJoin::addBlockToJoin` used to add the block before checking its limits. The persistent
+# sink must restore the previous state when this publish step throws.
+$CLICKHOUSE_CLIENT --query "INSERT INTO limited_join VALUES (1, 10), (2, 20)" 2>&1 | grep -o 'SET_SIZE_LIMIT_EXCEEDED' | head -n 1
+echo "rows immediately after rejected insert:"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM limited_join"
+$CLICKHOUSE_CLIENT --query "DETACH TABLE limited_join"
+$CLICKHOUSE_CLIENT --query "ATTACH TABLE limited_join"
+echo "rows after reattach:"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM limited_join"
+$CLICKHOUSE_CLIENT --query "DROP TABLE limited_join"

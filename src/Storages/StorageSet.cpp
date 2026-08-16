@@ -70,8 +70,8 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
     std::optional<CompressedWriteBuffer> compressed_backup_buf;
     std::optional<NativeWriter> backup_stream;
-    std::vector<Block> staged_blocks;
     bool backup_promoted = false;
+    bool state_update_started = false;
     bool persistent;
 };
 
@@ -143,6 +143,20 @@ void SetOrJoinSink::discardStagedBackup() noexcept
 void SetOrJoinSink::onException(std::exception_ptr)
 {
     discardStagedBackup();
+
+    if (!state_update_started)
+        return;
+
+    try
+    {
+        table.rebuildFromBackups();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("SetOrJoinSink"),
+            fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", table.getStorageID().getNameForLogs()));
+    }
 }
 
 
@@ -150,9 +164,9 @@ void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
-    /// Stage the blocks in a temporary backup file and keep them out of the live state until the
-    /// whole file has been finalized and promoted. A late I/O failure must not make a failed
-    /// `INSERT` visible in a persistent `Set` or `Join` table.
+    /// Stage blocks in a temporary backup file and keep them out of the live state until the whole
+    /// file has been finalized and promoted. The backup is replayed in `onFinish`, so an INSERT
+    /// does not retain a second in-memory copy of all its input blocks.
     if (persistent)
     {
         if (!backup_buf)
@@ -162,7 +176,6 @@ void SetOrJoinSink::consume(Chunk & chunk)
             backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
         }
         backup_stream->write(block);
-        staged_blocks.emplace_back(std::move(block));
         return;
     }
 
@@ -180,8 +193,8 @@ void SetOrJoinSink::onFinish()
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
         backup_promoted = true;
 
-        for (const auto & block : staged_blocks)
-            table.insertBlock(block, getContext());
+        state_update_started = true;
+        table.restoreFromFile(fs::path(backup_path) / backup_file_name);
     }
 
     table.finishInsert();
@@ -272,6 +285,22 @@ void StorageSet::finishInsert()
         current_set = set;
     }
     current_set->finishInsert();
+}
+
+void StorageSet::rebuildFromBackups()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto rebuilt_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    rebuilt_set->setHeader(metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName());
+
+    forEachBackupBlock([&](const Block & block)
+    {
+        rebuilt_set->insertFromBlock(block.getColumnsWithTypeAndName());
+    });
+    rebuilt_set->finishInsert();
+
+    std::lock_guard lock(mutex);
+    set = std::move(rebuilt_set);
 }
 
 size_t StorageSet::getSize(ContextPtr) const
@@ -388,6 +417,32 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
         file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
+}
+
+void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Block &)> & callback) const
+{
+    static const char * file_suffix = ".bin";
+    static const auto file_suffix_size = strlen(".bin");
+
+    using FilePriority = std::pair<UInt64, String>;
+    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
+    for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
+    {
+        const auto & name = dir_it->name();
+        const auto & file_path = dir_it->path();
+        if (disk->existsFile(file_path) && endsWith(name, file_suffix) && disk->getFileSize(file_path) > 0)
+            backup_files.push({parse<UInt64>(name.substr(0, name.size() - file_suffix_size)), file_path});
+    }
+
+    while (!backup_files.empty())
+    {
+        auto backup_buf = disk->readFile(backup_files.top().second, getReadSettings());
+        CompressedReadBuffer compressed_backup_buf(*backup_buf);
+        NativeReader backup_stream(compressed_backup_buf, 0);
+        for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
+            callback(block);
+        backup_files.pop();
+    }
 }
 
 

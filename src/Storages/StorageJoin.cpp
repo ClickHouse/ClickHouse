@@ -344,6 +344,20 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     join->addBlockToJoin(block_to_insert, true);
 }
 
+void StorageJoin::rebuildFromBackups()
+{
+    auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    forEachBackupBlock([&](const Block & block)
+    {
+        Block block_to_insert = block;
+        convertRightBlock(block_to_insert);
+        rebuilt_join->addBlockToJoin(block_to_insert, true);
+    });
+
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, nullptr);
+    join = std::move(rebuilt_join);
+}
+
 size_t StorageJoin::getSize(ContextPtr context) const
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);

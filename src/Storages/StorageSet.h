@@ -3,6 +3,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <functional>
+
 
 namespace DB
 {
@@ -50,6 +52,13 @@ protected:
     /// Restore from backup.
     void restore();
 
+    /// Read every committed backup in insertion order. The caller owns the destination state, so
+    /// it can keep an update private until it has been built successfully.
+    void forEachBackupBlock(const std::function<void(const Block &)> & callback) const;
+
+    /// Restore the live state after an insert failed while publishing its committed backup.
+    virtual void rebuildFromBackups() = 0;
+
 private:
     void restoreFromFile(const String & file_path);
 
@@ -96,6 +105,7 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
+    void rebuildFromBackups() override;
 };
 
 }

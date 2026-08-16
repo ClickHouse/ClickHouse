@@ -12,3 +12,9 @@ rows immediately after failed insert:
 0
 rows after reattach:
 1
+-- Join limit
+SET_SIZE_LIMIT_EXCEEDED
+rows immediately after rejected insert:
+0
+rows after reattach:
+0
