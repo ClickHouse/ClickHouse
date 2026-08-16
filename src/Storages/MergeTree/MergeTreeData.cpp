@@ -9177,17 +9177,18 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
         return std::nullopt;
 
-    /// The predicate is evaluated asynchronously for a background mutation. A subquery that is
-    /// still present here has not been rewritten to an initiator-time literal, so evaluating it
-    /// while pruning could allocate block numbers for a different snapshot than the mutation
-    /// eventually sees. Conservatively leave such mutations unpruned.
+    /// A subquery that is still present here is evaluated independently by the pruning pass and
+    /// by the mutation execution. It can therefore produce a different partition set between
+    /// those evaluations. This is also unsafe for foreground lightweight updates: their
+    /// partition block numbers bound the parts that `updateLightweightImpl` reads, rather than
+    /// merely serving as an optimization hint. Conservatively leave such commands unpruned.
     auto contains_subquery = [](const ASTPtr & ast, const auto & self) -> bool
     {
         if (ast->as<ASTSubquery>())
             return true;
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
     };
-    if (command_runs_in_background && contains_subquery(predicate, contains_subquery))
+    if (contains_subquery(predicate, contains_subquery))
         return std::nullopt;
 
     auto predicate_clone = predicate->clone();
