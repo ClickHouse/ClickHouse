@@ -1,5 +1,4 @@
--- Tags: no-fasttest
--- no-fasttest: the Merge-over-Distributed arm needs a cluster.
+-- Tags: shard
 
 DROP TABLE IF EXISTS local_t;
 DROP TABLE IF EXISTS dist_t;
@@ -9,6 +8,15 @@ CREATE TABLE local_t (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO local_t SELECT number FROM numbers(10);
 CREATE TABLE empty_t (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE dist_t (k UInt64) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), local_t);
+
+-- Pin every setting the assertions depend on: the runner randomizes them, and with the
+-- optimization disabled the unfixed code is already correct, so a randomized run would pass
+-- against it. The two-level thresholds decide whether the memory-efficient path is reached.
+SET enable_analyzer = 1;
+SET optimize_injective_functions_in_group_by = 1;
+SET group_by_use_nulls = 0;
+SET group_by_two_level_threshold = 1;
+SET group_by_two_level_threshold_bytes = 1;
 
 SELECT '-- a GROUP BY key that is an injective function of constants must still aggregate';
 SELECT count() FROM (SELECT 1 FROM local_t GROUP BY materialize(NULL));
@@ -40,7 +48,7 @@ SELECT count() FROM (SELECT 1 FROM local_t GROUP BY materialize(NULL) WITH TOTAL
 SELECT count() FROM (SELECT 1 FROM local_t GROUP BY materialize(NULL)) SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- a Merge table mixing a local and a remote child must not lose the aggregation';
-SELECT multiIf(0, NULL, materialize(toNullable(NULL))) FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY ALL;
+SELECT multiIf(0, NULL, materialize(toNullable(NULL))) FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY ALL SETTINGS distributed_aggregation_memory_efficient = 1;
 SELECT multiIf(0, NULL, materialize(toNullable(NULL))) FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY ALL SETTINGS distributed_aggregation_memory_efficient = 0;
 SELECT count() FROM (SELECT 1 FROM merge(currentDatabase(), '^(local_t|dist_t)$') GROUP BY materialize(toNullable(NULL)));
 

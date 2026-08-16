@@ -59,9 +59,7 @@ public:
 
         auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
 
-        /// At least one key is needed for GROUP BY: with an empty key list the query does not
-        /// aggregate at all. Unwrapping yields nothing when every key is an injective function
-        /// of constants.
+        /// At least one key is needed for GROUP BY: with an empty key list the query does not aggregate.
         if (!new_group_by.empty())
             group_by = std::move(new_group_by);
     }
