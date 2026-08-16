@@ -57,7 +57,7 @@ SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMEN
 
 -- Existing metadata is accepted during an upgrade, including a destination override that was valid
 -- before this validation was added. The table does not attempt to connect while it is attached.
-ATTACH TABLE nats_file_with_url_override_from_existing_metadata (key UInt64)
+ATTACH TABLE nats_file_with_url_override_from_existing_metadata UUID 'c6d2423a-9ab2-4a37-8e56-10e479541001' (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222');
 DROP TABLE nats_file_with_url_override_from_existing_metadata;
 
@@ -67,7 +67,7 @@ DROP TABLE nats_file_with_url_override_from_existing_metadata;
 CREATE NAMED COLLECTION 04891_nats_existing_sql_collection AS
     nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1, nats_credential_file = '/etc/passwd';
-ATTACH TABLE nats_file_from_existing_sql_collection (key UInt64)
+ATTACH TABLE nats_file_from_existing_sql_collection UUID 'c6d2423a-9ab2-4a37-8e56-10e479541002' (key UInt64)
 ENGINE = NATS(04891_nats_existing_sql_collection); -- { serverError BAD_ARGUMENTS }
 DROP NAMED COLLECTION 04891_nats_existing_sql_collection;
 
