@@ -27,10 +27,10 @@ Introducido en: v1.1.0
 
 Calcula la conjunción lógica de dos o más valores.
 
-La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings#short_circuit_function_evaluation) controla si se usa la evaluación de cortocircuito.
+La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla si se usa la evaluación de cortocircuito.
 Si está habilitada, `val_i` solo se evalúa si `(val_1 AND val_2 AND ... AND val_{i-1})` es `true`.
 
-Por ejemplo, con la evaluación de cortocircuito, no se lanza ninguna excepción por división entre cero al ejecutar la consulta `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
+Por ejemplo, con la evaluación de cortocircuito, no se lanza ninguna excepción de división por cero al ejecutar la consulta `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
 El cero como argumento se considera `false`; los valores distintos de cero se consideran `true`.
 
 **Sintaxis**
@@ -122,7 +122,7 @@ Introducido en: v1.1.0
 
 Calcula la disyunción lógica de dos o más valores.
 
-La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings#short_circuit_function_evaluation) controla si se usa la evaluación de cortocircuito.
+La configuración [`short_circuit_function_evaluation`](/es/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla si se usa la evaluación de cortocircuito.
 Si está habilitada, `val_i` se evalúa solo si `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` es `true`.
 
 Por ejemplo, con la evaluación de cortocircuito, no se produce ninguna excepción de división por cero al ejecutar la consulta `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.

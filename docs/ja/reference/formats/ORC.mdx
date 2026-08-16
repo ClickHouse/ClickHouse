@@ -27,29 +27,31 @@ doc_type: 'reference'
 
 以下の表は、サポートされている ORC のデータ型と、`INSERT` および `SELECT` クエリでそれぞれ対応する ClickHouse の [データ型](/ja/reference/data-types/index) を比較したものです。
 
-| ORC data type (`INSERT`)              | ClickHouse data type                                                                | ORC data type (`SELECT`) |
-| ------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
-| `Boolean`                             | [Bool](/ja/reference/data-types/boolean)                                               | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/ja/reference/data-types/int-uint)                                      | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/ja/reference/data-types/int-uint)                                      | `Bigint`                 |
-| `Float`                               | [Float32](/ja/reference/data-types/float)                                              | `Float`                  |
-| `Double`                              | [Float64](/ja/reference/data-types/float)                                              | `Double`                 |
-| `Decimal`                             | [Decimal](/ja/reference/data-types/decimal)                                            | `Decimal`                |
-| `Date`                                | [Date32](/ja/reference/data-types/date32)                                              | `Date`                   |
-| `Timestamp`                           | [DateTime64](/ja/reference/data-types/datetime64)                                      | `Timestamp`              |
-| `String`, `Varchar`, `Binary`          | [String](/ja/reference/data-types/string)                                              | `String`                  |
-| `Char`                                 | [FixedString](/ja/reference/data-types/fixedstring)                                    | `String`                  |
-| `List`                                | [Array](/ja/reference/data-types/array)                                                | `List`                   |
-| `Struct`                              | [Tuple](/ja/reference/data-types/tuple)                                                | `Struct`                 |
-| `Map`                                 | [Map](/ja/reference/data-types/map)                                                    | `Map`                    |
-| `Int`                                 | [IPv4](/ja/reference/data-types/int-uint)                                              | `Int`                    |
-| `Binary`                              | [IPv6](/ja/reference/data-types/ipv6)                                                  | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                     | `Binary`                 |
-| `Binary`                              | [Decimal256](/ja/reference/data-types/decimal)                                         | `Binary`                 |
+| ORC データ型 (`INSERT`)      | ClickHouse データ型                                                                | ORC データ型 (`SELECT`) |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
+| `Boolean`                     | [Bool](/ja/reference/data-types/boolean)                                               | `Boolean`                |
+| `Tinyint`                     | [Int8/UInt8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)    | `Tinyint`                |
+| `Smallint`                    | [Int16/UInt16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum) | `Smallint`               |
+| `Int`                         | [Int32/UInt32](/ja/reference/data-types/int-uint)                                      | `Int`                    |
+| `Bigint`                      | [Int64/UInt64](/ja/reference/data-types/int-uint)                                      | `Bigint`                 |
+| `Float`                       | [Float32](/ja/reference/data-types/float)                                              | `Float`                  |
+| `Double`                      | [Float64](/ja/reference/data-types/float)                                              | `Double`                 |
+| `Decimal`                     | [Decimal](/ja/reference/data-types/decimal)                                            | `Decimal`                |
+| `Date`                        | [Date32](/ja/reference/data-types/date32)                                              | `Date`                   |
+| `Timestamp`                   | [DateTime64](/ja/reference/data-types/datetime64)                                      | `Timestamp`              |
+| `String`, `Varchar`, `Binary` | [String](/ja/reference/data-types/string)                                              | `String`                 |
+| `Char`                        | [FixedString](/ja/reference/data-types/fixedstring)                                    | `String`                 |
+| `List`                        | [Array](/ja/reference/data-types/array)                                                | `List`                   |
+| `Struct`                      | [Tuple](/ja/reference/data-types/tuple)                                                | `Struct`                 |
+| `Map`                         | [Map](/ja/reference/data-types/map)                                                    | `Map`                    |
+| `Int`                         | [IPv4](/ja/reference/data-types/int-uint)                                              | `Int`                    |
+| `Binary`                      | [IPv6](/ja/reference/data-types/ipv6)                                                  | `Binary`                 |
+| `Binary`                      | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                     | `Binary`                 |
+| `Binary`                      | [Decimal256](/ja/reference/data-types/decimal)                                         | `Binary`                 |
+| `Union`                       | [Variant](/ja/reference/data-types/variant)                                            | `Union`                  |
 
 * その他の型はサポートされていません。
+* ORC の `Union` カラムはユニオンのブランチ型に対する [Variant](/ja/reference/data-types/variant) として読み取られ、`Variant` カラムはそのブランチ型に対する ORC の `Union` として書き込まれます。`Variant` はブランチ型をソートするため、ブランチの順序が ORC ファイルと異なる場合があることに注意してください。重複するブランチ型を含むユニオン (例: `uniontype<int,int>`) はサポートされていません。
 * Array はネスト可能で、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 * ClickHouse テーブルのカラムのデータ型は、対応する ORC のデータフィールドと一致している必要はありません。データを挿入する際、ClickHouse はまず上記の表に従ってデータ型を解釈し、その後、ClickHouse テーブルのカラムに設定されたデータ型へデータを [CAST](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) します。
 
@@ -112,13 +114,13 @@ FORMAT ORC
   ## フォーマット設定
 </div>
 
-| 設定                                                                                                                                                                                     | 説明                                                 | デフォルト   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------- |
-| [`output_format_orc_string_as_string`](/ja/reference/settings/formats#output_format_orc_string_as_string)                                                                                  | String カラムには、Binary ではなく ORC の String 型を使用します。     | `true`   |
-| [`output_format_orc_compression_method`](/ja/reference/settings/formats#output_format_orc_compression_method)                                                                             | 出力 ORC フォーマットで使用する圧縮方式。デフォルト値                      | `zstd`  |
-| [`input_format_orc_case_insensitive_column_matching`](/ja/reference/settings/formats#input_format_orc_case_insensitive_column_matching)                                                    | ORC のカラムと ClickHouse のカラムを照合する際に、大文字・小文字を区別しません。   | `false`  |
-| [`input_format_orc_allow_missing_columns`](/ja/reference/settings/formats#input_format_orc_allow_missing_columns)                                                                          | ORC データの読み取り時に、欠落しているカラムを許可します。                    | `true`   |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ja/reference/settings/formats#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)      | ORC フォーマットのスキーマ推論時に、未対応の型を持つカラムをスキップできるようにします。     | `false`  |
+| 設定                                                                                                                                                                                              | 説明                                               | デフォルト   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------- |
+| [`output_format_orc_string_as_string`](/ja/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                            | String カラムには、Binary ではなく ORC の String 型を使用します。   | `true`  |
+| [`output_format_orc_compression_method`](/ja/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                        | 出力 ORC フォーマットで使用する圧縮方式。デフォルト値                    | `zstd`  |
+| [`input_format_orc_case_insensitive_column_matching`](/ja/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                               | ORC のカラムと ClickHouse のカラムを照合する際に、大文字・小文字を区別しません。 | `false` |
+| [`input_format_orc_allow_missing_columns`](/ja/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                     | ORC データの読み取り時に、欠落しているカラムを許可します。                  | `true`  |
+| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/ja/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference) | ORC フォーマットのスキーマ推論時に、未対応の型を持つカラムをスキップできるようにします。   | `false` |
 
 Hadoop とデータをやり取りするには、[HDFS テーブルエンジン](/ja/reference/engines/table-engines/integrations/hdfs) を使用できます。
 
