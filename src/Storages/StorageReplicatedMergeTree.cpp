@@ -7508,6 +7508,11 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
+    UInt64 incoming_rows = 0;
+    for (const auto & part : loaded_parts)
+        incoming_rows += part->rows_count;
+    checkDatabaseRowsLimit(incoming_rows);
+
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
         /* async_insert */ false,
@@ -9253,6 +9258,19 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
+    UInt64 incoming_rows = 0;
+    for (const auto & part : src_all_parts)
+        incoming_rows += part->rows_count;
+
+    UInt64 outgoing_rows = 0;
+    if (replace)
+    {
+        const auto destination_parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+        for (const auto & part : destination_parts)
+            outgoing_rows += part->rows_count;
+    }
+    checkDatabaseRowsLimit(incoming_rows, outgoing_rows);
+
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior must opt in via
@@ -9596,6 +9614,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+
+        UInt64 moved_rows = 0;
+        for (const auto & part : src_all_parts)
+            moved_rows += part->rows_count;
+        const UInt64 outgoing_rows = getStorageID().getDatabaseName() == dest_table_storage->getStorageID().getDatabaseName() ? moved_rows : 0;
+        dest_table_storage->checkDatabaseRowsLimit(moved_rows, outgoing_rows);
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",

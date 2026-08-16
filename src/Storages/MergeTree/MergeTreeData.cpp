@@ -7450,6 +7450,26 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
+void MergeTreeData::checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows) const
+{
+    if (incoming_rows <= outgoing_rows)
+        return;
+
+    const String database_name = getStorageID().getDatabaseName();
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    const UInt64 limit = database ? database->getMaxRows() : 0;
+    if (limit == 0)
+        return;
+
+    const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
+    const UInt64 remaining_rows = current_rows > outgoing_rows ? current_rows - outgoing_rows : 0;
+    if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS,
+            "Adding {} rows to table {} would exceed the row limit (database setting `max_rows`) of {}: current {} - removing {} + adding {} rows",
+            incoming_rows, getStorageID().getNameForLogs(), limit, current_rows, outgoing_rows, incoming_rows);
+}
+
 void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
 {
     const auto settings = getSettings();
