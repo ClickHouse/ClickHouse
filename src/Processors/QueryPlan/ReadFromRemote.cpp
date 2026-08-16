@@ -813,6 +813,7 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setQueryPlanFallbackStage(stage);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -844,6 +845,7 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
