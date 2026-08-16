@@ -112,10 +112,10 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(arr) FROM volume_reducing_function_push_down ORDER BY id
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
 
--- The function does not have to be an output of the parent step: `ActionsDAG::split` leaves the
--- enclosing expression in place and only moves `lengthUTF8(s)` down.
-SELECT 'plan: nested expression (lengthUTF8(s)+1) — pushdown applied';
-SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
+-- The function does not have to be an output of the parent step, but byte-scanning `lengthUTF8`
+-- must not move below a `Filter`: that would scan values rejected by the filter.
+SELECT 'plan: nested expression (lengthUTF8(s)+1) below filter — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) + 1 FROM volume_reducing_function_push_down WHERE notEmpty(s)
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);

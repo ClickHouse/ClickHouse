@@ -18,8 +18,8 @@ plan: small FixedString lengthUTF8 — not pushed
 0
 plan: array length — not pushed
 0
-plan: nested expression (lengthUTF8(s)+1) — pushdown applied
-1
+plan: nested expression (lengthUTF8(s)+1) below filter — not pushed
+0
 plan: filter step as parent — pushdown applied
 1
 plan: filter step as parent — no pushdown when disabled
