@@ -55,12 +55,25 @@ struct MergeTreeMutationStatus
 
     /// The on-disk bytes of `parts_to_do_names`. Derived on read, like `parts_to_do`.
     UInt64 bytes_to_do = 0;
-    /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the
-    /// active table size, including the live fraction of parts currently being rewritten.
+    /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the parts
+    /// the mutation must rewrite, including the live fraction of those being rewritten right now.
     /// Unset when the remaining work is not known yet, i.e. `!is_done` with empty `parts_to_do_names`.
     std::optional<Float64> progress = {};
 /// NOLINTEND(readability-redundant-string-init)
 };
+
+/// Active parts as (min_block, bytes on disk), used to size the scope of a mutation.
+/// One per partition on the replicated path, where block numbers are allocated per partition.
+using PartBlockBytes = std::vector<std::pair<Int64, UInt64>>;
+
+/// Sort by `min_block` and replace each byte count with the running total, so that
+/// `getBytesBeforeBlock` can binary-search the result.
+void accumulatePartBlockBytes(PartBlockBytes & parts);
+
+/// On-disk bytes of the parts that predate `block_number`, i.e. the ones a mutation with that block
+/// number is responsible for rewriting, whether or not it has done so yet. Parts inserted after the
+/// mutation have a higher `min_block` and were never in its scope, so they must not weigh on it.
+UInt64 getBytesBeforeBlock(const PartBlockBytes & parts, Int64 block_number);
 
 /// Check mutation status and throw exception in case of error during mutation
 /// (latest_fail_reason not empty) or if mutation was killed (status empty

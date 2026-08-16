@@ -1356,13 +1356,17 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
-    UInt64 total_bytes_on_disk = 0;
+    /// Block numbers of a non-replicated table form a single sequence across all partitions,
+    /// so one accumulator sizes the scope of every mutation.
+    PartBlockBytes part_block_bytes;
+    part_block_bytes.reserve(data_parts.size());
     for (const auto & part : data_parts)
     {
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk()});
-        total_bytes_on_disk += part->getBytesOnDisk();
+        part_block_bytes.emplace_back(part->info.min_block, part->getBytesOnDisk());
     }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+    accumulatePartBlockBytes(part_block_bytes);
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
     /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
@@ -1408,9 +1412,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
+        UInt64 scope_bytes = getBytesBeforeBlock(part_block_bytes, static_cast<Int64>(entry.block_number));
         Float64 progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
-                / std::max<Float64>(static_cast<Float64>(total_bytes_on_disk), 1.0),
+                / std::max<Float64>(static_cast<Float64>(scope_bytes), 1.0),
             0.0, 1.0);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});

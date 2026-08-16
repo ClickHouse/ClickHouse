@@ -41,8 +41,9 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
         { "bytes_to_do",                   std::make_shared<DataTypeUInt64>(), "The total size on disk of the data parts that need to be mutated for the mutation to complete. Byte-weighted counterpart of `parts_to_do`."},
         { "progress",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts relative to the size of the table's active parts, "
-            "including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
+            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts relative to the size of the parts the mutation is "
+            "responsible for rewriting, including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
+            "Parts inserted after the mutation started were never in its scope and do not count towards it. "
             "The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward. "
             "`NULL` when the remaining work is not known yet: a mutation of a replicated table with `parts_to_do` = 0 that is not done yet is waiting for an in-flight "
             "INSERT, and the size of the part it will create is not known before the part is committed."},

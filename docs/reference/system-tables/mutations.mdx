@@ -82,7 +82,7 @@ In ClickHouse Cloud the `system.mutations` table on each node has all the mutati
 
 ### Estimating mutation progress {#estimating-mutation-progress}
 
-`parts_to_do` counts data parts, and parts can be wildly unequal in size; a regular merge can also retire many pending parts in one step without doing any mutation work. A percentage computed from part counts (for example `1 - parts_to_do / <part count at submission>`) is therefore not a reliable progress number: it can sit almost frozen while most of the bytes are still unprocessed, and jump forward when parts are merged. An honest estimate weights the remaining parts by their size on disk and adds the live fraction of the part that is being rewritten right now, which [`system.merges`](/reference/system-tables/merges) exposes for rows with `is_mutation = 1`.
+`parts_to_do` counts data parts, and parts can be wildly unequal in size; a regular merge can also retire many pending parts in one step without doing any mutation work. A percentage computed from part counts (for example `1 - parts_to_do / <part count at submission>`) is therefore not a reliable progress number: it can sit almost frozen while most of the bytes are still unprocessed, and jump forward when parts are merged. An honest estimate weights the remaining parts by their size on disk and adds the live fraction of the part that is being rewritten right now, which [`system.merges`](/reference/system-tables/merges) exposes for rows with `is_mutation = 1`. It also measures that remainder against the mutation's own scope — the parts it is responsible for rewriting — rather than against every active part: a part inserted after the mutation started is never mutated by it, so counting it would make a mutation that has done nothing look nearly finished.
 
 `system.mutations` exposes this calculation directly through the `bytes_to_do` and `progress` columns. The following [parameterized view](/reference/statements/create/view#parameterized-view) packages the equivalent calculation for releases that predate those columns, and as a template for custom weighting:
 
@@ -94,7 +94,7 @@ SELECT
     -- `parts_to_do` = 0 on an unfinished mutation means the remaining work is not
     -- known yet, so report it as unknown instead of as finished.
     if(m.parts_to_do = 0, NULL, formatReadableSize(sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))))) AS bytes_left,
-    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))) / max2((SELECT sum(bytes_on_disk) FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active), 1), 4)) AS progress
+    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))) / max2(any(s.scope_bytes), 1), 4)) AS progress
 FROM
 (
     -- `system.mutations` has one row per mutation command, and every row of a
@@ -108,6 +108,24 @@ FROM
 LEFT ARRAY JOIN m.parts_to_do_names AS part_name
 LEFT JOIN (SELECT name, bytes_on_disk FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active) AS p ON p.name = part_name
 LEFT JOIN (SELECT arrayJoin(source_part_names) AS name, progress FROM system.merges WHERE database = {database:String} AND table = {table:String} AND is_mutation) AS mg ON mg.name = part_name
+-- The denominator is the mutation's own scope: every part it is responsible for rewriting,
+-- including the ones it has already rewritten. A part inserted after the mutation started has
+-- a higher `min_block_number` and was never in scope, so it must not count towards progress.
+LEFT JOIN
+(
+    SELECT mut.mutation_id AS mutation_id, sum(sp.bytes_on_disk) AS scope_bytes
+    FROM
+    (
+        SELECT DISTINCT mutation_id, CAST((`block_numbers.partition_id`, `block_numbers.number`), 'Map(String, Int64)') AS block_number_by_partition
+        FROM system.mutations
+        WHERE database = {database:String} AND table = {table:String} AND NOT is_done
+    ) AS mut
+    CROSS JOIN (SELECT partition_id, min_block_number, bytes_on_disk FROM system.parts WHERE database = {database:String} AND table = {table:String} AND active) AS sp
+    -- A replicated mutation carries one block number per partition; a non-replicated one carries
+    -- a single number under the empty key, because its block numbers form one global sequence.
+    WHERE sp.min_block_number < if(mapContains(mut.block_number_by_partition, sp.partition_id), mut.block_number_by_partition[sp.partition_id], mut.block_number_by_partition[''])
+    GROUP BY mut.mutation_id
+) AS s ON s.mutation_id = m.mutation_id
 GROUP BY m.mutation_id, m.parts_to_do
 ORDER BY m.mutation_id
 ```

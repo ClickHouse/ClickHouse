@@ -8615,12 +8615,15 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
     /// A part that is gone by now was retired, i.e. contributes no remaining bytes.
     std::unordered_map<String, UInt64> part_bytes_on_disk;
-    UInt64 total_bytes_on_disk = 0;
+    /// Mutation block numbers are allocated per partition here, so the scope is sized per partition.
+    std::unordered_map<String, PartBlockBytes> part_block_bytes_by_partition;
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         part_bytes_on_disk[part->name] = part->getBytesOnDisk();
-        total_bytes_on_disk += part->getBytesOnDisk();
+        part_block_bytes_by_partition[part->info.getPartitionId()].emplace_back(part->info.min_block, part->getBytesOnDisk());
     }
+    for (auto & [_, part_blocks] : part_block_bytes_by_partition)
+        accumulatePartBlockBytes(part_blocks);
 
     std::unordered_map<String, Float64> mutating_part_progress;
     for (const auto & merge : getContext()->getMergeList().get())
@@ -8655,10 +8658,18 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(it->second) * progress_it->second;
         }
+        UInt64 scope_bytes = 0;
+        for (const auto & [partition_id, block_number] : status.block_numbers)
+        {
+            auto it = part_block_bytes_by_partition.find(partition_id);
+            if (it != part_block_bytes_by_partition.end())
+                scope_bytes += getBytesBeforeBlock(it->second, block_number);
+        }
+
         status.bytes_to_do = bytes_to_do;
         status.progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
-                / std::max<Float64>(static_cast<Float64>(total_bytes_on_disk), 1.0),
+                / std::max<Float64>(static_cast<Float64>(scope_bytes), 1.0),
             0.0, 1.0);
     }
 
