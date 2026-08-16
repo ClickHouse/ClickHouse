@@ -361,6 +361,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
+    /// An archive exposes `_path` and `_file` values for its entries, while this iterator sees
+    /// only the outer archive object. Let the regular filter step evaluate the predicate after
+    /// `ArchiveIterator` has created entry object infos.
+    const auto * path_filter_predicate = is_archive ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
@@ -371,7 +375,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         auto paths = expandSelectionGlob(reading_path.path);
         ExpressionActionsPtr deferred_filter_actions;
 
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns))
         {
             Strings filter_paths;
             filter_paths.reserve(paths.size());
@@ -409,7 +413,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             iterator = std::make_unique<GlobIterator>(
                 object_storage,
                 configuration,
-                predicate,
+                path_filter_predicate,
                 virtual_columns,
                 hive_columns,
                 local_context,
@@ -492,7 +496,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         Strings paths;
         ExpressionActionsPtr deferred_filter_actions;
 
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns);
         if (filter_dag)
         {
             const auto configuration_paths = configuration->getPaths();

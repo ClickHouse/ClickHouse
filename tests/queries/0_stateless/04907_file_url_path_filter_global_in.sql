@@ -7,3 +7,7 @@ WHERE _path GLOBAL IN (SELECT 'no such path');
 
 SELECT * FROM url('http://127.0.0.1:1/04907_url_path_filter_global_in_missing.tsv', TSV, 'x UInt64')
 WHERE _path GLOBAL IN (SELECT 'no such path');
+
+-- A comma in a plain URL is literal, not a separator for multiple URLs.
+SELECT * FROM url('http://localhost:8123/?query=SELECT%201%20FORMAT%20TSV&comment=a,b', TSV, 'x UInt64')
+WHERE _path = '/';
