@@ -1626,6 +1626,14 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
+                        if (!fs::exists(archive))
+                        {
+                            if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                continue;
+
+                            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                        }
+
                         auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                         if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                             continue;
@@ -1664,6 +1672,14 @@ Chunk StorageFileSource::generate()
                                 auto archive = files_iterator->next();
                                 if (archive.empty())
                                     return {};
+
+                                if (!fs::exists(archive))
+                                {
+                                    if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                        continue;
+
+                                    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                                }
 
                                 current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_archive_stat.st_size == 0)
@@ -1718,6 +1734,14 @@ Chunk StorageFileSource::generate()
                     current_path = files_iterator->next();
                     if (current_path.empty())
                         return {};
+
+                    if (!fs::exists(current_path))
+                    {
+                        if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                            continue;
+
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
+                    }
                 }
 
                 /// Special case for distributed format. Defaults are not needed here.
@@ -2165,28 +2189,7 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
-    {
         paths = {""};   /// when use fd, paths are empty
-    }
-    else
-    {
-        const std::vector<std::string> * p = nullptr;
-
-        if (archive_info.has_value())
-            p = &archive_info->paths_to_archives;
-        else
-            p = &paths;
-
-        if (p->size() == 1 && !fs::exists(p->at(0)))
-        {
-            if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
-
-            auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
-            return;
-        }
-    }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
