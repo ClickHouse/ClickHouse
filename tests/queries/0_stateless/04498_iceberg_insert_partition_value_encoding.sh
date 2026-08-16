@@ -53,3 +53,13 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, v FROM ${TABLE} ORDER BY id FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
+
+echo "--- Float32 partition (Avro float from Field::Float64) ---"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE} (f Float32, v String)
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
+    PARTITION BY (f)
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1.25, 'a'), (2.5, 'b')"
+${CLICKHOUSE_CLIENT} --query "SELECT f, v FROM ${TABLE} ORDER BY f FORMAT TSV"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"

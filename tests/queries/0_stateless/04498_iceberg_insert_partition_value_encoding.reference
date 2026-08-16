@@ -12,3 +12,6 @@ y
 2	b
 3	c
 4	d
+--- Float32 partition (Avro float from Field::Float64) ---
+1.25	a
+2.5	b
