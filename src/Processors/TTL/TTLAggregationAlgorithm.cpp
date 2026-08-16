@@ -370,7 +370,19 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             {
                 if (!columns_added.contains(name))
                 {
-                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    /// Aggregation strips LowCardinality from GROUP BY keys too. This can be a
+                    /// subcolumn of a nested type, so coerce it back to the stream's declared
+                    /// type before inserting into the result column, just as for a SET result
+                    /// above.
+                    const auto & result_column_type = header.getByName(name).type;
+                    auto & column_with_type = agg_block.getByName(name);
+                    if (!column_with_type.type->equals(*result_column_type))
+                    {
+                        column_with_type.column = castColumn(column_with_type, result_column_type);
+                        column_with_type.type = result_column_type;
+                    }
+
+                    const IColumn * values_column = column_with_type.column.get();
                     auto & result_column = result_columns[header.getPositionByName(name)];
                     result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
                 }
