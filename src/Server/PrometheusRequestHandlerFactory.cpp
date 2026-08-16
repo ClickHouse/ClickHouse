@@ -279,14 +279,22 @@ namespace
         const AsynchronousMetrics & async_metrics,
         const PrometheusRequestHandlerConfig & config,
         bool for_keeper,
-        std::unordered_map<String, String> headers = {})
+        std::unordered_map<String, String> headers = {},
+        String url_prefix = {})
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
         auto metric_writer = createPrometheusMetricWriter(config, for_keeper);
-        auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
+        auto creator = [
+            &server,
+            &async_metrics,
+            config,
+            metric_writer,
+            headers_moved = std::move(headers),
+            url_prefix_moved = std::move(url_prefix)]() -> std::unique_ptr<PrometheusRequestHandler>
         {
-            return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);
+            return std::make_unique<PrometheusRequestHandler>(
+                server, config, async_metrics, metric_writer, headers_moved, url_prefix_moved);
         };
         return std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     }
@@ -309,9 +317,15 @@ namespace
             {
                 String prefix = "prometheus.handlers." + key;
                 auto parsed_config = parseHandlerConfig(config, prefix + ".handler");
-                if (auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, for_keeper))
+                if (auto handler = createPrometheusHandlerFactoryFromConfig(
+                        server,
+                        asynchronous_metrics,
+                        parsed_config,
+                        for_keeper,
+                        {},
+                        config.getString(prefix + ".url_prefix", "")))
                 {
-                    handler->addFiltersFromConfig(config, prefix);
+                    handler->addFiltersFromConfig(config, prefix, /* allow_options = */ true);
                     factory->addHandler(handler);
                 }
             }
@@ -357,9 +371,15 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
 
     PrometheusRequestHandlerConfig parsed_config = parseHandlerConfig(config, handler_config_prefix);
 
-    auto handler = createPrometheusHandlerFactoryFromConfig(server, asynchronous_metrics, parsed_config, /* for_keeper= */ false, headers);
+    auto handler = createPrometheusHandlerFactoryFromConfig(
+        server,
+        asynchronous_metrics,
+        parsed_config,
+        /* for_keeper= */ false,
+        headers,
+        config.getString(config_prefix + ".url_prefix", ""));
     chassert(handler);  /// `handler` can't be nullptr here because `for_keeper` is false.
-    handler->addFiltersFromConfig(config, config_prefix);
+    handler->addFiltersFromConfig(config, config_prefix, /* allow_options = */ true);
     return handler;
 }
 

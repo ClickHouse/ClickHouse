@@ -1,6 +1,8 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -25,8 +27,9 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
     config = StorageTimeSeriesSelector::getConfiguration(args, context);
 }
 
-ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
+ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
+    checkTimeSeriesTableSelectAccess(context, config.time_series_storage_id);
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.id_data_type},
         {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},

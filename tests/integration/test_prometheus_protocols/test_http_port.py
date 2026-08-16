@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
@@ -111,6 +112,32 @@ def test_main_http_prefixed_query_api():
     assert metric_name in data
 
 
+def test_main_http_prometheus_options_preflight_uses_clickhouse_headers():
+    response = requests.options(
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}/prometheus/api/v1/query",
+        headers={
+            "Origin": "https://example.test",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 204, response.text
+    assert response.content == b""
+    assert response.headers.get("Access-Control-Allow-Origin") == "https://example.test", response.headers
+
+
+def test_main_http_prometheus_options_allows_a_configured_get_rule():
+    response = requests.options(
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}/prometheus-method-filtered/api/v1/query",
+        headers={
+            "Origin": "https://example.test",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 204, response.text
+    assert response.content == b""
+    assert response.headers.get("Access-Control-Allow-Origin") == "https://example.test", response.headers
+
+
 def test_main_http_prefixed_query_range_api():
     timestamp = 1_700_001_250.0
     metric_name = "main_http_prefixed_query_range_target"
@@ -129,6 +156,30 @@ def test_main_http_prefixed_query_range_api():
     assert metric_name in data
 
 
+def test_main_http_custom_filter_api_v1_dispatches_query_write_and_read():
+    timestamp = 1_700_001_300.0
+    metric_name = "main_http_custom_filter_target"
+
+    send_to_clickhouse([({"__name__": metric_name}, {timestamp: 14.0})], "/legacy/prom/write")
+
+    metric_names = read_metric_names(
+        metric_name,
+        timestamp - 1,
+        timestamp + 1,
+        "/legacy/prom/read",
+    )
+    assert metric_name in metric_names
+
+    data = execute_query_via_http_api(
+        node.ip_address,
+        MAIN_HTTP_PORT,
+        "/legacy/prom/query",
+        metric_name,
+        timestamp=timestamp,
+    )
+    assert metric_name in data
+
+
 def test_main_http_prefixed_label_values_api():
     timestamp = 1_700_001_275.0
     metric_name = "main_http_prefixed_label_values_target"
@@ -143,6 +194,16 @@ def test_main_http_prefixed_label_values_api():
         f"/prometheus/api/v1/label/job/values"
         f"?start={int(timestamp - 1)}"
         f"&end={int(timestamp + 1)}"
+    )
+    response = get_response_to_http_api(url)
+    error = extract_error_from_http_api_response(response)
+    assert "label values endpoint is not implemented" in error
+
+
+def test_main_http_custom_filter_api_v1_dispatches_label_values():
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        f"/legacy/prom/label/job/values"
     )
     response = get_response_to_http_api(url)
     error = extract_error_from_http_api_response(response)

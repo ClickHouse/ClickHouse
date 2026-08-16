@@ -1,5 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -37,6 +39,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -647,6 +650,23 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         ErrorCodes::UNEXPECTED_TABLE_ENGINE,
         "This operation can be executed on a TimeSeries table only, the engine of table {} is not TimeSeries",
         storage->getStorageID().getNameForLogs());
+}
+
+void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageID & time_series_table_id)
+{
+    context->checkAccess(AccessType::SELECT, time_series_table_id);
+
+    const auto row_policy_filter = context->getRowPolicyFilter(
+        time_series_table_id.getDatabaseName(),
+        time_series_table_id.getTableName(),
+        RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot read TimeSeries targets because SELECT row policies are applied on TimeSeries table {}",
+            time_series_table_id.getNameForLogs());
+    }
 }
 
 

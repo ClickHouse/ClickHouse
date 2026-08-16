@@ -127,7 +127,7 @@ FilterExpression getExpression(const std::string & expression, HTTPRequestFilter
 
 }
 
-HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, bool allow_options)
 {
     std::vector<String> methods;
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
@@ -135,7 +135,11 @@ HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config
     for (const auto & iterator : tokenizer)
         methods.emplace_back(Poco::toUpper(Poco::trim(iterator)));
 
-    return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
+    return [methods, allow_options](const HTTPServerRequest & request)
+    {
+        return (allow_options && request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS)
+            || std::count(methods.begin(), methods.end(), request.getMethod());
+    };
 }
 
 HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type)
@@ -196,7 +200,8 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
     };
 }
 
-std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_options)
 {
     std::vector<HTTPRequestFilter> filters;
 
@@ -233,7 +238,7 @@ std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::U
         else if (filter_type == "headers_regexp")
             filters.push_back(headersFilter(config, config_prefix + ".headers_regexp", HTTPRequestFilterMatchType::Regexp));
         else if (filter_type == "methods")
-            filters.push_back(methodsFilter(config, config_prefix + ".methods"));
+            filters.push_back(methodsFilter(config, config_prefix + ".methods", allow_options));
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", config_prefix, filter_type);
     }

@@ -43,6 +43,9 @@ $CLICKHOUSE_CLIENT -q "
   -- arrayJoin scoped inside a subquery does not change the outer row count and stays allowed.
   CREATE ROW POLICY valid_policy ON row_policy_table FOR SELECT USING value IN (SELECT arrayJoin([10, 20])) TO ALL;
   SELECT * FROM row_policy_table ORDER BY id;
+  -- StorageMerge pushes the policy into the child MergeTree reader, where its set must be ready
+  -- before the storage-level filter starts evaluating rows.
+  SELECT * FROM merge(currentDatabase(), '^row_policy_table$') FINAL ORDER BY id;
 
   DROP ROW POLICY valid_policy ON row_policy_table;
   DROP TABLE row_policy_table;

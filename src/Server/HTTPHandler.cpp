@@ -56,6 +56,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/String.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -150,14 +151,19 @@ void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::U
         if (config_key == "header" || config_key.starts_with("header["))
         {
             /// If there is empty header name, it will not be processed and message about it will be in logs
-            if (config.getString("http_options_response." + config_key + ".name", "").empty())
+            const auto header_name = config.getString("http_options_response." + config_key + ".name", "");
+            const auto header_value = config.getString("http_options_response." + config_key + ".value", "");
+            if (header_name.empty())
                 LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+            else if (Poco::icompare(header_name, "Access-Control-Allow-Origin") == 0)
+                response.set(header_name, header_value);
             else
-                response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                             config.getString("http_options_response." + config_key + ".value", ""));
+                response.add(header_name, header_value);
 
         }
     }
+}
+
 }
 
 /// Process options request. Useful for CORS.
@@ -174,7 +180,6 @@ void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::Laye
     response.setKeepAlive(false);
     response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
     response.send();
-}
 }
 
 static std::chrono::steady_clock::duration parseSessionTimeout(

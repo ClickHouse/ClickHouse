@@ -1,9 +1,23 @@
 <clickhouse>
+    <http_options_response>
+        <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>https://example.test</value>
+        </header>
+    </http_options_response>
     <http_handlers>
         <rule>
             <url_prefix>/prometheus/api/v1</url_prefix>
             <handler>
                 <type>prometheus_api_v1</type>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <rule>
+            <url>/prometheus-method-filtered/api/v1/query</url>
+            <methods>GET,HEAD</methods>
+            <handler>
+                <type>prometheus_query</type>
                 <table>default.prometheus_http</table>
             </handler>
         </rule>
@@ -18,6 +32,13 @@
             <url>/api/v1/read</url>
             <handler>
                 <type>prometheus_read</type>
+                <table>default.prometheus_http</table>
+            </handler>
+        </rule>
+        <rule>
+            <url_regexp>^/legacy/prom/(query|write|read|label/[^/]+/values)$</url_regexp>
+            <handler>
+                <type>prometheus_api_v1</type>
                 <table>default.prometheus_http</table>
             </handler>
         </rule>

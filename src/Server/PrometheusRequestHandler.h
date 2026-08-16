@@ -21,7 +21,8 @@ public:
         const PrometheusRequestHandlerConfig & config_,
         const AsynchronousMetrics & async_metrics_,
         std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
-        std::unordered_map<String, String> response_headers_ = {});
+        std::unordered_map<String, String> response_headers_ = {},
+        String url_prefix_ = {});
     ~PrometheusRequestHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
@@ -41,6 +42,7 @@ private:
     const AsynchronousMetrics & async_metrics;
     const std::shared_ptr<PrometheusMetricsWriter> metrics_writer;
     const LoggerPtr log;
+    const String url_prefix;
 
     class Impl;
     class ImplWithContext;

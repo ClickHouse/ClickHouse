@@ -125,6 +125,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/read` | Prometheus remote read |
 | `/prometheus/api/v1/query` | Instant PromQL queries |
 | `/prometheus/api/v1/query_range` | Range PromQL queries |
+| `/prometheus/api/v1/metadata` | Metric-family metadata |
 
 The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter. It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
@@ -189,6 +190,18 @@ curl --user default:<password> --get \
 
 See the [supported PromQL features](/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
 
+### Query metric metadata {#metadata}
+
+The `/prometheus/api/v1/metadata` endpoint returns metric-family metadata stored in the Metrics target of the configured `TimeSeries` table. It supports the following Prometheus parameters:
+
+The parameters can be provided in the URL query string.
+
+| Parameter | Description |
+|---|---|
+| `metric` | Return metadata for one metric family. |
+| `limit` | Limit the number of metric families returned. A negative value means no limit; zero returns no metric families. |
+| `limit_per_metric` | Limit the number of metadata objects returned for each metric family. Zero or a negative value means no limit. |
+
 #### Grafana {#grafana}
 
 Configure a Prometheus data source with the base URL ending before `/api/v1`:
@@ -212,7 +225,7 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the series metadata endpoint `/api/v1/series` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. The label metadata endpoints a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete (`/api/v1/labels`, `/api/v1/label/<name>/values`) are not implemented and return an error. Write PromQL expressions in code mode instead of the query builder.
+The query endpoints `/api/v1/query` and `/api/v1/query_range`, and the metadata endpoints `/api/v1/metadata` and `/api/v1/series`, are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. The other metadata endpoints a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete (`/api/v1/labels`, `/api/v1/label/<name>/values`) are not implemented and return an error. Write PromQL expressions in code mode instead of the query builder.
 </Note>
 
 #### SQL entry points {#sql-entry-points}

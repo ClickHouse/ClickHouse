@@ -1731,6 +1731,7 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
 
 void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
 {
+    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(actions_dag, step->getContext());
     step->addFilter(actions_dag.clone(), filter_column_name);
 }
 

@@ -17,7 +17,7 @@ class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
-/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values
+/// Implements /api/v1/query, /api/v1/query_range, /api/v1/metadata, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
@@ -47,6 +47,17 @@ public:
     void executePromQLQuery(
         WriteBuffer & response,
         const Params & params,
+        QueryFinishCallback query_finish_callback = {});
+
+    /// Get metric metadata (/api/v1/metadata).
+    /// `limit` is the maximum number of metric families (negative means no limit).
+    /// `limit_per_metric` is the maximum number of metadata objects per metric;
+    /// zero or negative means no per-metric limit.
+    void getMetadata(
+        WriteBuffer & response,
+        const String & metric_param,
+        Int64 limit,
+        Int64 limit_per_metric,
         QueryFinishCallback query_finish_callback = {});
 
     /// Get series metadata (/api/v1/series): the union of the series matched by the `match[]` selectors, capped by `limit` (0 means no limit).

@@ -16,10 +16,12 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #include <IO/SnappyBasicWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
@@ -39,6 +41,9 @@
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <optional>
+#include <string_view>
+
 
 namespace DB
 {
@@ -57,6 +62,53 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
+namespace
+{
+/// Returns the endpoint path relative to the configured URL prefix, or the API version segment
+/// when no URL prefix was passed to the handler.
+std::optional<std::string_view> extractAPIv1EndpointPath(std::string_view uri_path, std::string_view url_prefix)
+{
+    if (!url_prefix.empty())
+    {
+        while (url_prefix.size() > 1 && url_prefix.ends_with('/'))
+            url_prefix.remove_suffix(1);
+
+        if (url_prefix == "/")
+        {
+            if (!uri_path.starts_with('/'))
+                return std::nullopt;
+
+            uri_path.remove_prefix(1);
+        }
+        else
+        {
+            if (!uri_path.starts_with(url_prefix))
+                return std::nullopt;
+
+            uri_path.remove_prefix(url_prefix.size());
+            if (!uri_path.starts_with('/'))
+                return std::nullopt;
+
+            uri_path.remove_prefix(1);
+        }
+
+        if (uri_path.empty())
+            return std::nullopt;
+        return uri_path;
+    }
+
+    static constexpr std::string_view api_v1_segment = "/api/v1/";
+    const size_t api_v1_pos = uri_path.find(api_v1_segment);
+    if (api_v1_pos == std::string_view::npos)
+        return std::nullopt;
+
+    const auto endpoint_path = uri_path.substr(api_v1_pos + api_v1_segment.size());
+    if (endpoint_path.empty())
+        return std::nullopt;
+    return endpoint_path;
+}
+}
+
 /// Base implementation of a prometheus protocol.
 class PrometheusRequestHandler::Impl
 {
@@ -64,6 +116,10 @@ public:
     explicit Impl(PrometheusRequestHandler & parent) : parent_ref(parent) {}
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
+    virtual void handleOptionsRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
+    {
+        processOptionsRequest(response, server().config());
+    }
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
@@ -72,6 +128,7 @@ protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
     IServer & server() { return parent().server; }
     const PrometheusRequestHandlerConfig & config() { return parent().config; }
+    const String & url_prefix() { return parent().url_prefix; }
     PrometheusMetricsWriter & metrics_writer() { return *parent().metrics_writer; }
     LoggerPtr log() { return parent().log; }
     WriteBuffer & getOutputStream(HTTPServerResponse & response) { return parent().getOutputStream(response); }
@@ -134,6 +191,10 @@ public:
     /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
     virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
+    /// Validates the request after authentication but before creating a query context. This is useful for
+    /// endpoint method checks that must take precedence over ClickHouse setting validation.
+    virtual bool validateRequestBeforeContext(HTTPServerRequest & /* request */, HTTPServerResponse & /* response */) { return true; }
+
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -175,6 +236,9 @@ protected:
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
         if (!authenticateUser(request, response))
+            return false;
+
+        if (!validateRequestBeforeContext(request, response))
             return false;
 
         makeContext(request);
@@ -422,19 +486,164 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/metadata, /api/v1/series, /api/v1/labels,
+/// /api/v1/label/<name>/values, /api/v1/format_query, /api/v1/parse_query).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
 
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+    enum class Endpoint
+    {
+        Query,
+        QueryRange,
+        FormatQuery,
+        ParseQuery,
+        Metadata,
+        Series,
+        Labels,
+        LabelValues,
+        Unknown,
+    };
+
+    static Endpoint resolveEndpointPath(std::string_view endpoint_path)
+    {
+        if (endpoint_path == "query_range")
+            return Endpoint::QueryRange;
+        if (endpoint_path == "query")
+            return Endpoint::Query;
+        if (endpoint_path == "format_query")
+            return Endpoint::FormatQuery;
+        if (endpoint_path == "parse_query")
+            return Endpoint::ParseQuery;
+        if (endpoint_path == "metadata")
+            return Endpoint::Metadata;
+        if (endpoint_path == "series")
+            return Endpoint::Series;
+        if (endpoint_path == "labels")
+            return Endpoint::Labels;
+        if (extractLabelValuesName(endpoint_path))
+            return Endpoint::LabelValues;
+        return Endpoint::Unknown;
+    }
+
+    static Endpoint resolveEndpointSuffix(std::string_view uri_path)
+    {
+        if (uri_path.ends_with("/query_range"))
+            return Endpoint::QueryRange;
+        if (uri_path.ends_with("/query"))
+            return Endpoint::Query;
+        if (uri_path.ends_with("/format_query"))
+            return Endpoint::FormatQuery;
+        if (uri_path.ends_with("/parse_query"))
+            return Endpoint::ParseQuery;
+        if (uri_path.ends_with("/metadata"))
+            return Endpoint::Metadata;
+        if (uri_path.ends_with("/series"))
+            return Endpoint::Series;
+        if (uri_path.ends_with("/labels"))
+            return Endpoint::Labels;
+        if (extractLabelValuesNameFromURI(uri_path))
+            return Endpoint::LabelValues;
+        return Endpoint::Unknown;
+    }
+
+    static Endpoint resolveEndpoint(
+        std::string_view uri_path,
+        PrometheusRequestHandlerConfig::Type type,
+        std::string_view api_v1_url_prefix)
+    {
+        if (type == PrometheusRequestHandlerConfig::Type::APIv1)
+        {
+            if (api_v1_url_prefix.empty())
+                return resolveEndpointSuffix(uri_path);
+
+            const auto endpoint_path = extractAPIv1EndpointPath(uri_path, api_v1_url_prefix);
+            if (!endpoint_path)
+                return Endpoint::Unknown;
+            return resolveEndpointPath(*endpoint_path);
+        }
+
+        return resolveEndpointSuffix(uri_path);
+    }
+
+    bool shouldParseFormFromRequestBody(const HTTPServerRequest & request) const override
+    {
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_POST)
+            return false;
+
+        switch (current_endpoint)
+        {
+            case Endpoint::Query:
+            case Endpoint::QueryRange:
+            case Endpoint::FormatQuery:
+            case Endpoint::ParseQuery:
+            case Endpoint::Series:
+            case Endpoint::Labels:
+                return true;
+            case Endpoint::Metadata:
+            case Endpoint::LabelValues:
+            case Endpoint::Unknown:
+                return false;
+        }
+
+        UNREACHABLE();
+    }
+
+    bool validateRequestBeforeContext(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        const auto & method = request.getMethod();
+        const bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+            || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+
+        switch (current_endpoint)
+        {
+            case Endpoint::Metadata:
+                if (is_get_or_head)
+                    return true;
+                return rejectUnsupportedMethod(response, "GET, HEAD");
+
+            case Endpoint::LabelValues:
+                if (is_get_or_head)
+                    return true;
+                return rejectUnsupportedMethod(response, "GET, HEAD");
+
+            case Endpoint::Query:
+            case Endpoint::QueryRange:
+            case Endpoint::FormatQuery:
+            case Endpoint::ParseQuery:
+            case Endpoint::Series:
+            case Endpoint::Labels:
+                if (is_get_or_head || method == Poco::Net::HTTPRequest::HTTP_POST)
+                    return true;
+                return rejectUnsupportedMethod(response, "GET, HEAD, POST");
+
+            case Endpoint::Unknown:
+                return true;
+        }
+
+        UNREACHABLE();
+    }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
+
+        current_endpoint = resolveEndpoint(Poco::URI(request.getURI()).getPath(), config().type, url_prefix());
+    }
+
+    void handleOptionsRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        if (current_endpoint == Endpoint::Unknown)
+        {
+            writeNotFoundResponse(request, response);
+            getOutputStream(response).finalize();
+            return;
+        }
+
+        processOptionsRequest(response, server().config());
     }
 
     bool isSettingLikeParameter(const String & name) override
@@ -443,10 +652,29 @@ public:
         if (name.empty())
             return false;
 
-        /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "lookback_delta", "database", "table"};
-        return !reserved_param_names.contains(name);
+        if (current_endpoint == Endpoint::Unknown)
+            return false;
+
+        /// Settings class.
+        /// Parameters specific to /api/v1/metadata are endpoint-local. In particular, `limit` is also
+        /// a ClickHouse setting and must keep its existing setting semantics on the query endpoints.
+        if (current_endpoint == Endpoint::Metadata
+            && (name == "metric" || name == "limit" || name == "limit_per_metric"))
+            return false;
+
+        if (current_endpoint == Endpoint::Series && name == "limit")
+            return false;
+
+        /// Series, labels, and label-values consume Prometheus matchers themselves.
+        if (name == "match[]"
+            && (current_endpoint == Endpoint::Series
+                || current_endpoint == Endpoint::Labels
+                || current_endpoint == Endpoint::LabelValues))
+            return false;
+
+        static const NameSet prometheus_param_names{"query", "time", "start", "end", "step", "lookback_delta"};
+        return !prometheus_param_names.contains(name)
+            && ImplWithContext::isSettingLikeParameter(name);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -458,9 +686,25 @@ public:
 
         response.setContentType("application/json");
 
+        const String uri_path = Poco::URI(uri).getPath();
+        const Endpoint endpoint = current_endpoint;
+        const auto endpoint_path = extractAPIv1EndpointPath(uri_path, url_prefix());
+        if (endpoint == Endpoint::Unknown)
+        {
+            writeNotFoundResponse(request, response);
+            return;
+        }
+
         try
         {
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            if (endpoint == Endpoint::FormatQuery)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
+            if (endpoint == Endpoint::ParseQuery)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
+
+            const auto time_series_table_id = getTimeSeriesTableID();
+            context->checkAccess(AccessType::SELECT, time_series_table_id);
+            auto table = DatabaseCatalog::instance().getTable(time_series_table_id, context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()
@@ -468,108 +712,124 @@ public:
                 getOutputStream(response).finalize();
             };
 
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
-
-            if (uri_path.ends_with("/query_range"))
+            switch (endpoint)
             {
-                String query = params->get("query", "");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
-                String step = params->get("step", "");
-                String lookback_delta = params->get("lookback_delta", "");
-
-                /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
-
-                PrometheusHTTPProtocolAPI::Params params
+                case Endpoint::QueryRange:
                 {
-                    .type = PrometheusHTTPProtocolAPI::Type::Range,
-                    .promql_query = query,
-                    .time_param = "",
-                    .start_param = start,
-                    .end_param = end,
-                    .step_param = step,
-                    .lookback_delta_param = lookback_delta,
-                };
+                    String query = params->get("query", "");
+                    String start = params->get("start", "");
+                    String end = params->get("end", "");
+                    String step = params->get("step", "");
+                    String lookback_delta = params->get("lookback_delta", "");
 
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/query"))
-            {
-                String query = params->get("query", "");
-                String time = params->get("time", "");
-                String lookback_delta = params->get("lookback_delta", "");
+                    /// TODO: Support the following **optional** query parameters:
+                    /// - timeout=<duration>: Evaluation timeout
+                    /// - limit=<number>: Maximum number of returned series
 
-                /// TODO: Support optional parameters same as for the range query.
+                    PrometheusHTTPProtocolAPI::Params params
+                    {
+                        .type = PrometheusHTTPProtocolAPI::Type::Range,
+                        .promql_query = query,
+                        .time_param = "",
+                        .start_param = start,
+                        .end_param = end,
+                        .step_param = step,
+                        .lookback_delta_param = lookback_delta,
+                    };
 
-                PrometheusHTTPProtocolAPI::Params params
-                {
-                    .type = PrometheusHTTPProtocolAPI::Type::Instant,
-                    .promql_query = query,
-                    .time_param = time,
-                    .start_param = "",
-                    .end_param = "",
-                    .step_param = "",
-                    .lookback_delta_param = lookback_delta,
-                };
-
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
-            else if (uri_path.ends_with("/parse_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
-            }
-            else if (uri_path.ends_with("/series"))
-            {
-                Strings match = params->getAll("match[]");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
-
-                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
-                UInt64 limit = 0;
-                String limit_param = params->get("limit", "");
-                if (!limit_param.empty())
-                {
-                    Int64 parsed_limit = 0;
-                    if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                                        limit_param);
-                    limit = static_cast<UInt64>(parsed_limit);
+                    protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                    break;
                 }
+                case Endpoint::Query:
+                {
+                    String query = params->get("query", "");
+                    String time = params->get("time", "");
+                    String lookback_delta = params->get("lookback_delta", "");
 
-                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/labels"))
-            {
-                String match = params->get("match[]", "");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
+                    /// TODO: Support optional parameters same as for the range query.
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
-            }
-            else if (auto label_name = extractLabelValuesName(uri_path))
-            {
-                String match = params->get("match[]", "");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
+                    PrometheusHTTPProtocolAPI::Params params
+                    {
+                        .type = PrometheusHTTPProtocolAPI::Type::Instant,
+                        .promql_query = query,
+                        .time_param = time,
+                        .start_param = "",
+                        .end_param = "",
+                        .step_param = "",
+                        .lookback_delta_param = lookback_delta,
+                    };
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
-            }
-            else
-            {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
-                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-                writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
+                    protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                    break;
+                }
+                case Endpoint::FormatQuery:
+                case Endpoint::ParseQuery:
+                    UNREACHABLE();
+                case Endpoint::Metadata:
+                {
+                    String metric = params->get("metric", "");
+                    Int64 limit = getMetadataLimitParam("limit");
+                    Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
+                    protocol.getMetadata(
+                        getOutputStream(response),
+                        metric,
+                        limit,
+                        limit_per_metric,
+                        query_finish_callback);
+                    break;
+                }
+                case Endpoint::Series:
+                {
+                    Strings match = params->getAll("match[]");
+                    String start = params->get("start", "");
+                    String end = params->get("end", "");
+
+                    /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
+                    UInt64 limit = 0;
+                    String limit_param = params->get("limit", "");
+                    if (!limit_param.empty())
+                    {
+                        Int64 parsed_limit = 0;
+                        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                                            limit_param);
+                        limit = static_cast<UInt64>(parsed_limit);
+                    }
+
+                    protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
+                    break;
+                }
+                case Endpoint::Labels:
+                {
+                    String match = params->get("match[]", "");
+                    String start = params->get("start", "");
+                    String end = params->get("end", "");
+
+                    protocol.getLabels(getOutputStream(response), match, start, end);
+                    break;
+                }
+                case Endpoint::LabelValues:
+                {
+                    std::optional<String> label_name;
+                    if (config().type == PrometheusRequestHandlerConfig::Type::APIv1 && endpoint_path)
+                    {
+                        label_name = extractLabelValuesName(*endpoint_path);
+                    }
+                    else
+                    {
+                        label_name = extractLabelValuesNameFromURI(uri_path);
+                    }
+                    chassert(label_name);
+                    String match = params->get("match[]", "");
+                    String start = params->get("start", "");
+                    String end = params->get("end", "");
+
+                    protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                    break;
+                }
+                case Endpoint::Unknown:
+                    UNREACHABLE();
             }
         }
         catch (const Exception & e)
@@ -598,9 +858,46 @@ public:
     }
 
 private:
-    /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
-    /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
-    static std::optional<String> extractLabelValuesName(std::string_view uri_path)
+    bool rejectUnsupportedMethod(HTTPServerResponse & response, const char * allowed_methods)
+    {
+        response.setContentType("application/json");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+        response.set("Allow", allowed_methods);
+        writeString(R"({"status":"error","errorType":"bad_data","error":"Method not allowed"})", getOutputStream(response));
+        return false;
+    }
+
+    Int64 getMetadataLimitParam(const String & name) const
+    {
+        const String value = params->get(name, "");
+        if (value.empty())
+            return -1;
+
+        Int64 result = 0;
+        if (!tryParse(result, value.data(), value.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be a number", name);
+        return result;
+    }
+
+    /// Extracts the label name from a label-values endpoint path "label/<name>/values".
+    /// Returns std::nullopt when `endpoint_path` isn't a valid label-values endpoint.
+    static std::optional<String> extractLabelValuesName(std::string_view endpoint_path)
+    {
+        static constexpr std::string_view values_suffix = "/values";
+        static constexpr std::string_view label_prefix = "label/";
+
+        if (!endpoint_path.starts_with(label_prefix) || !endpoint_path.ends_with(values_suffix))
+            return std::nullopt;
+
+        const size_t label_name_size = endpoint_path.size() - label_prefix.size() - values_suffix.size();
+        const std::string_view label_name = endpoint_path.substr(label_prefix.size(), label_name_size);
+        if (label_name.empty() || label_name.contains('/'))
+            return std::nullopt;
+
+        return String{label_name};
+    }
+
+    static std::optional<String> extractLabelValuesNameFromURI(std::string_view uri_path)
     {
         static constexpr std::string_view values_suffix = "/values";
         static constexpr std::string_view label_segment = "/label";
@@ -608,24 +905,30 @@ private:
         if (!uri_path.ends_with(values_suffix))
             return std::nullopt;
 
-        /// Strip the "/values" suffix, leaving "<prefix>/label/<name>".
         std::string_view without_values = uri_path.substr(0, uri_path.size() - values_suffix.size());
-
-        /// A label name never contains '/', so it is the last path segment.
-        size_t name_slash = without_values.rfind('/');
+        const size_t name_slash = without_values.rfind('/');
         if (name_slash == std::string_view::npos)
             return std::nullopt;
 
-        std::string_view label_name = without_values.substr(name_slash + 1);
+        const std::string_view label_name = without_values.substr(name_slash + 1);
         if (label_name.empty())
             return std::nullopt;
 
-        /// The segment before the name must be "/label".
         if (!without_values.substr(0, name_slash).ends_with(label_segment))
             return std::nullopt;
 
         return String{label_name};
     }
+
+    void writeNotFoundResponse(const HTTPServerRequest & request, HTTPServerResponse & response)
+    {
+        LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(request.getURI()), request.getMethod());
+        response.setContentType("application/json");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
+    }
+
+    Endpoint current_endpoint = Endpoint::Unknown;
 };
 
 
@@ -657,6 +960,12 @@ public:
         current_impl->handleRequest(request, response);
     }
 
+    void handleOptionsRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        /// `current_impl` was selected in beforeHandlingRequest().
+        current_impl->handleOptionsRequest(request, response);
+    }
+
     void onException() override
     {
         if (current_impl)
@@ -664,20 +973,29 @@ public:
     }
 
 private:
-    /// Selects the implementation for a request based on the trailing segment of its path,
-    /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
-    /// ("/prefix/api/v1/write").
+    /// Selects the implementation using the configured prefix, or the legacy suffix dispatcher
+    /// when no prefix is configured.
     Impl & getImpl(const HTTPServerRequest & request)
     {
         /// Get the decoded URL path (without the query string).
         const String path = Poco::URI(request.getURI()).getPath();
 
-        if (path.ends_with("/write"))
-            return write_impl;
-        if (path.ends_with("/read"))
-            return read_impl;
+        if (url_prefix().empty())
+        {
+            if (path.ends_with("/write"))
+                return write_impl;
+            if (path.ends_with("/read"))
+                return read_impl;
+        }
+        else if (const auto endpoint_path = extractAPIv1EndpointPath(path, url_prefix()))
+        {
+            if (*endpoint_path == "write")
+                return write_impl;
+            if (*endpoint_path == "read")
+                return read_impl;
+        }
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// All other API-v1 endpoints (query, query_range, metadata, series, labels, label/<name>/values)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
@@ -694,12 +1012,14 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     const PrometheusRequestHandlerConfig & config_,
     const AsynchronousMetrics & async_metrics_,
     std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
-    std::unordered_map<String, String> response_headers_)
+    std::unordered_map<String, String> response_headers_,
+    String url_prefix_)
     : server(server_)
     , config(config_)
     , async_metrics(async_metrics_)
     , metrics_writer(metrics_writer_)
     , log(getLogger("PrometheusRequestHandler"))
+    , url_prefix(std::move(url_prefix_))
 {
     response_headers = response_headers_;
     createImpl();
@@ -752,12 +1072,20 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
         /// Make keep-alive works.
-        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
+        if (request.getVersion() == HTTPServerRequest::HTTP_1_1
+            && request.getMethod() != HTTPServerRequest::HTTP_OPTIONS)
             response.setChunkedTransferEncoding(true);
 
         setResponseDefaultHeaders(response);
 
         impl->beforeHandlingRequest(request);
+
+        if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
+        {
+            impl->handleOptionsRequest(request, response);
+            return;
+        }
+
         impl->handleRequest(request, response);
 
         getOutputStream(response).finalize();

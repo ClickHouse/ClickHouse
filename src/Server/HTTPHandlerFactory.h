@@ -44,9 +44,10 @@ public:
             addFilter(std::move(cur_filter));
     }
 
-    void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+    /// 'allow_options' makes an explicitly configured methods filter accept OPTIONS as well.
+    void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix, bool allow_options = false)
     {
-        addFilters(extractHTTPRequestFiltersFromConfig(config, prefix));
+        addFilters(extractHTTPRequestFiltersFromConfig(config, prefix, allow_options));
     }
 
     void attachStrictPath(const String & strict_path)

@@ -42,7 +42,9 @@ enum class HTTPRequestFilterMatchType
 /// is matched as an exact string, or as a regular expression if it starts with the "regex:" marker.
 
 /// Matches the request method against a comma-separated list of methods (e.g. "GET,POST"). Case-insensitive.
-HTTPRequestFilter methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path);
+/// When 'allow_options' is true, OPTIONS matches independently of the configured list.
+HTTPRequestFilter methodsFilter(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_path, bool allow_options = false);
 
 /// Matches the request URL path according to `match_type`. The query string is ignored when matching.
 HTTPRequestFilter urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path, HTTPRequestFilterMatchType match_type);
@@ -62,7 +64,8 @@ HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config
 /// `url_regexp`, `full_url`, `methods`, `headers`, `headers_regexp`, `empty_query_string`, ...), one filter per
 /// sub-tag. The `handler` sub-tag is ignored. A request matches the rule only if every returned filter matches.
 /// Throws if an unknown sub-tag is encountered.
-std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_options = false);
 
 /// Contains regular expressions configured for a rule's URL and headers with named capturing groups.
 struct HTTPHandlerRegexpsWithNamedGroups

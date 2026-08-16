@@ -23,6 +23,7 @@ namespace CurrentMetrics
 }
 
 namespace Poco { class Logger; }
+namespace Poco::Util { class LayeredConfiguration; }
 
 namespace DB
 {
@@ -34,6 +35,10 @@ class WriteBufferFromHTTPServerResponse;
 struct SQLDefinedHandler;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
+
+/// Process an HTTP OPTIONS request using the server-wide response headers.
+/// This is used by handlers which need to answer preflight requests before creating a query context.
+void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config);
 
 struct HTTPHandlerConnectionConfig
 {
