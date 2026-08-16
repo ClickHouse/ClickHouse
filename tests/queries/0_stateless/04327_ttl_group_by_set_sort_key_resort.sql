@@ -256,7 +256,9 @@ TTL x + toIntervalDay(1) GROUP BY z
     SET x = max(x) + interval 100 years
 SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 SYSTEM STOP MERGES t_mat_tuple_chain;
-INSERT INTO t_mat_tuple_chain (x) SELECT toDateTime('2020-01-01') + number * 86400 * 40 FROM numbers(10);
+-- The old analyzer resolves `y.d` against the insert block, which holds only `x`, so the insert
+-- needs the new one. The merge below still runs on whichever analyzer the job selects.
+INSERT INTO t_mat_tuple_chain (x) SELECT toDateTime('2020-01-01') + number * 86400 * 40 FROM numbers(10) SETTINGS enable_analyzer = 1;
 SYSTEM START MERGES t_mat_tuple_chain;
 OPTIMIZE TABLE t_mat_tuple_chain FINAL;
 SELECT 'mat tuple chain consistent', countIf(z = toYYYYMM(y.d) AND y.d = toDate(x)) = count() FROM t_mat_tuple_chain;
