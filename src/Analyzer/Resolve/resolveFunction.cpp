@@ -1174,6 +1174,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
                     && left_key_type
                     && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
+                        || isNullableOrLowCardinalityNullable(left_result_type)
                         || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
             }
 

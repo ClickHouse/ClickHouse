@@ -43,3 +43,10 @@ SELECT number, number IN (SELECT number FROM numbers(3)) FROM numbers(5) ORDER B
 -- cast as a tuple. In particular, `Set::execute` parses `String` '01' as `UInt8` 1; rewriting to
 -- `equals(String, UInt8)` would instead fail with `NO_COMMON_TYPE`.
 SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELECT toUInt8(1));
+
+-- Equal `Nullable` scalar types need the same treatment: with `transform_null_in = 0`, regular
+-- `IN` and `NOT IN` return `NULL` for a NULL key, while `equals` in the EXISTS rewrite would make
+-- `NOT IN` true. Both predicates must filter the row out.
+SET transform_null_in = 0;
+SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
+SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
