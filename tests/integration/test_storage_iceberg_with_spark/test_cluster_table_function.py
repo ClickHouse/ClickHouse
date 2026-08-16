@@ -420,7 +420,33 @@ def test_cluster_table_function_split_by_buckets_with_position_deletes(started_c
     select_cluster = sorted(
         int(x)
         for x in instance.query(
-            f"SELECT id FROM {table_function_expr_cluster} SETTINGS cluster_table_function_split_granularity='bucket'"
+            f"SELECT id FROM {table_function_expr_cluster} SETTINGS cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size=0"
         ).strip().split()
     )
     assert select_cluster == expected_ids
+
+    def get_buffers_count(query):
+        instance.query("SYSTEM FLUSH LOGS")
+        buffers_count_before = int(
+            instance.query(
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+            )
+        )
+        query()
+        instance.query("SYSTEM FLUSH LOGS")
+        buffers_count_after = int(
+            instance.query(
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+            )
+        )
+        return buffers_count_after - buffers_count_before
+
+    buffers_count_with_splitting = get_buffers_count(
+        lambda: instance.query(
+            f"SELECT count() FROM {table_function_expr_cluster} SETTINGS cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size=0"
+        )
+    )
+    buffers_count_without_splitting = get_buffers_count(
+        lambda: instance.query(f"SELECT count() FROM {table_function_expr_cluster}")
+    )
+    assert buffers_count_with_splitting > buffers_count_without_splitting
