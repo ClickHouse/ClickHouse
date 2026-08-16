@@ -99,6 +99,14 @@ CREATE TABLE nats_locked_basic_token_cleared_in_settings (key UInt64)
 ENGINE = NATS(nats_config_locked_basic_credentials)
 SETTINGS nats_token = ''; -- { serverError BAD_ARGUMENTS }
 
+-- Authentication methods cannot be layered: a query cannot add inline credentials to a collection
+-- that defines basic credentials, or add basic credentials to one that defines a credentials file.
+CREATE TABLE nats_inline_credentials_over_locked_basic_credentials (key UInt64)
+ENGINE = NATS(nats_config_locked_basic_credentials, nats_credentials = 'user JWT and seed'); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_basic_credentials_over_locked_file (key UInt64)
+ENGINE = NATS(nats_config_locked_credentials, nats_username = 'user', nats_password = 'password'); -- { serverError BAD_ARGUMENTS }
+
 -- But an override of the path on top of the configuration-defined collection comes from SQL again.
 CREATE TABLE nats_file_over_config_collection (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_credential_file = '/etc/shadow'); -- { serverError BAD_ARGUMENTS }
