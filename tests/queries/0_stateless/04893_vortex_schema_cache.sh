@@ -24,8 +24,10 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 1;
     DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0;
     DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 1;
-    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0, schema_inference_allow_nullable_tuple_type = 1;
-    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0, schema_inference_allow_nullable_tuple_type = 0;
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0, allow_experimental_nullable_tuple_type = 1;
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0, allow_experimental_nullable_tuple_type = 0;
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 1, schema_inference_make_json_columns_nullable = 0;
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 1, schema_inference_make_json_columns_nullable = 1;
     SELECT count() FROM system.schema_inference_cache
     WHERE format = 'Vortex' AND additional_format_info LIKE '%schema_inference_make_columns_nullable%';
 "

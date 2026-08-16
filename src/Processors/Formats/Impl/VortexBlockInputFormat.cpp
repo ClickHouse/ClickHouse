@@ -844,9 +844,11 @@ void registerVortexSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+                "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
+                "schema_inference_allow_nullable_tuple_type={};"
                 "allow_geoparquet_parser={}",
                 settings.schema_inference_make_columns_nullable,
+                settings.schema_inference_make_json_columns_nullable,
                 settings.schema_inference_allow_nullable_tuple_type,
                 settings.parquet.allow_geoparquet_parser);
         });
