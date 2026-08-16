@@ -61,6 +61,15 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT s, lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
 
+-- An alias of the same source still makes the wide column cross the sort. Replacing only `a`
+-- would therefore evaluate `length` earlier without reducing the sort payload.
+SELECT 'plan: sibling alias still needed above — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT s, length(a)
+    FROM (SELECT s, s AS a, id FROM volume_reducing_function_push_down ORDER BY id)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
 -- The function does not have to be an output of the parent step: `ActionsDAG::split` leaves the
 -- enclosing expression in place and only moves `lengthUTF8(s)` down.
 SELECT 'plan: nested expression (lengthUTF8(s)+1) — pushdown applied';

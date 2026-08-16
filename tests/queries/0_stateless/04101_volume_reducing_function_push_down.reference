@@ -6,6 +6,8 @@ plan: filter not reading the argument — not pushed
 0
 plan: argument still needed above — not pushed
 0
+plan: sibling alias still needed above — not pushed
+0
 plan: nested expression (lengthUTF8(s)+1) — pushdown applied
 1
 plan: filter step as parent — pushdown applied

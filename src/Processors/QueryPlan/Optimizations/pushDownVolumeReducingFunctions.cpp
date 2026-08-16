@@ -423,18 +423,34 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 
         if (child_actions)
         {
+            const ActionsDAG::Node * source_below = nullptr;
             if (const auto * surfaced = child_actions->tryFindInOutputs(name_above))
             {
-                const auto * source = resolveAliases(surfaced);
-                if (source->type != ActionsDAG::ActionType::INPUT)
+                source_below = resolveAliases(surfaced);
+                if (source_below->type != ActionsDAG::ActionType::INPUT)
                     continue;
-                name_below = source->result_name;
+                name_below = source_below->result_name;
             }
             else if (child_inputs_in_use.contains(name_above))
             {
                 /// A column the child consumes but does not output cannot reach the parent at all.
                 continue;
             }
+
+            /// Removing only the parent-visible alias is not enough when the child also surfaces
+            /// the same wide input under another name. That sibling would still cross the barrier,
+            /// so pushing the function down would add work without reducing the carried volume.
+            bool has_surfaced_sibling = false;
+            if (source_below)
+                for (const auto * output : child_actions->getOutputs())
+                    if (output->result_name != name_above && resolveAliases(output) == source_below)
+                    {
+                        has_surfaced_sibling = true;
+                        break;
+                    }
+
+            if (has_surfaced_sibling)
+                continue;
         }
 
         if (columns_pinned_by_child.contains(name_below))
