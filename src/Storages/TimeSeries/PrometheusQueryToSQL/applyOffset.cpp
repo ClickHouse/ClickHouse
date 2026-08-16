@@ -101,10 +101,22 @@ namespace
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
     SQLQueryPiece setEvaluationTime(
         const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
+        {
+            expression.node = offset_node;
+            return std::move(expression);
+        }
+
+        auto node_range = context.node_range_getter.get(offset_node);
+        if (node_range.empty())
+            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
+
         /// <expression> is expected to be calculated at a fixed evaluation time.
         if (expression.start_time != expression.end_time)
         {
@@ -112,10 +124,6 @@ namespace
                             "Expression {} is expected to be calculated at a fixed evaluation time",
                             getPromQLText(expression, context));
         }
-
-        auto node_range = context.node_range_getter.get(offset_node);
-        if (node_range.empty())
-            return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
 
         expression.node = offset_node;
 
@@ -213,7 +221,7 @@ namespace
 
 SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);
