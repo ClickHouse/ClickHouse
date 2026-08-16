@@ -117,7 +117,7 @@ tx 3 "ROLLBACK" > /dev/null
 
 echo "replicated_metadata_alter_rejected $(grep -c NOT_IMPLEMENTED <<< "$replicated_alter_output")"
 echo "replicated_column_after_metadata_alter $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = '${rep_db}' AND table = 't' AND name IN ('value', 'value2')")"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE ${rep_db} SYNC"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${rep_db} SYNC" > /dev/null
 
 # Subsequent mutations must not be blocked by the removed one.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation_kill_txn_race UPDATE value = value + 7 WHERE 1 SETTINGS mutations_sync = 1"
