@@ -215,20 +215,6 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parseString(const String & yaml)
     return buildXMLFromYAMLNode(node_yml);
 }
 
-bool YAMLParser::isScalar(const String & yaml)
-{
-    try
-    {
-        YAML::Node node_yml = YAML::Load(yaml);
-        /// A null node (for example, an empty value) is also kept as literal text.
-        return node_yml.IsScalar() || node_yml.IsNull();
-    }
-    catch (const YAML::ParserException & e)
-    {
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration from a string, {}", e.what());
-    }
-}
-
 }
 #else
 

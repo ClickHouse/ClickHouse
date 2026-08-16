@@ -58,8 +58,8 @@ def start_cluster():
     try:
 
         def create_zk_roots(zk):
-            # A YAML subtree (does not start with '<') stored in a ZooKeeper node: it must
-            # be autodetected and parsed as YAML, just like a config file.
+            # A YAML subtree (does not start with '<') stored in a ZooKeeper node. The matching
+            # include explicitly opts in with yaml="true" and parses it as YAML.
             zk.create(
                 path="/profile_settings_yaml",
                 value=b"max_query_size: 99999\n",
@@ -71,6 +71,14 @@ def start_cluster():
             zk.create(
                 path="/scalar_with_yaml_syntax",
                 value=b"abc # rotated",
+                makepath=True,
+            )
+            # A malformed YAML-looking leaf value. An unmarked <include> is also the generic leaf
+            # replacement form, so this must be substituted as literal text rather than rejecting
+            # the configuration while probing for a YAML subtree.
+            zk.create(
+                path="/malformed_yaml_scalar",
+                value=b"[1",
                 makepath=True,
             )
             # A value that is a valid YAML mapping ("abc: def"), used as a leaf substitution:
@@ -164,8 +172,8 @@ def test_config_env_cdata_end_sequence(start_cluster):
     assert get_log_comment(node_env, "env_cdata") == "a]]>b\n"
 
 
-def test_config_zk_yaml_is_autodetected(start_cluster):
-    """A structural <include from_zk=...> whose value does not start with '<' is autodetected as YAML."""
+def test_config_zk_yaml_is_parsed_with_explicit_opt_in(start_cluster):
+    """A structural <include from_zk=... yaml="true"> parses a non-XML value as YAML."""
     assert (
         node_zk.query(
             "SELECT value FROM system.settings WHERE name = 'max_query_size'",
@@ -197,6 +205,15 @@ def test_config_zk_include_scalar_keeps_literal_text(start_cluster):
     assert get_log_comment(node_zk, "zk_include_scalar") == "abc # rotated\n"
 
 
+def test_config_zk_include_malformed_yaml_keeps_literal_text(start_cluster):
+    """A leaf <include from_zk=...> keeps malformed YAML-looking text literal.
+
+    The generic leaf-replacement form does not probe YAML: YAML subtree expansion requires the
+    explicit yaml="true" attribute, so a secret with the value "[1" keeps working.
+    """
+    assert get_log_comment(node_zk, "zk_include_malformed_yaml") == "[1\n"
+
+
 def test_config_zk_leaf_yaml_mapping_keeps_literal_text(start_cluster):
     """A from_zk leaf value that is a valid YAML mapping must be kept as literal text.
 
@@ -216,7 +233,7 @@ def test_config_zk_leaf_cdata_end_sequence(start_cluster):
 
 
 def test_config_zk_yaml_top_level_sequence_include(start_cluster):
-    """A structural <include from_zk=...> whose YAML document root is a sequence must insert every item.
+    """An opted-in YAML sequence include must insert every item.
 
     A top-level sequence used to clone the synthetic `clickhouse` root, appending several root
     elements of which only the first was kept, so every item after the first was silently dropped.
