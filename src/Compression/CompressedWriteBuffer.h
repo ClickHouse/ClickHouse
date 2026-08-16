@@ -52,6 +52,7 @@ public:
     WriteBuffer * getNestedBuffer() const { return &out; }
 
 private:
+    void preNext() override;
     void nextImpl() override;
 
     /// Select the direct or owned buffer for the next block.
@@ -83,6 +84,7 @@ private:
 
     /// Expected `out` position for a direct block; nullptr for an owned block.
     char * expected_out_position = nullptr;
+    size_t expected_out_flush_count = 0;
 };
 
 }

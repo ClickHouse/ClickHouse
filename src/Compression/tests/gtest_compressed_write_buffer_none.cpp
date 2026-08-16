@@ -193,8 +193,10 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
     compressed_out.declareOutBufferExclusive();
 
     compressed_out.write("hello", 5);
-    /// Someone else writes to `out` even though it was declared exclusive.
+    /// Someone else writes to and flushes `out` even though it was declared exclusive. The flush
+    /// restores the cursor to its original address, so the flush count must be checked too.
     out.write("x", 1);
+    out.next();
 
     EXPECT_THROW(compressed_out.next(), DB::Exception);
     compressed_out.cancel();

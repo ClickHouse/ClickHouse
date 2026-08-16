@@ -44,6 +44,8 @@ public:
         if (canceled)
             return;
 
+        preNext();
+
         if (!offset())
             return;
 
@@ -128,6 +130,8 @@ public:
 
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+
+    virtual void preNext() { }
 
     virtual void finalizeImpl() { next(); }
     virtual void cancelImpl() noexcept { }

@@ -35,6 +35,7 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
         if (out.available() >= required_size)
         {
             expected_out_position = out.position();
+            expected_out_flush_count = out.getFlushCount();
             char * data_begin = out.position() + COMPRESSED_BLOCK_PREFIX_SIZE;
             working_buffer = Buffer(data_begin, data_begin + block_size);
             pos = working_buffer.begin();
@@ -50,13 +51,17 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
     expected_out_position = nullptr;
 }
 
+void CompressedWriteBuffer::preNext()
+{
+    if (expected_out_position && (out.position() != expected_out_position || out.getFlushCount() != expected_out_flush_count))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "CompressedWriteBuffer: the output buffer declared exclusive was changed by someone else, "
+            "the block written in place would be corrupted");
+}
+
 void CompressedWriteBuffer::nextImpl()
 {
-    if (expected_out_position && out.position() != expected_out_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "CompressedWriteBuffer: the position of the output buffer declared exclusive was moved by someone else, "
-            "the block written in place would be corrupted");
-
     if (!offset())
         return;
 
