@@ -226,7 +226,7 @@ def main():
     )
     assert (
         '"name":"openSSL.client.caConfig",'
-        '"href":"/reference/settings/server-settings/settings/other'
+        '"path":"/other'
         '#openssl.client.caconfig","default":"0"'
     ) in complex_explorer
     assert complex_anchor_routes["openssl.client.caconfig"] == \
@@ -371,8 +371,12 @@ def main():
         assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
-        assert explorer.startswith("const SessionSettingsExplorer = () => {")
-        component_start = explorer.index("const SessionSettingsExplorer = () => {")
+        assert explorer.startswith(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
+        component_start = explorer.index(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
         assert component_start == 0
         assert explorer.index(
             "  const [entries] = useState(() => ("
@@ -388,7 +392,7 @@ def main():
             '"/reference/settings/session-settings/filesystem-cache"'
         ) in routes_script
         assert (
-            '"href":"/reference/settings/session-settings/filesystem-cache#filesystem_cache_alpha"'
+            '"path":"/filesystem-cache#filesystem_cache_alpha"'
             in explorer)
         assert '"default":"0"' in explorer
         assert 'title="Default value"' in explorer
@@ -396,6 +400,10 @@ def main():
         assert "text-gray-500 dark:text-gray-400" in explorer
         assert 'gridTemplateColumns: "44ch max-content"' in explorer
         assert 'style={{ overflowWrap: "anywhere" }}' in explorer
+        assert (
+            'href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`}'
+            in explorer
+        )
         assert 'item.value.name.split("_")' in explorer
         assert "<wbr />" in explorer
         assert "settingNameColumnWidth" not in explorer
@@ -463,7 +471,7 @@ def main():
         )
         assert (
             '"name":"empty_default",'
-            '"href":"/reference/settings/session-settings/empty#empty_default",'
+            '"path":"/empty#empty_default",'
             '"default":"\\"\\""'
         ) in empty_default_explorer
         server_empty_default_explorer = mod._settings_explorer_component(
@@ -488,7 +496,7 @@ def main():
         )
         assert (
             '"name":"server_empty_default",'
-            '"href":"/reference/settings/server-settings/settings/other'
+            '"path":"/other'
             '#server_empty_default","default":"\\"\\""'
         ) in server_explorer
         server_sql = (
@@ -559,10 +567,7 @@ def main():
         for name, default_value in expected_manual_server_defaults.items():
             expected_setting = {
                 "name": name,
-                "href": (
-                    "/reference/settings/server-settings/settings/other"
-                    f"#{name}"
-                ),
+                "path": f"/other#{name}",
                 "default": default_value,
             }
             assert json.dumps(
@@ -733,9 +738,13 @@ def main():
             by_path = {artifact.path: artifact.content for artifact in artifacts}
 
             root = by_path[dest]
-            assert f"<{family['component_name']} />" in root
+            explorer_tag = (
+                f'<{family["component_name"]} '
+                f'href="{family["base_route"]}" />'
+            )
+            assert explorer_tag in root
             assert f"## {family['browse_title']}" in root
-            assert root.count(f"<{family['component_name']} />") == 1
+            assert root.count(explorer_tag) == 1
             assert root.count(f"## {family['browse_title']}") == 1
             assert "## filesystem_cache_alpha" not in root
             routes_script_path = (
@@ -758,9 +767,13 @@ def main():
 
             component_path = docs / family["component_path"]
             explorer = by_path[component_path]
-            assert f'const {family["component_name"]} = () => {{' in explorer
+            component_declaration = (
+                f'const {family["component_name"]} = '
+                '({ href: baseRoute }) => {'
+            )
+            assert component_declaration in explorer
             component_start = explorer.index(
-                f'const {family["component_name"]} = () => {{')
+                component_declaration)
             assert component_start == 0
             assert explorer.index(
                 "  const [entries] = useState(() => ("
@@ -787,7 +800,7 @@ def main():
             assert "const isOpen = isSearching || expandedGroups.has(key)" in explorer
             assert "No matching settings" in explorer
             assert (
-                f'"href":"{family["base_route"]}/filesystem-cache'
+                '"path":"/filesystem-cache'
                 '#filesystem_cache_alpha"'
             ) in explorer
 
