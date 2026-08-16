@@ -708,7 +708,8 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64> && std::is_same_v<RightDataType, DataTypeTime64>)
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
+                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
             {
                 if (cast_type == CastType::accurate)
                 {
