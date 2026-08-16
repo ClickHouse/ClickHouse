@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstring>
 #include <limits>
 #include <optional>
 
@@ -306,8 +307,26 @@ private:
         return static_cast<Float64>(typeid_cast<const ColumnVector<Float32> &>(column).getData()[index]);
     }
 
-    /// The 3rd argument must be the same array in every row: it is captured from the first row and later rows are
-    /// verified by a cheap fingerprint (size and endpoints), because `add` runs once per sample on the hot path.
+    /// Bitwise like `sameValue`, with the element type dispatched once per row instead of once per element.
+    static bool sameGridValues(const IColumn & column, size_t begin, size_t size, const VectorWithMemoryTracking<Float64> & captured)
+    {
+        if (size != captured.size())
+            return false;
+        if (size == 0)
+            return true;
+
+        if (const auto * float64_column = typeid_cast<const ColumnVector<Float64> *>(&column))
+            return 0 == memcmp(float64_column->getData().data() + begin, captured.data(), size * sizeof(Float64));
+
+        const auto & float32_data = typeid_cast<const ColumnVector<Float32> &>(column).getData();
+        for (size_t i = 0; i < size; ++i)
+            if (!sameValue(static_cast<Float64>(float32_data[begin + i]), captured[i]))
+                return false;
+        return true;
+    }
+
+    /// The 3rd argument must be the same array in every row: it is captured from the first row and every later row is
+    /// compared against it in full, since a fingerprint of size and endpoints accepts rows differing in the middle.
     void captureOrCheckGridPhis(AggregateDataPtr __restrict place, const IColumn * phis_column, size_t row_num) const
     {
         const auto & arr = typeid_cast<const ColumnArray &>(*phis_column);
@@ -320,10 +339,7 @@ private:
 
         if (data(place)->grid_phis_captured)
         {
-            if (size != grid_phis.size()
-                || (size != 0
-                    && (!sameValue(gridValueAt(values, begin), grid_phis.front())
-                        || !sameValue(gridValueAt(values, end - 1), grid_phis.back()))))
+            if (!sameGridValues(values, begin, size, grid_phis))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Aggregate function {} requires the same `phis` array for all rows", getName());
             return;

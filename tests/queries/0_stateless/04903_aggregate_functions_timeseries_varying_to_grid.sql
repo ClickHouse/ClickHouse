@@ -39,6 +39,9 @@ SELECT '-- timeSeries*VaryingToGrid: the 3rd argument must be the same in every 
 SELECT timeSeriesPredictLinearVaryingToGrid(100, 120, 10, 30)(timestamp, value, arrayMap(x -> x + grp, predict_offsets)) FROM varying_input; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesQuantileVaryingToGrid(100, 120, 10, 30)(timestamp, value, arrayMap(x -> x / (1 + grp), phis)) FROM varying_input; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesPredictLinearVaryingToGrid(100, 120, 10, 30)(timestamp, value, arrayResize(predict_offsets, 3 - grp)) FROM varying_input; -- { serverError BAD_ARGUMENTS }
+-- Rows that differ only in the middle of the array must be rejected as well.
+SELECT timeSeriesPredictLinearVaryingToGrid(100, 120, 10, 30)(timestamp, value, arrayMap(x -> if(x = 5, x + grp * 2, x), predict_offsets)) FROM varying_input; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesQuantileVaryingToGrid(100, 120, 10, 30)(timestamp, value, arrayMap(x -> if(x = 0.5, x + grp * 0.2, x), phis)) FROM varying_input; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesPredictLinearVaryingToGridMerge(100, 120, 10, 30)(st) FROM (SELECT timeSeriesPredictLinearVaryingToGridState(100, 120, 10, 30)(timestamp, value, arrayMap(x -> x + grp, predict_offsets)) AS st FROM varying_input GROUP BY grp); -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesQuantileVaryingToGridMerge(100, 120, 10, 30)(st) FROM (SELECT timeSeriesQuantileVaryingToGridState(100, 120, 10, 30)(timestamp, value, arrayMap(x -> x / (1 + grp), phis)) AS st FROM varying_input GROUP BY grp); -- { serverError BAD_ARGUMENTS }
 
