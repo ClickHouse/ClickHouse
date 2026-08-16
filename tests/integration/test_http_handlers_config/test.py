@@ -27,7 +27,9 @@ class SimpleCluster:
 def test_dynamic_query_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "dynamic_handler", "test_dynamic_handler"
+            ClickHouseCluster(__file__, "test_dynamic_query_handler"),
+            "dynamic_handler",
+            "test_dynamic_handler",
         )
     ) as cluster:
         test_query = urllib.parse.quote_plus(
@@ -127,7 +129,9 @@ def test_dynamic_handler_put_delete_still_readonly():
     # matching such a rule must still force readonly, so a user-supplied modifying query is rejected.
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "dynamic_handler", "test_dynamic_handler"
+            ClickHouseCluster(__file__, "test_dynamic_handler_put_delete_still_readonly"),
+            "dynamic_handler",
+            "test_dynamic_handler",
         )
     ) as cluster:
         select_query = urllib.parse.quote_plus("SELECT 1")
@@ -157,7 +161,9 @@ def test_dynamic_handler_put_delete_still_readonly():
 def test_predefined_query_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "predefined_handler", "test_predefined_handler"
+            ClickHouseCluster(__file__, "test_predefined_query_handler"),
+            "predefined_handler",
+            "test_predefined_handler",
         )
     ) as cluster:
         assert (
@@ -292,7 +298,7 @@ def test_predefined_query_handler():
 def test_predefined_handler_absent_header():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_predefined_handler_absent_header"),
             "predefined_handler_absent_header",
             "test_predefined_handler_absent_header",
         )
@@ -325,7 +331,9 @@ def test_predefined_handler_absent_header():
 def test_fixed_static_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "static_handler", "test_static_handler"
+            ClickHouseCluster(__file__, "test_fixed_static_handler"),
+            "static_handler",
+            "test_static_handler",
         )
     ) as cluster:
         assert (
@@ -384,7 +392,9 @@ def test_fixed_static_handler():
 def test_config_static_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "static_handler", "test_static_handler"
+            ClickHouseCluster(__file__, "test_config_static_handler"),
+            "static_handler",
+            "test_static_handler",
         )
     ) as cluster:
         assert (
@@ -432,7 +442,9 @@ def test_config_static_handler():
 def test_absolute_path_static_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "static_handler", "test_static_handler"
+            ClickHouseCluster(__file__, "test_absolute_path_static_handler"),
+            "static_handler",
+            "test_static_handler",
         )
     ) as cluster:
         cluster.instance.exec_in_container(
@@ -500,7 +512,9 @@ def test_absolute_path_static_handler():
 def test_relative_path_static_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "static_handler", "test_static_handler"
+            ClickHouseCluster(__file__, "test_relative_path_static_handler"),
+            "static_handler",
+            "test_static_handler",
         )
     ) as cluster:
         cluster.instance.exec_in_container(
@@ -568,7 +582,9 @@ def test_relative_path_static_handler():
 def test_defaults_http_handlers():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "defaults_handlers", "test_defaults_handlers"
+            ClickHouseCluster(__file__, "test_defaults_http_handlers"),
+            "defaults_handlers",
+            "test_defaults_handlers",
         )
     ) as cluster:
         assert 200 == cluster.instance.http_request("", method="GET").status_code
@@ -648,7 +664,7 @@ def test_defaults_http_handlers_config_order():
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_defaults_http_handlers_config_order_first"),
             "defaults_handlers_config_order_first",
             "test_defaults_handlers_config_order/defaults_first",
         )
@@ -657,7 +673,7 @@ def test_defaults_http_handlers_config_order():
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_defaults_http_handlers_config_order_last"),
             "defaults_handlers_config_order_first",
             "test_defaults_handlers_config_order/defaults_last",
         )
@@ -668,7 +684,9 @@ def test_defaults_http_handlers_config_order():
 def test_prometheus_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "prometheus_handler", "test_prometheus_handler"
+            ClickHouseCluster(__file__, "test_prometheus_handler"),
+            "prometheus_handler",
+            "test_prometheus_handler",
         )
     ) as cluster:
         assert (
@@ -709,7 +727,7 @@ def test_prometheus_handler():
 def test_replicas_status_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_replicas_status_handler"),
             "replicas_status_handler",
             "test_replicas_status_handler",
         )
@@ -752,7 +770,9 @@ def test_replicas_status_handler():
 def test_headers_in_response():
     with contextlib.closing(
             SimpleCluster(
-                ClickHouseCluster(__file__), "headers_in_response", "test_headers_in_response"
+                ClickHouseCluster(__file__, "test_headers_in_response"),
+                "headers_in_response",
+                "test_headers_in_response",
             )
     ) as cluster:
         for endpoint in ("static", "ping", "replicas_status", "play", "dashboard", "binary", "merges", "metrics",
@@ -783,8 +803,9 @@ def test_common_headers_without_per_handler():
     have no per-handler http_response_headers configured."""
     with contextlib.closing(
             SimpleCluster(
-                ClickHouseCluster(__file__), "common_headers_no_per_handler",
-                "test_common_headers_without_per_handler"
+                ClickHouseCluster(__file__, "test_common_headers_without_per_handler"),
+                "common_headers_no_per_handler",
+                "test_common_headers_without_per_handler",
             )
     ) as cluster:
         # dynamic_query_handler without per-handler headers
@@ -806,7 +827,9 @@ def test_common_headers_without_per_handler():
 def test_redirect_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "redirect_handler", "test_redirect_handler"
+            ClickHouseCluster(__file__, "test_redirect_handler"),
+            "redirect_handler",
+            "test_redirect_handler",
         )
     ) as cluster:
         def get(uri, *args, **kwargs):
@@ -846,7 +869,7 @@ def test_predefined_handler_whitespace():
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_predefined_handler_whitespace"),
             "predefined_handler_whitespace",
             "test_predefined_handler_whitespace",
         )
@@ -880,7 +903,9 @@ def test_predefined_handler_whitespace():
 def test_url_prefix_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "url_prefix_handler", "test_url_prefix_handler"
+            ClickHouseCluster(__file__, "test_url_prefix_handler"),
+            "url_prefix_handler",
+            "test_url_prefix_handler",
         )
     ) as cluster:
         def get(path):
@@ -915,7 +940,9 @@ def test_url_prefix_handler():
 def test_url_regexp_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "url_regexp_handler", "test_url_regexp_handler"
+            ClickHouseCluster(__file__, "test_url_regexp_handler"),
+            "url_regexp_handler",
+            "test_url_regexp_handler",
         )
     ) as cluster:
         def get(path):
@@ -946,7 +973,7 @@ def test_url_regexp_handler():
 def test_headers_regexp_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__),
+            ClickHouseCluster(__file__, "test_headers_regexp_handler"),
             "headers_regexp_handler",
             "test_headers_regexp_handler",
         )
@@ -975,7 +1002,9 @@ def test_headers_regexp_handler():
 def test_catch_all_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "catch_all_handler", "test_catch_all_handler"
+            ClickHouseCluster(__file__, "test_catch_all_handler"),
+            "catch_all_handler",
+            "test_catch_all_handler",
         )
     ) as cluster:
         # The single rule has only <handler> and no match conditions, so it must match every request
