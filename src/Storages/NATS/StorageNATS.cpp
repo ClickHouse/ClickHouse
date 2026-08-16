@@ -904,7 +904,6 @@ void resolveCredentialSource(
     bool password_assigned_by_query,
     bool token_assigned_by_query,
     bool destination_assigned_by_query,
-    bool credentials_from_global_config,
     bool allow_named_collection_override_by_default,
     bool loading_from_existing_metadata)
 {
@@ -946,12 +945,13 @@ void resolveCredentialSource(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
 
-    /// Credentials read from the server configuration are secrets selected by the operator. They
-    /// must not be sent to an endpoint selected by the query. The global `nats.user`,
-    /// `nats.password`, and `nats.token` fallbacks follow the same rule. Loading an existing table
-    /// definition is exempt so an upgrade does not make previously valid metadata unloadable.
-    if (!loading_from_existing_metadata && (trusted_credentials_from_collection || credentials_from_global_config)
-        && destination_assigned_by_query)
+    /// Credentials read from a named collection in the server configuration are secrets selected
+    /// by the operator. They must not be sent to an endpoint selected by the query. The global
+    /// `nats.user`, `nats.password`, and `nats.token` fallbacks intentionally retain their
+    /// established behavior: they authenticate tables whose destination is defined in SQL.
+    /// Loading an existing table definition is exempt so an upgrade does not make previously valid
+    /// metadata unloadable.
+    if (!loading_from_existing_metadata && trusted_credentials_from_collection && destination_assigned_by_query)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`nats_url` and `nats_server_list` cannot be overridden when credentials come from the server configuration file");
@@ -1109,11 +1109,6 @@ void registerStorageNATS(StorageFactory & factory)
             }
         }
 
-        const auto & config = args.getContext()->getConfigRef();
-        const bool credentials_from_global_config = ((*nats_settings)[NATSSetting::nats_username].value.empty() && config.has("nats.user"))
-            || ((*nats_settings)[NATSSetting::nats_password].value.empty() && config.has("nats.password"))
-            || ((*nats_settings)[NATSSetting::nats_token].value.empty() && config.has("nats.token"));
-
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
@@ -1134,7 +1129,6 @@ void registerStorageNATS(StorageFactory & factory)
             password_assigned_by_query,
             token_assigned_by_query,
             destination_assigned_by_query,
-            credentials_from_global_config,
             args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
             isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 

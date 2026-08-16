@@ -1,4 +1,10 @@
 <clickhouse>
+    <!-- Global NATS credentials are a legacy fallback for tables whose destination is defined in SQL. -->
+    <nats>
+        <user>global_user</user>
+        <password>global_password</password>
+        <token>global_token</token>
+    </nats>
     <named_collections>
         <remote1>
             <host>127.0.0.2</host>

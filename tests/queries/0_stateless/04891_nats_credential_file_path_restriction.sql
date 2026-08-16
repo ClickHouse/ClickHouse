@@ -66,6 +66,11 @@ DROP TABLE nats_file_with_url_override_from_existing_metadata;
 CREATE TABLE nats_basic_credentials_in_config_collection (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials); -- { serverError CANNOT_CONNECT_NATS }
 
+-- Global `<nats>` credentials remain a fallback for tables which define their destination in SQL.
+CREATE TABLE nats_global_basic_credentials (key UInt64) ENGINE = NATS
+SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1; -- { serverError CANNOT_CONNECT_NATS }
+
 CREATE TABLE nats_basic_credentials_with_url_override (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
 
