@@ -754,10 +754,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// multi-stream funnel path (which passes it to every `MergingAggregatedBucketTransform`).
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
+                /// Keep the total unfinished in-order aggregation batch across all shards within
+                /// `aggregation_in_order_max_block_bytes`, as in the ordinary multi-stream path below.
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
-                    max_block_size, aggregation_in_order_max_block_bytes,
+                    max_block_size, aggregation_in_order_max_block_bytes / num_shards,
                     limit_hint, dataflow_cache_updater);
             });
             pipeline.addSimpleTransform([&](const SharedHeader & header)
