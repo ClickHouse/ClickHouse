@@ -421,7 +421,9 @@ SELECT 'pres stord', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_stord
 -- storage column name; an unresolved name returns before any filter is installed. The type tested
 -- is the sort column's own: v.f is a static Float64, so it keeps the filter even though the column
 -- it is read from is a JSON. Sorting on the JSON itself does not.
-SELECT 'pres jsub', count() > 0 FROM (EXPLAIN actions = 1 SELECT v.f FROM d_json ORDER BY v.f ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
+-- Only the analyzer resolves a dotted name to an alias, so the filter is installed exactly when the
+-- analyzer is enabled. Comparing against the setting keeps both directions asserted.
+SELECT 'pres jsub', (count() > 0) = getSetting('enable_analyzer') FROM (EXPLAIN actions = 1 SELECT v.f FROM d_json ORDER BY v.f ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres jroot', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_json ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off varlen', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 0) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0) WHERE explain LIKE '%__topKFilter%';
