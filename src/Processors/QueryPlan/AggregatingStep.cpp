@@ -669,6 +669,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             && limit_hint == 0
             && !skip_merging
             && transform_params->params.max_rows_to_group_by == 0
+            /// Virtual rows steer the ordinary merging transform toward the next primary-key range. The
+            /// reshuffle turns one input chunk into separate shard chunks, so it cannot preserve that stream
+            /// metadata for every shard merge. Keep the existing read-in-order path when virtual rows are on.
+            && !settings.read_in_order_use_virtual_row
             && max_threads > 1
             && pipeline.getNumStreams() > 1
             /// The reshuffle wires an intermediate graph of `num_streams * num_shards`

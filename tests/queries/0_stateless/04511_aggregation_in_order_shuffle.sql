@@ -26,6 +26,12 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle GROUP BY k
       SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
+-- Virtual rows are consumed by the ordinary in-order merge. The reshuffle must not discard their metadata.
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') = 0
+FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle GROUP BY k
+      SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1,
+          read_in_order_use_virtual_row = 1);
+
 -- Correctness: order-independent checksum of the result must match the default aggregation.
 -- 1) full key
 SELECT
