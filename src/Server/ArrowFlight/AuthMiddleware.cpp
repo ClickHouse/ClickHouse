@@ -22,6 +22,15 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
 }
 
+void AuthMiddleware::closeSession(bool enable_close)
+{
+    if (session_id.empty() || !enable_close)
+        return;
+
+    calls_data.closeSessionPreparedStatements(session_id, username);
+    session->closeSession(session_id);
+}
+
 void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers)
 {
     if (!token.empty())
@@ -36,10 +45,7 @@ void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
     if (!session_id.empty())
     {
         if (session_close)
-        {
-            calls_data.closeSessionPreparedStatements(session_id, username);
-            session->closeSession(session_id);
-        }
+            closeSession(true);
         else
         {
             if (calls_data.usesSessionTimeoutForPsLifetime() && session_timeout.count() > 0)
