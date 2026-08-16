@@ -363,11 +363,14 @@ Block makeHeader(const DataTypePtr & type)
     return Block{ColumnWithTypeAndName(type->createColumn(), type, "key")};
 }
 
-std::vector<ColumnPtr> splitColumn(const ColumnPtr & column, size_t chunk_rows)
+std::vector<Chunk> splitColumnIntoChunks(const ColumnPtr & column, size_t chunk_rows)
 {
-    std::vector<ColumnPtr> chunks;
+    std::vector<Chunk> chunks;
     for (size_t offset = 0; offset < column->size(); offset += chunk_rows)
-        chunks.push_back(column->cut(offset, std::min(chunk_rows, column->size() - offset)));
+    {
+        const auto rows = std::min(chunk_rows, column->size() - offset);
+        chunks.emplace_back(Columns{column->cut(offset, rows)}, rows);
+    }
     return chunks;
 }
 
@@ -562,6 +565,10 @@ static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & sta
 
         filter->finishInsert();
         benchmark::DoNotOptimize(filter.get());
+
+        state.PauseTiming();
+        filter.reset();
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
@@ -617,35 +624,39 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & st
     const auto chunk_rows = static_cast<size_t>(state.range(1));
     const auto type = uint64Type();
     auto build_column = makeShuffledUInt64Column(rows);
-    auto column_chunks = splitColumn(build_column, chunk_rows);
+    auto chunks = splitColumnIntoChunks(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(type));
 
     for (auto _ : state)
     {
-        BuildRuntimeFilterTransform transform(
-            header,
-            /*filter_column_name_=*/"key",
-            /*filter_column_type_=*/type,
-            /*filter_name_=*/"_runtime_filter_benchmark",
-            /*filter_key_=*/String{},
-            /*filters_to_merge_=*/0,
-            EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-            BLOOM_FILTER_BYTES,
-            BLOOM_FILTER_HASH_FUNCTIONS,
-            DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-            BLOCKS_TO_SKIP_BEFORE_REENABLING,
-            DISABLE_BLOOM_FULLNESS_CHECK,
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false,
-            /*distinct_keys_hint_=*/std::nullopt,
-            /*query_context_=*/nullptr);
-
-        for (const auto & column_chunk : column_chunks)
+        state.PauseTiming();
         {
-            Chunk chunk({column_chunk}, column_chunk->size());
-            transform.transform(chunk);
+            BuildRuntimeFilterTransform transform(
+                header,
+                /*filter_column_name_=*/"key",
+                /*filter_column_type_=*/type,
+                /*filter_name_=*/"_runtime_filter_benchmark",
+                /*filter_key_=*/String{},
+                /*filters_to_merge_=*/0,
+                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                BLOOM_FILTER_BYTES,
+                BLOOM_FILTER_HASH_FUNCTIONS,
+                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
+                BLOCKS_TO_SKIP_BEFORE_REENABLING,
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*allow_to_use_not_exact_filter_=*/true,
+                /*track_key_range_=*/false,
+                /*distinct_keys_hint_=*/std::nullopt,
+                /*query_context_=*/nullptr);
+            state.ResumeTiming();
+
+            for (auto & chunk : chunks)
+                transform.transform(chunk);
+            benchmark::DoNotOptimize(&transform);
+
+            state.PauseTiming();
         }
-        benchmark::DoNotOptimize(&transform);
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
@@ -660,35 +671,39 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark
     const auto source_type = uint32Type();
     const auto target_type = uint64Type();
     auto build_column = makeShuffledUInt32Column(rows);
-    auto column_chunks = splitColumn(build_column, chunk_rows);
+    auto chunks = splitColumnIntoChunks(build_column, chunk_rows);
     auto header = std::make_shared<const Block>(makeHeader(source_type));
 
     for (auto _ : state)
     {
-        BuildRuntimeFilterTransform transform(
-            header,
-            /*filter_column_name_=*/"key",
-            /*filter_column_type_=*/target_type,
-            /*filter_name_=*/"_runtime_filter_benchmark",
-            /*filter_key_=*/String{},
-            /*filters_to_merge_=*/0,
-            EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-            BLOOM_FILTER_BYTES,
-            BLOOM_FILTER_HASH_FUNCTIONS,
-            DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-            BLOCKS_TO_SKIP_BEFORE_REENABLING,
-            DISABLE_BLOOM_FULLNESS_CHECK,
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false,
-            /*distinct_keys_hint_=*/std::nullopt,
-            /*query_context_=*/nullptr);
-
-        for (const auto & column_chunk : column_chunks)
+        state.PauseTiming();
         {
-            Chunk chunk({column_chunk}, column_chunk->size());
-            transform.transform(chunk);
+            BuildRuntimeFilterTransform transform(
+                header,
+                /*filter_column_name_=*/"key",
+                /*filter_column_type_=*/target_type,
+                /*filter_name_=*/"_runtime_filter_benchmark",
+                /*filter_key_=*/String{},
+                /*filters_to_merge_=*/0,
+                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                BLOOM_FILTER_BYTES,
+                BLOOM_FILTER_HASH_FUNCTIONS,
+                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
+                BLOCKS_TO_SKIP_BEFORE_REENABLING,
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*allow_to_use_not_exact_filter_=*/true,
+                /*track_key_range_=*/false,
+                /*distinct_keys_hint_=*/std::nullopt,
+                /*query_context_=*/nullptr);
+            state.ResumeTiming();
+
+            for (auto & chunk : chunks)
+                transform.transform(chunk);
+            benchmark::DoNotOptimize(&transform);
+
+            state.PauseTiming();
         }
-        benchmark::DoNotOptimize(&transform);
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
