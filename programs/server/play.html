@@ -13580,39 +13580,12 @@ async function tokenizeWithFallback(text)
 }
 
 /// `ParserInsertQuery` treats everything after `INSERT ... FORMAT <input format>` as inline input
-/// data, including an `INSERT ... SELECT input(...) FORMAT ...`, except for an optional `SETTINGS`
-/// list when `allow_settings_after_format_in_insert` is enabled. Stop request-shaping walks before
-/// rows, while allowing the framing-setting detector to inspect that real settings list.
-function tokensBeforeInlineInsertPayload(tokens, include_postformat_insert_settings = false)
+/// data, including an `INSERT ... SELECT input(...) FORMAT ...`. Stop request-shaping walks before
+/// rows: a post-format `SETTINGS` list is syntax only when the session enables
+/// `allow_settings_after_format_in_insert`, which this page cannot know. Treat it as payload rather
+/// than guessing and changing the meaning of an inline `INSERT` on the default server grammar.
+function tokensBeforeInlineInsertPayload(tokens)
 {
-    const settingName = (tok) => tok && (tok.type === TT.BareWord || tok.type === TT.QuotedIdentifier);
-    const endOfSettings = (start) => {
-        let j = start;
-        while (settingName(tokens[j])) {
-            ++j;
-            if (tokens[j] && tokens[j].type === TT.Equals) {
-                ++j;
-                if (tokens[j] && (tokens[j].type === TT.Minus || tokens[j].type === TT.Plus)) ++j;
-                if (!tokens[j]) break;
-                if (OPENING_BRACKETS.has(tokens[j].type)) {
-                    let value_depth = 0;
-                    do {
-                        if (OPENING_BRACKETS.has(tokens[j].type)) ++value_depth;
-                        else if (CLOSING_BRACKETS.has(tokens[j].type)) --value_depth;
-                        ++j;
-                    } while (tokens[j] && value_depth > 0);
-                } else {
-                    ++j;
-                }
-            }
-            if (tokens[j] && tokens[j].type === TT.Comma) {
-                ++j;
-                continue;
-            }
-            break;
-        }
-        return j;
-    };
     let depth = 0;
     let saw_insert = false;
     let saw_statement_keyword = false;
@@ -13656,15 +13629,6 @@ function tokensBeforeInlineInsertPayload(tokens, include_postformat_insert_setti
             && tokens[i + 1]
             && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)) {
             if (saw_select_source && !select_reads_inline_data) return tokens;
-            /// With `allow_settings_after_format_in_insert`, `ParserInsertQuery` consumes a real
-            /// `SETTINGS` list between the input format and rows. Keep that list visible to the
-            /// framing-setting detector, but never expose the following inline data as SQL.
-            if (include_postformat_insert_settings
-                && tokens[i + 2]
-                && tokens[i + 2].type === TT.BareWord
-                && tokens[i + 2].token.toLowerCase() === 'settings') {
-                return tokens.slice(0, endOfSettings(i + 3));
-            }
             return tokens.slice(0, i);
         }
     }
@@ -13710,7 +13674,7 @@ function tokensBeforeInlineInsertPayload(tokens, include_postformat_insert_setti
 async function detectFramingSetting(query)
 {
     const raw_tokens = await tokenizeWithFallback(query);
-    const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant), true);
+    const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
     /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
@@ -13748,6 +13712,12 @@ async function detectFramingSetting(query)
             /// expression open a settings context merely because it eventually reaches `FROM`.
             const follows_select = is_settings && tokens[i - 1]
                 && tokens[i - 1].type === TT.BareWord && tokens[i - 1].token.toLowerCase() === 'select';
+            /// A `settings` identifier can also occur later in a select list, where a preceding
+            /// comma proves it is an expression position rather than a clause. In particular,
+            /// `SELECT 1, settings x, framing_output_format = 'None' FROM ...` must not be
+            /// reshaped as a settings list.
+            const follows_select_list_separator = is_settings && tokens[i - 1]
+                && tokens[i - 1].type === TT.Comma;
             /// A real settings context is not just the keyword: the keyword must be followed by an
             /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
             /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`,
@@ -13762,7 +13732,7 @@ async function detectFramingSetting(query)
             /// String', (1, 'None'))` the keyword is followed by a `,` right away, in `SELECT
             /// settings framing_output_format FROM t` by an implicit alias, and in `SELECT settings
             /// x, framing_output_format = 'None' FROM t` the list would run into a `FROM`.
-            if ((is_settings || is_set) && !follows_select
+            if ((is_settings || is_set) && !follows_select && !follows_select_list_separator
                 && settingName(tokens[i + 1]) !== null
                 && tokens[i + 2] && (tokens[i + 2].type === TT.Equals || tokens[i + 2].type === TT.Comma)) {
                 /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand

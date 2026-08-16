@@ -134,53 +134,12 @@ std::optional<std::string> settingName(const Tok & tok)
 }
 
 /// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
-/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`,
-/// so SQL-looking payload must not reach this walker.
-std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens, bool include_postformat_insert_settings = false)
+/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`.
+/// A post-format `SETTINGS` list is syntax only when the session enables
+/// `allow_settings_after_format_in_insert`, which the page cannot know, so SQL-looking payload must
+/// not reach this walker.
+std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
 {
-    const auto is_setting_name = [](const Tok & tok)
-    {
-        return tok.type == DB::TokenType::BareWord || tok.type == DB::TokenType::QuotedIdentifier;
-    };
-    const auto end_of_settings = [&](size_t start)
-    {
-        size_t j = start;
-        while (j < tokens.size() && is_setting_name(tokens[j]))
-        {
-            ++j;
-            if (j < tokens.size() && tokens[j].type == DB::TokenType::Equals)
-            {
-                ++j;
-                if (j < tokens.size() && (tokens[j].type == DB::TokenType::Minus || tokens[j].type == DB::TokenType::Plus))
-                    ++j;
-                if (j == tokens.size())
-                    break;
-                if (isOpeningBracket(tokens[j].type))
-                {
-                    int value_depth = 0;
-                    do
-                    {
-                        if (isOpeningBracket(tokens[j].type))
-                            ++value_depth;
-                        else if (isClosingBracket(tokens[j].type))
-                            --value_depth;
-                        ++j;
-                    } while (j < tokens.size() && value_depth > 0);
-                }
-                else
-                {
-                    ++j;
-                }
-            }
-            if (j < tokens.size() && tokens[j].type == DB::TokenType::Comma)
-            {
-                ++j;
-                continue;
-            }
-            break;
-        }
-        return j;
-    };
     int depth = 0;
     bool saw_insert = false;
     bool saw_statement_keyword = false;
@@ -225,9 +184,6 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
         {
             if (saw_select_source && !select_reads_inline_data)
                 return tokens;
-            if (include_postformat_insert_settings && i + 2 < tokens.size()
-                && tokens[i + 2].type == DB::TokenType::BareWord && toLower(tokens[i + 2].text) == "settings")
-                return {tokens.begin(), tokens.begin() + end_of_settings(i + 3)};
             return {tokens.begin(), tokens.begin() + i};
         }
     }
@@ -239,7 +195,7 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
 /// `fallbackTokenize`'s - see `expectFraming`, which exercises both here).
 FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
 {
-    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens, true);
+    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens);
     int depth = 0;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
@@ -274,6 +230,10 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
             /// expression open a settings context merely because it eventually reaches `FROM`.
             const bool follows_select = is_settings && i > 0 && tokens[i - 1].type == DB::TokenType::BareWord
                 && toLower(tokens[i - 1].text) == "select";
+            /// A `settings` identifier after a select-list comma is an expression position, not a
+            /// settings clause. For example, `SELECT 1, settings x, framing_output_format =
+            /// 'None' FROM ...` must not be reshaped as a settings list.
+            const bool follows_select_list_separator = is_settings && i > 0 && tokens[i - 1].type == DB::TokenType::Comma;
             /// A real settings context is not just the keyword: the keyword must be followed by an
             /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
             /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`, so
@@ -283,7 +243,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
             /// ENDS where a settings list can end - see `list_ends_properly` below. A column merely
             /// named `settings` in the query body stays out of the walk either way: it is followed by
             /// a `,` right away, by an implicit alias, or its "list" runs into a `FROM`.
-            if ((is_settings || is_set) && !follows_select && i + 2 < tokens.size() && settingName(tokens[i + 1]).has_value()
+            if ((is_settings || is_set) && !follows_select && !follows_select_list_separator && i + 2 < tokens.size() && settingName(tokens[i + 1]).has_value()
                 && (tokens[i + 2].type == DB::TokenType::Equals || tokens[i + 2].type == DB::TokenType::Comma))
             {
                 /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand
@@ -650,13 +610,14 @@ TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
 
 TEST(PlayDetectFramingSetting, InlineInsertPayloadIsNotSql)
 {
-    /// With `allow_settings_after_format_in_insert`, the `SETTINGS` list between the input format
-    /// and rows is query syntax and must be honored.
-    expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\nline", false, true);
+    /// A post-format `SETTINGS` list is syntax only when `allow_settings_after_format_in_insert` is
+    /// enabled for the session. The page cannot know that setting, so on the default grammar it must
+    /// keep a first payload row beginning with `SETTINGS` out of the request-shaping walk.
+    expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\nline", false, false);
     expectFraming(
         "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = "
         "'JSONEachPacketString'\nline",
-        true,
+        false,
         false);
 }
 
@@ -668,6 +629,10 @@ TEST(PlayDetectFramingSetting, ShorthandOpenedListMustEndLikeASettingsList)
     /// settings list can end. Here it runs into a `FROM`, so the walk is rolled back and the
     /// comparison in the body is not mistaken for a real setting.
     expectFraming("SELECT settings x, framing_output_format = 'None' FROM t", false, false);
+    expectFraming(
+        "SELECT 1, settings x, framing_output_format = 'None' FROM values('settings UInt8, framing_output_format String', (1, 'None'))",
+        false,
+        false);
     expectFraming("SELECT settings x, framing_output_format = 'None' FROM t WHERE x", false, false);
     /// A real settings clause later in such a query is still found.
     expectFraming("SELECT settings x FROM t SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'", false, true);
