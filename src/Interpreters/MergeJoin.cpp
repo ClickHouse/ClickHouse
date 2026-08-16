@@ -1267,13 +1267,17 @@ void MergeJoin::initRightTableWriter()
     right_blocks.clear();
 }
 
+constexpr size_t min_unmatched_rows_per_range = 8;
+
 /// Stream from not joined earlier rows of the right table.
 class NotJoinedMerge final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
     NotJoinedMerge(const MergeJoin & parent_, UInt64 max_block_size_)
-        : parent(parent_), max_block_size(max_block_size_)
-    {}
+        : parent(parent_)
+        , max_block_size(max_block_size_)
+    {
+    }
 
     Block getEmptyBlock() override { return parent.modifyRightBlock(parent.right_sample_block).cloneEmpty(); }
 
@@ -1291,27 +1295,60 @@ public:
             {
                 IColumn::Filter not_used = bitmaps.getNotUsed(block_number);
 
-                size_t range_start = 0;
-                while (range_start < not_used.size())
+                size_t unmatched_rows = 0;
+                size_t unmatched_ranges = 0;
+                for (size_t range_start = 0; range_start < not_used.size();)
                 {
                     while (range_start < not_used.size() && !not_used[range_start])
                         ++range_start;
+
+                    if (range_start == not_used.size())
+                        break;
 
                     size_t range_end = range_start;
                     while (range_end < not_used.size() && not_used[range_end])
                         ++range_end;
 
-                    if (range_start == range_end)
-                        break;
+                    unmatched_rows += range_end - range_start;
+                    ++unmatched_ranges;
+                    range_start = range_end;
+                }
 
-                    rows_added += range_end - range_start;
+                rows_added += unmatched_rows;
+
+                /// Avoid repeated per-range work, for example LowCardinality dictionary remapping,
+                /// when the unmatched rows are too fragmented.
+                if (unmatched_ranges && unmatched_rows / unmatched_ranges < min_unmatched_rows_per_range)
+                {
                     for (size_t col = 0; col < columns_right.size(); ++col)
                     {
                         const IColumn & column = *right_block->getByPosition(col).column;
-                        columns_right[col]->insertRangeFrom(column, range_start, range_end - range_start);
+                        ColumnPtr portion = column.filter(not_used, 1);
+                        columns_right[col]->insertRangeFrom(*portion, 0, portion->size());
                     }
+                }
+                else
+                {
+                    for (size_t range_start = 0; range_start < not_used.size();)
+                    {
+                        while (range_start < not_used.size() && !not_used[range_start])
+                            ++range_start;
 
-                    range_start = range_end;
+                        if (range_start == not_used.size())
+                            break;
+
+                        size_t range_end = range_start;
+                        while (range_end < not_used.size() && not_used[range_end])
+                            ++range_end;
+
+                        for (size_t col = 0; col < columns_right.size(); ++col)
+                        {
+                            const IColumn & column = *right_block->getByPosition(col).column;
+                            columns_right[col]->insertRangeFrom(column, range_start, range_end - range_start);
+                        }
+
+                        range_start = range_end;
+                    }
                 }
             }
             else

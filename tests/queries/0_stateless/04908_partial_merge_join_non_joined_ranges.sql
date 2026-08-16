@@ -34,3 +34,21 @@ ALL FULL JOIN
         toString(number) AS text
     FROM numbers(16)
 ) AS r ON l.k = r.k;
+
+-- Keep the right side in one block so the long unmatched ranges use the range path.
+SELECT
+    count() = 32,
+    sum(r.k) = 496,
+    sum(l.value) = 444,
+    countIf(isNull(r.payload)) = 7,
+    countIf(isNull(r.text)) = 0
+FROM values('k UInt64, value UInt64', (1, 101), (2, 102), (20, 120), (21, 121)) AS l
+ALL RIGHT JOIN
+(
+    SELECT
+        number AS k,
+        CAST(if(number % 5 = 0, NULL, number + 1000) AS Nullable(UInt64)) AS payload,
+        toString(number) AS text
+    FROM numbers(32)
+) AS r ON l.k = r.k
+SETTINGS partial_merge_join_rows_in_right_blocks = 32, max_block_size = 32;
