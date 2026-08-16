@@ -431,8 +431,9 @@ enum class IndexFilePresence
     /// Accounted for: a checksums.txt entry or a member of skp_idx.packed. A file that is on disk
     /// but in neither is an orphan whose index is already dead, so it is not a readable substream.
     Accounted,
-    /// Also any file present on disk under that name. Cleanup must see an orphan in order to strip
-    /// it from inherited checksums and keep it out of the hardlink loop.
+    /// On a part carrying skp_idx.packed, also a file present on disk that the archive does not
+    /// hold. Cleanup must see such an orphan in order to strip it from inherited checksums and
+    /// keep it out of the hardlink loop.
     OrDanglingOnDisk,
 };
 

@@ -52,11 +52,12 @@ bool indexFileExistsInChecksums(
         if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage))
             if (disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
                 return true;
-    }
 
-    /// Nothing accounts for the name, so a file still present under it is an orphan.
-    if (presence == IndexFilePresence::OrDanglingOnDisk && storage)
-        return storage->existsFile(path_prefix + extension) || storage->existsFile(hash + extension);
+        /// Neither checksums.txt nor the archive accounts for the name, so a file still present
+        /// under it is an orphan.
+        if (presence == IndexFilePresence::OrDanglingOnDisk)
+            return storage->existsFile(path_prefix + extension) || storage->existsFile(hash + extension);
+    }
 
     return false;
 }

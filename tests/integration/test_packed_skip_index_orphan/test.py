@@ -69,12 +69,34 @@ def make_packed_part(table, index_ddl, extra_columns=""):
     return path
 
 
-def inject_orphan(path, name, size=64):
+def make_unpacked_part(table, index_ddl):
+    """The same shape with packing off, so the part carries no archive at all. Returns its path."""
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (k UInt64, a UInt64, b UInt64, {index_ddl})
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 packed_skip_index_max_bytes = 0, index_granularity = 100,
+                 replace_long_file_name_to_hash = 0,
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+        """
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, number, number FROM numbers(2000)"
+    )
+    path = part_path(table)
+    # Guard the fixture: with an archive present this would exercise the packed path instead.
+    assert not file_exists(f"{path}/skp_idx.packed"), "fixture built a packed archive"
+    return path
+
+
+def inject_orphan(path, name, size=64, source="skp_idx.packed"):
     """A standalone skip-index file with no checksums entry and no archive member."""
-    sh(f'head -c {size} "{path}/skp_idx.packed" > "{path}/{name}"')
+    sh(f'head -c {size} "{path}/{source}" > "{path}/{name}"')
     # Owned by the server user, so a leak fails the assertion below on its own merits rather
     # than on a permission error from the injection.
-    sh(f'chown --reference="{path}/skp_idx.packed" "{path}/{name}"')
+    sh(f'chown --reference="{path}/{source}" "{path}/{name}"')
     assert file_exists(f"{path}/{name}")
 
 
@@ -132,4 +154,27 @@ def test_orphan_is_not_hardlinked_by_mutation(start_cluster):
     assert (
         node.query("CHECK TABLE t_mutate SETTINGS check_query_single_value_result = 1")
         == "1\n"
+    )
+
+
+def test_orphan_on_unpacked_part_is_not_counted(start_cluster):
+    """Without an archive the part is outside this probe's scope, so the orphan stays invisible."""
+    path = make_unpacked_part(
+        "t_unpacked",
+        "INDEX mm_a a TYPE minmax GRANULARITY 1",
+    )
+    # mm_b is declared but never materialized, so nothing accounts for skp_idx_mm_b.idx2.
+    node.query("ALTER TABLE t_unpacked ADD INDEX mm_b b TYPE minmax GRANULARITY 1")
+    inject_orphan(path, "skp_idx_mm_b.idx2", source="skp_idx_mm_a.idx2")
+    node.query("DETACH TABLE t_unpacked")
+    node.query("ATTACH TABLE t_unpacked")
+
+    # mm_a is checksummed and sized; mm_b exists only as an unaccounted file and reads as absent,
+    # so its bytes never enter the totals that only a checksummed index can later subtract.
+    assert (
+        node.query(
+            "SELECT name, data_compressed_bytes > 0 FROM system.data_skipping_indices"
+            " WHERE database = currentDatabase() AND table = 't_unpacked' ORDER BY name"
+        )
+        == "mm_a\t1\nmm_b\t0\n"
     )
