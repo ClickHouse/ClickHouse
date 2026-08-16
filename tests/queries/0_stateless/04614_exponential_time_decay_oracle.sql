@@ -3,6 +3,10 @@ DROP TABLE IF EXISTS time_decay_feature_gate_blocked;
 DROP TABLE IF EXISTS time_decay_default_insert;
 DROP TABLE IF EXISTS time_decay_default_alter;
 DROP TABLE IF EXISTS time_decay_default_simple_aggregate;
+DROP TABLE IF EXISTS time_decay_aggregate_state_reattach;
+DROP TABLE IF EXISTS time_decay_simple_aggregate_reattach;
+DROP TABLE IF EXISTS time_decay_mv_source;
+DROP TABLE IF EXISTS time_decay_mv_reattach;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
@@ -66,13 +70,41 @@ ENGINE = AggregatingMergeTree
 ORDER BY id;
 DETACH TABLE time_decay_aggregate_state_reattach;
 
+CREATE TABLE time_decay_simple_aggregate_reattach
+(
+    id UInt8,
+    value SimpleAggregateFunction(
+        exponentialTimeDecayedSum,
+        ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id;
+DETACH TABLE time_decay_simple_aggregate_reattach;
+
+CREATE TABLE time_decay_mv_source
+(
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory;
+
+CREATE MATERIALIZED VIEW time_decay_mv_reattach
+ENGINE = Memory
+AS SELECT value FROM time_decay_mv_source;
+DETACH TABLE time_decay_mv_reattach;
+
 SET allow_experimental_time_decay_aggregate_functions = 0;
 
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
 ATTACH TABLE time_decay_feature_gate;
 ATTACH TABLE time_decay_aggregate_state_reattach;
+ATTACH TABLE time_decay_simple_aggregate_reattach;
+ATTACH TABLE time_decay_mv_reattach;
 SELECT 'aggregate metadata attach preserved';
+SELECT 'simple aggregate metadata attach preserved';
+SELECT 'materialized view short attach preserved';
+INSERT INTO time_decay_mv_source VALUES ((2, 1, 10));
+SELECT count() FROM time_decay_mv_reattach;
 
 -- Full ATTACH definitions are fresh DDL, not metadata recovery, and must obey
 -- the same experimental type gate as CREATE.
@@ -87,6 +119,18 @@ ATTACH TABLE time_decay_aggregate_attach_blocked
 )
 ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 
+-- Materialized views use the same schema gate for both inferred CREATE columns
+-- and explicit columns in full ATTACH definitions.
+CREATE MATERIALIZED VIEW time_decay_mv_create_blocked
+ENGINE = Memory
+AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
+ATTACH MATERIALIZED VIEW time_decay_mv_attach_blocked
+(
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory
+AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
+
 CREATE TABLE time_decay_feature_gate_blocked
 (
     value ExponentialTimeDecayingFloat64(10)
@@ -95,18 +139,10 @@ ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE time_decay_feature_gate
     ADD COLUMN blocked ExponentialTimeDecayingFloat64(10); -- { serverError ILLEGAL_COLUMN }
 
--- Type names accepted by scalar functions must not bypass the experimental
--- setting. These fail while resolving the type, before processing the value.
-SELECT _CAST(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT accurateCastOrDefault(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT JSONExtract('{"value":1,"time":0,"decay_length":10}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT JSONExtractKeysAndValues('{}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT getTypeSerializationStreams('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-
--- Runtime type-name validation must not apply unrelated CREATE/ALTER restrictions.
-SELECT _CAST(1, 'LowCardinality(UInt8)') FORMAT Null;
-SELECT JSONExtract('{"value":1}', 'value', 'LowCardinality(UInt8)') FORMAT Null;
+-- Type reconstruction remains available for expression evaluation and persisted
+-- metadata. The setting gates execution and fresh schema persistence.
+SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'))
+    = 'ExponentialTimeDecayingFloat64(10)';
 
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
@@ -172,6 +208,9 @@ SETTINGS aggregate_functions_null_for_empty = 1;
 
 DROP TABLE time_decay_feature_gate;
 DROP TABLE time_decay_aggregate_state_reattach;
+DROP TABLE time_decay_simple_aggregate_reattach;
+DROP TABLE time_decay_mv_reattach;
+DROP TABLE time_decay_mv_source;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 

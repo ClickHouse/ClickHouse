@@ -16,16 +16,13 @@ struct DataTypeValidationSettings
 
     explicit DataTypeValidationSettings(const Settings & settings);
 
-    static DataTypeValidationSettings forRuntimeTypeNames(const Settings & settings);
-
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_suspicious_fixed_string_types = true;
     bool allow_suspicious_variant_types = true;
     bool validate_nested_types = true;
     bool enable_time_time64_type = true;
     bool allow_experimental_nullable_tuple_type = true;
-    /// Fail closed for callers which do not provide query settings explicitly.
-    bool allow_experimental_time_decay_aggregate_functions = false;
+    bool allow_experimental_time_decay_aggregate_functions = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

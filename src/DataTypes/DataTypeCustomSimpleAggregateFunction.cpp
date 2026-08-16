@@ -158,7 +158,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     AggregateFunctionProperties properties;
     /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
     auto action = NullsAction::EMPTY;
-    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    function = AggregateFunctionFactory::instance().getForDataType(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 

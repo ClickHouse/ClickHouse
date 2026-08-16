@@ -3,7 +3,6 @@
 
 #include <filesystem>
 
-#include <AggregateFunctions/AggregateFunctionExponentialTimeDecayed.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
@@ -562,7 +561,6 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ExperimentalTimeDecayAggregateFunctionMetadataScope metadata_scope(LoadingStrictnessLevel::ATTACH <= mode);
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
@@ -934,17 +932,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         if (create.isParameterizedView())
         {
-            if (!internal && !create.attach_short_syntax)
-            {
-                const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(getContext()->getSettingsRef());
-                for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
-                {
-                    /// Identifier is a query-parameter kind, not a data type.
-                    if (type_name == "Identifier")
-                        continue;
-                    validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
-                }
-            }
+            validateTableStructure(create, properties);
             return properties;
         }
 
@@ -1120,11 +1108,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     /// User-supplied CREATE and full ATTACH definitions must validate data types.
     /// Short ATTACH and internal metadata loading must remain available for recovery.
-    if (!internal && !create.attach_short_syntax && !create.is_materialized_view)
+    if (!internal && !create.attach_short_syntax)
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+
+        if (create.isParameterizedView())
+        {
+            for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+            {
+                /// Identifier is a query-parameter kind, not a data type.
+                if (type_name == "Identifier")
+                    continue;
+                validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+            }
+        }
     }
 }
 

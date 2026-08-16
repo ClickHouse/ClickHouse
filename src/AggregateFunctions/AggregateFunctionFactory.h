@@ -103,6 +103,16 @@ public:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
+    /// Reconstruct an aggregate function embedded in a data type without applying
+    /// query settings. Persisted metadata must remain parseable; fresh DDL is
+    /// validated separately after the complete schema has been built.
+    AggregateFunctionPtr getForDataType(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties) const;
+
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(
         String name,
@@ -114,6 +124,15 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    AggregateFunctionPtr getWithSettingsMode(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant,
+        bool use_query_context_settings) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
@@ -121,7 +140,8 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool use_query_context_settings) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;
