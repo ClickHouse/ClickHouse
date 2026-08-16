@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: the two-stage quantized-codes rewrite is deliberately disabled under parallel replicas.
-
 -- The quantized-codes vector search rewrite and `arrayJoin` below the sort.
 --
 -- On the vector-similarity-index path an `arrayJoin` below the sort is rejected (see
@@ -16,6 +13,7 @@
 SET allow_experimental_codecs = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04893;
 
