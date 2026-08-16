@@ -89,6 +89,25 @@ SELECT * FROM t_reverse_final FINAL ORDER BY x DESC;
 
 DROP TABLE t_reverse_final;
 
+-- A descending sorting key and an ascending query cancel the physical direction.
+-- The parallel FINAL path must still use the reverse read and keep the newest version.
+CREATE TABLE t_reverse_final (x Int32, y Int32, ver Int32)
+ENGINE = ReplacingMergeTree(ver) ORDER BY (x DESC)
+SETTINGS allow_experimental_reverse_key = 1;
+
+INSERT INTO t_reverse_final SELECT number, 1, 1 FROM numbers(10000);
+INSERT INTO t_reverse_final SELECT number, 2, 2 FROM numbers(10000);
+
+SELECT 'descending sorting key';
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
+    EXPLAIN PLAN actions = 1 SELECT * FROM t_reverse_final FINAL ORDER BY x ASC LIMIT 1 SETTINGS max_threads = 4, max_final_threads = 4
+) WHERE explain like '%ReadType%';
+SELECT count(), min(y), max(y) FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4;
+SELECT (SELECT cityHash64(groupArray((x, y, ver))) FROM (SELECT * FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4))
+     = (SELECT cityHash64(groupArray((x, y, ver))) FROM (SELECT * FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4, optimize_read_in_reverse_order_final = 0));
+
+DROP TABLE t_reverse_final;
+
 -- ReplacingMergeTree with version and is_deleted columns.
 CREATE TABLE t_reverse_final (x Int32, y Int32, ver Int32, is_deleted UInt8)
 ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY x;
