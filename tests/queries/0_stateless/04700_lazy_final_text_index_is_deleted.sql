@@ -58,6 +58,20 @@ SELECT 'is_deleted filter in plan', count() > 0 FROM
 )
 WHERE explain LIKE '%is_deleted = 0%';
 
+-- Same two assertions for the PREWHERE rewrite path: the count alone would stay
+-- green if the filter were served by a regular FINAL read instead.
+SELECT 'prewhere text-index read in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL PREWHERE str = 'baz'
+)
+WHERE explain LIKE '%__text_index_idx_%';
+
+SELECT 'prewhere is_deleted filter in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL PREWHERE str = 'baz'
+)
+WHERE explain LIKE '%is_deleted = 0%';
+
 DROP TABLE tab;
 
 -- Mixed intersecting and non-intersecting parts with is_deleted. The single-token
@@ -102,6 +116,19 @@ WHERE explain LIKE '%Union%';
 SELECT 'is_deleted filter in union plan', count() > 0 FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab FINAL WHERE str IN ('aaa', 'zzz')
+)
+WHERE explain LIKE '%is_deleted = 0%';
+
+-- The non-intersecting side reached via PREWHERE, guarded the same way.
+SELECT 'prewhere text-index read in mixed plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL PREWHERE str = 'zzz'
+)
+WHERE explain LIKE '%__text_index_idx_%';
+
+SELECT 'prewhere is_deleted filter in mixed plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL PREWHERE str = 'zzz'
 )
 WHERE explain LIKE '%is_deleted = 0%';
 

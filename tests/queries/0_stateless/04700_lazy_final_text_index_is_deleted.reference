@@ -4,6 +4,8 @@
 1
 text-index read in plan	1
 is_deleted filter in plan	1
+prewhere text-index read in plan	1
+prewhere is_deleted filter in plan	1
 1
 0
 1
@@ -12,3 +14,5 @@ is_deleted filter in plan	1
 2
 union in plan	1
 is_deleted filter in union plan	1
+prewhere text-index read in mixed plan	1
+prewhere is_deleted filter in mixed plan	1
