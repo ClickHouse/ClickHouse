@@ -988,6 +988,13 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
             "The unfinished-compaction marker of the deduplication log ({}) can neither be removed nor emptied; refusing to load "
             "the deduplication log because every record written now would be discarded by the next restart",
             marker_path);
+
+    /// The marker has successfully fenced and discarded the divergent history, so this
+    /// instance has a clean empty history too. Leaving either flag set would make later
+    /// best-effort compactions preserve a newly written marker and discard records that
+    /// were committed after this reset on the next restart.
+    history_diverged = false;
+    history_fence_pending = false;
 }
 
 void MergeTreeDeduplicationLog::prepareToWrite()

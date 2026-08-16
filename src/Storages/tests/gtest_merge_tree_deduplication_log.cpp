@@ -514,6 +514,11 @@ public:
         const bool is_marker = std::filesystem::path(path).stem() == "deduplication_log_0";
         if (is_marker && !marker_writable)
             throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        if (!is_marker && mode == WriteMode::Rewrite && fail_next_log_rewrite)
+        {
+            fail_next_log_rewrite = false;
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected compaction snapshot write failure");
+        }
 
         auto impl = DiskLocal::writeFile(path, buf_size, mode, settings);
         if (is_marker)
@@ -526,6 +531,7 @@ public:
     size_t fail_on_sync;
     size_t fail_from_flush;
     bool marker_writable = true;
+    bool fail_next_log_rewrite = false;
 
 private:
     size_t flush_count = 0;
@@ -2799,6 +2805,57 @@ TEST(MergeTreeDeduplicationLog, RecoveredDivergedHistoryIsRewritten)
         EXPECT_FALSE(log.addPart({"block5"}, part("all_10_10_0")).empty());
         EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
 
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: after re-enabling a zero-window log discards a fenced history,
+/// the in-memory divergence state must be cleared as well. Otherwise every later
+/// insert retries compaction; one transient compaction failure then leaves a marker
+/// armed and makes a restart discard post-reset committed block ids.
+TEST(MergeTreeDeduplicationLog, ReenablingAfterDiscardClearsDivergedHistory)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_reenable_discard_state/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+
+    {
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+        EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+
+        /// Let record writes recover, but fail the compaction attempted while
+        /// re-enabling. This makes the transition take the history-discard path.
+        disk->fail_from_flush = std::numeric_limits<size_t>::max();
+        log.setDeduplicationWindowSize(0);
+        disk->fail_next_log_rewrite = true;
+        log.setDeduplicationWindowSize(2);
+        EXPECT_FALSE(std::filesystem::exists(marker_path));
+
+        /// A stale `history_diverged` would force this otherwise unnecessary
+        /// compaction. Fail its snapshot write: the old state then preserves the
+        /// marker and the following restart discards this committed block.
+        disk->fail_next_log_rewrite = true;
+        EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+        EXPECT_FALSE(log.addPart({"block5"}, part("all_6_6_0")).empty());
         log.shutdown();
     }
 
