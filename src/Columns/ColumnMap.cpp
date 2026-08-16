@@ -148,6 +148,23 @@ void ColumnMap::insertDefault()
 {
     nested->insertDefault();
 }
+
+void ColumnMap::insertManyDefaults(size_t length)
+{
+    if (length == 0)
+        return;
+
+    auto & offsets = getNestedColumn().getOffsets();
+    const auto current_size = offsets.size();
+
+    /// Empty Map rows do not add nested key/value elements. Reserve only the offsets for a fresh or larger batch,
+    /// while keeping ColumnArray's geometric growth for one-row and small repeated calls.
+    if (length > 1 && length > current_size)
+        offsets.reserve_exact(current_size + length);
+
+    nested->insertManyDefaults(length);
+}
+
 void ColumnMap::popBack(size_t n)
 {
     nested->popBack(n);
