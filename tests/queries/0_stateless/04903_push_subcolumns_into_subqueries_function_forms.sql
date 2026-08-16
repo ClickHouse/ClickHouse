@@ -68,4 +68,20 @@ SELECT trimLeft(explain) FROM
 WHERE explain LIKE '%Output%';
 SELECT variantElement(v, 'UInt32') FROM (SELECT id, v FROM t_push_subcolumns_function_forms) ORDER BY id;
 
+CREATE TABLE t_push_subcolumns_dotted_tuple
+(
+    id UInt32,
+    t Tuple(`a.b` UInt32, a Tuple(b UInt32))
+)
+ENGINE = MergeTree ORDER BY id;
+
+SELECT 'tupleElement dotted name stays unoptimized';
+SELECT trimLeft(explain) FROM
+(
+    EXPLAIN actions = 1
+    SELECT tupleElement(t, 'a.b') FROM (SELECT t FROM t_push_subcolumns_dotted_tuple)
+)
+WHERE explain LIKE '%Output%';
+
+DROP TABLE t_push_subcolumns_dotted_tuple;
 DROP TABLE t_push_subcolumns_function_forms;

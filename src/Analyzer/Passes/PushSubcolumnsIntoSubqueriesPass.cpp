@@ -28,6 +28,7 @@
 #include <Storages/StorageSnapshot.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/predicate.hpp>
 #include <cstdlib>
 #include <map>
 #include <optional>
@@ -76,6 +77,12 @@ struct PushdownGroup
     DataTypePtr column_type;
     /// Result type of the getSubcolumn function.
     DataTypePtr subcolumn_type;
+    /// Result type of the original function. It differs from the subcolumn type for
+    /// `variantElement`, which wraps the selected variant alternative in Nullable.
+    DataTypePtr result_type;
+    /// `tupleElement` requires additional storage capability and ambiguity checks.
+    bool requires_tuple_element_guards = false;
+    ContextPtr context;
     /// False if at least one occurrence cannot be replaced. All occurrences of the same
     /// subcolumn are replaced together or not at all: replacing only some of them could
     /// desynchronize expressions that must stay equal, e.g. an aggregation key in the
@@ -134,6 +141,8 @@ struct CandidateMatch
     ColumnNode * column_node;
     QueryTreeNodePtr column_source;
     String subcolumn_path;
+    DataTypePtr subcolumn_type;
+    bool requires_tuple_element_guards = false;
 };
 
 /// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
@@ -253,7 +262,7 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*column_node->getColumnType());
         const auto & variant_name = constant_node->getValue().safeGet<String>();
         auto discriminator = variant_type.tryGetVariantDiscriminator(variant_name);
-        if (!discriminator || !function_node.getResultType()->equals(*variant_type.getVariant(*discriminator)))
+        if (!discriminator)
             return {};
 
         subcolumn_path = variant_name;
@@ -264,7 +273,43 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
     if (subcolumn_path.empty())
         return {};
 
-    return CandidateMatch{column_node, std::move(column_source), std::move(subcolumn_path)};
+    auto subcolumn_type = function_node.getResultType();
+    if (function_name == "variantElement")
+    {
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*column_node->getColumnType());
+        auto discriminator = variant_type.tryGetVariantDiscriminator(subcolumn_path);
+        chassert(discriminator);
+        subcolumn_type = variant_type.getVariant(*discriminator);
+    }
+
+    return CandidateMatch{
+        column_node,
+        std::move(column_source),
+        std::move(subcolumn_path),
+        std::move(subcolumn_type),
+        function_name == "tupleElement"};
+}
+
+bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
+{
+    std::string_view name = element_name;
+    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
+    {
+        auto head = name.substr(0, dot);
+        auto tail = name.substr(dot + 1);
+        if (!head.empty() && !tail.empty()
+            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
+            return true;
+    }
+    return false;
+}
+
+bool sourceHasColumnCaseInsensitive(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+{
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions::All))
+        if (boost::iequals(column.name, column_name))
+            return true;
+    return false;
 }
 
 /// Collect query and union table expressions of the JOIN TREE that can accept
@@ -435,7 +480,10 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .column_name = column_name,
                             .subcolumn_path = match->subcolumn_path,
                             .column_type = match->column_node->getColumnType(),
-                            .subcolumn_type = function_node->getResultType(),
+                            .subcolumn_type = match->subcolumn_type,
+                            .result_type = function_node->getResultType(),
+                            .requires_tuple_element_guards = match->requires_tuple_element_guards,
+                            .context = query_node.getContext(),
                             .viable = true,
                             .occurrences = 0,
                             .applicable = false,
@@ -452,7 +500,9 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                     /// All occurrences must have the same types. Types can diverge e.g. when
                     /// group_by_use_nulls wraps an occurrence used as a GROUP BY key into Nullable.
                     if (!group->column_type->equals(*match->column_node->getColumnType())
-                        || !group->subcolumn_type->equals(*function_node->getResultType()))
+                        || !group->subcolumn_type->equals(*match->subcolumn_type)
+                        || !group->result_type->equals(*function_node->getResultType())
+                        || group->requires_tuple_element_guards != match->requires_tuple_element_guards)
                         group->viable = false;
 
                     /// The occurrence can be replaced with a column reference when it is evaluated
@@ -556,13 +606,23 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
 
         /// Some storages expose subcolumns syntactically but opt out of rewriting reads of a column
         /// into direct reads of its subcolumns (e.g. StorageFile, StorageURL, StorageDistributed).
-        if (!storage_snapshot->storage.supportsOptimizationToSubcolumns())
+        if (!storage_snapshot->storage.supportsOptimizationToSubcolumns()
+            && !(group.requires_tuple_element_guards && storage_snapshot->storage.supportsOptimizationToTupleElementSubcolumns()))
             return nullptr;
 
         if (storage_snapshot->metadata->isVirtualColumn(inner_column->getColumnName()))
             return nullptr;
 
         auto subcolumn_full_name = inner_column->getColumnName() + "." + subcolumn_path;
+
+        if (group.requires_tuple_element_guards)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner_column->getColumnType().get());
+            if (!tuple_type
+                || tupleElementNameIsAmbiguousWhenFlattened(*tuple_type, subcolumn_path)
+                || sourceHasColumnCaseInsensitive(storage_snapshot, subcolumn_full_name))
+                return nullptr;
+        }
 
         /// An ordinary column with the same name would shadow the subcolumn.
         if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), subcolumn_full_name))
@@ -894,6 +954,8 @@ void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
                 node = std::make_shared<ColumnNode>(
                     NameAndTypePair{group->new_column_name, group->subcolumn_type},
                     std::static_pointer_cast<ITableExpressionNode>(group->source));
+                if (!group->result_type->equals(*group->subcolumn_type))
+                    node = buildCastFunction(node, group->result_type, group->context);
                 return;
             }
         }

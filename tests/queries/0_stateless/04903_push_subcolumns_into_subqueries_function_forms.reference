@@ -19,7 +19,10 @@ Output: n.null
 0
 1
 variantElement
-Output: variantElement(v, \'UInt32\')
-Output: v
+Output: CAST(v.UInt32, \'Nullable(UInt32)\')
+Output: v.UInt32
 1
 \N
+tupleElement dotted name stays unoptimized
+Output: tupleElement(t, \'a.b\')
+Output: t
