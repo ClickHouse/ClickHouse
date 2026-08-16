@@ -25,5 +25,16 @@ ORDER BY L2Distance(vec, [0., 2.]) ASC
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0;
 
+-- `selectRangesToRead` may defer the row policy for FINAL before the optimizer's second pass.
+SELECT id FROM tab_vec_row_policy FINAL
+ORDER BY L2Distance(vec, [0., 2.]) ASC
+LIMIT 3
+SETTINGS
+    vector_search_with_rescoring = 0,
+    query_plan_optimize_lazy_materialization = 0,
+    make_distributed_plan = 1,
+    distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0;
+
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 DROP TABLE tab_vec_row_policy;
