@@ -63,8 +63,11 @@ namespace
                     /// timestamp + INTERVAL x MILLISECONDS
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
+                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    /// The interval functions do not accept Decimal arguments, so the literal must be
+                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
+                    /// scale >= timestamp_scale.
+                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];
@@ -101,16 +104,16 @@ namespace
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
     SQLQueryPiece setEvaluationTime(
         const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
-        /// <expression> is expected to be calculated at a fixed evaluation time.
-        if (expression.start_time != expression.end_time)
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Expression {} is expected to be calculated at a fixed evaluation time",
-                            getPromQLText(expression, context));
+            expression.node = offset_node;
+            return std::move(expression);
         }
 
         auto node_range = context.node_range_getter.get(offset_node);
@@ -119,6 +122,14 @@ namespace
             SQLQueryPiece res{offset_node, offset_node->result_type, StoreMethod::EMPTY};
             res.value_data_type = expression.value_data_type;
             return res;
+        }
+
+        /// <expression> is expected to be calculated at a fixed evaluation time.
+        if (expression.start_time != expression.end_time)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Expression {} is expected to be calculated at a fixed evaluation time",
+                            getPromQLText(expression, context));
         }
 
         expression.node = offset_node;
@@ -217,7 +228,7 @@ namespace
 
 SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);
