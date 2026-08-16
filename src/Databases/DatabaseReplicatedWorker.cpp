@@ -188,7 +188,7 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
     }
 
     size_t pos = 1;
-    while (pos < tokens.size() && !isKeyword(tokens[pos], "TABLE"))
+    while (pos < tokens.size() && !isKeyword(tokens[pos], "TABLE") && !isKeyword(tokens[pos], "VIEW"))
         ++pos;
     if (pos == tokens.size())
         return {};
