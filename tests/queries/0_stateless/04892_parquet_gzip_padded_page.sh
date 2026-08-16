@@ -191,4 +191,4 @@ ${CLICKHOUSE_LOCAL} --query="
          = (select (groupBitXor(cityHash64(s)), count()) from file('${SPLIT_MEMBER_FILE}', Parquet))"
 
 echo "a second gzip member beyond the declared output is rejected"
-${CLICKHOUSE_LOCAL} --query="select count() from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'
+${CLICKHOUSE_LOCAL} --query="select sum(length(s)) from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'
