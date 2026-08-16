@@ -13,11 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # release.
 
 DICT="d_${CLICKHOUSE_DATABASE}"
-# The dictionary FILE source needs an absolute path, and it must be the path this server actually
-# serves -- ask the server rather than assuming a layout.
-USER_FILES=$(${CLICKHOUSE_CLIENT} --query "select value from system.server_settings where name = 'user_files_path'")
 REL="${CLICKHOUSE_DATABASE}/prefetch_lifetime.parquet"
-ABS="${USER_FILES%/}/${REL}"
 
 # Small row groups so there are many read ranges, hence many queued tasks at throw time.
 ${CLICKHOUSE_CLIENT} --query="
@@ -26,6 +22,11 @@ ${CLICKHOUSE_CLIENT} --query="
     settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 5000,
              output_format_parquet_compression_method = 'none';
 "
+
+# The dictionary FILE source needs the actual absolute path. The `user_files_path` setting can be
+# empty, so derive the resolved path from the table function instead of composing it from that
+# setting.
+ABS=$(${CLICKHOUSE_CLIENT} --query="select _path from file('${REL}', Parquet) limit 1")
 
 # `val` is Int64 in the dictionary but holds strings in the file, so the Parquet read throws
 # mid-flight, which is what makes the pipeline tear down while tasks are still running.
