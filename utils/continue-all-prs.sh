@@ -809,13 +809,19 @@ create_triage_clone()
     git -C "$triage_wt" remote set-url origin "$origin_url"
 }
 
-transfer_validated_triage_merge()
+recreate_validated_triage_merge()
 {
-    local wt="$1" triage_wt="$2" head
+    local wt="$1" start_head="$2" base_head="$3"
 
-    head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
-    git -C "$wt" fetch -q "$triage_wt" "$head" || return 1
-    git -C "$wt" checkout --detach -q "$head"
+    # Do not transfer the triage commit object. Even with the expected parents
+    # and tree, its author, committer, and message are untrusted. Recreate the
+    # clean merge in the trusted worker instead.
+    git -C "$wt" checkout --detach -q "$start_head" || return 1
+    if ! git -C "$wt" merge --no-ff --no-commit "$base_head"; then
+        git -C "$wt" merge --abort || true
+        return 1
+    fi
+    git -C "$wt" commit -m "Merge base branch into pull request head"
 }
 
 discard_untrusted_triage_changes()
@@ -861,7 +867,7 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home last_message
-    local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_home
+    local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_codex_home triage_home
     local -a codex_env active_codex_env
     local u_i u_o u_ci u_co u_cost triage_cost coding_cost
     local -a model_args triage_git_args triage_sandbox_args
@@ -938,16 +944,21 @@ run_continue_pr()
         [[ ! -e "$HOME/.gitconfig" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.gitconfig")
         [[ ! -e "$HOME/.git-credentials" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.git-credentials")
         [[ ! -e "$HOME/.netrc" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.netrc")
+        [[ "${GH_CONFIG_DIR:-}" != /* || ! -d "$GH_CONFIG_DIR" ]] || triage_sandbox_args+=(--tmpfs "$GH_CONFIG_DIR")
         if [[ "$AGENT" == "codex" ]]; then
             if [[ "$CUSTOM_KEY" == 1 ]]; then
                 triage_agent_home="$codex_home"
             else
                 triage_agent_home="${CODEX_HOME:-$HOME/.codex}"
             fi
-            # Codex uses `HOME/.codex` when `CODEX_HOME` is unset. Preserve
-            # its configured state at that location inside the empty sandbox
-            # home and set `CODEX_HOME` explicitly for both login modes.
-            [[ ! -d "$triage_agent_home" ]] || triage_sandbox_args+=(--bind "$triage_agent_home" "$triage_home/.codex")
+            # Give triage a disposable copy of Codex state. The sandbox may
+            # write auth, plugin, and MCP state, but none of it can reach the
+            # worker's real `CODEX_HOME` or survive the triage phase.
+            triage_codex_home="$triage_wt/.triage-codex-home"
+            rm -rf "$triage_codex_home"
+            mkdir -p "$triage_codex_home" || return 1
+            [[ ! -d "$triage_agent_home" ]] || cp -a "$triage_agent_home/." "$triage_codex_home" || return 1
+            triage_sandbox_args+=(--bind "$triage_codex_home" "$triage_home/.codex")
             triage_sandbox_args+=(--setenv CODEX_HOME "$triage_home/.codex")
         fi
     else
@@ -984,7 +995,7 @@ run_continue_pr()
         active_codex_env=("${codex_env[@]}")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
-            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u SSH_AUTH_SOCK -u GIT_CONFIG)
+            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR -u SSH_AUTH_SOCK -u GIT_CONFIG)
             # Bubblewrap supplies the private `CODEX_HOME`; do not override it
             # with the host-side custom-key directory after entering the sandbox.
             active_codex_env=()
@@ -1092,11 +1103,12 @@ ${system_prompt}"
         if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
             handoff=$(cat "$log.last")
             if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
-                transfer_validated_triage_merge "$wt" "$triage_wt" || return 1
+                recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
             else
                 discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
             fi
             echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
+            rm -rf "$triage_codex_home"
             phase="coding"
             triage_sandbox_args=()
             phase_iter=0
@@ -1112,11 +1124,12 @@ ${system_prompt}"
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
             if [[ "$phase" != "triage" ]] || triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
                 if [[ "$phase" == "triage" ]]; then
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
                     if [[ "$triage_pushable" != "1" ]]; then
                         if [[ "$triage_start_head" != "$(git -C "$triage_wt" rev-parse HEAD)" ]]; then
-                            transfer_validated_triage_merge "$wt" "$triage_wt" || return 1
                             handoff=$(cat "$log.last")
                             echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
+                            rm -rf "$triage_codex_home"
                             phase="coding"
                             triage_sandbox_args=()
                             phase_iter=0
@@ -1126,23 +1139,22 @@ ${system_prompt}"
                         break
                     fi
                 fi
-                if [[ "$phase" == "triage" ]] && ! git -C "$triage_wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
+                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
                     handoff=$(cat "$log.last")
                     echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after the validated triage update could not be pushed =====" >> "$log"
+                    rm -rf "$triage_codex_home"
                     phase="coding"
                     triage_sandbox_args=()
                     phase_iter=0
                     sid=""
                     continue
                 fi
-                if [[ "$phase" == "triage" ]]; then
-                    transfer_validated_triage_merge "$wt" "$triage_wt" || return 1
-                fi
                 break
             fi
             handoff=$(cat "$log.last")
             discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
             echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after non-mechanical triage changes =====" >> "$log"
+            rm -rf "$triage_codex_home"
             phase="coding"
             triage_sandbox_args=()
             phase_iter=0
@@ -1158,11 +1170,12 @@ ${system_prompt}"
             if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
                 handoff=$(cat "$log.last")
                 if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
-                    transfer_validated_triage_merge "$wt" "$triage_wt" || return 1
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
                 else
                     discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
                 fi
                 echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
+                rm -rf "$triage_codex_home"
                 phase="coding"
                 triage_sandbox_args=()
                 phase_iter=0
@@ -1179,6 +1192,7 @@ ${system_prompt}"
     done
 
     [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
+    [[ -z "${triage_codex_home:-}" ]] || rm -rf "$triage_codex_home"
     return "$ec"
 }
 
