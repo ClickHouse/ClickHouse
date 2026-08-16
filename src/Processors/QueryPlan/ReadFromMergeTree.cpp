@@ -15,6 +15,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -70,6 +71,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -80,6 +82,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -2157,6 +2160,67 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Names of the physical columns that a merge of a Summing table aggregates.
+/// The merge removes a row when the values in all of these columns are zero after summation,
+/// so a FINAL read has to fetch every one of them even when the query itself needs only
+/// a subset. Otherwise `SummingSortedTransform` would decide the removal by the visible
+/// subset alone and drop rows that a real merge keeps (because some column that the query
+/// does not read sums to a non-zero value).
+static NameSet getColumnsAggregatedForSummingFinal(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
+{
+    NameSet not_aggregated;
+    for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
+        not_aggregated.insert(name);
+    for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
+        not_aggregated.insert(name);
+
+    const auto & columns_to_sum = merging_params.columns_to_sum;
+
+    NameSet aggregated_columns;
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+    {
+        if (not_aggregated.contains(column.name))
+            continue;
+        if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
+            continue;
+
+        if (!columns_to_sum.empty())
+        {
+            /// An entry of `columns_to_sum` may name the column itself, the Nested table the column
+            /// belongs to, or (with allow_tuple_element_aggregation) an element of a Tuple column.
+            const auto nested_table_name = Nested::extractTableName(column.name);
+            for (const auto & name : columns_to_sum)
+            {
+                if (name == column.name || name == nested_table_name || name.starts_with(column.name + "."))
+                {
+                    aggregated_columns.insert(column.name);
+                    break;
+                }
+            }
+            continue;
+        }
+
+        const bool is_simple_aggregate_function
+            = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
+        bool aggregated
+            = column.type->isSummable() || WhichDataType(column.type).isAggregateFunction() || is_simple_aggregate_function;
+        if (!aggregated && WhichDataType(column.type).isArray())
+        {
+            /// Arrays of a Nested table whose name ends with "Map" are merged with sumMap.
+            const auto nested_table_name = Nested::extractTableName(column.name);
+            aggregated = nested_table_name != column.name && endsWith(nested_table_name, "Map");
+        }
+        if (!aggregated && merging_params.allow_tuple_element_aggregation)
+            aggregated = WhichDataType(column.type).isTuple();
+
+        if (aggregated)
+            aggregated_columns.insert(column.name);
+    }
+
+    return aggregated_columns;
+}
+
 /// Returns the list of column names required for the transforms in addMergingFinal
 static NameSet getColumnsRequiredForMergingFinal(
     const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
@@ -2175,9 +2239,11 @@ static NameSet getColumnsRequiredForMergingFinal(
         case MergeTreeData::MergingParams::Aggregating:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Coalescing:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Summing:
             break;
+        case MergeTreeData::MergingParams::Summing: {
+            required_columns.merge(getColumnsAggregatedForSummingFinal(metadata_snapshot, merging_params));
+            break;
+        }
         case MergeTreeData::MergingParams::VersionedCollapsing:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Collapsing: {
@@ -4078,6 +4144,17 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
             column_names_to_read.push_back(data.merging_params.version_column);
+
+        /// A Summing merge decides whether to remove a row by looking at all aggregated columns,
+        /// so the read has to fetch all of them even when the query needs only a subset of them.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            for (const auto & column_name : getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params))
+            {
+                if (names.emplace(column_name).second)
+                    column_names_to_read.push_back(column_name);
+            }
+        }
 
         return spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
