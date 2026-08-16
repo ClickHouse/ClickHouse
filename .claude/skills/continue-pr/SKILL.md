@@ -88,12 +88,17 @@ git fetch "$HEAD_REMOTE" "$HEAD_BRANCH"
 git checkout --detach "$HEAD_REMOTE/$HEAD_BRANCH"
 ```
 
-Immediately after either checkout completes, capture an immutable baseline before
-editing, merging, or running any helper that can modify the branch. This is the
-only authoritative record of the PR surface that existed when the worker began:
+Immediately after either checkout completes, discard any state left by an
+earlier PR before recording the immutable baseline. The automation uses a
+dedicated worker worktree, so it must never preserve staged, unstaged, or
+untracked files from a previous session. This is the only authoritative record
+of the PR surface that existed when the worker began:
 
 ```bash
 git fetch origin "$BASE_BRANCH"
+git reset --hard "$HEAD_REMOTE/$HEAD_BRANCH"
+git clean -ffdx -e build/
+test -z "$(git status --porcelain)"
 mkdir -p tmp
 PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
 INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
