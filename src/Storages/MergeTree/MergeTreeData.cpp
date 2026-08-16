@@ -269,6 +269,7 @@ namespace Setting
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
+    extern const SettingsBool validate_mutation_query;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
