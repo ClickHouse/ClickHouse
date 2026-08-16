@@ -975,7 +975,7 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
                 f"WHERE file_path LIKE '%{failed_file}'"
             ).strip()
 
-        run_with_retry(lambda x: x == "Processing\\t", get_cached_record)
+        run_with_retry(lambda x: x == "Processing", get_cached_record)
 
         # The foreign processor now fails `test_1.csv`, then processes `test_2.csv`.
         # The ordered high-water mark covers both files, but the failed node remains
