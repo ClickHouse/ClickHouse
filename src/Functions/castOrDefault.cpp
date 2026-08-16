@@ -162,7 +162,6 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto nullable_return_type = makeNullable(return_type);
         ColumnsWithTypeAndName cast_args
         {
             column_to_cast_non_const,
@@ -172,26 +171,26 @@ public:
                 ""
             }
         };
+        auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
         auto cast_func = cast_or_null_resolver->build(cast_args);
-        auto cast_result = cast_func->execute(cast_args, nullable_return_type, non_const_column_to_cast->size(), false);
-
-        const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
-        const auto & null_map_data = cast_result_nullable.getNullMapData();
+        auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
+        auto cast_result_full = cast_result->convertToFullColumnIfLowCardinality();
+        auto cast_null_map_column = getSourceNullMap(*cast_result_full);
         auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
         auto source_null_map_column = getSourceNullMap(*source_column_full);
+        const auto * cast_null_map_data = cast_null_map_column
+            ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
+            : nullptr;
         const auto * source_null_map_data = source_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
             : nullptr;
-        size_t null_map_data_size = null_map_data.size();
-        const auto & nested_column = cast_result_nullable.getNestedColumn();
+        if (!cast_null_map_data)
+            return cast_result;
+
         auto result = return_type->createColumn();
-        result->reserve(null_map_data_size);
+        result->reserve(cast_result->size());
 
-        ColumnNullable * result_nullable = nullptr;
-        if (result->isNullable())
-            result_nullable = assert_cast<ColumnNullable *>(&*result);
-
-        size_t start_insert_index = 0;
+        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
 
         Field default_value;
         ColumnPtr default_column;
@@ -210,36 +209,23 @@ public:
             default_value = return_type->getDefault();
         }
 
-        for (size_t i = 0; i < null_map_data_size; ++i)
+        for (size_t i = 0; i < cast_result->size(); ++i)
         {
-            bool is_current_index_null = null_map_data[i];
-            if (!is_current_index_null)
-                continue;
-
-            if (i != start_insert_index)
+            const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
+            const bool cast_failed = (*cast_null_map_data)[i] && !is_source_null;
+            if (!cast_failed)
             {
-                if (result_nullable)
-                    result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
+                if (cast_result_nullable && !result->isNullable())
+                    result->insertFrom(cast_result_nullable->getNestedColumn(), i);
                 else
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                    result->insertFrom(*cast_result, i);
+                continue;
             }
 
-            if (result_nullable && source_null_map_data && (*source_null_map_data)[i])
-                result_nullable->insertFrom(cast_result_nullable, i);
-            else if (default_column)
+            if (default_column)
                 result->insertFrom(*default_column, i);
             else
                 result->insert(default_value);
-
-            start_insert_index = i + 1;
-        }
-
-        if (null_map_data_size != start_insert_index)
-        {
-            if (result_nullable)
-                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
-            else
-                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
         }
 
         return result;
