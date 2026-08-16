@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -3590,6 +3591,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -3662,6 +3665,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -3721,6 +3726,15 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 #endif
+
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
 
     if (query_fuzzer_runs)
     {
@@ -4673,6 +4687,9 @@ void ClientBase::runInteractive()
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
             && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
             && !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
