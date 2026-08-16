@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <IO/Operators.h>
 #include <Interpreters/FillingRow.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -347,6 +348,11 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
         {
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
+
+            if (convertFieldToType(staleness_border, *descr.fill_column_type).isNull())
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL STALENESS bound does not fit the column type");
 
             if (!less((*base_row[i])[row_ind], staleness_border, getDirection(i)))
                 throw Exception(

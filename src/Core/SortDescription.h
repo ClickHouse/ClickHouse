@@ -36,6 +36,7 @@ struct FillColumnDescription
     std::optional<IntervalKind> step_kind;
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
+    DataTypePtr fill_column_type;
 
     using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
     StepFunction step_func;
