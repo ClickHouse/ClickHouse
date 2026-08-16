@@ -24,12 +24,12 @@ arraySlice on QBit(Float32, 8)
 [-5,-6,-7,-8]	QBit(Float32, 4)
 [6,7,8]	[2,3,4,5,6]	[3,4,5]
 [-6,-7,-8]	[-2,-3,-4,-5,-6]	[-3,-4,-5]
+[1,2,3]
+[-1,-2,-3]
 [5,6,7,8]	QBit(Float32, 4)
 [-5,-6,-7,-8]	QBit(Float32, 4)
 [1,2,3,4,5,6,7,8]	QBit(Float32, 8)
 [-1,-2,-3,-4,-5,-6,-7,-8]	QBit(Float32, 8)
-[1]
-[-1]
 arraySlice errors
 arraySlice on strided QBit keeps the stride when aligned to stride groups
 [9,10,11,12,13,14,15,16]	QBit(Float32, 8)
