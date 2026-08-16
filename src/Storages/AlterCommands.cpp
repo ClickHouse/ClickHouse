@@ -988,6 +988,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
     }
     else if (type == DROP_INDEX)
     {
+        if (clear && metadata.lookup_indices.has(index_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot clear lookup index {} because lookup indices do not have per-part data",
+                backQuote(index_name));
+        }
+
         if (!partition && !clear)
         {
             auto erase_it = std::find_if(
