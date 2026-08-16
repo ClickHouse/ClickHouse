@@ -102,7 +102,7 @@ SELECT 'descending sorting key';
 SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
     EXPLAIN PLAN actions = 1 SELECT * FROM t_reverse_final FINAL ORDER BY x ASC LIMIT 1 SETTINGS max_threads = 4, max_final_threads = 4
 ) WHERE explain like '%ReadType%';
-SELECT count(), min(y), max(y) FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4;
+SELECT * FROM t_reverse_final FINAL ORDER BY x ASC LIMIT 2 SETTINGS max_threads = 4, max_final_threads = 4;
 SELECT (SELECT cityHash64(groupArray((x, y, ver))) FROM (SELECT * FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4))
      = (SELECT cityHash64(groupArray((x, y, ver))) FROM (SELECT * FROM t_reverse_final FINAL ORDER BY x ASC SETTINGS max_threads = 4, max_final_threads = 4, optimize_read_in_reverse_order_final = 0));
 
