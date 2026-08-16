@@ -41,7 +41,7 @@ PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_rep
 # functions is offloaded as - and the two leaves are told apart by their arguments even when they
 # have no aliases.
 QUERY="SELECT count(), sum(l.v), sum(r.v) FROM merge(currentDatabase(), '^t_pr_merge_sibling_(a1|b1)\$') AS l INNER JOIN merge(currentDatabase(), '^t_pr_merge_sibling_b1\$') AS r ON l.k = r.k"
-ALIASLESS_QUERY="SELECT count(), sum(l.v), sum(r.v) FROM merge(currentDatabase(), '^t_pr_merge_sibling_(a1|b1)\$') INNER JOIN merge(currentDatabase(), '^t_pr_merge_sibling_b1\$') USING (k)"
+ALIASLESS_QUERY="SELECT count() FROM merge(currentDatabase(), '^t_pr_merge_sibling_(a1|b1)\$') INNER JOIN merge(currentDatabase(), '^t_pr_merge_sibling_b1\$') USING (k)"
 
 # Sanity check: the query is eligible for parallel replicas and returns correct results.
 $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS"
