@@ -169,10 +169,26 @@ bool authenticateUserByHTTP(
     }
 #endif
 
+    /// Client info and its effective address must be ready before the early empty-user
+    /// rejection below, so its session-log record has the same address as regular HTTP
+    /// authentication failures.
+    session.setHTTPClientInfo(request);
+    const auto & client_info = session.getClientInfo();
+    auto forwarded_address = client_info.getLastForwardedFor();
+    const bool use_forwarded_address = global_context->getConfigRef().getBool("auth_use_forwarded_address", false);
+    if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
+
+    const auto client_address = forwarded_address && use_forwarded_address
+        ? *forwarded_address
+        : request.clientAddress();
+
     if (config_credentials)
     {
         checkUserNameNotEmptyAndServerHasEnoughMemory(
-            config_credentials->getUserName(), "config authentication", global_context, session, request.clientAddress());
+            config_credentials->getUserName(), "config authentication", global_context, session, client_address);
     }
     if (has_ssl_certificate_auth)
     {
@@ -194,7 +210,7 @@ bool authenticateUserByHTTP(
         /// If the header is not set (or empty), the certificate must authenticate the default session user.
         if (user.empty())
             user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
 
         if (peer_certificate)
             certificate_subjects = peer_certificate->extractAllSubjects();
@@ -223,7 +239,7 @@ bool authenticateUserByHTTP(
         /// the password is checked against the default session user.
         if (user.empty())
             user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
     }
     else if (has_http_credentials)
     {
@@ -245,7 +261,7 @@ bool authenticateUserByHTTP(
             /// An empty user name in Basic credentials means the default session user.
             if (user.empty())
                 user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context, session, request.clientAddress());
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context, session, client_address);
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -282,7 +298,7 @@ bool authenticateUserByHTTP(
             /// If the user name is not set (or set to an empty string), the default session user is assumed.
             if (user.empty())
                 user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context, session, request.clientAddress());
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context, session, client_address);
         }
     }
 
@@ -357,25 +373,11 @@ bool authenticateUserByHTTP(
         quota_key = params.get("quota_key");
     }
 
-    /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    session.setHTTPClientInfo(request);
+    /// Client info is already set above; the quota key is used for accounting parameters in `setUser`.
     session.setQuotaClientKey(quota_key);
 
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
-    const auto & client_info = session.getClientInfo();
-    auto forwarded_address = client_info.getLastForwardedFor();
-    const bool use_forwarded_address = global_context->getConfigRef().getBool("auth_use_forwarded_address", false);
     try
     {
-        /// If `auth_use_forwarded_address` is enabled, consider a non-empty invalid header an error
-        /// instead of silently authenticating with the proxy's address.
-        if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
-
         if (forwarded_address && use_forwarded_address)
             session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
