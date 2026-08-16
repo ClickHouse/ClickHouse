@@ -416,6 +416,21 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
 }
 
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata)
+{
+    for (auto & column : columns)
+    {
+        /// Same type only: a dropped and re-added column would throw in the helper.
+        const auto * column_in_metadata = metadata.tryGet(column.name);
+        if (!column_in_metadata || !column_in_metadata->codec || !column_in_metadata->type->equals(*column.type))
+            continue;
+
+        /// The customization lands on the shared type instance, i.e. on column.type itself.
+        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
+        attachQuantizeSerializationIfNeeded(column_with_codec);
+    }
+}
+
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
