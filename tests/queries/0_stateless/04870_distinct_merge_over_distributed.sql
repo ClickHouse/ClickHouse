@@ -32,10 +32,11 @@ SELECT count() FROM (SELECT DISTINCT s FROM merge_distinct ORDER BY s LIMIT 100)
     SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0,
         optimize_distinct_in_order = 1, enable_analyzer = 0;
 
--- `DISTINCT ON` reaches the same transform through a different resolution path.
+-- `DISTINCT ON (s)` parses into `LIMIT 1 BY s`, so this arm covers
+-- `LimitBySortedStreamTransform`, which also assumes equal keys are adjacent. It is selected on
+-- the sort prefix alone, independently of `optimize_distinct_in_order`, so no pin is needed here.
 SELECT count() FROM (SELECT DISTINCT ON (s) s FROM merge_distinct ORDER BY s LIMIT 100)
-    SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0,
-        optimize_distinct_in_order = 1;
+    SETTINGS max_threads = 1, distributed_aggregation_memory_efficient = 0;
 
 -- The same query straight through the `Distributed` table was always correct. Expected: 21.
 SELECT count() FROM (SELECT DISTINCT s FROM dist_distinct ORDER BY s LIMIT 100)
