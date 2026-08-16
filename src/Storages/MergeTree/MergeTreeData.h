@@ -1951,8 +1951,10 @@ protected:
 
     SerializationInfoByName getSerializationHints() const override;
 
+public:
     bool hasAutomaticLowCardinalitySerialization() const override { return has_automatic_low_cardinality.load(std::memory_order_relaxed); }
 
+protected:
     /// Recomputes @has_automatic_low_cardinality. Must be called under the parts lock, after
     /// every change of @serialization_hints.
     void updateHasAutomaticLowCardinality();
