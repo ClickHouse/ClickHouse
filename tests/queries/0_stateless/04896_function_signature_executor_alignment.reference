@@ -1,6 +1,9 @@
 Float64	Float64	Float64	Float64
 Float64	Float64	Float64	Float64
 Float64	Float64
+Float32
+Float32
+Float32
 A	A	B
 1	1
 Nullable(UInt8)

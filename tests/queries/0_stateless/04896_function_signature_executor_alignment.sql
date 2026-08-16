@@ -19,6 +19,11 @@ SELECT
 -- `always_returns_float64` implementations stay `Float64` for every argument type.
 SELECT toTypeName(cos(materialize(toBFloat16(1)))), toTypeName(sin(materialize(toBFloat16(1))));
 
+-- The tuple-or-array wrappers delegate type-only resolution to the selected carrier.
+SELECT toTypeName(L2Norm([toFloat32(1)]));
+SELECT toTypeName(LpNorm([toFloat32(1)], toUInt128(2)));
+SELECT toTypeName(LpDistance([toFloat32(1)], [toFloat32(1)], toInt128(2)));
+
 -- `char` accepts every integer and float family at analysis time, exactly as before the
 -- declarative signature (`isInt() || isUInt() || isFloat()`); the column dispatch is what
 -- rejects the families it has no branch for.
