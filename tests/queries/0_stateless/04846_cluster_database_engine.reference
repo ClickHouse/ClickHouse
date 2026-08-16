@@ -8,7 +8,7 @@ Cluster
 t
 -- each table is exposed as a Distributed storage
 Distributed
--- SHOW CREATE TABLE prints a Distributed table over the named cluster
+-- SHOW CREATE TABLE includes a sharding key so it remains valid after a cluster reload
 1
 -- DESCRIBE reflects the remote structure
 id	UInt64

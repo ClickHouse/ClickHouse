@@ -38,8 +38,8 @@ ${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${CLUSTER_DB}"
 echo '-- each table is exposed as a Distributed storage'
 ${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.tables WHERE database = '${CLUSTER_DB}' AND name = 't'"
 
-echo '-- SHOW CREATE TABLE prints a Distributed table over the named cluster'
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.t FORMAT TSVRaw" | grep -c "Distributed('test_shard_localhost', '${CLICKHOUSE_DATABASE}', 't')"
+echo '-- SHOW CREATE TABLE includes a sharding key so it remains valid after a cluster reload'
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.t FORMAT TSVRaw" | grep -c "Distributed('test_shard_localhost', '${CLICKHOUSE_DATABASE}', 't', rand())"
 
 echo '-- DESCRIBE reflects the remote structure'
 ${CLICKHOUSE_CLIENT} --query "DESCRIBE TABLE ${CLUSTER_DB}.t" | cut -f1,2
