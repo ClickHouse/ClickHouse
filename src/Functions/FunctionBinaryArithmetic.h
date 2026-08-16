@@ -3544,6 +3544,7 @@ public:
 
                     auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
                     auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                    auto arithmetic_arg_type = getArithmeticType(arg_type);
 
                     // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
                     // width (`DecimalBinaryOperation` feeds both operands into
@@ -3561,9 +3562,9 @@ public:
                     // computes through floating point and never wraps. An unbounded range over an unsigned
                     // domain always contains the discontinuity, so it is never always-monotonic; report
                     // monotonicity only when an endpoint keeps the range on one side of it.
-                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                    if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                     {
-                        if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                        if (intDivRangeCrossesSignedWrap(arithmetic_arg_type, left_point, right_point))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }

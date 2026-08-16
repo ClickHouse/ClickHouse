@@ -351,6 +351,10 @@ INSERT INTO t_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7
 INSERT INTO m_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('8000::1');
 SELECT 'c9iv ipv4 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100);
 SELECT 'c9iv ipv6 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100);
+-- A one-sided predicate reaches the null-endpoint monotonicity path. It must also reject
+-- the signed-wrap discontinuity instead of pruning the rows above it.
+SELECT 'c9iv ipv4 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) < 100);
+SELECT 'c9iv ipv6 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) < 100);
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 8: pruning-liveness positive controls. The fix must not silently degrade the surviving
