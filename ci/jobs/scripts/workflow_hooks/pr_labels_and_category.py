@@ -244,6 +244,14 @@ def _submodule_paths() -> set:
     return paths
 
 
+def submodule_changed(changed_files, submodule_paths) -> bool:
+    # A bump leaves `.gitmodules` alone but touches the submodule path, which is still
+    # registered. Adding, removing or renaming one always edits `.gitmodules` itself.
+    if ".gitmodules" in changed_files:
+        return True
+    return bool(set(changed_files) & set(submodule_paths))
+
+
 def check_labels(category, info):
     pr_labels_to_add = []
     pr_labels_to_remove = []
@@ -273,7 +281,7 @@ def check_labels(category, info):
             "most likely failed to fetch the PR file list from the GitHub API. "
             "See the Config Workflow logs for the underlying error."
         )
-        if set(changed_files) & _submodule_paths():
+        if submodule_changed(changed_files, _submodule_paths()):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
