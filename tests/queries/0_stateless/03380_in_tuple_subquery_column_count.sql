@@ -78,6 +78,10 @@ SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Tu
 -- column-count mismatch. Regression for the false positive flagged in PR #97540.
 SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
 
+-- A scalar is not a one-element tuple. Its cast to a single `Tuple` key must be validated during
+-- analysis too, so folding the inner predicate cannot hide the runtime `TYPE_MISMATCH`.
+SELECT 1 FROM (SELECT 2 AS c1 WHERE 1 IN (SELECT tuple(1))) t0 WHERE t0.c1 = 1; -- { serverError TYPE_MISMATCH }
+
 -- A single non-tuple right column the whole left tuple cannot be cast to at all is a genuine mismatch
 -- and is still rejected. The check probes castability at the type level with an empty left column, so a
 -- fabricated default value (a `NULL` in a nullable element) is never the reason a query is rejected -
