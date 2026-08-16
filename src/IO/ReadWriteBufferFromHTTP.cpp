@@ -484,12 +484,12 @@ bool ReadWriteBufferFromHTTP::isReadCancelled() const
 /// The fallbacks of tryGetFileSize, tryGetLastModificationTime and getFileInfo treat the failure
 /// of their metadata request as an answer: the file simply comes out as one without the metadata.
 /// A request interrupted by a cancellation must not come out that way - the caller would go on
-/// requesting the data no one needs - so its error is rethrown. The interruption is told by the
-/// mark doWithRetries leaves on the abandoned request, see Cancellation::markReadInterrupted, not
-/// by the cancellation flag itself: an error the cancellation had nothing to do with - one that
-/// had already happened when the cancellation arrived - stays swallowed no matter how the delivery
-/// of the cancellation races with the unwinding, so a soft cancellation cannot turn a failure the
-/// fallback would have swallowed into a failure of the query, see StorageURLSource::generate.
+/// requesting the data no one needs - so its error is rethrown. The interruption is identified by
+/// the request-local exception doWithRetries throws, not by the cancellation flag itself: an error
+/// the cancellation had nothing to do with - one that had already happened when the cancellation
+/// arrived - stays swallowed no matter how the delivery of the cancellation races with the
+/// unwinding, so a soft cancellation cannot turn a failure the fallback would have swallowed into
+/// a failure of the query, see StorageURLSource::generate.
 void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
 {
     /// Holds the thread right before the check, so that a test can deliver a cancellation to a
@@ -497,8 +497,17 @@ void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
     /// 04869_url_function_stale_metadata_error_after_soft_cancel.
     FailPointInjection::pauseFailPoint(FailPoints::http_read_buffer_pause_before_metadata_fallback);
 
-    if (cancellation && cancellation->isReadInterrupted())
+    try
+    {
         throw;
+    }
+    catch (const ReadInterruptedException &)
+    {
+        throw;
+    }
+    catch (...)
+    {
+    }
 }
 
 

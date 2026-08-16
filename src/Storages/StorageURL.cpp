@@ -120,7 +120,6 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
