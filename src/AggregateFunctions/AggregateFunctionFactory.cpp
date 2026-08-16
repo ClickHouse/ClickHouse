@@ -608,6 +608,13 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().tryGetQueryContext();
 
+    /// Keep the query settings available for combinator resolution as well as for leaf creators.
+    /// A combinator may decide whether to place the Variant NULL-skipping wrapper around its
+    /// combined function, so it must not treat an absent explicit settings pointer as the default
+    /// after its nested leaf has already obtained the query settings.
+    if (!settings && query_context)
+        settings = &query_context->getSettingsRef();
+
     if (found.creator)
     {
         auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? case_insensitive_name : name, action);
@@ -622,9 +629,6 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
-
-        if (!settings && query_context)
-            settings = &query_context->getSettingsRef();
 
         /// The nested function of a -Distinct combinator over a Variant argument is resolved with
         /// `allow_skipping_variant_nulls` unset (see the combinator branch below): the combinator replays its

@@ -13,6 +13,11 @@
 
 using namespace DB;
 
+namespace DB::Setting
+{
+extern const SettingsBool aggregate_functions_skip_variant_nulls;
+}
+
 static AggregateFunctionPtr resolve(const String & name, const DataTypes & arguments, double level)
 {
     Array parameters;
