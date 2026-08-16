@@ -15,6 +15,7 @@ sys.path.insert(
 from perf_create_query_utils import (  # noqa: E402
     create_query_engine,
     first_keyword,
+    is_ordinary_mergetree_create_query,
     is_mergetree_create_query,
     strip_setting_from_query,
 )
@@ -368,6 +369,17 @@ def test_value_aware_only_strips_baseline_default(case):
     else:
         # Not a baseline-default value: query must be byte-for-byte unchanged.
         assert result == query
+
+
+def test_specialized_mergetree_enabled_setting_is_baseline_equivalent():
+    # The runtime applies `optimize_row_order_if_no_order_by` only to ordinary
+    # `MergeTree` engines. On `ReplacingMergeTree` it is a no-op, so an enabled
+    # setting can be stripped on an old baseline without changing the table
+    # layout on either side of the comparison.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = ReplacingMergeTree ORDER BY tuple() SETTINGS {SETTING} = 1"
+    expected = "CREATE TABLE t (a UInt64) ENGINE = ReplacingMergeTree ORDER BY tuple()"
+    assert not is_ordinary_mergetree_create_query(query)
+    assert strip_setting_from_query(query, SETTING, ALLOWED | {"1", "true"}) == expected
 
 
 @pytest.mark.parametrize("case", VALUE_AWARE_CASES, ids=[c[0] for c in VALUE_AWARE_CASES])

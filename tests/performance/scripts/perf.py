@@ -26,6 +26,7 @@ from scipy import stats
 # ci/tests/test_strip_setting_from_query.py.
 from perf_create_query_utils import (
     first_keyword,
+    is_ordinary_mergetree_create_query,
     is_mergetree_create_query,
     strip_setting_from_query,
 )
@@ -745,10 +746,12 @@ if not args.use_existing_tables:
     # are equivalent to the baseline server's default for it. The setting is
     # only stripped when the fixture pins it to one of those values, so that
     # both sides of the A/B comparison build the same table. An enabled value
-    # (e.g. `optimize_row_order_if_no_order_by = 1`) is NOT strippable: the
-    # baseline would build an unoptimized table while the PR side uses the
-    # optimized layout, so it is re-raised as UNKNOWN_SETTING to fail fast
-    # instead of silently comparing incomparable tables.
+    # (e.g. `optimize_row_order_if_no_order_by = 1`) is NOT strippable for an
+    # ordinary `MergeTree`: the baseline would build an unoptimized table while
+    # the PR side uses the optimized layout, so it is re-raised as
+    # UNKNOWN_SETTING to fail fast instead of silently comparing incomparable
+    # tables. It is strippable for a specialized `MergeTree`, where this
+    # setting is a documented no-op.
     strippable_unknown_settings = {
         "optimize_row_order_if_no_order_by": {"0", "false"},
     }
@@ -790,10 +793,16 @@ if not args.use_existing_tables:
                         if m:
                             unknown_setting = m.group(1)
                             if unknown_setting in strippable_unknown_settings:
+                                allowed_values = strippable_unknown_settings[unknown_setting]
+                                if (
+                                    unknown_setting == "optimize_row_order_if_no_order_by"
+                                    and not is_ordinary_mergetree_create_query(current_query)
+                                ):
+                                    allowed_values = allowed_values | {"1", "true"}
                                 new_query = strip_setting_from_query(
                                     current_query,
                                     unknown_setting,
-                                    strippable_unknown_settings[unknown_setting],
+                                    allowed_values,
                                 )
                                 if new_query != current_query:
                                     print(

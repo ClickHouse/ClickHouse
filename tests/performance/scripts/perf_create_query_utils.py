@@ -171,6 +171,22 @@ def is_mergetree_create_query(query):
     return engine is not None and engine.lower().endswith("mergetree")
 
 
+def is_ordinary_mergetree_create_query(query):
+    """Whether `query` creates an ordinary `MergeTree`-family table.
+
+    `optimize_row_order_if_no_order_by` only changes writes to ordinary
+    `MergeTree` engines. The corresponding replicated and shared variants
+    retain that mode; specialized engines such as `ReplacingMergeTree` and
+    `AggregatingMergeTree` deliberately keep the inserted row order.
+    """
+    engine = create_query_engine(query)
+    return engine is not None and engine.lower() in {
+        "mergetree",
+        "replicatedmergetree",
+        "sharedmergetree",
+    }
+
+
 def strip_setting_from_query(query, setting_name, allowed_values=None):
     """Strip a single MergeTree setting from a CREATE TABLE SETTINGS clause.
 
