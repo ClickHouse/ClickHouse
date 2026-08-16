@@ -8,6 +8,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace ProfileEvents
 {
