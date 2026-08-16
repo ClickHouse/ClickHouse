@@ -35,7 +35,7 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000003', toDateTime64(1700000000, 3, 'UTC'), 20);
 
 -- A second metric with its own name and an extra tag, one series per instance, in ascending
--- instance order - deliberately a different natural order than `sort_desc(up)` produces.
+-- instance order - deliberately a different natural order than sort_desc(up) produces.
 INSERT INTO ts_tags VALUES
     ('00000000-0000-0000-0000-000000000011', 'mem', {'instance':'host1','job':'j1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
     ('00000000-0000-0000-0000-000000000012', 'mem', {'instance':'host2','job':'j1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
