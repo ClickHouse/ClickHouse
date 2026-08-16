@@ -7081,12 +7081,21 @@ void StorageReplicatedMergeTree::alter(
             return definitions;
         };
 
+        auto index_definitions = [](const IndicesDescription & indices)
+        {
+            ASTs definitions;
+            for (const auto & index : indices)
+                definitions.push_back(index.definition_ast);
+            return definitions;
+        };
+
         /// An implicit-index setting change can remove a legacy implicit index from the local
         /// metadata without changing the explicit list. Compare the complete descriptions too,
         /// so this path rewrites `/metadata/indices` with explicit definitions only.
         if (!same_definitions(explicit_index_definitions(future_metadata.secondary_indices),
                               explicit_index_definitions(current_metadata->secondary_indices))
-            || !same_definitions(future_metadata.secondary_indices, current_metadata->secondary_indices))
+            || !same_definitions(index_definitions(future_metadata.secondary_indices),
+                                 index_definitions(current_metadata->secondary_indices)))
             future_metadata_in_zk.skip_indices
                 = ReplicatedMergeTreeTableMetadata::formatDefinitionList(explicit_index_definitions(future_metadata.secondary_indices));
 
