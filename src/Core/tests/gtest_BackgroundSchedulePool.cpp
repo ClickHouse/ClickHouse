@@ -20,7 +20,7 @@ TEST(BackgroundSchedulePool, Schedule)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -28,6 +28,9 @@ TEST(BackgroundSchedulePool, Schedule)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// The notify must be issued under the waiter's mutex: otherwise the last iteration can
+        /// notify between the waiter's predicate check and its block, and nothing re-notifies.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->schedule(), true);
@@ -36,19 +39,26 @@ TEST(BackgroundSchedulePool, Schedule)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    std::unique_lock lock(mutex);
-    condvar.wait(lock, [&] { return counter == ITERATIONS; });
+    bool finished = false;
+    {
+        std::unique_lock lock(mutex);
+        /// Bounded wait so a regression fails the test instead of hanging it.
+        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return counter == ITERATIONS; });
+    }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// Join before asserting: the pool's destructor requires join(), so a fatal assertion here
+    /// would abort the binary instead of failing the test.
     pool->join();
+
+    EXPECT_TRUE(finished) << "only " << counter << " of " << ITERATIONS << " iterations ran";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
     auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{0};
     std::mutex mutex;
     std::condition_variable condvar;
 
@@ -56,6 +66,9 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
+        /// The notify must be issued under the waiter's mutex: otherwise the last iteration can
+        /// notify between the waiter's predicate check and its block, and nothing re-notifies.
+        std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
             ASSERT_EQ(task->scheduleAfter(1), true);
@@ -64,14 +77,19 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
+    bool finished = false;
     {
         std::unique_lock lock(mutex);
-        condvar.wait(lock, [&] { return counter == ITERATIONS; });
+        /// Bounded wait so a regression fails the test instead of hanging it.
+        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return counter == ITERATIONS; });
     }
 
-    ASSERT_EQ(counter, ITERATIONS);
-
+    /// Join before asserting: the pool's destructor requires join(), so a fatal assertion here
+    /// would abort the binary instead of failing the test.
     pool->join();
+
+    EXPECT_TRUE(finished) << "only " << counter << " of " << ITERATIONS << " iterations ran";
+    ASSERT_EQ(counter, ITERATIONS);
 }
 
 /// Previously leads to UB
