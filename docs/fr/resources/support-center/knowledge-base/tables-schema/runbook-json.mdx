@@ -47,8 +47,8 @@ Vos données arrivent en JSON. ClickHouse vous propose plusieurs façons de les 
 
 **Compromis :** Les changements de schéma nécessitent `ALTER TABLE`. Les champs inattendus sont silencieusement ignorés à l’insertion, sauf si le schéma est mis à jour.
 
-<Accordion title="Mise en place, vérification et points d’attention">
-  **Mise en place**
+<Accordion title="Configuration, vérification et points d’attention">
+  **Configuration**
 
   ```sql
   CREATE TABLE events
@@ -79,7 +79,7 @@ Vos données arrivent en JSON. ClickHouse vous propose plusieurs façons de les 
 
   **Points d’attention**
 
-  * Si vous insérez des données JSON avec `JSONEachRow` et que le JSON contient des champs absents du schéma, ClickHouse les ignore silencieusement par défaut. Définissez [`input_format_skip_unknown_fields`](/fr/reference/settings/formats#input_format_skip_unknown_fields) sur `0` si vous préférez obtenir des erreurs.
+  * Si vous insérez des données JSON avec `JSONEachRow` et que le JSON contient des champs absents du schéma, ClickHouse les ignore silencieusement par défaut. Définissez [`input_format_skip_unknown_fields`](/fr/reference/settings/formats/input-format#input_format_skip_unknown_fields) sur `0` si vous préférez obtenir des erreurs.
 </Accordion>
 
 ***
