@@ -588,6 +588,9 @@ protected:
     /// The `readonly` value of the session (see `aiSessionReadonly`), resolved on demand because
     /// it takes a query to the server. Forgotten when a `SET` can have changed it.
     std::optional<UInt64> ai_session_readonly;
+    /// Set when an agent query may have been logged without its marker. It is deliberately
+    /// sticky for the session, because those old rows cannot be separated from user history.
+    bool ai_query_log_access_permanently_disabled = false;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage

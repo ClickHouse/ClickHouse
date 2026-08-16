@@ -4,6 +4,8 @@
 #if USE_CLIENT_AI
 
 #include <Client/AI/AIClientFactory.h>
+
+#include <limits>
 #include <Client/AI/AIConfiguration.h>
 #include <Common/Exception.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -187,6 +189,11 @@ TEST(AIClientFactory, MalformedConfigurationValues)
     EXPECT_NO_THROW({
         ai_config = AIClientFactory::loadConfiguration(*config);
     });
+
+    config->setUInt64("ai.max_tokens", static_cast<UInt64>(std::numeric_limits<int>::max()) + 1);
+    EXPECT_THROW({
+        ai_config = AIClientFactory::loadConfiguration(*config);
+    }, Exception);
 }
 
 /// Temperature must be left unset unless explicitly configured, so that it is

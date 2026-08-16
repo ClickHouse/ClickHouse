@@ -2987,6 +2987,8 @@ void ClientBase::processParsedSingleQuery(
             /// next needs the value, instead of modeling the change here.
             if (changes_setting("readonly") || changes_setting("profile"))
                 ai_session_readonly.reset();
+            if (changes_setting("profile"))
+                ai_query_log_access_permanently_disabled = true;
 #endif
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -3903,7 +3905,18 @@ void ClientBase::initAIAgent()
     };
     hooks.check_query = [this](const String & query) { return checkAIQuery(query); };
     hooks.session_restrictions = [this] { return aiSessionRestrictions(); };
-    hooks.can_read_query_log = [this] { return aiSessionReadonly() != 1; };
+    hooks.can_read_query_log = [this]
+    {
+        /// Once agent activity has run while query-log marking was unavailable, its unmarked
+        /// rows cannot be distinguished reliably from user history later in this session.
+        /// Keep the tool unavailable rather than risking replaying that activity to the model.
+        if (ai_query_log_access_permanently_disabled || aiSessionReadonly() == 1)
+        {
+            ai_query_log_access_permanently_disabled = true;
+            return false;
+        }
+        return true;
+    };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -3927,7 +3940,7 @@ void ClientBase::initAIAgent()
         /// No client-side AI provider: fall back to the `aiGenerate` function configured
         /// on the server we are connected to (or in clickhouse-local). This adds nothing
         /// the user could not do with a plain `SELECT aiGenerate(...)` query.
-        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar);
+        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar, ai_config);
     }
 
     if (!transport)
