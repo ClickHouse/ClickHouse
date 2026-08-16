@@ -383,7 +383,7 @@ static void sampleNonStatePartsCompression(
     /// A state-bearing carrier this walk does not know how to take apart (or whose type does not match its
     /// structure): count its own payload as incompressible rather than applying the leaves' ratio to it.
     size_t leaves_byte_size = 0;
-    forEachAggregateStateLeaf(*column, [&](const ColumnAggregateFunction & leaf) { leaves_byte_size += leaf.byteSize(); });
+    forEachAggregateStateLeaf(*column, [&](const ColumnAggregateFunction & leaf, size_t) { leaves_byte_size += leaf.byteSize(); });
     const size_t carrier_bytes = (column->byteSize() - leaves_byte_size) * repetitions;
     sample_bytes += carrier_bytes;
     compressed_bytes += carrier_bytes;
