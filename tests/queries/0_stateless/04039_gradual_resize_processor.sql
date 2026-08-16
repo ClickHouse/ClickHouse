@@ -28,6 +28,11 @@ SETTINGS index_granularity = 256;
 SYSTEM STOP MERGES test_gradual_resize;
 INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(1000000);
 
+-- The table is partitioned by `k`, which is also the grouping key. Keep independent
+-- per-partition aggregation disabled so the query reaches the pre-aggregation resize
+-- stage that this test is intended to cover.
+SET allow_aggregate_partitions_independently = 0;
+
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET max_threads = 4;
