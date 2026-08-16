@@ -8,6 +8,12 @@ plan: argument still needed above — not pushed
 0
 plan: sibling alias still needed above — not pushed
 0
+plan: sibling alias below outer sort — not pushed
+0
+plan: small FixedString lengthUTF8 — not pushed
+0
+plan: array length — not pushed
+0
 plan: nested expression (lengthUTF8(s)+1) — pushdown applied
 1
 plan: filter step as parent — pushdown applied

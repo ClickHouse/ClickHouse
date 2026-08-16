@@ -70,6 +70,32 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     FROM (SELECT s, s AS a, id FROM volume_reducing_function_push_down ORDER BY id)
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
 
+-- The same alias relationship can be below a plain outer `SortingStep`, whose immediate child has
+-- no actions. The expression below the sort must still be checked before considering `a` replaced.
+SELECT 'plan: sibling alias below outer sort — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT s, length(a)
+    FROM (SELECT s, s AS a, id FROM volume_reducing_function_push_down)
+    ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
+-- `lengthUTF8` returns `UInt64`; it is not volume-reducing for a `FixedString` that occupies at
+-- most eight bytes per row.
+SELECT 'plan: small FixedString lengthUTF8 — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT lengthUTF8(fs) FROM volume_reducing_function_push_down ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
+
+-- Composite paths can share their payload with other expressions under another nested-column
+-- name. Do not push them down unless the optimizer can prove the complete payload is removed.
+SELECT 'plan: array length — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT length(arr) FROM volume_reducing_function_push_down ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
 -- The function does not have to be an output of the parent step: `ActionsDAG::split` leaves the
 -- enclosing expression in place and only moves `lengthUTF8(s)` down.
 SELECT 'plan: nested expression (lengthUTF8(s)+1) — pushdown applied';

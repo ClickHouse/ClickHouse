@@ -1,5 +1,6 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -21,17 +22,24 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// `lengthUTF8` is only defined for `String` / `FixedString`, while `length`, `empty` and
-/// `notEmpty` also accept `Array` and `Map`. `empty` / `notEmpty` are additionally defined for
-/// fixed-size types (`UUID`, `IPv4`, `IPv6`, `QBit`), but replacing a fixed-size column with
-/// another fixed-size column reduces no volume, so those arguments are not accepted.
+/// The optimization applies only to `String` / `FixedString`. Although `length`, `empty` and
+/// `notEmpty` also accept `Array` and `Map`, a composite path can share its payload with other
+/// expressions under a different nested-column name. The optimizer cannot prove that removing one
+/// such path removes the payload from a sort or filter, so it must not push those functions down.
+/// `empty` / `notEmpty` are additionally defined for fixed-size types (`UUID`, `IPv4`, `IPv6`,
+/// `QBit`), but replacing a fixed-size column with another fixed-size column reduces no volume.
 bool isSupportedArgumentType(const String & function_name, const DataTypePtr & type)
 {
     if (function_name == "lengthUTF8")
+    {
+        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
+            return fixed_string->getN() > sizeof(UInt64);
+
         return isStringOrFixedString(type);
+    }
 
     if (function_name == "length" || function_name == "empty" || function_name == "notEmpty")
-        return isStringOrFixedString(type) || isArray(type) || isMap(type);
+        return isStringOrFixedString(type);
 
     return false;
 }
@@ -448,6 +456,30 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
                         has_surfaced_sibling = true;
                         break;
                     }
+
+            if (has_surfaced_sibling)
+                continue;
+        }
+        else if (const auto * sorting_input_actions = tryGetStepActions(child_node->children.front()->step.get()))
+        {
+            /// A `SortingStep` has no `ActionsDAG` of its own. Its input can nevertheless expose
+            /// the same wide source under multiple aliases, so inspect the expression immediately
+            /// below it before deciding that removing one name reduces the sort payload.
+            const auto * source_below = sorting_input_actions->tryFindInOutputs(name_below);
+            if (!source_below)
+                continue;
+
+            source_below = resolveAliases(source_below);
+            if (source_below->type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            bool has_surfaced_sibling = false;
+            for (const auto * output : sorting_input_actions->getOutputs())
+                if (output->result_name != name_below && resolveAliases(output) == source_below)
+                {
+                    has_surfaced_sibling = true;
+                    break;
+                }
 
             if (has_surfaced_sibling)
                 continue;
