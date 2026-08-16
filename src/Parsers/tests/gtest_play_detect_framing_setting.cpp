@@ -134,53 +134,11 @@ std::optional<std::string> settingName(const Tok & tok)
 }
 
 /// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
-/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`,
-/// except for the optional post-format `SETTINGS` list.
-std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens, bool include_postformat_insert_settings = false)
+/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`.
+/// Although `allow_settings_after_format_in_insert` can enable an optional post-format `SETTINGS`
+/// list, the Web UI cannot know that session setting, so it stops at the input boundary.
+std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
 {
-    const auto is_setting_name = [](const Tok & tok)
-    {
-        return tok.type == DB::TokenType::BareWord || tok.type == DB::TokenType::QuotedIdentifier;
-    };
-    const auto end_of_settings = [&](size_t start)
-    {
-        size_t j = start;
-        while (j < tokens.size() && is_setting_name(tokens[j]))
-        {
-            ++j;
-            if (j < tokens.size() && tokens[j].type == DB::TokenType::Equals)
-            {
-                ++j;
-                if (j < tokens.size() && (tokens[j].type == DB::TokenType::Minus || tokens[j].type == DB::TokenType::Plus))
-                    ++j;
-                if (j == tokens.size())
-                    break;
-                if (isOpeningBracket(tokens[j].type))
-                {
-                    int value_depth = 0;
-                    do
-                    {
-                        if (isOpeningBracket(tokens[j].type))
-                            ++value_depth;
-                        else if (isClosingBracket(tokens[j].type))
-                            --value_depth;
-                        ++j;
-                    } while (j < tokens.size() && value_depth > 0);
-                }
-                else
-                {
-                    ++j;
-                }
-            }
-            if (j < tokens.size() && tokens[j].type == DB::TokenType::Comma)
-            {
-                ++j;
-                continue;
-            }
-            break;
-        }
-        return j;
-    };
     int depth = 0;
     bool saw_insert = false;
     bool saw_statement_keyword = false;
@@ -225,9 +183,6 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
         {
             if (saw_select_source && !select_reads_inline_data)
                 return tokens;
-            if (include_postformat_insert_settings && i + 2 < tokens.size()
-                && tokens[i + 2].type == DB::TokenType::BareWord && toLower(tokens[i + 2].text) == "settings")
-                return {tokens.begin(), tokens.begin() + end_of_settings(i + 3)};
             return {tokens.begin(), tokens.begin() + i};
         }
     }
@@ -239,7 +194,7 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
 /// `fallbackTokenize`'s - see `expectFraming`, which exercises both here).
 FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
 {
-    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens, true);
+    const std::vector<Tok> tokens = tokensBeforeInlineInsertPayload(all_tokens);
     int depth = 0;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
@@ -654,13 +609,13 @@ TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
 
 TEST(PlayDetectFramingSetting, InlineInsertPayloadIsNotSql)
 {
-    /// With `allow_settings_after_format_in_insert`, the `SETTINGS` list between the input format
-    /// and rows is query syntax and must be honored.
-    expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\nline", false, true);
+    /// The session can enable post-format `SETTINGS`, but the default grammar treats it as payload.
+    /// Do not reshape the request based on syntax whose availability the page cannot determine.
+    expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\nline", false, false);
     expectFraming(
         "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = "
         "'JSONEachPacketString'\nline",
-        true,
+        false,
         false);
 }
 
