@@ -25,7 +25,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
           data_part->getDataPartStoragePtr(),
           metadata_snapshot_,
           columns_list_,
-          /*reset_columns=*/true)
+          /*reset_columns=*/true,
+          data_part->getSerializationInfos())
     , part_serialization_infos(data_part->getSerializationInfos())
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.

@@ -107,7 +107,7 @@ SETTINGS
 
 INSERT INTO t_auto_lc_mutate SELECT number, if(number % 2 = 0, '', 'm_' || toString(number % 10)) FROM numbers(2000);
 
-ALTER TABLE t_auto_lc_mutate UPDATE lc = 'updated' WHERE empty(lc);
+ALTER TABLE t_auto_lc_mutate UPDATE lc = 'updated' WHERE lc = '';
 
 SELECT 'mutation: kind after, correctness';
 SELECT DISTINCT serialization_kind FROM system.parts_columns

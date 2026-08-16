@@ -12275,16 +12275,23 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     const auto physical_columns = storage_columns.getAllPhysical();
     serialization_hints = SerializationInfoByName(physical_columns, settings);
 
-    /// `SerializationInfoByName` creates entries only for the columns eligible for sparse serialization.
-    /// Keep entries for every String/FixedString column as well. They are needed to aggregate an already
-    /// persisted automatic `LowCardinality` kind after the setting for new writes is disabled.
-    for (const auto & column : physical_columns)
-    {
-        if (isStringOrFixedString(column.type) && !serialization_hints.contains(column.name))
-            serialization_hints.emplace(column.name, column.type->createSerializationInfo(settings));
-    }
-
     auto range = getDataPartsStateRange(DataPartState::Active);
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries only for columns that are already automatically encoded in an active part,
+    /// so a table without the feature enabled does not acquire serialization metadata on rewrite.
+    for (const auto & part : range)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto * column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : range)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);

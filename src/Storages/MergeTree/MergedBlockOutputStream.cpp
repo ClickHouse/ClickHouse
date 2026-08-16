@@ -46,7 +46,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec)
     : IMergedBlockOutputStream(
-          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
+          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_, data_part->getSerializationInfos())
     , columns_list(columns_list_)
     , default_codec(default_codec_)
     , part_serialization_infos(data_part->getSerializationInfos())

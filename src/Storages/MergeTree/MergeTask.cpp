@@ -909,21 +909,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
 
-    /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so the source
-    /// parts' kinds have to be aggregated even when sparse serialization is disabled - otherwise a merge
-    /// would silently drop the encoding. `SerializationInfoByName` creates entries only for the columns
-    /// eligible for sparse serialization, so the missing ones are created here.
-    for (const auto & column : global_ctx->storage_columns)
-    {
-        if (isStringOrFixedString(column.type) && !infos.contains(column.name))
-            infos.emplace(column.name, column.type->createSerializationInfo(info_settings));
-    }
-
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
         auto part_infos = part->getSerializationInfos();
+
+        /// `SerializationInfoByName` creates entries only for columns eligible for sparse
+        /// serialization. Add an entry only when a source part is already automatically encoded,
+        /// so a merge preserves the kind without adding metadata to unrelated String columns.
+        for (const auto & [name, info] : part_infos)
+        {
+            if (!infos.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto * column = global_ctx->storage_columns.tryGetByName(name))
+                    infos.emplace(name, column->type->createSerializationInfo(info_settings));
+            }
+        }
 
         addMissedColumnsToSerializationInfos(
             part->rows_count,
