@@ -106,12 +106,11 @@ TTLTransform::TTLTransform(
     /// mere presence of the clause in metadata would force `executeUnsorted` (whole-part external
     /// aggregation) even for a not-yet-expired earlier TTL. `group_by_ttl.min` is the minimum TTL value
     /// over the part's rows, so `min > current_time` means no row is expired and the TTL cannot fire.
-    /// Conservative on the safe side: when forced, or when the info is missing/uninitialized, assume it
-    /// fires and keep the unsorted path -- we never take the streaming fast path on a scrambled stream.
+    /// Conservative on the safe side: when the info is missing or uninitialized, assume it fires and keep
+    /// the unsorted path -- we never take the streaming fast path on a scrambled stream. `force_` only
+    /// makes the algorithm evaluate TTL expressions row by row; it does not make a future TTL expire.
     auto group_by_ttl_fires = [&](const TTLDescription & ttl) -> bool
     {
-        if (force_)
-            return true;
         auto it = old_ttl_infos.group_by_ttl.find(ttl.result_column);
         if (it == old_ttl_infos.group_by_ttl.end())
             return true;

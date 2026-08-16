@@ -37,3 +37,4 @@ eph mat data	cba	5
 eph mat data	zyx	2
 eph mat sorted	1
 future ttl leaves materialized	1
+future group by leaves column ttl materialized	1

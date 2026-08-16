@@ -322,3 +322,24 @@ INSERT INTO t_future_ttl_mut (ts, x) VALUES ('2020-01-15 00:00:00', 7), ('2020-0
 ALTER TABLE t_future_ttl_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'future ttl leaves materialized', countIf(m = saved_m) = count() FROM t_future_ttl_mut;
 DROP TABLE t_future_ttl_mut;
+
+-- `force_` in `MATERIALIZE TTL` evaluates every TTL expression, but it does not make a future
+-- GROUP BY TTL fire. In particular, its SET targets must not refresh a MATERIALIZED expiry input
+-- of a later column TTL: `m` contains `now()` and would visibly change even though `x` is unchanged.
+DROP TABLE IF EXISTS t_future_group_by_before_column_ttl;
+CREATE TABLE t_future_group_by_before_column_ttl
+(
+    ts DateTime,
+    x UInt32,
+    m DateTime MATERIALIZED now() + toIntervalSecond(x),
+    saved_m DateTime DEFAULT m,
+    payload UInt32 DEFAULT 1 TTL m + toIntervalDay(1)
+)
+ENGINE = MergeTree ORDER BY x
+TTL ts + toIntervalYear(50) GROUP BY x SET x = max(x) + 1
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_future_group_by_before_column_ttl;
+INSERT INTO t_future_group_by_before_column_ttl (ts, x) VALUES ('2020-01-15 00:00:00', 7), ('2020-02-15 00:00:00', 8);
+ALTER TABLE t_future_group_by_before_column_ttl MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'future group by leaves column ttl materialized', countIf(m = saved_m) = count() FROM t_future_group_by_before_column_ttl;
+DROP TABLE t_future_group_by_before_column_ttl;
