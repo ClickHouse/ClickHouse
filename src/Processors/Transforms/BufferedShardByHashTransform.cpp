@@ -17,10 +17,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-namespace
-{
-
-Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const std::vector<const void *> & touched)
+static Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const std::vector<const void *> & touched)
 {
     Int64 released_bytes = 0;
     for (const void * ptr : touched)
@@ -36,37 +33,76 @@ Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const std::
     return released_bytes;
 }
 
+struct BufferedShardByHashChunkCharge
+{
+    BufferedShardByHashChunkCharge(std::shared_ptr<BufferedShardByHashBudget> budget_, const std::vector<const void *> & touched_)
+        : budget(std::move(budget_))
+        , touched(touched_)
+    {
+    }
+
+    void activate()
+    {
+        active.store(true, std::memory_order_relaxed);
+    }
+
+    void releaseUnlocked()
+    {
+        if (!active.exchange(false, std::memory_order_relaxed))
+            return;
+
+        budget->total_buffered_bytes.fetch_sub(releaseChunkChargeUnlocked(*budget, touched), std::memory_order_relaxed);
+    }
+
+    void release()
+    {
+        /// The charge is attached to a queued chunk before it is transferred from the queue. If insertion into
+        /// `ChunkInfoCollection` fails, that inactive ChunkInfo is destroyed while its caller holds this mutex.
+        /// It owns no accounting yet, so it must not try to acquire the same mutex during that cleanup.
+        if (!active.load(std::memory_order_relaxed))
+            return;
+
+        std::lock_guard lock(budget->mutex);
+        releaseUnlocked();
+    }
+
+    std::shared_ptr<BufferedShardByHashBudget> budget;
+    std::vector<const void *> touched;
+    std::atomic_bool active = false;
+};
+
+namespace
+{
+
 /// Keeps a shuffle budget charge alive while a downstream processor retains the chunk. In particular,
 /// `MergingSortedTransform` retains a pulled input until it advances that input.
 class BufferedShardByHashChunkInfo final : public ChunkInfo
 {
+private:
+    struct State
+    {
+        explicit State(std::shared_ptr<BufferedShardByHashChunkCharge> charge_)
+            : charge(std::move(charge_))
+        {
+        }
+
+        ~State()
+        {
+            charge->release();
+        }
+
+        std::shared_ptr<BufferedShardByHashChunkCharge> charge;
+    };
+
 public:
-    BufferedShardByHashChunkInfo(std::shared_ptr<BufferedShardByHashBudget> budget_, std::vector<const void *> touched_)
-        : state(std::make_shared<State>(std::move(budget_), std::move(touched_)))
+    explicit BufferedShardByHashChunkInfo(std::shared_ptr<BufferedShardByHashChunkCharge> charge_)
+        : state(std::make_shared<State>(std::move(charge_)))
     {
     }
 
     Ptr clone() const override { return std::make_shared<BufferedShardByHashChunkInfo>(*this); }
 
 private:
-    struct State
-    {
-        State(std::shared_ptr<BufferedShardByHashBudget> budget_, std::vector<const void *> touched_)
-            : budget(std::move(budget_))
-            , touched(std::move(touched_))
-        {
-        }
-
-        ~State()
-        {
-            std::lock_guard lock(budget->mutex);
-            budget->total_buffered_bytes.fetch_sub(releaseChunkChargeUnlocked(*budget, touched), std::memory_order_relaxed);
-        }
-
-        std::shared_ptr<BufferedShardByHashBudget> budget;
-        std::vector<const void *> touched;
-    };
-
     std::shared_ptr<State> state;
 };
 
@@ -88,7 +124,7 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     , budget_enabled(max_queue_length_ == 0 && max_buffered_bytes_ != 0)
     , budget(budget_ ? std::move(budget_) : std::make_shared<BufferedShardByHashBudget>())
     , output_queues(num_shards)
-    , port_resident_touched(num_shards)
+    , port_resident_charges(num_shards)
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
@@ -118,9 +154,9 @@ BufferedShardByHashTransform::~BufferedShardByHashTransform()
     for (const auto & queue : output_queues)
         for (const auto & queued : queue)
             released_bytes += releaseTouchedObjectsUnlocked(queued.touched_objects);
-    for (const auto & parked : port_resident_touched)
-        if (parked.has_value())
-            released_bytes += releaseTouchedObjectsUnlocked(*parked);
+    for (const auto & parked : port_resident_charges)
+        if (parked)
+            parked->releaseUnlocked();
     released_bytes += releaseTouchedObjectsUnlocked(pending_input_touched);
     budget->total_buffered_bytes.fetch_sub(released_bytes, std::memory_order_relaxed);
 
@@ -339,10 +375,18 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
-        if (port_resident_touched[shard].has_value() && (output_it->isFinished() || !output_it->hasData()))
+        if (port_resident_charges[shard] && output_it->isFinished())
         {
-            releaseQueuedChunk(*port_resident_touched[shard]);
-            port_resident_touched[shard].reset();
+            /// A finished output still reporting data has discarded that parked chunk. The ChunkInfo remains
+            /// attached until the port is torn down, so release its shared charge explicitly now.
+            port_resident_charges[shard]->releaseUnlocked();
+            port_resident_charges[shard].reset();
+        }
+        else if (port_resident_charges[shard] && !output_it->hasData())
+        {
+            /// The downstream pulled the chunk. Its ChunkInfo now keeps the charge until the downstream
+            /// processor releases its retained input.
+            port_resident_charges[shard].reset();
         }
     }
 }
@@ -539,7 +583,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
             auto drain_it = outputs.begin();
             for (size_t shard = 0; shard < num_shards; ++shard, ++drain_it)
             {
-                if (output_queues[shard].empty() && !port_resident_touched[shard].has_value())
+                if (output_queues[shard].empty() && !port_resident_charges[shard])
                     drain_it->finish();
                 else
                     fully_drained = false;
@@ -685,10 +729,10 @@ void BufferedShardByHashTransform::work()
         if (output_it->isFinished())
         {
             /// The output closed since prepare(): drop the chunk parked in its port (if any) and its queue.
-            if (port_resident_touched[shard].has_value())
+            if (port_resident_charges[shard])
             {
-                releaseQueuedChunk(*port_resident_touched[shard]);
-                port_resident_touched[shard].reset();
+                port_resident_charges[shard]->releaseUnlocked();
+                port_resident_charges[shard].reset();
             }
             clearQueue(shard);
             continue;
@@ -700,12 +744,23 @@ void BufferedShardByHashTransform::work()
         if (!output_it->canPush())
             continue;
 
-        /// Move the charge into the chunk before publishing it. The ChunkInfo follows the chunk through a
-        /// downstream merge and releases its charge only after that merge releases the retained input.
-        QueuedChunk queued = dequeue(shard);
+        /// The charge starts inactive, so if `ChunkInfoCollection::add` throws while this mutex is held its
+        /// cleanup does not attempt to re-lock it. Once the collection owns the ChunkInfo, dequeue transfers
+        /// the queue's charge to it and the explicit port handle releases it if downstream closes this output.
         if (budget_enabled)
-            queued.chunk.getChunkInfos().add(std::make_shared<BufferedShardByHashChunkInfo>(budget, std::move(queued.touched_objects)));
-        output_it->push(std::move(queued.chunk));
+        {
+            auto charge = std::make_shared<BufferedShardByHashChunkCharge>(budget, queue.front().touched_objects);
+            auto info = std::make_shared<BufferedShardByHashChunkInfo>(charge);
+            queue.front().chunk.getChunkInfos().add(std::move(info));
+            QueuedChunk queued = dequeue(shard);
+            charge->activate();
+            port_resident_charges[shard] = std::move(charge);
+            output_it->push(std::move(queued.chunk));
+        }
+        else
+        {
+            output_it->push(std::move(dequeue(shard).chunk));
+        }
     }
 }
 

@@ -4,7 +4,6 @@
 #include <deque>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 
 #include <Columns/IColumn.h>
@@ -19,6 +18,7 @@ namespace DB
 {
 
 class BufferedShardByHashTransform;
+struct BufferedShardByHashChunkCharge;
 
 /// Bookkeeping for one physical buffer (by pointer) referenced by at least one currently-buffered charge
 /// somewhere in a shuffle stage. `refcount` counts every live *visit* that currently holds a reference to it
@@ -55,7 +55,7 @@ struct BufferedShardByHashBudget
 {
     /// Guards `shared_object_refcounts`, `scatters`, the accounting updates to `total_buffered_bytes`, and the
     /// per-scatter bookkeeping of everything currently charged (each scatter's `output_queues` charges and
-    /// `port_resident_touched`) - a scatter reclaims the stale charges of its siblings through `scatters`, so that
+    /// `port_resident_charges`) - a scatter reclaims the stale charges of its siblings through `scatters`, so that
     /// bookkeeping is not private to one scatter any more.
     std::mutex mutex;
     /// Total resident buffered bytes across all scatters of the stage. Updated under `mutex` together with the
@@ -166,7 +166,7 @@ private:
     };
 
     /// Queue bookkeeping that maintains the shared buffered-bytes counter. When `budget_enabled`, all of it -
-    /// like everything else that touches the charges recorded in `output_queues` or `port_resident_touched` -
+    /// like everything else that touches the charges recorded in `output_queues` or `port_resident_charges` -
     /// runs with `budget->mutex` held: a sibling scatter reclaims this scatter's stale port-resident charges
     /// through `BufferedShardByHashBudget::scatters`. Without a budget the chunks carry no charge, so there is
     /// nothing shared to guard and the mutex is not taken (see `lockBudget`).
@@ -275,7 +275,7 @@ private:
     /// the bounded-queue mode used by the sharded aggregator, and a demand-driven stage with the cap disabled -
     /// nothing ever consults `total_buffered_bytes`, so the transform does no ownership accounting whatsoever:
     /// it neither walks the pulled block nor the scattered columns, keeps no charges in `QueuedChunk` /
-    /// `port_resident_touched`, does not register in `BufferedShardByHashBudget::scatters`, and never takes
+    /// `port_resident_charges`, does not register in `BufferedShardByHashBudget::scatters`, and never takes
     /// `budget->mutex`. That accounting is two full recursive walks per input block plus hash-table churn, and
     /// the bounded-queue path is itself a hot-path optimization, so it must not pay for a budget it does not have.
     bool budget_enabled;
@@ -302,7 +302,7 @@ private:
     /// For each shard, the budget charge of the chunk currently parked in its output port (empty if the port
     /// holds no chunk we pushed). The charge stays held until the downstream merge pulls the chunk out of the
     /// port; only then is it truly gone from the pipeline (a port can hold at most one chunk at a time).
-    std::vector<std::optional<std::vector<const void *>>> port_resident_touched;
+    std::vector<std::shared_ptr<BufferedShardByHashChunkCharge>> port_resident_charges;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;
