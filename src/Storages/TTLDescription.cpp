@@ -20,6 +20,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -1194,6 +1195,9 @@ static void checkTTLGroupBySetForAggregateFunctions(
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
+    /// Evaluate a subcolumn TTL via getSubcolumn from the whole (possibly just-updated) column,
+    /// not a stale pre-extracted subcolumn.
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, expression_source_columns);
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
@@ -1202,6 +1206,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, where_expression_source_columns);
         return buildExpressionAndSets(ast, where_expression_source_columns, context);
     }
 
@@ -1240,6 +1245,10 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
+    /// Rewrite subcolumns to getSubcolumn so a subcolumn TTL resolves to its top-level column: a
+    /// mutation of the parent then affects the TTL (getColumnDependencies) and it recomputes from the
+    /// updated parent. Stored expression_ast is kept for SHOW CREATE.
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(ttl_ast, columns.getAllPhysical());
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
@@ -1266,6 +1275,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(ast, columns.getAllPhysical());
                 where_expression
                     = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_source_columns).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();

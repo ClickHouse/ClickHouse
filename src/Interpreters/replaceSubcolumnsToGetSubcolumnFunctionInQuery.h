@@ -11,4 +11,3 @@ namespace DB
 void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns);
 
 }
-
