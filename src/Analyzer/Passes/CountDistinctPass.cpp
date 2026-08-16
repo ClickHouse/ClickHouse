@@ -24,6 +24,8 @@ namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsBool optimize_distributed_group_by_sharding_key;
+    extern const SettingsBool optimize_skip_unused_shards;
 }
 
 namespace
@@ -40,12 +42,14 @@ public:
         if (!getSettings()[Setting::count_distinct_optimization])
             return;
 
-        /// With `distributed_group_by_no_merge` the `GROUP BY` of the rewritten subquery is completed
-        /// independently on each shard and is not merged on the initiator, so the outer `count()` would
-        /// count duplicate per-shard groups instead of the global distinct keys. This is also the case
-        /// the `isRemote()` check below cannot catch when the remote/distributed table is reached through
-        /// a local wrapper such as `StorageMerge` (`merge(...)`), so skip the rewrite outright in this mode.
-        if (getSettings()[Setting::distributed_group_by_no_merge])
+        /// The rewritten subquery must be merged on the initiator. Otherwise, the outer `count()` counts
+        /// duplicate groups returned independently by each shard instead of global distinct keys. This can
+        /// happen with `distributed_group_by_no_merge` and with the sharding-key optimization. The latter
+        /// is not observable through the direct `isRemote()` check below when a distributed table is hidden
+        /// behind a subquery or local wrapper, so fail closed for both settings combinations.
+        if (getSettings()[Setting::distributed_group_by_no_merge]
+            || (getSettings()[Setting::optimize_skip_unused_shards]
+                && getSettings()[Setting::optimize_distributed_group_by_sharding_key]))
             return;
 
         auto * query_node = node->as<QueryNode>();

@@ -65,4 +65,29 @@ SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_rem
 SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
     SETTINGS count_distinct_optimization = 1;
 
+-- `StorageDistributed` also skips the coordinator merge for a `GROUP BY` on its sharding
+-- key when both of these settings are enabled. The outer query sees only a `QueryNode`, so
+-- the direct `isRemote()` check cannot detect this carrier. Keep the rewrite disabled and
+-- ensure the result remains the global count rather than two shard-local counts.
+DROP TABLE IF EXISTS t_cd_sharding;
+DROP TABLE IF EXISTS t_cd_sharding_dist;
+CREATE TABLE t_cd_sharding (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_cd_sharding VALUES (1)(2)(3)(3);
+CREATE TABLE t_cd_sharding_dist AS t_cd_sharding
+    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_cd_sharding, x);
+
+SELECT countDistinct(x) FROM
+(
+    SELECT x FROM t_cd_sharding_dist
+)
+SETTINGS count_distinct_optimization = 0, optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1;
+SELECT countDistinct(x) FROM
+(
+    SELECT x FROM t_cd_sharding_dist
+)
+SETTINGS count_distinct_optimization = 1, optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1;
+
+DROP TABLE t_cd_sharding_dist;
+DROP TABLE t_cd_sharding;
+
 DROP TABLE t_cd_remote;
