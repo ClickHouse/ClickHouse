@@ -776,6 +776,14 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
     instance.restart_clickhouse()
     assert table_name in instance.query("SHOW TABLES FROM test_database").split()
 
+    # Restart reconstructs the publication from the restored list before it republishes the wrapper, so
+    # the surviving table is not merely visible: it resumes replication before the retry.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
     # A retry works even though the prior rollback could not re-add the table to the publication.
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
     assert table_name not in instance.query("SHOW TABLES FROM test_database").split()

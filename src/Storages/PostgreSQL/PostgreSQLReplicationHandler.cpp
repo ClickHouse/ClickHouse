@@ -3515,12 +3515,20 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     {
                         LOG_ERROR(log,
                                   "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
-                                  "Will use tables list from setting. "
+                                  "Recreating the publication from the tables list setting. "
                                   "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
                                   "Or you can you ALTER SETTING. "
                                   "\nPublication tables: {}.\nTables list: {}",
                                   doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
 
+                        /// Unlike coordinated setups, a plain MaterializedPostgreSQL database owns its
+                        /// publication. Returning the setting without removing a mismatching publication
+                        /// only rebuilds the local wrappers: createPublicationIfNeeded later adopts the
+                        /// old publication on ATTACH, leaving the restored table silently non-replicating
+                        /// after a failed DETACH TABLE ... PERMANENTLY recovery and restart. Drop it here
+                        /// so startSynchronization recreates it from `tables_list` before the consumer
+                        /// starts.
+                        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
                         return std::set(expected_tables.begin(), expected_tables.end());
                     }
                 }
