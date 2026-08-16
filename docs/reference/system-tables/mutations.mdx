@@ -89,14 +89,25 @@ In ClickHouse Cloud the `system.mutations` table on each node has all the mutati
 ```sql
 CREATE VIEW mutation_progress AS
 SELECT
+    mutation_id,
+    parts_to_do,
+    -- Both derived values are estimates of the work left, so when any of that work has an
+    -- unknown size they are reported as unknown rather than as a number that is too small.
+    if(work_is_unknown, NULL, formatReadableSize(bytes_remaining)) AS bytes_left,
+    if(work_is_unknown, NULL, round(1 - bytes_remaining / max2(scope_bytes, 1), 4)) AS progress
+FROM
+(
+SELECT
     m.mutation_id AS mutation_id,
     m.parts_to_do AS parts_to_do,
-    -- `parts_to_do` = 0 on an unfinished mutation means the remaining work is not
-    -- known yet, so report it as unknown instead of as finished.
+    -- `parts_to_do` = 0 on an unfinished mutation means the remaining work is not known yet.
+    -- Neither is it known when a part is queued on this replica but not yet on disk: it has no
+    -- `system.parts` row, and the unmatched `LEFT JOIN` below would silently count it as 0 bytes.
+    m.parts_to_do = 0 OR countIf(empty(coalesce(p.name, ''))) > 0 AS work_is_unknown,
     -- A part can be rewritten by an earlier mutation than this one, so only subtract the live
     -- fraction when `parts_in_progress_names` says the rewrite is advancing *this* mutation.
-    if(m.parts_to_do = 0, NULL, formatReadableSize(sum(p.bytes_on_disk * (1 - if(has(m.parts_in_progress_names, part_name), coalesce(mg.progress, 0), 0))))) AS bytes_left,
-    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - if(has(m.parts_in_progress_names, part_name), coalesce(mg.progress, 0), 0))) / max2(any(s.scope_bytes), 1), 4)) AS progress
+    sum(p.bytes_on_disk * (1 - if(has(m.parts_in_progress_names, part_name), coalesce(mg.progress, 0), 0))) AS bytes_remaining,
+    any(s.scope_bytes) AS scope_bytes
 FROM
 (
     -- `system.mutations` has one row per mutation command, and every row of a
@@ -129,7 +140,8 @@ LEFT JOIN
     GROUP BY mut.mutation_id
 ) AS s ON s.mutation_id = m.mutation_id
 GROUP BY m.mutation_id, m.parts_to_do
-ORDER BY m.mutation_id
+)
+ORDER BY mutation_id
 ```
 
 ```sql title="Query"
@@ -143,7 +155,9 @@ SELECT * FROM mutation_progress(database = 'db', table = 't')
 └─────────────────┴─────────────┴────────────┴──────────┘
 ```
 
-Like the built-in `progress` column, the view reports `NULL` rather than a percentage when `parts_to_do` = 0 on a mutation that is not done: the mutation is waiting for an in-flight `INSERT`, and the size of the part it will create is not known before the part is committed.
+Like the built-in `progress` column, the view reports `NULL` rather than a number whenever part of the remaining work has no known size. That happens when `parts_to_do` = 0 on a mutation that is not done, because it is waiting for an in-flight `INSERT` whose part is not committed yet, and when a part it still has to rewrite is queued on this replica but not yet on disk, because a part with no `system.parts` row has no size to weigh.
+
+Note that `bytes_left` goes `NULL` in that second case while the built-in `bytes_to_do` column keeps reporting the parts it can size. The two answer different questions: `bytes_to_do` measures the bytes currently on disk that still need rewriting, so a part that is not on disk contributes nothing to it, whereas `bytes_left` is an estimate of the work remaining, and an estimate that quietly omits unknown work is worse than no estimate.
 
 <Note>
 The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward. `system.parts` and `system.merges` are replica-local, so run the query on the replica executing the mutation. The view reads `system.mutations`, `system.parts`, and `system.merges`, so it requires read access to those tables.
