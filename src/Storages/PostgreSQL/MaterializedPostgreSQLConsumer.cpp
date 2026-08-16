@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
