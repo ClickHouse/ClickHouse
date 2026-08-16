@@ -832,6 +832,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
     }
 
+    /// Database engines can resolve named collections from their persisted `CREATE DATABASE`
+    /// metadata too. A detached database is absent from `DatabaseCatalog`, but that metadata is
+    /// still replayed by a later `ATTACH DATABASE` or server start.
+    const StorageID database_id{database_name, ""};
+    if (drop)
+        NamedCollectionFactory::instance().removeDependencies(database_id);
+    else if (!truncate)
+        NamedCollectionFactory::instance().markDependenciesDetached(database_id);
+
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());

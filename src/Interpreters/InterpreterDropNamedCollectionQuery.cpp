@@ -53,6 +53,30 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             dependent_names.reserve(dependents.size());
             for (const auto & dep : dependents)
             {
+                /// A dependency with an empty table name belongs to a database engine. Its metadata
+                /// is replayed on every server start just like table metadata, so it must keep the
+                /// collection alive while that database exists.
+                if (dep.table_name.empty())
+                {
+                    if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
+                    {
+                        dependent_names.push_back(fmt::format("database `{}`", dep.database_name));
+                        continue;
+                    }
+
+                    /// Database creation is synchronized by the database-level DDL guard. Once it
+                    /// is acquired, an absent database dependency can only be a failed create.
+                    auto ddl_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(dep.database_name);
+                    if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
+                    {
+                        dependent_names.push_back(fmt::format("database `{}`", dep.database_name));
+                        continue;
+                    }
+
+                    NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
+                    continue;
+                }
+
                 const auto table = DatabaseCatalog::instance().tryGetTable(
                     StorageID{dep.database_name, dep.table_name}, current_context);
                 if (table && (!dep.hasUUID() || table->getStorageID().uuid == dep.uuid))

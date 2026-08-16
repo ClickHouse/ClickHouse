@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} --query "CREATE NAMED COLLECTION nc_04907 AS url = 'http://localhost:1/'"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE db_04907 ENGINE = S3(nc_04907)"
+
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION nc_04907" 2>&1 | grep -F "NAMED_COLLECTION_IS_USED"
+
+${CLICKHOUSE_CLIENT} --query "DETACH DATABASE db_04907"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION nc_04907" 2>&1 | grep -F "NAMED_COLLECTION_IS_USED"
+
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE db_04907"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE db_04907"
+${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION nc_04907"
