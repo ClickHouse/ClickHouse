@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS varying_input;
 -- The functions are experimental and disabled by default.
 SET allow_experimental_time_series_aggregate_functions = 0;
 SET allow_experimental_time_series_table = 0;
-SELECT timeSeriesPredictLinearVaryingToGrid(100, 120, 10, 30)(100::DateTime, 10::Float64, [0., 5., 10.]); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT timeSeriesPredictLinearVaryingToGrid(100, 120, 10, 30)(toDateTime(100), 10::Float64, [0., 5., 10.]); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
 SET allow_experimental_time_series_aggregate_functions = 1;
 
