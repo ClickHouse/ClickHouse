@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array)
 * `needles` — Искомые токены. [`String`](/ru/reference/data-types/string) или [`Array(String)`](/ru/reference/data-types/array)
-* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если он явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
+* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если он явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите токены в массиве как есть (без токенизации)**
+**Укажите искомые подстроки в массиве как есть (без токенизации)**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array) или [`Array(Nullable(String))`](/ru/reference/data-types/array) или [`Array(Nullable(FixedString))`](/ru/reference/data-types/array)
 * `needles` — Искомые токены. [`String`](/ru/reference/data-types/string) или [`Array(String)`](/ru/reference/data-types/array)
-* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
+* `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -913,7 +913,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 Перед поиском функция токенизирует аргументы `input` и `phrase` с помощью токенизатора, указанного для текстового индекса.
 Если для столбца не определен текстовый индекс, вместо него используется токенизатор `splitByNonAlpha` — если только токенизатор не передан как необязательный третий аргумент.
-Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `ngrams` или `asciiCJK`.
+Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` или `icu`.
 
 <Note>
   Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
