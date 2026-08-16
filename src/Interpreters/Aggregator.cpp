@@ -61,6 +61,7 @@ namespace ProfileEvents
     extern const Event AggregationBucketTopKConversions;
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
+    extern const Event AdaptiveAggregationPressureStandDowns;
 }
 
 namespace CurrentMetrics
@@ -1950,7 +1951,11 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// frozen one it can join the baseline path for good and spill through the branch below.
             if (params.max_bytes_before_external_group_by
                 && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            {
+                if (adaptive->isLearning())
+                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
                 adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+            }
 
             if (!adaptive->isBaseline())
             {

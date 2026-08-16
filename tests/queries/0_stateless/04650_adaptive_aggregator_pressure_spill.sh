@@ -58,7 +58,27 @@ SELECT 'Learning-phase tables spill under the external threshold';
 SELECT count() FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k) FORMAT Null;
 SELECT coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'ExternalAggregationWritePart';
 
+SELECT 'The learning phase stood down under pressure';
+SELECT coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureStandDowns';
+
 SELECT 'A learning-phase query fits in a limit only spilling can meet';
 SELECT count() FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k)
 SETTINGS max_memory_usage = 700000000;
+"
+
+# The same shape with no external threshold: the pressure trigger cannot fire, so the producers
+# stay in the learning phase and the counter must not move.
+$CLICKHOUSE_LOCAL --query "
+SET max_threads = 4;
+SET group_by_two_level_threshold = 1000;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET enable_sharding_aggregator = 0;
+SET enable_adaptive_aggregator = 1;
+SET adaptive_aggregator_freeze_threshold = 4000000;
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
+
+SELECT 'No pressure, no stand-down';
+SELECT count() FROM (SELECT concat(toString(number), repeat('x', number % 40)) AS k, count() AS c FROM numbers_mt(3000000) GROUP BY k) FORMAT Null;
+SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPressureStandDowns';
 "
