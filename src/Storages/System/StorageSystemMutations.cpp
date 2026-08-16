@@ -29,12 +29,16 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_clickhouse_keeper>/mutations/` directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
         { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
         { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
-        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
+        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). "
+            "For mutations of non-replicated tables it holds a single empty string, whatever the number of partitions, because their block numbers form one sequence "
+            "for the whole table rather than one per partition."
+        },
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
-            "In non-replicated tables, block numbers in all partitions form a single sequence. "
-            "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
+            "In non-replicated tables, block numbers in all partitions form a single sequence, so the array holds exactly one number, paired with the empty partition id above, "
+            "and that number applies to every partition of the table."
         },
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
