@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
 }
@@ -330,6 +331,20 @@ ParallelReplicasEngagement mayEngageParallelReplicasForView(const StorageView & 
         return {};
 
     auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+
+    /// This must mirror `StorageView::getViewContext`, which is the context used by
+    /// `StorageView::readImpl`. When the outer planner unwraps a `VIEW` over an
+    /// eligible `MergeTree`, the view's own read is local, even if a wrapper such as
+    /// `Merge` or `Alias` leaves this preflight responsible for looking through it.
+    Settings view_settings = view_context->getSettingsCopy();
+    if (context->canUseParallelReplicasOnInitiator()
+        && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
+        && !view_settings[Setting::parallel_replicas_plan_based]
+        && view.getUnderlyingMergeTreeStorageForParallelReplicas(context))
+    {
+        view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
+        view_context->setSettings(view_settings);
+    }
 
     QueryTreeNodePtr inner_query_tree;
     try

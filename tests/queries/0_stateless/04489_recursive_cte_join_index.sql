@@ -1170,10 +1170,9 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 -- A delegating wrapper whose target is an ordinary `VIEW` must be judged with the view rule:
 -- `StorageView` is not remote, so an `isRemote` gate on the unwrapped target would silently
--- miss it. A `Merge` over a view over a local table cannot engage parallel replicas (with
--- `parallel_replicas_for_non_replicated_merge_tree = 0` — pinned, the harness may randomize
--- it — the inner `MergeTree` is not eligible either way), so it must keep running under the
--- forcing mode.
+-- miss it. With `parallel_replicas_allow_view_over_mergetree = 1`, `StorageView::readImpl`
+-- disables parallel replicas in the inner view context for a `MergeTree` target. A `Merge`
+-- wrapper must mirror that local read rather than rejecting the forced mode in its preflight.
 DROP VIEW IF EXISTS edges_view_wrapped;
 DROP TABLE IF EXISTS edges_merge_view_local;
 CREATE VIEW edges_view_wrapped AS SELECT * FROM edges;
@@ -1188,7 +1187,8 @@ WITH RECURSIVE merge_view_local_pr AS
 )
 SELECT sum(n) FROM merge_view_local_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
+    automatic_parallel_replicas_mode = 0;
 
 DROP TABLE edges_merge_view_local;
 DROP VIEW edges_view_wrapped;
