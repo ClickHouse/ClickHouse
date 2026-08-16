@@ -26,10 +26,10 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta_azure_key"
 
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_delta_azure_conn (x UInt8)
-    ENGINE = DeltaLakeAzure('${CONNECTION_STRING}', 'cont', 'p')"
+    ENGINE = DeltaLakeAzure('${CONNECTION_STRING}', 'cont', 'p')" 2>/dev/null
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_delta_azure_key (x UInt8)
-    ENGINE = DeltaLakeAzure('${ENDPOINT}', 'cont', 'p', 'devstoreaccount1', '${KEY}')"
+    ENGINE = DeltaLakeAzure('${ENDPOINT}', 'cont', 'p', 'devstoreaccount1', '${KEY}')" 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_delta_azure_conn"
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_delta_azure_key"
