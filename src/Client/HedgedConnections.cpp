@@ -8,7 +8,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace ProfileEvents
 {
@@ -127,14 +126,6 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
-    if (query_plan.getMaxThreads() || query_plan.getConcurrencyControl())
-    {
-        /// Future hedged replicas replay this action after their connection is established.
-        /// Exclude peers that cannot deserialize the plan instead of letting the replay
-        /// serialize it at an older version and lose its execution limits.
-        hedged_connections_factory.setMinQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
-    }
-
     auto send_query_plan = [&query_plan](ReplicaState & replica) { replica.connection->sendQueryPlan(query_plan); };
 
     for (auto & offset_state : offset_states)
@@ -147,6 +138,12 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
 
 bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
 {
+    /// The first replica is established before the query is sent, but a later hedge may
+    /// select any remaining replica. Its query-plan serialization version is unknown here,
+    /// so use the SQL fallback rather than making that hedge unavailable after a timeout.
+    if (hedged_connections_factory.maySelectUnverifiedReplica())
+        return false;
+
     for (const OffsetState & offset_state : offset_states)
     {
         for (const ReplicaState & replica : offset_state.replicas)
