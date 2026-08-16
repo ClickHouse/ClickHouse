@@ -14,6 +14,6 @@ DATA_FILE="$CLICKHOUSE_TEST_UNIQUE_NAME.parquet"
 ${CLICKHOUSE_CLIENT} --query "
     EXPLAIN PLAN
     SELECT t.a.j.k
-    FROM file('$DATA_FILE', Parquet, '$SCHEMA')
+    FROM file('$DATA_FILE', 'Parquet', '$SCHEMA')
     PREWHERE t.a.j.k = 1
 " | grep -x '   Prewhere filter'
