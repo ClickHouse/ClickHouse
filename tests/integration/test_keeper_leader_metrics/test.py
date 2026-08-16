@@ -141,6 +141,12 @@ def test_leader_failover_metrics(started_cluster):
 
         assert last_election_time == 0
         assert last_unavailable_time == 0
+
+        result = get_mntr_metrics(new_leader)
+        assert int(result["zk_sum_leader_unavailable_time"]) == 0
+        assert int(result["zk_cnt_leader_unavailable_time"]) == 0
+        assert int(result["zk_sum_election_time"]) == 0
+        assert int(result["zk_cnt_election_time"]) == 0
     finally:
         if old_leader is not None:
             old_leader.start_clickhouse()
