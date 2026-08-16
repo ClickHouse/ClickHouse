@@ -96,7 +96,10 @@ StorageJoin::StorageJoin(
 
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    if (query_id.empty() && context)
+        query_id = context->getCurrentQueryId();
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return tryLockTimed(lock, type, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
@@ -104,7 +107,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    if (query_id.empty() && context)
+        query_id = context->getCurrentQueryId();
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return lock->getLock(type, query_id, acquire_timeout, false);
