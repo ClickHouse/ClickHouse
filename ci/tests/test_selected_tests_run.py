@@ -122,7 +122,9 @@ def test_selected_tests_fail_when_previous_failure_lookup_fails(monkeypatch):
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
 
     monkeypatch.setattr(
-        targeter, "get_changed_or_new_tests_with_info", lambda strict=False: ([], None)
+        targeter,
+        "get_changed_or_new_tests_with_info",
+        lambda strict=False, include_harness_smoke=False: ([], None),
     )
 
     def raise_cidb_error():
@@ -143,6 +145,27 @@ def test_selected_tests_fail_when_changed_file_lookup_fails():
 
     with pytest.raises(RuntimeError, match="changed files"):
         targeter.get_changed_or_new_tests_with_info(strict=True)
+
+
+def test_selected_tests_add_smoke_tests_for_harness_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(is_local_run=False, get_changed_files=lambda: [])
+    targeter._diff_text = "+++ b/ci/jobs/functional_tests.py\n"
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1.",
+        "01109_exchange_tables.",
+    ]
+
+
+def test_selected_tests_do_not_add_smoke_tests_for_query_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(is_local_run=False, get_changed_files=lambda: [])
+    targeter._diff_text = "+++ b/tests/queries/0_stateless/00001_select_1.sql\n"
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1."
+    ]
 
 
 _NO_TESTS_OUTPUT = (

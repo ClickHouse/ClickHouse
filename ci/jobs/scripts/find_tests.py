@@ -48,6 +48,38 @@ class Targeting:
     INTEGRATION_JOB_TYPE = "Integration"
     STATELESS_JOB_TYPE = "Stateless"
 
+    # The selected-test sanitizer jobs replace their full-suite counterparts,
+    # so a change to the harness itself must not leave every one of those jobs
+    # with an empty selection. Keep one inexpensive test for each of the
+    # parallel and sequential flavors. Both are compatible with the sanitizer
+    # and storage configurations used by the selected-test jobs.
+    STATELESS_HARNESS_SMOKE_TESTS = (
+        "00001_select_1.",
+        "01109_exchange_tables.",
+    )
+
+    # Keep this in sync with the functional-test runner inputs in
+    # `common_ft_job_config` and with the selected-test orchestration. A
+    # change here means test selection or the runner configuration changed,
+    # rather than a query test that can be discovered from its path.
+    _STATELESS_HARNESS_PATHS = (
+        "ci/defs/job_configs.py",
+        "ci/jobs/functional_tests.py",
+        "ci/jobs/scripts/clickhouse_proc.py",
+        "ci/jobs/scripts/find_tests.py",
+        "ci/jobs/scripts/functional_tests_results.py",
+        "ci/jobs/scripts/server_cleanup.py",
+        "ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+        "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
+        "ci/praktika/cidb.py",
+        "ci/workflows/pull_request.py",
+        "tests/clickhouse-test",
+    )
+    _STATELESS_HARNESS_PATH_PREFIXES = (
+        "ci/docker/stateless-test/",
+        "tests/config/",
+    )
+
     def __init__(self, info: Info):
         self.info = info
         self._cidb = None
@@ -295,7 +327,18 @@ class Targeting:
             return False
         return False
 
-    def get_changed_tests(self, strict=False):
+    @classmethod
+    def _is_stateless_harness_file(cls, fpath: str) -> bool:
+        return (
+            fpath in cls._STATELESS_HARNESS_PATHS
+            or fpath.startswith(cls._STATELESS_HARNESS_PATH_PREFIXES)
+            or (
+                Path(fpath).parent == Path("tests")
+                and Path(fpath).suffix == ".txt"
+            )
+        )
+
+    def get_changed_tests(self, strict=False, include_harness_smoke=False):
         # TODO: add support for integration tests
         result = set()
         if hasattr(self, '_diff_text') and self._diff_text:
@@ -317,6 +360,15 @@ class Targeting:
             )
         if not changed_files:
             return result
+
+        if include_harness_smoke and any(
+            self._is_stateless_harness_file(fpath) for fpath in changed_files
+        ):
+            print(
+                "Functional-test harness changed; adding deterministic smoke tests: "
+                f"{list(self.STATELESS_HARNESS_SMOKE_TESTS)}"
+            )
+            result.update(self.STATELESS_HARNESS_SMOKE_TESTS)
 
         for fpath in changed_files:
             if not fpath.startswith("tests/queries/0_stateless/"):
@@ -1838,8 +1890,14 @@ class Targeting:
             for tname, (kw_hits, _kw) in sorted_tests
         ]
 
-    def get_changed_or_new_tests_with_info(self, strict=False):
-        tests = sorted(self.get_changed_tests(strict=strict))
+    def get_changed_or_new_tests_with_info(
+        self, strict=False, include_harness_smoke=False
+    ):
+        tests = sorted(
+            self.get_changed_tests(
+                strict=strict, include_harness_smoke=include_harness_smoke
+            )
+        )
         info = f"Found {len(tests)} changed or new tests:\n"
         for test in tests[:200]:
             info += f" - {test}\n"
@@ -2257,7 +2315,7 @@ class Targeting:
         # no other job runs them in that flavor.
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
             changed_tests, result = self.get_changed_or_new_tests_with_info(
-                strict=True
+                strict=True, include_harness_smoke=True
             )
             add_tests(changed_tests)
             results.append(result)
