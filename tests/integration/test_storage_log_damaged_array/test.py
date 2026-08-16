@@ -23,11 +23,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("engine", ["Log", "TinyLog"])
-def test_read_array_with_missing_elements(started_cluster, engine):
-    node = started_cluster.instances["node"]
-    table = f"damaged_{engine.lower()}"
+def create_table(node, table, engine):
+    """Fills a table with 500 rows of Array(Array(Int64)) and detaches it, returning its data path.
 
+    The outer offsets then describe 1000 inner arrays, the inner offsets 1500 leaf elements.
+    """
     node.query(f"DROP TABLE IF EXISTS {table}")
     node.query(
         f"CREATE TABLE {table} (a UInt64, arr Array(Array(Int64))) ENGINE = {engine}"
@@ -40,23 +40,38 @@ def test_read_array_with_missing_elements(started_cluster, engine):
     table_path = node.query(
         f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
     ).strip()
-
     node.query(f"DETACH TABLE {table}")
+    return table_path
 
-    # Empty the stream holding the sizes of the inner arrays while leaving the outer sizes and the
-    # elements in place, and record the new size so that the size check accepts the table again.
-    # This is the shape a Log table is left in when a write commit is interrupted between streams.
+
+def record_size(node, table_path, stream, size):
+    """Records `size` as the size of `stream` so that the size check accepts the table again."""
     sizes_path = table_path + "sizes.json"
-    node.exec_in_container(
-        ["bash", "-c", f"truncate -s 0 {table_path}arr.size1.bin"], user="root"
-    )
     sizes = json.loads(node.exec_in_container(["cat", sizes_path], user="root"))
     root = sizes.get("clickhouse", sizes.get("yandex"))
-    root["arr%2Esize1%2Ebin"]["size"] = "0"
+    root[stream.replace(".", "%2E")]["size"] = str(size)
     node.exec_in_container(
         ["bash", "-c", f"cat > {sizes_path} << 'EOF'\n{json.dumps(sizes)}\nEOF"],
         user="root",
     )
+
+
+# Emptying one stream and leaving the others in place is the shape a Log table is left in when a
+# write commit is interrupted between streams. Which nesting level ends up lying depends on which
+# stream is gone: without the inner sizes the outer array holds 0 of the 1000 inner arrays its
+# offsets promise, while without the leaf elements the outer level is consistent (1000 == 1000) and
+# it is the inner level that claims 1500 elements it does not have.
+@pytest.mark.parametrize("damaged_stream", ["arr.size1.bin", "arr.bin"])
+@pytest.mark.parametrize("engine", ["Log", "TinyLog"])
+def test_read_array_with_missing_elements(started_cluster, engine, damaged_stream):
+    node = started_cluster.instances["node"]
+    table = f"damaged_{engine.lower()}_{damaged_stream.replace('.', '_')}"
+    table_path = create_table(node, table, engine)
+
+    node.exec_in_container(
+        ["bash", "-c", f"truncate -s 0 {table_path}{damaged_stream}"], user="root"
+    )
+    record_size(node, table_path, damaged_stream, 0)
 
     node.query(f"ATTACH TABLE {table}")
 
@@ -69,6 +84,38 @@ def test_read_array_with_missing_elements(started_cluster, engine):
         assert "arr" in error, error
 
     # The server must still be running: the damaged column was rejected, not consumed.
+    assert node.query("SELECT 1").strip() == "1"
+
+    node.query(f"DROP TABLE {table}")
+
+
+# An elements stream that is short but not empty is rejected while it is being read, before the
+# offsets can be compared with it, so it fails with a different error. Pinned here so that the
+# contract holds for both shapes: no inconsistent array column reads successfully.
+@pytest.mark.parametrize("engine", ["Log", "TinyLog"])
+def test_read_array_with_partial_elements(started_cluster, engine):
+    node = started_cluster.instances["node"]
+    table = f"partial_{engine.lower()}"
+    table_path = create_table(node, table, engine)
+
+    full_size = int(
+        node.exec_in_container(
+            ["bash", "-c", f"stat -c%s {table_path}arr.bin"], user="root"
+        ).strip()
+    )
+    assert full_size > 1, full_size
+    node.exec_in_container(
+        ["bash", "-c", f"truncate -s {full_size // 2} {table_path}arr.bin"], user="root"
+    )
+    record_size(node, table_path, "arr.bin", full_size // 2)
+
+    node.query(f"ATTACH TABLE {table}")
+
+    error = node.query_and_get_error(
+        f"SELECT a, arr FROM {table} ORDER BY a DESC LIMIT 10 FORMAT Null"
+    )
+    assert "CANNOT_READ_ALL_DATA" in error, error
+
     assert node.query("SELECT 1").strip() == "1"
 
     node.query(f"DROP TABLE {table}")
