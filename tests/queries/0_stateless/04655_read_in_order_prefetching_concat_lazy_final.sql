@@ -113,7 +113,7 @@ SELECT 'lazy_final_inner_join_keeps_virtual_rows';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE
     SELECT l.path
-    FROM t_prefetching_concat_lazy_final AS l
+    FROM t_prefetching_concat_lazy_final FINAL AS l
     INNER JOIN t_prefetching_concat_lazy_final_right AS r USING path
     WHERE l.path LIKE '%file.log'
     ORDER BY l.path
