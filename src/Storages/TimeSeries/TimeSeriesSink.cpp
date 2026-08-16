@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
@@ -31,6 +32,7 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <bit>
 #include <ranges>
 
 
@@ -140,7 +142,24 @@ namespace
         }
     }
 
-    /// Fills columns id, timestamp, value for the "samples" table.
+    /// Returns true if `value` is the Prometheus "stale marker": the specific NaN payload
+    /// (`math.Float64frombits(0x7ff0000000000002)` in Prometheus's own Go code) that scrapers and
+    /// remote-write clients use to mark a series as stale (e.g. a scrape target disappeared). Real
+    /// Prometheus's query engine (`value.IsStaleNaN`) recognizes exactly this bit pattern and treats any
+    /// sample carrying it as if the series had no sample at that point ("absent"), never as a literal NaN
+    /// datapoint flowing into aggregations - unlike an ordinary user-supplied NaN, which must still
+    /// propagate as NaN.
+    ///
+    /// The marker can only be recognized while the value is still a Float64: narrowing this exact bit
+    /// pattern to Float32 collapses it to the same canonical quiet-NaN bit pattern (0x7fc00000) that any
+    /// other NaN also narrows to (verified empirically), so the marker becomes indistinguishable from a
+    /// genuine user NaN once stored - there is no reliable way to detect it later at query time.
+    bool isPrometheusStaleMarker(Float64 value)
+    {
+        return std::bit_cast<UInt64>(value) == 0x7FF0000000000002ULL;
+    }
+
+    /// Fills columns id, timestamp, value, and (if the samples table has it) is_stale_marker for the "samples" table.
     void fillSamplesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
@@ -149,8 +168,12 @@ namespace
         const ColumnArray::Offsets & ts_offsets,
         IColumn & out_id_column,
         IColumn & out_timestamp_column,
-        IColumn & out_value_column)
+        IColumn & out_value_column,
+        IColumn * out_is_stale_marker_column)
     {
+        /// Stale markers are only recognizable from a Float64 values column (see isPrometheusStaleMarker()).
+        const auto * float64_values = typeid_cast<const ColumnFloat64 *>(&ts_values);
+
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
         {
@@ -173,6 +196,17 @@ namespace
                 out_id_column.insertManyFrom(id_column, id_index, num_samples);
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
+                if (out_is_stale_marker_column)
+                {
+                    if (float64_values)
+                    {
+                        const auto & values_data = float64_values->getData();
+                        for (size_t j = ts_start; j != ts_end; ++j)
+                            out_is_stale_marker_column->insert(isPrometheusStaleMarker(values_data[j]) ? 1u : 0u);
+                    }
+                    else
+                        out_is_stale_marker_column->insertManyDefaults(num_samples);
+                }
             }
 
             ++id_index;
@@ -575,10 +609,17 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
 
     /// Build source header for samples block.
+    auto samples_target_metadata
+        = time_series_storage.getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    if (samples_target_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
+        is_stale_marker_type = samples_target_metadata->columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
+
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
+    if (is_stale_marker_type)
+        samples_header.insert(ColumnWithTypeAndName{is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 }
 
@@ -732,16 +773,26 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto value_column = scalar_type->createColumn();
         value_column->reserve(total_samples);
 
+        MutableColumnPtr is_stale_marker_column;
+        if (is_stale_marker_type)
+        {
+            is_stale_marker_column = is_stale_marker_type->createColumn();
+            is_stale_marker_column->reserve(total_samples);
+        }
+
         fillSamplesColumns(
             filter,
             *id_column, ts_timestamps, ts_values, ts_offsets,
-            *samples_id_column, *timestamp_column, *value_column);
+            *samples_id_column, *timestamp_column, *value_column,
+            is_stale_marker_column.get());
 
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        if (is_stale_marker_column)
+            samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
         samples_pipeline->push(std::move(samples_block));
     }

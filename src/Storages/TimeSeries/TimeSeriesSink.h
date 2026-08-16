@@ -94,6 +94,9 @@ private:
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
 
+    /// Type of the `is_stale_marker` column in the samples target table, or null if that table doesn't have it.
+    DataTypePtr is_stale_marker_type;
+
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 

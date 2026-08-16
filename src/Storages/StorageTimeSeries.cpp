@@ -766,7 +766,7 @@ This is equivalent to declaring the timestamp and value column types in the samp
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -806,7 +806,7 @@ SQL, but the Prometheus remote-write and remote-read protocols and the PromQL fu
 a staleness marker cannot be told apart from an ordinary `NaN` value.
 
 Columns the engine creates itself get time-series compression codecs:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(Gorilla, ZSTD(1))`. Near-monotonic timestamps barely
+`timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
 See also [Adjusting types of columns](#adjusting-column-types).
 
@@ -865,7 +865,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3)),
     `is_stale_marker` UInt8 DEFAULT 0
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
@@ -900,7 +900,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3)),
     `is_stale_marker` UInt8 DEFAULT 0
 )
 ENGINE = MergeTree
@@ -953,7 +953,7 @@ You can adjust the types of columns in the inner target tables using the `INNER 
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:
