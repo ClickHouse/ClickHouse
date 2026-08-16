@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
@@ -222,6 +223,7 @@ TableJoin::TableJoin(
     , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
     , temporary_files_codec(settings[Setting::temporary_files_codec])
     , allow_experimental_codecs(settings[Setting::allow_experimental_codecs])
+    , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
     , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])

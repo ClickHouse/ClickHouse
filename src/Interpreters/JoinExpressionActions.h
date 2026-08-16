@@ -235,7 +235,7 @@ public:
     JoinActionRef(std::nullptr_t) : node_ptr(nullptr) {} /// NOLINT
 
     explicit JoinActionRef(NodeRawPtr node_, const JoinExpressionActions & expression_actions_);
-    explicit JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_);
+    explicit JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_);
 
     class AddFunction
     {
@@ -291,7 +291,7 @@ private:
     static ActionsDAG & getActionsDAG(JoinExpressionActions::Data & data_);
 
     NodeRawPtr node_ptr = nullptr;
-    std::weak_ptr<JoinExpressionActions::Data> data = {};
+    std::shared_ptr<JoinExpressionActions::Data> data;
 };
 
 }
