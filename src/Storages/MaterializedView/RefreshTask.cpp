@@ -155,9 +155,10 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 }
 
 /// Hash of the parts of the view definition that decide what a refresh reads and produces: the
-/// `SELECT` query and the refresh strategy (which carries `IF CHANGED`, the schedule and the
-/// dependencies). Used to tell whether a persisted `REFRESH ... IF CHANGED` source hash was produced
-/// by the definition the view has now, or by an older one that an `ALTER` has since replaced.
+/// `SELECT` query, the refresh strategy (which carries `IF CHANGED`, the schedule and the
+/// dependencies), and SQL security. Used to tell whether a persisted `REFRESH ... IF CHANGED` source
+/// hash was produced by the definition the view has now, or by an older one that an `ALTER` has since
+/// replaced.
 UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata)
 {
     SipHash hash;
@@ -165,6 +166,8 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata)
         metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
     if (metadata.refresh)
         metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
+    hash.update(metadata.sql_security_type ? static_cast<Int8>(*metadata.sql_security_type) : Int8(-1));
+    hash.update(metadata.definer.value_or(""));
     return hash.get128();
 }
 
@@ -1378,9 +1381,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// The watermark this replica remembers in memory, or - after a server restart, or when the
             /// previous refresh ran on another replica - the one persisted in the coordination state.
             /// The persisted one counts only if the view definition has not changed since it was
-            /// written: an `ALTER ... MODIFY QUERY` / `MODIFY REFRESH` makes the old source hash
-            /// meaningless for the new definition, and this way every replica ignores it without
-            /// needing a separate Keeper write.
+            /// written: an `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` makes
+            /// the old source hash meaningless for the new definition, and this way every replica
+            /// ignores it without needing a separate Keeper write.
             std::optional<UInt128> previous_source_hash = watermark.local_source_hash;
             if (!previous_source_hash.has_value() && watermark.persisted_definition_hash == watermark.definition_hash)
                 previous_source_hash = watermark.persisted_source_hash;

@@ -123,8 +123,9 @@ public:
         /// is not skipped materializes another copy of the source data, so losing the watermark appends
         /// duplicate rows even though nothing changed.
         /// `last_success_definition_hash` makes the watermark self-invalidating: after an
-        /// `ALTER ... MODIFY QUERY` / `MODIFY REFRESH` it no longer matches the current definition, so
-        /// the stored source hash is ignored on every replica without a separate Keeper write.
+        /// `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` it no longer matches
+        /// the current definition, so the stored source hash is ignored on every replica without a
+        /// separate Keeper write.
         /// nullopt if no refresh remembered a hash yet, or if the sources cannot report their
         /// modification state.
         std::optional<UInt128> last_success_source_hash;
