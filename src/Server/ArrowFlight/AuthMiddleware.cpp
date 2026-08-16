@@ -142,14 +142,15 @@ namespace
 }
 
 
-String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::string password)
+String AuthMiddlewareFactory::TokenStorage::getToken(
+    std::string username, std::string password, std::chrono::seconds token_timeout)
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 
     cleanupExpiredTokens();
 
     auto token = toString(UUIDHelpers::generateV4());
-    auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
+    auto expiration_time = std::chrono::steady_clock::now() + token_timeout;
     auto exp_iter = token_expiration_list.insert({expiration_time, token});
     token_expiration_list_index[token] = exp_iter;
     token_to_credentials[token] = {username, password};
@@ -157,7 +158,8 @@ String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::
     return token;
 }
 
-std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenStorage::getCredentials(std::string token)
+std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenStorage::getCredentials(
+    std::string token, std::chrono::seconds token_timeout)
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 
@@ -166,7 +168,7 @@ std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenS
     auto it = token_to_credentials.find(token);
     if (it != token_to_credentials.end())
     {
-        auto expiration_time = std::chrono::steady_clock::now() + std::chrono::seconds(config.getInt("default_session_timeout", 60));
+        auto expiration_time = std::chrono::steady_clock::now() + token_timeout;
         auto new_iter = token_expiration_list.insert({expiration_time, token});
         token_expiration_list.erase(token_expiration_list_index[token]);
         token_expiration_list_index[token] = new_iter;
@@ -192,6 +194,37 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         std::shared_ptr<arrow::flight::ServerMiddleware> * middleware)
 {
     const auto & headers = context.incoming_headers();
+    const auto & config = server.context()->getConfigRef();
+
+    std::string session_id;
+    auto session_it = headers.find("x-clickhouse-session-id");
+    if (session_it != headers.end())
+        session_id = std::string(session_it->second);
+
+    std::string session_check;
+    session_it = headers.find("x-clickhouse-session-check");
+    if (session_it != headers.end())
+        session_check = std::string(session_it->second);
+
+    std::string session_timeout_str;
+    session_it = headers.find("x-clickhouse-session-timeout");
+    if (session_it != headers.end())
+        session_timeout_str = std::string(session_it->second);
+
+    unsigned session_timeout = 0;
+    if (!session_timeout_str.empty())
+    {
+        ReadBufferFromString buf(session_timeout_str);
+        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+            return arrow::Status::Invalid("Invalid session timeout: " + session_timeout_str);
+    }
+
+    std::string session_close;
+    session_it = headers.find("x-clickhouse-session-close");
+    if (session_it != headers.end())
+        session_close = std::string(session_it->second);
+
+    const auto bearer_token_timeout = std::chrono::seconds(config.getUInt("arrowflight.bearer_token_timeout_seconds", 60));
 
     std::string username("default");
     std::string password;
@@ -210,7 +243,7 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         else if (auto token_opt = getTokenFromBearerHeader(headers); token_opt && *token_opt != "None")
         {
             token = *token_opt;
-            credentials = token_storage.getCredentials(token);
+            credentials = token_storage.getCredentials(token, bearer_token_timeout);
             if (!credentials)
                 return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
 
@@ -225,45 +258,17 @@ arrow::Status AuthMiddlewareFactory::StartCall(
 
     try
     {
-        std::string session_id;
-        auto session_it = headers.find("x-clickhouse-session-id");
-        if (session_it != headers.end())
-            session_id = std::string(session_it->second);
-
-        std::string session_check;
-        session_it = headers.find("x-clickhouse-session-check");
-        if (session_it != headers.end())
-            session_check = std::string(session_it->second);
-
-        std::string session_timeout_str;
-        session_it = headers.find("x-clickhouse-session-timeout");
-        if (session_it != headers.end())
-            session_timeout_str = std::string(session_it->second);
-
-        unsigned session_timeout = 0;
-        if (!session_timeout_str.empty())
-        {
-            ReadBufferFromString buf(session_timeout_str);
-            if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-                return arrow::Status::Invalid("Invalid session timeout: " + session_timeout_str);
-        }
-
-        std::string session_close;
-        session_it = headers.find("x-clickhouse-session-close");
-        if (session_it != headers.end())
-            session_close = std::string(session_it->second);
-
         if (session_id.empty())
             session->makeSessionContext();
         else
-            session->makeSessionContext(session_id, parseSessionTimeout(server.context()->getConfigRef(), session_timeout), session_check == "1");
+            session->makeSessionContext(session_id, parseSessionTimeout(config, session_timeout), session_check == "1");
 
         if (auth)
-            token = token_storage.getToken(username, password);
+            token = token_storage.getToken(username, password, bearer_token_timeout);
 
         auto parsed_session_timeout = session_id.empty()
             ? std::chrono::steady_clock::duration{0}
-            : parseSessionTimeout(server.context()->getConfigRef(), session_timeout);
+            : parseSessionTimeout(config, session_timeout);
 
         *middleware = std::make_unique<AuthMiddleware>(session, token, username, calls_data, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true), parsed_session_timeout);
     }

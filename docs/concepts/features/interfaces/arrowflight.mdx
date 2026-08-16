@@ -66,7 +66,7 @@ Clients authenticate with a username and password via the standard HTTP `Authori
 
 ### Bearer Token Authentication {#bearer-auth}
 
-Subsequent requests can use the Bearer token returned from Basic authentication via the `Authorization: Bearer <token>` header. The token is automatically refreshed on each use and expires based on the `default_session_timeout` server setting (default: 60 seconds).
+Subsequent requests can use the Bearer token returned from Basic authentication via the `Authorization: Bearer <token>` header. The token is automatically refreshed on each use. Its sliding expiration is controlled by `arrowflight.bearer_token_timeout_seconds` (default: 60 seconds).
 
 ### Python Example {#auth-python-example}
 
@@ -128,8 +128,9 @@ Sessions allow setting persistent ClickHouse settings via the `SetSessionOptions
 | `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false` | If `true`, poll descriptors are cancelled after being consumed by `PollFlightInfo`. |
 | `arrowflight.max_prepared_statements_per_user` | `100` | Maximum number of open prepared statements per user. Set to `0` to disable the limit. |
 | `arrowflight.prepared_statements_lifetime_seconds` | `-1` | Prepared statement lifetime mode. `> 0`: use this value as lifetime and refresh expiration on each request for both session-bound and session-less statements. `0`: disable automatic expiration. `-1`: for session-bound statements, use session timeout as lifetime and refresh it on each request; session-less statements do not expire automatically. |
+| `arrowflight.bearer_token_timeout_seconds` | `60` | Bearer token sliding expiration in seconds. |
 | `enable_arrow_close_session` | `true` | Allow clients to close sessions via the `x-clickhouse-session-close` header. |
-| `default_session_timeout` | `60` | Default session timeout in seconds. Also controls Bearer token expiration. |
+| `default_session_timeout` | `60` | Default session timeout in seconds. |
 | `max_session_timeout` | `3600` | Maximum allowed session timeout in seconds. |
 
 ## Supported RPC Methods {#rpc-methods}

@@ -1,0 +1,5 @@
+<clickhouse>
+    <arrowflight>
+        <bearer_token_timeout_seconds>3</bearer_token_timeout_seconds>
+    </arrowflight>
+</clickhouse>

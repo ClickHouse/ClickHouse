@@ -72,14 +72,14 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
     class TokenStorage
     {
     public:
-        explicit TokenStorage(const Poco::Util::AbstractConfiguration & config_) : config(config_) {}
+        TokenStorage() = default;
 
         /// Generates unique token for given credentials and saves it in storage.
-        String getToken(std::string username, std::string password);
+        String getToken(std::string username, std::string password, std::chrono::seconds token_timeout);
 
         /// Returns credential associated with specific token and updates expiration time for this token.
         /// If the token isn't found (never existed or expired) - returns empty optional.
-        std::optional<std::pair<std::string, std::string>> getCredentials(std::string token);
+        std::optional<std::pair<std::string, std::string>> getCredentials(std::string token, std::chrono::seconds token_timeout);
 
     private:
         void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);
@@ -90,14 +90,11 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
         TokenExpirationList token_expiration_list TSA_GUARDED_BY(token_mutex);
         std::unordered_map<std::string, TokenExpirationList::iterator> token_expiration_list_index TSA_GUARDED_BY(token_mutex);
         std::unordered_map<std::string, std::pair<std::string, std::string>> token_to_credentials TSA_GUARDED_BY(token_mutex);
-
-        const Poco::Util::AbstractConfiguration & config;
     };
 
 public:
     explicit AuthMiddlewareFactory(IServer & server_, ArrowFlight::CallsData & calls_data_)
         : server(server_)
-        , token_storage(server_.config())
         , calls_data(calls_data_)
     {}
 
