@@ -129,6 +129,26 @@ TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
     expectUsage(hierarchy, 0);
 }
 
+TEST(MemoryTracker, SpeculativeReservationRanksQueryForGlobalOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+
+    first.addSpeculativeReservation(reservation);
+    EXPECT_GT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+
+    first.subSpeculativeReservation(reservation);
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+}
+
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
 {
     const Int64 amount_before = total_memory_tracker.get();
