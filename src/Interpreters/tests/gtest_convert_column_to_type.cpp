@@ -174,6 +174,18 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"UInt16", Field(UInt64(19000)), "Date"},
         {"Date", Field(UInt64(19000)), "DateTime('UTC')"},
 
+        /// numeric -> date family (column-native path)
+        {"UInt64", Field(UInt64(19000)), "Date"},                         // 19000
+        {"Int64", Field(Int64(19000)), "Date"},                          // 19000
+        {"UInt64", Field(UInt64(70000)), "Date"},                        // out of UInt16 range -> null
+        {"Int64", Field(Int64(-1)), "Date"},                             // negative -> null
+        {"Int64", Field(Int64(19000)), "Date32"},                        // in window
+        {"UInt64", Field(UInt64(19000)), "Date32"},                      // in window
+        {"Int64", Field(Int64(3000000)), "Date32"},                      // > max extended day -> null
+        {"Int64", Field(Int64(-800000)), "Date32"},                      // < min extended day -> null
+        {"UInt64", Field(UInt64(1700000000)), "DateTime('UTC')"},        // fits UInt32
+        {"UInt64", Field(UInt64(5000000000)), "DateTime('UTC')"},        // > UInt32 max -> truncates (raw, no range check)
+
         /// nullable / lowcardinality wrappers
         {"Nullable(Int32)", Field(Int64(7)), "Int64"},
         {"Nullable(Int32)", Field(Null()), "Int64"},                     // null in, non-null to -> not representable

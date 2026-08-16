@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -187,6 +188,58 @@ std::optional<ColumnPtr> tryConvertToDecimalColumnNative(
     return std::nullopt;
 }
 
+/// Faithful column-native numeric -> date conversions - the `Date`/`Date32`/`DateTime` branches of
+/// `convertFieldToType`'s number-representable path. Reuses the proven native-number path
+/// (`tryConvertNumericColumnNative`, i.e. `accurate::convertNumeric`) for the accurate integer step and
+/// mirrors each target's quirk exactly: `Date` is a range-checked `UInt16`; `Date32` is an `Int32` day
+/// number restricted to the extended-range window `[DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM]`;
+/// `DateTime` keeps the value unchanged (no range check - `convertFieldToType` returns it as-is and it is
+/// then truncated into the `UInt32` column). Sources are native integers only (matching the `UInt64`/`Int64`
+/// field branches there); `Bool`, wide integers and floats fall through to the `Field` path, as do the
+/// cross-calendar (`Date`<->`DateTime`), `DateTime64`/`Time`/`Time64` conversions (a later increment).
+/// Returns the converted size-1 column, a null `ColumnPtr{}` for a not-representable value, or
+/// std::nullopt when not handled here. Pinned by `gtest_convert_column_to_type`.
+std::optional<ColumnPtr> tryConvertToDateColumnNative(
+    const IColumn & value, const DataTypePtr & from, const DataTypePtr & to, bool convert_inexact_floats)
+{
+    const WhichDataType which_from(from);
+    if (isBool(from) || !(which_from.isNativeInt() || which_from.isNativeUInt()))
+        return std::nullopt;
+
+    const WhichDataType which_to(to);
+
+    /// `Date` (UInt16): accurate range-checked conversion, identical to `convertNumericType<UInt16>`.
+    /// A `UInt16` result column is exactly a `Date` column.
+    if (which_to.isDate())
+        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt16>(), convert_inexact_floats);
+
+    /// `Date32` (Int32 day number): accurate to `Int64`, then restrict to the representable window.
+    if (which_to.isDate32())
+    {
+        auto as_int64 = tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeInt64>(), convert_inexact_floats);
+        if (!as_int64 || !*as_int64)
+            return as_int64;  // std::nullopt (n/a) or null `ColumnPtr` (out of `Int64` range)
+        const Int64 day_num = (*as_int64)->getInt(0);
+        if (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
+            return ColumnPtr{};
+        auto column = to->createColumn();
+        assert_cast<ColumnInt32 &>(*column).getData().push_back(static_cast<Int32>(day_num));
+        return column;
+    }
+
+    /// `DateTime` (UInt32): `convertFieldToType` returns the unsigned value unchanged, which is then
+    /// stored (truncated) into the `UInt32` column - no range check. `Int64` sources are not handled
+    /// there, so leave them on the `Field` path.
+    if (which_to.isDateTime() && which_from.isNativeUInt())
+    {
+        auto column = to->createColumn();
+        assert_cast<ColumnUInt32 &>(*column).getData().push_back(static_cast<UInt32>(value.getUInt(0)));
+        return column;
+    }
+
+    return std::nullopt;
+}
+
 /// `IColumn::get` reconstructs a `Field` using the storage column's `NearestFieldType`, which does not
 /// round-trip the `Field` tag for `Bool`: a `DataTypeBool` column is a plain `ColumnUInt8`, so `get`
 /// yields a `UInt64` `Field`. `convertFieldToType` keys on that tag (e.g. `Bool -> String` gives
@@ -271,6 +324,10 @@ ColumnPtr convertColumnToTypeOrNull(
     /// a strict-rejected lossy value; std::nullopt means "not handled here, use the `Field` fallback").
     if (auto decimal = tryConvertToDecimalColumnNative(unwrapped, from, to, strict))
         return std::move(*decimal);
+
+    /// numeric -> `Date`/`Date32`/`DateTime` column-native (same optional convention as above).
+    if (auto date = tryConvertToDateColumnNative(unwrapped, from, to, convert_inexact_floats))
+        return std::move(*date);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
