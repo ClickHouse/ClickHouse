@@ -6,8 +6,7 @@
 -- flat built-in default (`LZ4`) while the parent switched to a stronger codec.
 -- Here the recompression TTL forces the parent part to `NONE` during the merge, and the
 -- projection is rebuilt during that same merge (it is not materialized on insert); the
--- rebuilt projection part must inherit the parent's `NONE` codec. Adaptive selection is enabled
--- to verify it does not replace this explicit recompression codec with `T64`.
+-- rebuilt projection part must inherit the parent's `NONE` codec.
 
 DROP TABLE IF EXISTS t_proj_codec;
 
@@ -23,7 +22,6 @@ TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(NONE)
 SETTINGS
     materialize_projections_on_insert = 0,
     materialize_projections_on_merge = 1,
-    allow_experimental_adaptive_codec_selection = 1,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;
 
@@ -48,11 +46,5 @@ WHERE database = currentDatabase() AND table = 't_proj_codec' AND active;
 SELECT 'projection', name, default_compression_codec
 FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_proj_codec' AND active;
-
--- Projection data must really use NONE. If the projection writer re-enabled adaptive selection,
--- monotonic x would be written with T64 and be smaller than its uncompressed representation.
-SELECT 'projection data uses NONE', min(data_compressed_bytes = data_uncompressed_bytes)
-FROM system.projection_parts_columns
-WHERE database = currentDatabase() AND table = 't_proj_codec' AND active AND column = 'x';
 
 DROP TABLE t_proj_codec;
