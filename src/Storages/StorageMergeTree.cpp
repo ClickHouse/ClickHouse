@@ -2409,16 +2409,24 @@ bool StorageMergeTree::optimize(
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 
+        /// Install this guard before allocating `held_merge_slots`: `reserveTaskSlots` has already
+        /// updated the metric, so an allocation exception must not leak the reservation.
+        size_t reserved_slots_to_release = reserved_merge_slots;
+        std::shared_ptr<std::atomic<size_t>> held_merge_slots;
+        SCOPE_EXIT({
+            if (held_merge_slots)
+                reserved_slots_to_release = held_merge_slots->exchange(0);
+
+            if (reserved_slots_to_release)
+                merge_mutate_executor->releaseTaskSlots(reserved_slots_to_release);
+        });
+
         /// Reserved slots are released as partitions finish (see the per-task release below) rather
         /// than held for the whole query: slots reserved for partitions that turn out to have nothing
         /// to merge (e.g. already merged, or optimize_skip_merged_partitions) must not stay charged in
-        /// the task metric while a few long merges run. `held_merge_slots` is the count still charged;
-        /// SCOPE_EXIT releases whatever remains (e.g. on the sequential path or an early return).
-        auto held_merge_slots = std::make_shared<std::atomic<size_t>>(reserved_merge_slots);
-        SCOPE_EXIT({
-            if (const size_t rest = held_merge_slots->exchange(0))
-                merge_mutate_executor->releaseTaskSlots(rest);
-        });
+        /// the task metric while a few long merges run. `held_merge_slots` is the count still charged.
+        held_merge_slots = std::make_shared<std::atomic<size_t>>(reserved_merge_slots);
+        reserved_slots_to_release = 0;
 
         std::optional<PreformattedMessage> failure_reason;
 
@@ -2521,11 +2529,11 @@ bool StorageMergeTree::optimize(
         if (partition)
             partition_id = getPartitionIDFromQuery(partition, local_context);
 
-        /// An explicit-partition OPTIMIZE FINAL also executes its foreground merge synchronously.
-        /// Reserve an executor slot first, just as the all-partitions path does, so it cannot
-        /// bypass the configured merge capacity or begin new work after executor shutdown.
+        /// An explicit-partition OPTIMIZE executes its foreground merge synchronously, both with
+        /// and without FINAL. Reserve an executor slot first, just as the all-partitions path does,
+        /// so it cannot bypass the configured merge capacity or begin new work after shutdown.
         size_t reserved_merge_slot = 0;
-        if (partition && final && merge_mutate_executor)
+        if (partition && merge_mutate_executor)
         {
             reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
             if (reserved_merge_slot == 0)
