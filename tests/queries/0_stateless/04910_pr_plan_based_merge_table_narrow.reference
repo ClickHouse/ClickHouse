@@ -1,0 +1,11 @@
+-- narrowing enabled
+1
+-- narrowing disabled by the settings
+0
+-- ORDER BY is a full sort above the union, narrowing stays allowed
+1	1
+0
+1
+2
+3
+4

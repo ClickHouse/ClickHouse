@@ -4,6 +4,9 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -218,12 +221,23 @@ void UnionStep::describePipeline(FormatSettings & settings) const
 
 void UnionStep::serialize(Serialization & ctx) const
 {
-    (void)ctx;
+    /// Whether this union may concatenate its streams follows from the plan it belongs to, not from the
+    /// settings, so only the node that built the plan can decide it - see the comment on `allow_narrowing`.
+    /// `max_threads` is deliberately left out: it is not a decision but a budget, and every node computes
+    /// its own from `max_threads`, which is resolved locally (`auto` becomes that node's core count and is
+    /// then adjusted for its free memory). Writing the initiator's value would impose the initiator's
+    /// capacity on every replica - and, since it feeds the narrowing limit, would raise rather than lower it.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_NARROWING)
+        writeBinary(allow_narrowing, ctx.out);
 }
 
 QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<UnionStep>(ctx.input_headers);
+    bool allow_narrowing = false;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_NARROWING)
+        readBinary(allow_narrowing, ctx.in);
+
+    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/ 0, allow_narrowing);
 }
 
 QueryPlanStepPtr UnionStep::clone() const

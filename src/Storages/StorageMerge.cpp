@@ -2149,8 +2149,18 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
         plans.push_back(std::make_unique<QueryPlan>(std::move(child.plan)));
     }
 
+    /// Narrowing is allowed, as it is for the `UNION ALL` this union stands for. `initializePipeline` does
+    /// the same thing by hand (`pipeline.narrow`) because it unites pipelines, where the step's own machinery
+    /// is out of reach; here the union step caps the number of simultaneously reading children itself, by
+    /// `max_streams_for_union_step` and `max_streams_for_union_step_to_max_threads_ratio`. Of the three cases
+    /// in which `initializePipeline` skips narrowing, two cannot happen for an expanded `Merge` - every child
+    /// is a plain `MergeTree` read, so no child produces sorted streams or partial aggregation states - and
+    /// reading in order is handled generically: `optimizeReadInOrder` and `applyOrder` call `disableNarrowing`
+    /// on a union whose streams have to stay individually sorted.
     QueryPlan union_plan;
-    union_plan.unitePlans(std::make_unique<UnionStep>(std::move(input_headers)), std::move(plans));
+    union_plan.unitePlans(
+        std::make_unique<UnionStep>(std::move(input_headers), /*max_threads_=*/ 0, /*allow_narrowing_=*/ true),
+        std::move(plans));
 
     /// This step is destroyed once it is replaced by the union, so the tables it holds must be kept alive by
     /// the plan instead - the same holders `initializePipeline` attaches to the pipeline.
