@@ -21,7 +21,7 @@ SET allow_experimental_logsql_dialect = 1;
 SET logsql_table = 'logs_04891';
 SET dialect = 'logsql';
 
--- Selected text filters stringify typed fields, and a missing Nullable field is empty.
+-- Selected text filters stringify typed fields; an empty Nullable field matches an empty filter.
 size:* | count();
 size:i(""*) | count();
 size:i(*) | count();
