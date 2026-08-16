@@ -81,12 +81,11 @@ for serialize in 1 0; do
          SETTINGS serialize_query_plan = $serialize, enable_analyzer = 1" 2>&1 | grep -c -F "LEAKED"
 done
 
-# The plan shape does not depend on who runs the query, and wrapping EXPLAIN in a subquery needs
-# CREATE TEMPORARY TABLE, so the checks below run as the default user. They pin every setting the
-# shape depends on, because the test also runs with randomized settings. The settings are pinned
-# on the client and not with a SETTINGS clause inside the subquery, because changing
+# The checks below run as the restricted user so the row policy on `projecting_view` applies. They
+# pin every setting the shape depends on, because the test also runs with randomized settings. The
+# settings are pinned on the client and not with a SETTINGS clause inside the subquery, because changing
 # `enable_analyzer` in a subquery is rejected when the server default differs.
-explain_client="${CLICKHOUSE_CLIENT} --enable_parallel_replicas 0
+explain_client="${CLICKHOUSE_CLIENT} --user \"$user\" --enable_parallel_replicas 0
     --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0"
 
 echo "===== an outer predicate merges into a view that is not a barrier ====="
