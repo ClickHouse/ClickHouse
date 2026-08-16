@@ -1,5 +1,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Formats/FormatFactory.h>
@@ -166,7 +167,11 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 }
             }
 
-            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+            std::unique_ptr<ReadBuffer> buffer;
+            if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(last_object_info.get()))
+                buffer = object_info_in_archive->archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            else
+                buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
             size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
             auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
             for (const auto & file_bucket : file_bucket_infos)

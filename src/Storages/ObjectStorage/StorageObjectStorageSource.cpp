@@ -2004,13 +2004,18 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!path_in_archive.has_value())
         return object_info;
 
-    return createObjectInfoInArchive(path_to_archive, path_in_archive.value(), object_info->relative_path_with_metadata.read_source_index);
+    return createObjectInfoInArchive(
+        path_to_archive,
+        path_in_archive.value(),
+        object_info->relative_path_with_metadata.read_source_index,
+        object_info->file_bucket_info);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
     const std::string & path_to_archive,
     const std::string & path_in_archive,
-    std::optional<size_t> read_source_index)
+    std::optional<size_t> read_source_index,
+    FileBucketInfoPtr file_bucket_info)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
     archive_object->relative_path_with_metadata.read_source_index = read_source_index;
@@ -2037,8 +2042,10 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
         }
     }
 
-    return std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
+    auto object_info_in_archive = std::make_shared<ArchiveIterator::ObjectInfoInArchive>(
         archive_object, path_in_archive, archive_reader, archive_reader->getFileInfo(path_in_archive));
+    object_info_in_archive->file_bucket_info = std::move(file_bucket_info);
+    return object_info_in_archive;
 }
 
 static IArchiveReader::NameFilter createArchivePathFilter(const std::string & archive_pattern)

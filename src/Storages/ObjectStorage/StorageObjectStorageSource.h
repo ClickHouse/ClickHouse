@@ -182,7 +182,8 @@ private:
     ObjectInfoPtr createObjectInfoInArchive(
         const std::string & path_to_archive,
         const std::string & path_in_archive,
-        std::optional<size_t> read_source_index);
+        std::optional<size_t> read_source_index,
+        FileBucketInfoPtr file_bucket_info);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
