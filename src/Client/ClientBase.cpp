@@ -2936,6 +2936,8 @@ void ClientBase::processParsedSingleQuery(
 
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
+            const Dialect old_dialect = old_settings[Setting::dialect];
+
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
             replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
@@ -2947,6 +2949,14 @@ void ClientBase::processParsedSingleQuery(
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+            /// `SET dialect` is parsed with `ParserQuery` as an escape hatch from non-ClickHouse
+            /// dialects. That bypasses `ParserKQLStatement`, which normally clears its thread-local
+            /// `let` bindings. Do it after the setting was accepted, and only when crossing Kusto,
+            /// so a rejected `SET` leaves both the dialect and bindings unchanged.
+            const Dialect new_dialect = client_context->getSettingsRef()[Setting::dialect];
+            if (old_dialect != new_dialect && (old_dialect == Dialect::kusto || new_dialect == Dialect::kusto))
+                kqlLetBindingsClear();
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -3627,6 +3637,62 @@ bool ClientBase::processQueryText(const String & text)
         return false;
     };
 
+    const auto dialect_command_is_insert_data = [&](const String & sql_chunk)
+    {
+        const char * query_begin = sql_chunk.data();
+        const char * const queries_end = query_begin + sql_chunk.size();
+        const auto & settings = client_context->getSettingsRef();
+
+        while (query_begin < queries_end)
+        {
+            const char * query_end = query_begin;
+            ASTPtr parsed_query;
+            try
+            {
+                parsed_query = parseQuery(query_end, queries_end, settings, /*allow_multi_statements=*/ true);
+            }
+            catch (...)
+            {
+                /// Do not reinterpret a possible SQL/data line as a meta-command when the
+                /// preceding text cannot be parsed. Let the normal script path report the error.
+                return true;
+            }
+
+            if (!parsed_query)
+                return true;
+
+            const auto * insert = parsed_query->as<ASTInsertQuery>();
+            if (!insert)
+            {
+                if (const auto * explain = parsed_query->as<ASTExplainQuery>(); explain && explain->getExplainedQuery())
+                    insert = explain->getExplainedQuery()->as<ASTInsertQuery>();
+            }
+
+            if (insert && insert->data && insert->format != "Values")
+            {
+                /// Generic inline INSERT data ends at the first empty line. If the accumulated SQL
+                /// chunk reaches its end first, the following physical line is still data, not a
+                /// client meta-command.
+                const auto data_end = String(insert->data, queries_end).find("\n\n");
+                if (data_end == std::string::npos)
+                    return true;
+                query_begin = insert->data + data_end + 2;
+                continue;
+            }
+
+            if (query_end <= query_begin)
+                return true;
+            adjustQueryEnd(
+                query_end,
+                queries_end,
+                static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+                static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
+            query_begin = query_end;
+        }
+
+        return false;
+    };
+
     /// `clickhouse-local` accepts client meta-commands in noninteractive input. Split standalone
     /// dialect-command lines from a script before feeding the surrounding SQL to the multiquery
     /// parser, because the latter necessarily parses a whole input chunk with one dialect.
@@ -3640,7 +3706,7 @@ bool ClientBase::processQueryText(const String & text)
             const size_t line_size = (line_end == String::npos ? text.size() : line_end) - line_begin;
             const std::string_view line{text.data() + line_begin, line_size};
 
-            if (is_dialect_command(line))
+            if (is_dialect_command(line) && !dialect_command_is_insert_data(sql_chunk))
             {
                 if (!sql_chunk.empty() && !executeMultiQuery(sql_chunk))
                     return false;
@@ -3787,7 +3853,6 @@ bool ClientBase::processQueryText(const String & text)
 
             try
             {
-                const Dialect old_dialect = client_context->getSettingsRef()[Setting::dialect];
                 /// Execute the equivalent SQL through the normal query path. Besides validating the
                 /// value, this lets the server enforce query-setting constraints. The normal SET
                 /// bookkeeping persists the setting only after a successful exchange, so a rejected
@@ -3795,9 +3860,6 @@ bool ClientBase::processQueryText(const String & text)
                 if (!processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name)))
                     return true;
 
-                const Dialect new_dialect = client_context->getSettingsRef()[Setting::dialect];
-                if (old_dialect != new_dialect && (old_dialect == Dialect::kusto || new_dialect == Dialect::kusto))
-                    kqlLetBindingsClear();
             }
             catch (...)
             {

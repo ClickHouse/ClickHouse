@@ -57,6 +57,17 @@ send -- "print x\r"
 expect -- "Unknown expression identifier `x`"
 expect -- "(kusto) :) "
 
+# The SQL SET escape follows the same Kusto binding cleanup rules.
+send -- "let x = 42\r"
+expect -- "(kusto) :) "
+send -- "SET dialect = 'clickhouse'\r"
+expect -- ":) "
+send -- "SET dialect = 'kusto'\r"
+expect -- "(kusto) :) "
+send -- "print x\r"
+expect -- "Unknown expression identifier `x`"
+expect -- "(kusto) :) "
+
 # The /language and /lang aliases work; the default dialect is not shown in the prompt.
 send -- "/language clickhouse\r"
 expect -- ":) "
@@ -111,6 +122,21 @@ if {![regexp {(^|\n)0(\r?\n|$)} $output]} {
     exit 1
 }
 file delete $queries_file
+
+# A line that resembles a dialect command remains inline FORMAT data.
+set insert_file "$CLICKHOUSE_TMP/$basename.insert"
+set fp [open $insert_file w]
+puts $fp "CREATE TABLE t (s String) ENGINE = Memory;\nINSERT INTO t FORMAT TSV\n/dialect\n\nSELECT s FROM t;"
+close $fp
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --queries-file=$insert_file"} output]} {
+    puts stderr "clickhouse-local failed to keep /dialect as INSERT data: $output"
+    exit 1
+}
+if {![regexp {(^|\n)/dialect(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not preserve /dialect INSERT data: $output"
+    exit 1
+}
+file delete $insert_file
 
 # A newline-terminated noninteractive meta-command without a dialect command
 # must retain the regular `clickhouse-local` processing path.
