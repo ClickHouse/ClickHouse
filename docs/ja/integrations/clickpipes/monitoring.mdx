@@ -102,10 +102,12 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ### レイテンシ
 </div>
 
-| メトリクス                                     | 型             | 利用可能対象              | 説明                                                         |
-| ----------------------------------------- | ------------- | ------------------- | ---------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | ストリーミング、オブジェクトストレージ | レコードがソースで生成されてから ClickHouse に書き込まれるまでの時間 (ミリ秒) 。           |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres のみ)   | ソース側のレプリケーションスロットのラグ (MiB) 。Postgres ClickPipes でのみ出力されます。 |
+| メトリクス                                     | 型             | 利用可能対象            | 説明                                                         |
+| ----------------------------------------- | ------------- | ----------------- | ---------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | すべて               | レコードがソースで生成されてから ClickHouse に書き込まれるまでの時間 (ミリ秒) 。           |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres のみ) | ソース側のレプリケーションスロットのラグ (MiB) 。Postgres ClickPipes でのみ出力されます。 |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC               | ソースイベントのタイムスタンプから ClickPipes での処理までのラグ (ミリ秒) 。             |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC               | ClickPipe でイベントを受信してから ClickHouse テーブルに書き込むまでのラグ (ミリ秒) 。   |
 
 <div id="metrics-resources">
   ### リソース使用状況
