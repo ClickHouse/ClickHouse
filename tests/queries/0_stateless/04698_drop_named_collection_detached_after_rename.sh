@@ -23,6 +23,7 @@ CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE t (x UInt32) ENGINE = URL(${NC});
 RENAME TABLE t TO t_renamed;
 DETACH TABLE t_renamed;
+SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 "
 ${CLICKHOUSE_CLIENT} -m -q "
@@ -39,6 +40,7 @@ CREATE DATABASE ${DB};
 CREATE TABLE ${DB}.t (x UInt32) ENGINE = URL(${NC});
 RENAME DATABASE ${DB} TO ${DB}_2;
 DETACH TABLE ${DB}_2.t;
+SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 "
 ${CLICKHOUSE_CLIENT} -m -q "
@@ -55,6 +57,7 @@ CREATE DATABASE ${DB};
 CREATE TABLE ${DB}.t (x UInt32) ENGINE = URL(${NC});
 RENAME DATABASE ${DB} TO ${DB}_2;
 DETACH DATABASE ${DB}_2;
+SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 "
 ${CLICKHOUSE_CLIENT} -m -q "
@@ -70,6 +73,7 @@ CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE DATABASE ${DISK_DB} ENGINE = Atomic SETTINGS disk = disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/');
 CREATE TABLE ${DISK_DB}.t (x UInt32) ENGINE = URL(${NC});
 DETACH DATABASE ${DISK_DB};
+SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 "
 ${CLICKHOUSE_CLIENT} -m -q "

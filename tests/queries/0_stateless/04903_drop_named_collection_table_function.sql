@@ -1,5 +1,6 @@
 CREATE NAMED COLLECTION 04903_nc AS json_str = '{}';
 CREATE TABLE 04903_table AS fuzzJSON(04903_nc);
+SET check_named_collection_dependencies = true;
 DROP NAMED COLLECTION 04903_nc; -- { serverError NAMED_COLLECTION_IS_USED }
 DROP TABLE 04903_table;
 DROP NAMED COLLECTION 04903_nc;
