@@ -484,14 +484,22 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (access_control)
     {
         bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
+        bool allowed_private_preview = access_control->getAllowPrivatePreviewTierSettings();
         bool allowed_beta = access_control->getAllowBetaTierSettings();
-        if (!allowed_experimental || !allowed_beta)
+        if (!allowed_experimental || !allowed_private_preview || !allowed_beta)
         {
             auto setting_tier = current_settings.getTier(resolved_name);
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(
                         "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+            if (setting_tier == SettingsTierType::PRIVATE_PREVIEW && !allowed_private_preview)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
+                        "('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
             if (setting_tier == SettingsTierType::BETA && !allowed_beta)
