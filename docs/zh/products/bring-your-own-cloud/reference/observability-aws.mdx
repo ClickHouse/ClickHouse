@@ -34,7 +34,7 @@ BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
 | **最适合的场景** | 全面的基础设施和服务监控                                     | 面向特定服务的监控和集成                             |
 | **集成方式**   | 在外部 Prometheus 中配置 federation 以摄取集群指标            | 将 ClickHouse 指标端点直接添加到 Prometheus 配置中    |
 
-**建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。 
+**建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。
 
 <div id="builtin-prometheus-stack">
   ## 内置 BYOC Prometheus 栈
@@ -50,21 +50,23 @@ ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监�
   ### 访问 Prometheus 栈
 </div>
 
-要连接到内置的 Prometheus 栈，请执行以下操作：
+要连接内置的 Prometheus 栈：
 
-1. **联系 ClickHouse 支持团队**，为您的 BYOC 环境启用私有负载均衡器。
-2. **向 ClickHouse 支持团队索取 Prometheus 端点 URL**。
-3. **确认与 Prometheus 端点之间的私有网络连通性**——通常通过 VPC 对等连接或其他私有网络配置实现。
+1. 在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施**启用私有负载均衡器** (请参阅[负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)) 。
+2. 向 ClickHouse 支持团队**获取 Prometheus 端点 URL**。
+3. **验证是否可通过私有网络连接到 Prometheus 端点**，通常可通过 VPC/VNet 对等互连或其他私有网络配置实现。
 
 端点格式因连接类型而异：
 
-| 连接方式              | 端点格式                                                                           |
-| ----------------- | ------------------------------------------------------------------------------ |
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| 连接方式          | 端点格式                                                                           |
+| ------------- | ------------------------------------------------------------------------------ |
+| VPC/VNet 对等互连 | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| 专用终结点         | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` 可以是 `aws`、`gcp` 或 `azure`。对于专用终结点，`<label>` 因云平台而异：AWS 为 `vpce`，GCP 为 `p`，Azure 为 `privatelink`。
 
 <Note>
-  Prometheus 栈 URL 只能通过私有网络连接访问，且不需要身份验证。只有能够通过 VPC 对等连接或其他私有连接方式访问您的 BYOC VPC 的网络才能访问。
+  Prometheus 栈 URL 只能通过私有网络连接访问，且无需身份验证。只有能够通过对等互连或其他私有连接方式访问您的 BYOC VPC/VNet 的网络才能访问该 URL。
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -119,19 +121,19 @@ ClickHouse 服务会暴露一个与 Prometheus 兼容的指标端点，你可以
 指标端点位于您的 ClickHouse 服务端点上的 `/metrics_all`：
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **示例响应：**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes 存储在系统数据库 `s3disk` 磁盘上的字节数
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts 损坏的 detached parts 数量
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors 自上次重启以来服务器上的错误总数
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -182,7 +184,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +195,7 @@ scrape_configs:
 
 替换：
 
-* 将 `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` 替换为你的实际服务端点
+* 将 `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` 替换为你的实际服务端点
 * 将 `<username>` 和 `<password>` 替换为用于抓取的用户凭据
 
 <div id="clickhouse-mixin">

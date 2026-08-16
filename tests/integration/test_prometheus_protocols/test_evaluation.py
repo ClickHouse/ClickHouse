@@ -64,12 +64,17 @@ def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
 
 
 # Executes a query in both prometheus services - results should be the same.
-def execute_query_in_prometheus(query, timestamp, expect_error=False):
+# `eps` allows tiny float differences: the "reader" service aggregates series in the order
+# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
+# the "receiver" service uses.
+def execute_query_in_prometheus(query, timestamp, expect_error=False, eps=0):
     r1 = execute_query_in_prometheus_reader(query, timestamp, expect_error=expect_error)
     r2 = execute_query_in_prometheus_receiver(
         query, timestamp, expect_error=expect_error
     )
-    assert r1 == r2
+    assert http_api_response_close_to(
+        r1, r2, eps=eps
+    ), f"reader result: {r1}, receiver result: {r2}"
     return r1
 
 
@@ -97,7 +102,10 @@ def execute_query_in_clickhouse_sql(query, timestamp, expect_error=False):
 
 
 # Executes a range query in both prometheus services.
-def execute_range_query_in_prometheus(query, start_time, end_time, step):
+# `eps` allows tiny float differences: the "reader" service aggregates series in the order
+# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
+# the "receiver" service uses.
+def execute_range_query_in_prometheus(query, start_time, end_time, step, eps=0):
     r1 = execute_range_query_via_http_api(
         cluster.prometheus_ip["reader"],
         cluster.prometheus_port["reader"],
@@ -116,7 +124,9 @@ def execute_range_query_in_prometheus(query, start_time, end_time, step):
         end_time,
         step,
     )
-    assert r1 == r2
+    assert http_api_response_close_to(
+        r1, r2, eps=eps
+    ), f"reader result: {r1}, receiver result: {r2}"
     return r1
 
 
@@ -464,7 +474,10 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_result = execute_query_in_prometheus(query, timestamp, eps=eps)
+    assert http_api_response_close_to(
+        actual_result, result, eps=eps
+    ), f"actual result from prometheus: {actual_result}, expected: {result}"
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -509,9 +522,12 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step, eps=eps
     )
+    assert http_api_response_close_to(
+        actual_result, result, eps=eps
+    ), f"actual result from prometheus: {actual_result}, expected: {result}"
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
         query, start_time, end_time, step
