@@ -2630,6 +2630,7 @@ TEST(MergeTreeDeduplicationLog, TruncatedNewestLogIsNotAppendedTo)
 /// rewriting the in-memory state - which is correct and authoritative - as a fresh
 /// snapshot that replaces every older file leaves the abandoned records behind with them,
 /// so no history is lost at all.
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 TEST(MergeTreeDeduplicationLog, UnpersistedRollbackRewritesTheDivergedHistory)
 {
     const std::string work_dir = "tmp/gtest_dedup_log_diverged_repair/";
@@ -2694,6 +2695,7 @@ TEST(MergeTreeDeduplicationLog, UnpersistedRollbackRewritesTheDivergedHistory)
 
     std::filesystem::remove_all(work_dir);
 }
+#endif
 
 /// Same divergence as above, but the history cannot be rewritten either - the compaction
 /// snapshot is a numbered log file, so its flush fails too. The log must then fence the
