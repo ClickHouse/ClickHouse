@@ -23,6 +23,7 @@ PADDED_FILE="${WORK_DIR}/padded.parquet"
 EMPTY_MEMBER_FILE="${WORK_DIR}/empty-member.parquet"
 MAGIC_PADDING_FILE="${WORK_DIR}/magic-padding.parquet"
 OVERFLOW_FILE="${WORK_DIR}/overflow.parquet"
+SPLIT_MEMBER_FILE="${WORK_DIR}/split-member.parquet"
 
 # One fully dictionary-encoded `gzip`-compressed string column in a single row group. Checksums, the
 # page index and the bloom filter are disabled so that the only offsets to fix up after the padding
@@ -37,10 +38,10 @@ ${CLICKHOUSE_LOCAL} --query="
         engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
-python3 - "${DATA_FILE}" "${PADDED_FILE}" "${EMPTY_MEMBER_FILE}" "${MAGIC_PADDING_FILE}" "${OVERFLOW_FILE}" <<'PYEOF'
+python3 - "${DATA_FILE}" "${PADDED_FILE}" "${EMPTY_MEMBER_FILE}" "${MAGIC_PADDING_FILE}" "${OVERFLOW_FILE}" "${SPLIT_MEMBER_FILE}" <<'PYEOF'
 import gzip, struct, sys
 
-src, padded_dst, empty_member_dst, magic_padding_dst, overflow_dst = sys.argv[1:]
+src, padded_dst, empty_member_dst, magic_padding_dst, overflow_dst, split_member_dst = sys.argv[1:]
 PADDING = 4096
 
 # --- minimal Thrift compact protocol walker (records the byte range of every scalar integer field) ---
@@ -130,13 +131,13 @@ assert page_end + compressed_page_size == data_page_offset, \
 assert 1_100_000 <= uncompressed_page_size <= 1_300_000, \
     f"unexpected dictionary page payload size: {uncompressed_page_size}"
 
-def make_file(dst, suffix):
-    new_size_bytes = encode_varint(zigzag_encode(compressed_page_size + len(suffix)))
-    # The dictionary page grows by the suffix plus whatever the re-encoded size field added to the
+def make_file(dst, replacement):
+    new_size_bytes = encode_varint(zigzag_encode(len(replacement)))
+    # The dictionary page grows by the replacement plus whatever the re-encoded size field added to the
     # header, which moves the first data page and grows the chunk by the same amount. The reader's
     # `data_pages_bytes` (`total_compressed_size - (data_page_offset - dictionary_page_offset)`) and
     # `dictionary_page_offset` itself are unchanged.
-    grow = len(suffix) + len(new_size_bytes) - (page[(3,)][1] - page[(3,)][0])
+    grow = len(replacement) - compressed_page_size + len(new_size_bytes) - (page[(3,)][1] - page[(3,)][0])
 
     new_footer = splice(buf[footer_start:], [
         (meta[CM + (7,)][0] - footer_start, meta[CM + (7,)][1] - footer_start,
@@ -146,8 +147,8 @@ def make_file(dst, suffix):
     ])
 
     out = (
-        splice(buf[:data_page_offset], [(page[(3,)][0], page[(3,)][1], new_size_bytes)])
-        + suffix
+        splice(buf[:page_end], [(page[(3,)][0], page[(3,)][1], new_size_bytes)])
+        + replacement
         + buf[data_page_offset:footer_start]
         + new_footer
         + struct.pack("<I", len(new_footer))
@@ -155,14 +156,21 @@ def make_file(dst, suffix):
     )
     open(dst, "wb").write(out)
 
-make_file(padded_dst, b"\0" * PADDING)
+compressed_payload = buf[page_end:data_page_offset]
+make_file(padded_dst, compressed_payload + b"\0" * PADDING)
 # A trailing empty member must be accepted, while padding that merely starts with the gzip magic
 # bytes must not be mistaken for a malformed member.
-make_file(empty_member_dst, gzip.compress(b""))
-make_file(magic_padding_dst, b"\x1f\x8bnot-a-gzip-member")
+make_file(empty_member_dst, compressed_payload + gzip.compress(b""))
+make_file(magic_padding_dst, compressed_payload + b"\x1f\x8bnot-a-gzip-member")
 # A second gzip member must not be treated as page padding after the first member filled the
 # declared output exactly: it expands past the page header and must be rejected.
-make_file(overflow_dst, gzip.compress(b"overflow"))
+make_file(overflow_dst, compressed_payload + gzip.compress(b"overflow"))
+
+# A page payload may itself be a sequence of gzip members. Splitting the dictionary payload proves
+# that a member ending before the declared page size resets `inflate` and continues with the next.
+plain_payload = gzip.decompress(compressed_payload)
+split_at = len(plain_payload) // 2
+make_file(split_member_dst, gzip.compress(plain_payload[:split_at]) + gzip.compress(plain_payload[split_at:]))
 PYEOF
 
 echo "the padded file reads back exactly like the original"
@@ -176,6 +184,11 @@ ${CLICKHOUSE_LOCAL} --query="
          = (select (groupBitXor(cityHash64(s)), count()) from file('${EMPTY_MEMBER_FILE}', Parquet))
        and (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
          = (select (groupBitXor(cityHash64(s)), count()) from file('${MAGIC_PADDING_FILE}', Parquet))"
+
+echo "members that collectively fill the page read back exactly"
+${CLICKHOUSE_LOCAL} --query="
+    select (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
+         = (select (groupBitXor(cityHash64(s)), count()) from file('${SPLIT_MEMBER_FILE}', Parquet))"
 
 echo "a second gzip member beyond the declared output is rejected"
 ${CLICKHOUSE_LOCAL} --query="select count() from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'

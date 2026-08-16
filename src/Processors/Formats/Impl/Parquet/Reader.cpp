@@ -200,9 +200,19 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
             /// valid, a member that produces a byte overflows, and malformed remainder is padding.
             if (!checking_main_trailer && !checking_extra_member && zstr.next_out != zlib_out_begin + uncompressed_size)
             {
-                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                    "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
-                    uncompressed_size, zstr.next_out - zlib_out_begin);
+                if (zstr.next_in == in_end)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                        "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
+                        uncompressed_size, zstr.next_out - zlib_out_begin);
+
+                /// The member ended before the declared page size. Continue with the next member
+                /// using the regular output buffer; only after it is full do we switch to scratch
+                /// output to distinguish an overflowing member from page padding.
+                rc = inflateReset(&zstr);
+                if (rc != Z_OK)
+                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
+                zstr.avail_out = 0;
+                continue;
             }
             if (zstr.next_in == in_end)
                 return;
