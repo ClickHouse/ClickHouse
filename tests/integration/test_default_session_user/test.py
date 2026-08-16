@@ -780,22 +780,14 @@ def test_config_reload_prometheus_handlers_switch_to_fixed_user():
         time.sleep(1)
     assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
 
-
-def test_config_reload_prometheus_no_restart_when_handlers_fixed_user():
-    # This test runs after `test_config_reload_prometheus_handlers_switch_to_fixed_user`,
-    # so every handler in `node_reject`'s shared `prometheus.handlers` section now carries
-    # a fixed `user`.
-    #
-    # First, the reload of the previous test changed the shared section itself, which must
-    # restart *every* non-keeper composable `prometheus` listener serving it — including
-    # `prometheus-write-noreload` (port 9117), whose own `default_session_user` did not
-    # change in that reload (the section is baked into the listener's handler factory).
+    # The same handler-section reload must restart every non-keeper composable
+    # `prometheus` listener serving the section, including port 9117, whose own
+    # `default_session_user` did not change.
     assert node_reject.contains_in_log(
         "<prometheus.handlers> had been changed, will reload prometheus-write-noreload"
     )
 
-    # The restarted listener serves the fixed-user handler set. It comes back
-    # asynchronously after the reload, so poll.
+    # The restarted listener serves the fixed-user handler set.
     count_before = session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus")
     for _ in range(30):
         try:
@@ -807,10 +799,25 @@ def test_config_reload_prometheus_no_restart_when_handlers_fixed_user():
         time.sleep(1)
     assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
 
-    # Second, with a handler set that never consults `default_session_user`, changing the
-    # endpoint's override must not restart the listener: a restart would interrupt writes
-    # for a setting change that is a no-op there.
-    config_path = "/etc/clickhouse-server/config.d/config_reject.xml"
+    # The standalone `prometheus.port` listener uses the same section. It has no
+    # `protocols.*` entry, so a section change must still restart it by its port name.
+    assert node_reject.contains_in_log(
+        "<prometheus.handlers> had been changed, will reload Prometheus: http"
+    )
+
+    count_before = session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus")
+    for _ in range(30):
+        try:
+            prometheus_write(9118, node=node_reject)
+        except Exception:
+            pass
+        if session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before:
+            break
+        time.sleep(1)
+    assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
+
+    # With fixed-user handlers that never consult `default_session_user`, changing
+    # port 9117's override must not restart the listener.
     node_reject.replace_in_config(
         config_path,
         "proto_prometheus_norestart_user",
@@ -827,36 +834,6 @@ def test_config_reload_prometheus_no_restart_when_handlers_fixed_user():
     # The listener keeps serving without interruption.
     with assert_login_success("fixed_write_user", "Prometheus", node=node_reject):
         prometheus_write(9117, node=node_reject)
-
-
-def test_config_reload_standalone_prometheus_handlers_change():
-    # The standalone `prometheus.port` listener (`node_reject`, port 9118) is built from the
-    # same shared `prometheus.handlers` section as the composable `type = prometheus`
-    # endpoints, and the section is baked into its handler factory. It has no `protocols.*`
-    # entry, so the restart check must recognize it by its port name — otherwise a reload
-    # that edits the section leaves the old factory serving on the port until a full server
-    # restart.
-    #
-    # This test runs after `test_config_reload_prometheus_handlers_switch_to_fixed_user`,
-    # whose reload switched the section's anonymous `write` handler to a fixed `user`. That
-    # reload must have restarted the standalone listener as well, and the restarted listener
-    # must serve the new handler set — at startup the section was anonymous, and `node_reject`
-    # prohibits anonymous logins globally, so a stale factory would still reject the write.
-    assert node_reject.contains_in_log(
-        "<prometheus.handlers> had been changed, will reload Prometheus: http"
-    )
-
-    # The listener comes back asynchronously after the reload, so poll.
-    count_before = session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus")
-    for _ in range(30):
-        try:
-            prometheus_write(9118, node=node_reject)
-        except Exception:
-            pass
-        if session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before:
-            break
-        time.sleep(1)
-    assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
 
 
 def test_config_reload_http_handlers_reference_switch():
