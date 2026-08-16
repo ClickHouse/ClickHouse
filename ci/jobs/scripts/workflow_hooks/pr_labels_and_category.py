@@ -231,6 +231,19 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     return error, matched
 
 
+def _submodule_paths() -> set:
+    # Each line reads "submodule.<name>.path <path>". A changed submodule shows up in
+    # the PR file list as that path itself, because a gitlink is a single tree entry.
+    out = Shell.get_output("git config --file .gitmodules --get-regexp path")
+    paths = set()
+    for line in out.splitlines():
+        _, _, path = line.partition(" ")
+        path = path.strip()
+        if path:
+            paths.add(path)
+    return paths
+
+
 def check_labels(category, info):
     pr_labels_to_add = []
     pr_labels_to_remove = []
@@ -260,7 +273,7 @@ def check_labels(category, info):
             "most likely failed to fetch the PR file list from the GitHub API. "
             "See the Config Workflow logs for the underlying error."
         )
-        if "contrib/" in " ".join(changed_files):
+        if set(changed_files) & _submodule_paths():
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
