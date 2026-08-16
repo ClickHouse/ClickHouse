@@ -136,19 +136,18 @@ AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
 
 MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
 {
-    /// Find the current query's process-level tracker (if any): the total tracker uses it
-    /// for the global overcommit decision (`OvercommitTracker::needToStopQuery`), so a
-    /// reservation that crosses the server memory limit waits for or kills the selected
-    /// overcommitted query exactly like a real allocation from this thread would.
+    /// Find the outermost process-level tracker (if any): when a thread group is nested
+    /// under another one, real allocations overwrite `query_tracker` at every Process
+    /// level while recursing to the total tracker. Use the same tracker for global
+    /// overcommit decisions, so a reservation that crosses the server memory limit waits
+    /// for or kills the selected query exactly like a real allocation from this thread
+    /// would.
     /// Nothing is charged on the query tracker chain itself.
     MemoryTracker * process_tracker = nullptr;
     for (auto * tracker = DB::CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
     {
         if (tracker->level == VariableContext::Process)
-        {
             process_tracker = tracker;
-            break;
-        }
     }
 
     /// The reservations counter must be raised before the charge: if an external correction

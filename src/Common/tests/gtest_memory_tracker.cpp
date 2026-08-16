@@ -143,10 +143,28 @@ TEST(MemoryTracker, SpeculativeReservationRanksQueryForGlobalOvercommit)
     EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
 
     first.addSpeculativeReservation(reservation);
-    EXPECT_GT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+    EXPECT_LT(second.getOvercommitRatio(soft_limit), first.getOvercommitRatio(soft_limit));
 
     first.subSpeculativeReservation(reservation);
     EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+}
+
+TEST(MemoryTracker, GlobalReservationUsesOutermostProcessTracker)
+{
+    MemoryTracker outer_process(&total_memory_tracker, VariableContext::Process, false);
+    MemoryTracker inner_process(&outer_process, VariableContext::Process, false);
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&inner_process);
+        thread_status.untracked_memory_limit = 0;
+
+        constexpr Int64 reservation = MB;
+        auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+        EXPECT_EQ(credited_tracker, &outer_process);
+        CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+    }).join();
 }
 
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
