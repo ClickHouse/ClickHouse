@@ -507,6 +507,7 @@ void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
     }
     catch (...)
     {
+        // Ok: only `ReadInterruptedException` needs to escape this metadata fallback.
     }
 }
 
