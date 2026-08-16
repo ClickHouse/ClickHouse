@@ -43,8 +43,19 @@ db_rows "${DA}"
 $CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(3)"
 db_rows "${DA}"
 
-echo "-- 5. DROP PARTITION lowers the counter"
+echo "-- 4a. MOVE PARTITION inside an over-limit database succeeds"
 $CH -q "DROP TABLE ${DA}.t"
+$CH -q "CREATE TABLE ${DA}.src (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
+$CH -q "CREATE TABLE ${DA}.dst (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
+# The first INSERT may overshoot the limit, but moving its partition to another table in the
+# same database does not change the database row count.
+$CH -q "INSERT INTO ${DA}.src SELECT toDate('2020-01-01'), number FROM numbers(12)"
+$CH -q "ALTER TABLE ${DA}.src MOVE PARTITION '2020-01-01' TO TABLE ${DA}.dst"
+$CH -q "SELECT count() FROM ${DA}.dst"
+
+echo "-- 5. DROP PARTITION lowers the counter"
+$CH -q "DROP TABLE ${DA}.src"
+$CH -q "DROP TABLE ${DA}.dst"
 $CH -q "CREATE TABLE ${DA}.p (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
 $CH -q "INSERT INTO ${DA}.p VALUES ('2020-01-01', 1), ('2020-01-01', 2), ('2020-01-02', 3)"
 db_rows "${DA}"

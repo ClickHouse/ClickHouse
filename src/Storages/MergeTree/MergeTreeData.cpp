@@ -7279,7 +7279,12 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(
+    Poco::Event * until,
+    const ContextPtr & query_context,
+    bool allow_throw,
+    bool allow_delay,
+    bool check_database_rows_limit) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -7303,7 +7308,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
     /// Check the owning database's `max_rows` limit. Like `max_parts_in_total` above, it is
     /// checked before the write, so a single batch may overshoot and the next INSERT throws.
-    if (allow_throw)
+    if (allow_throw && check_database_rows_limit)
     {
         const String database_name = getStorageID().getDatabaseName();
         const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);

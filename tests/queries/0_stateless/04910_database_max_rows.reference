@@ -9,6 +9,8 @@ TOO_MANY_ROWS
 -- 4. TRUNCATE frees rows
 0
 3
+-- 4a. MOVE PARTITION inside an over-limit database succeeds
+12
 -- 5. DROP PARTITION lowers the counter
 3
 1

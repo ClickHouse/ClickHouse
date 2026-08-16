@@ -3244,8 +3244,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             dest_table_storage->getStorageID().getNameForLogs(),
             dest_table_storage->getStoragePolicy()->getName());
 
-    // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
-    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
+    // Preserve the part-count and dead-blob back-pressure used by INSERTs. The database row
+    // limit is checked below with the moved rows and its corresponding outgoing rows.
+    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true, true, false);
     const auto & settings = local_context->getSettingsRef();
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
