@@ -150,6 +150,20 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true, false}, // strict -> null
         {"Int64", Field(Int64(5)), "Decimal64(2)"},
 
+        /// more decimals (column-native path): int/wide/float/decimal sources into every width, default + strict
+        {"UInt64", Field(UInt64(42)), "Decimal64(2)"},                                                     // 42.00
+        {"Int64", Field(Int64(-5)), "Decimal64(2)"},                                                       // -5.00
+        {"UInt64", Field(UInt64(1000000000000000000ull)), "Decimal32(0)"},                                 // too big -> throws -> null
+        {"Int128", Field(Int128(5)), "Decimal128(3)"},                                                     // wide int -> 5.000
+        {"UInt256", Field(UInt256(7)), "Decimal256(2)"},                                                   // wide int -> 7.00
+        {"Float64", Field(Float64(0.5)), "Decimal64(2)"},                                                  // 0.50
+        {"Float64", Field(Float64(0.5)), "Decimal64(2)", true},                                            // exact -> 0.50
+        {"Float64", Field(Float64(0.125)), "Decimal64(2)", true},                                          // inexact -> null
+        {"Decimal32(2)", Field(DecimalField<Decimal32>(Decimal32(333), 2)), "Decimal64(4)"},               // widen 3.33 -> 3.3300
+        {"Decimal128(4)", Field(DecimalField<Decimal128>(Decimal128(12345), 4)), "Decimal64(2)"},          // narrow 1.2345 -> 1.23 (round)
+        {"Decimal128(4)", Field(DecimalField<Decimal128>(Decimal128(12345), 4)), "Decimal64(2)", true},    // narrow lossy -> null
+        {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal128(3)", true},        // widen exact -> 33.300
+
         /// string <-> number
         {"String", Field(String("42")), "Int32"},
         {"String", Field(String("256")), "UInt8"},                       // out of range -> null

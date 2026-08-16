@@ -4,15 +4,21 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Common/Exception.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -73,6 +79,112 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
     if (nullable.isNullAt(0))
         return ColumnPtr{};
     return nullable.getNestedColumnPtr();
+}
+
+/// Faithful column-native `X -> Decimal` conversion. Reuses the exact public primitives that
+/// `convertFieldToType`'s Decimal helpers call (`DataTypeDecimal::canStoreWhole`/`getScaleMultiplier`,
+/// `convertToDecimal`, `convertDecimals`, and `accurateEquals` for the strict exactness check), reading
+/// the value straight from the size-1 column instead of materializing a `Field`. Mirrors
+/// `convertDecimalType` (and its `convertIntToDecimalType`/`convertFloatToDecimalType`/
+/// `convertDecimalToDecimalType` cases): an integer or float too big for the target throws
+/// `ARGUMENT_OUT_OF_BOUND` exactly as there. Returns the converted size-1 column, a null `ColumnPtr{}`
+/// for a strict-rejected lossy value, or `std::nullopt` when the source is not handled here (caller
+/// uses the `Field` fallback). Pinned by `gtest_convert_column_to_type`.
+template <typename ToDataType>
+std::optional<ColumnPtr> convertToDecimalColumnNative(
+    const IColumn & value, const DataTypePtr & from, const ToDataType & to_type, bool strict)
+{
+    using ToField = typename ToDataType::FieldType;
+    const UInt32 to_scale = to_type.getScale();
+
+    auto build = [&](const ToField & converted) -> ColumnPtr
+    {
+        auto column = to_type.createColumn();
+        assert_cast<ColumnDecimal<ToField> &>(*column).getData().push_back(converted);
+        return column;
+    };
+
+    /// integers (native + wide): `int -> Decimal` is exact, so `strict` adds no check here.
+    auto from_integer = [&]<typename From>(const From & v) -> ColumnPtr
+    {
+        if (!to_type.canStoreWhole(v))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", to_type.getName());
+        return build(to_type.getScaleMultiplier() * ToField(static_cast<typename ToField::NativeType>(v)));
+    };
+
+    /// Decimals: mirror `convertDecimalToDecimalType` + the strict `accurateEquals` lossy-reject.
+    auto from_decimal = [&]<typename FromField>(const FromField & src, UInt32 from_scale) -> ColumnPtr
+    {
+        using FromDataType = DataTypeDecimal<FromField>;
+        const ToField converted = convertDecimals<FromDataType, ToDataType>(src, from_scale, to_scale);
+        if (strict
+            && !accurateEquals(Field(DecimalField<FromField>(src, from_scale)), Field(DecimalField<ToField>(converted, to_scale))))
+            return ColumnPtr{};
+        return build(converted);
+    };
+
+    const WhichDataType which_from(from);
+
+    if (which_from.isNativeUInt())
+        return from_integer(value.getUInt(0));
+    if (which_from.isNativeInt())
+        return from_integer(value.getInt(0));
+    if (which_from.isUInt128())
+        return from_integer(assert_cast<const ColumnVector<UInt128> &>(value).getData()[0]);
+    if (which_from.isUInt256())
+        return from_integer(assert_cast<const ColumnVector<UInt256> &>(value).getData()[0]);
+    if (which_from.isInt128())
+        return from_integer(assert_cast<const ColumnVector<Int128> &>(value).getData()[0]);
+    if (which_from.isInt256())
+        return from_integer(assert_cast<const ColumnVector<Int256> &>(value).getData()[0]);
+
+    /// floats (`Float32` widens to `Float64`, matching `NearestFieldType`): mirror `convertFloatToDecimalType`.
+    if (which_from.isFloat32() || which_from.isFloat64())
+    {
+        const Float64 v = value.getFloat64(0);
+        if (!to_type.canStoreWhole(v))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", to_type.getName());
+        const ToField converted = convertToDecimal<DataTypeNumber<Float64>, ToDataType>(v, to_scale);
+        if (strict && DecimalUtils::convertTo<Float64>(converted, to_scale) != v)
+            return ColumnPtr{};
+        return build(converted);
+    }
+
+    if (which_from.isDecimal32())
+        return from_decimal(assert_cast<const ColumnDecimal<Decimal32> &>(value).getData()[0],
+                            assert_cast<const DataTypeDecimal<Decimal32> &>(*from).getScale());
+    if (which_from.isDecimal64())
+        return from_decimal(assert_cast<const ColumnDecimal<Decimal64> &>(value).getData()[0],
+                            assert_cast<const DataTypeDecimal<Decimal64> &>(*from).getScale());
+    if (which_from.isDecimal128())
+        return from_decimal(assert_cast<const ColumnDecimal<Decimal128> &>(value).getData()[0],
+                            assert_cast<const DataTypeDecimal<Decimal128> &>(*from).getScale());
+    if (which_from.isDecimal256())
+        return from_decimal(assert_cast<const ColumnDecimal<Decimal256> &>(value).getData()[0],
+                            assert_cast<const DataTypeDecimal<Decimal256> &>(*from).getScale());
+
+    return std::nullopt;  // unsupported source (String/Date/Enum/wrappers/...) -> caller uses the Field fallback
+}
+
+/// Dispatch on the Decimal target width. Returns std::nullopt when `to` is not a Decimal, the source is
+/// `Bool` (which `convertFieldToType` does not accept for a Decimal target - it throws), or the source is
+/// otherwise not handled here, so the caller falls back to the `Field` path.
+std::optional<ColumnPtr> tryConvertToDecimalColumnNative(
+    const IColumn & value, const DataTypePtr & from, const DataTypePtr & to, bool strict)
+{
+    if (isBool(from))
+        return std::nullopt;
+
+    const WhichDataType which_to(to);
+    if (which_to.isDecimal32())
+        return convertToDecimalColumnNative(value, from, assert_cast<const DataTypeDecimal<Decimal32> &>(*to), strict);
+    if (which_to.isDecimal64())
+        return convertToDecimalColumnNative(value, from, assert_cast<const DataTypeDecimal<Decimal64> &>(*to), strict);
+    if (which_to.isDecimal128())
+        return convertToDecimalColumnNative(value, from, assert_cast<const DataTypeDecimal<Decimal128> &>(*to), strict);
+    if (which_to.isDecimal256())
+        return convertToDecimalColumnNative(value, from, assert_cast<const DataTypeDecimal<Decimal256> &>(*to), strict);
+    return std::nullopt;
 }
 
 /// `IColumn::get` reconstructs a `Field` using the storage column's `NearestFieldType`, which does not
@@ -154,6 +266,11 @@ ColumnPtr convertColumnToTypeOrNull(
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
         return std::move(*native);
+
+    /// `X -> Decimal` column-native (an engaged optional whose value may be a null `ColumnPtr`, meaning
+    /// a strict-rejected lossy value; std::nullopt means "not handled here, use the `Field` fallback").
+    if (auto decimal = tryConvertToDecimalColumnNative(unwrapped, from, to, strict))
+        return std::move(*decimal);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
