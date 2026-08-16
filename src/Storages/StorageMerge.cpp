@@ -69,8 +69,10 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -699,6 +701,14 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const Cont
     return optimization_settings;
 }
 
+/// `File` and `URL` readers determine their source count from the resolved paths
+/// or URIs. Their own clamp is more precise than the stream request available to
+/// `Merge`, so do not reject a bounded read before the child can apply it.
+static bool boundsReadStreamsInternally(const IStorage & storage)
+{
+    return typeid_cast<const StorageFile *>(&storage) || typeid_cast<const IStorageURLBase *>(&storage);
+}
+
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
@@ -854,22 +864,26 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         num_streams = std::min(num_streams, streams_for_limit);
     }
 
-    /// Some child storages create one source for every stream. Check the aggregate before
-    /// building child plans: checking only `ReadFromMergeTree` is insufficient because the
+    /// Some child storages create one source for every requested stream. Check their aggregate
+    /// before building child plans: checking only `ReadFromMergeTree` is insufficient because the
     /// `Merge` fan-out can keep every child below the limit while exceeding it in total, and
     /// other child storages such as `GenerateRandom` do not clamp the number of streams at all.
-    /// When there are fewer requested streams than tables, every table still gets one stream.
-    /// Otherwise, the current distributor gives every table `num_streams / tables_count` streams
-    /// and discards the remainder.
+    /// `File` and `URL` are excluded because their readers know the exact number of paths or
+    /// URIs and clamp more precisely than this step can. When there are fewer requested streams
+    /// than tables, every table still gets one stream. Otherwise, the current distributor gives
+    /// every table `num_streams / tables_count` streams and discards the remainder.
     static constexpr size_t max_streams_for_merge_read = 65536;
-    size_t total_streams = tables_count >= num_streams
-        ? tables_count
-        : num_streams - num_streams % tables_count;
-    if (total_streams > max_streams_for_merge_read)
+    const size_t streams_per_table = tables_count >= num_streams ? 1 : num_streams / tables_count;
+    const size_t unbounded_tables = std::count_if(selected_tables.begin(), selected_tables.end(), [] (const auto & table)
+    {
+        return !boundsReadStreamsInternally(*std::get<1>(table));
+    });
+    const size_t unbounded_streams = streams_per_table * unbounded_tables;
+    if (unbounded_streams > max_streams_for_merge_read)
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Too many streams for a `Merge` table read: {} (the maximum is {}). "
             "Lower `max_streams_to_max_threads_ratio`, `max_threads`, or `max_streams_multiplier_for_merge_tables`",
-            total_streams, max_streams_for_merge_read);
+            unbounded_streams, max_streams_for_merge_read);
 
     size_t remaining_streams = num_streams;
 
