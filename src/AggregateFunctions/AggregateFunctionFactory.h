@@ -103,9 +103,9 @@ public:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
-    /// Reconstruct an aggregate function embedded in a data type without applying
-    /// query settings. Persisted metadata must remain parseable; fresh DDL is
-    /// validated separately after the complete schema has been built.
+    /// Reconstruct an aggregate function embedded in a data type while allowing
+    /// the experimental time-decay functions. All other query settings are preserved.
+    /// Fresh DDL is validated separately after the complete schema has been built.
     AggregateFunctionPtr getForDataType(
         const String & name,
         NullsAction action,
@@ -131,7 +131,7 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
-        bool use_query_context_settings) const;
+        bool allow_experimental_time_decay_for_data_type) const;
 
     AggregateFunctionPtr getImpl(
         const String & name,
@@ -141,7 +141,7 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
         AggregateFunctionStateVariant state_variant,
-        bool use_query_context_settings) const;
+        bool allow_experimental_time_decay_for_data_type) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;

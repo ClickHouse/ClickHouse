@@ -131,6 +131,17 @@ ATTACH MATERIALIZED VIEW time_decay_mv_attach_blocked
 ENGINE = Memory
 AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
 
+-- Materialized views historically skip unrelated suspicious-type validation.
+-- Adding the time-decay gate must not change that behavior.
+CREATE MATERIALIZED VIEW time_decay_mv_unrelated_validation
+(
+    value LowCardinality(UInt64)
+)
+ENGINE = Memory
+AS SELECT toUInt64(1) AS value;
+SELECT 'unrelated materialized view validation preserved';
+DROP TABLE time_decay_mv_unrelated_validation;
+
 CREATE TABLE time_decay_feature_gate_blocked
 (
     value ExponentialTimeDecayingFloat64(10)

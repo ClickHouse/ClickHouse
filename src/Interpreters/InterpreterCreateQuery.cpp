@@ -1110,7 +1110,10 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     /// Short ATTACH and internal metadata loading must remain available for recovery.
     if (!internal && !create.attach_short_syntax)
     {
-        DataTypeValidationSettings validation_settings(settings);
+        DataTypeValidationSettings validation_settings
+            = create.is_materialized_view || create.isParameterizedView()
+            ? DataTypeValidationSettings::forExperimentalTimeDecay(settings)
+            : DataTypeValidationSettings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
 
