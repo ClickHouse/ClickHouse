@@ -1,4 +1,5 @@
 #include <Parsers/ASTUndropQuery.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Core/UUID.h>
@@ -10,6 +11,15 @@ namespace DB
 String ASTUndropQuery::getID(char delim) const
 {
     return "UndropQuery" + (delim + getDatabase()) + delim + getTable();
+}
+
+void ASTUndropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `cluster` is formatted and changes execution from local to distributed DDL, but is not a
+    /// child of this query.
+    hash_state.update(cluster.size());
+    hash_state.update(cluster);
+    ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTUndropQuery::clone() const

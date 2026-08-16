@@ -400,6 +400,23 @@ TEST(TreeHashCompleteness, OptimizeClusterIsSignificant)
     EXPECT_NE(hashOf("OPTIMIZE TABLE t ON CLUSTER c1"), hashOf("OPTIMIZE TABLE t ON CLUSTER c2"));
 }
 
+TEST(TreeHashCompleteness, AlterAndUndropMembersAreSignificant)
+{
+    /// The root cluster and command flags / source names are member-only, while each command's
+    /// expressions are children.
+    EXPECT_NE(hashOf("ALTER TABLE t ON CLUSTER c1 ADD COLUMN x UInt64"),
+              hashOf("ALTER TABLE t ON CLUSTER c2 ADD COLUMN x UInt64"));
+    EXPECT_NE(hashOf("ALTER TABLE t ADD COLUMN x UInt64"),
+              hashOf("ALTER TABLE t ADD COLUMN x UInt64 FIRST"));
+    EXPECT_NE(hashOf("ALTER TABLE t DROP PARTITION 1"),
+              hashOf("ALTER TABLE t DETACH PARTITION 1"));
+    EXPECT_NE(hashOf("ALTER TABLE t REPLACE PARTITION 1 FROM db1.src"),
+              hashOf("ALTER TABLE t REPLACE PARTITION 1 FROM db2.src"));
+
+    EXPECT_NE(hashOf("UNDROP TABLE t ON CLUSTER c1"),
+              hashOf("UNDROP TABLE t ON CLUSTER c2"));
+}
+
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
 {
     /// A plain view has no storage definition, and a materialized view with `TO [db].[table]` must
