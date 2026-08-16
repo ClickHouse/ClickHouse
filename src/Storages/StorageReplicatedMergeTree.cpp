@@ -8640,11 +8640,13 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 continue;
             bytes_to_do += it->second;
             if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
-                bytes_in_flight_done += it->second * progress_it->second;
+                bytes_in_flight_done += static_cast<Float64>(it->second) * progress_it->second;
         }
         status.bytes_to_do = bytes_to_do;
         status.progress = std::clamp(
-            1.0 - (bytes_to_do - bytes_in_flight_done) / std::max<Float64>(total_bytes_on_disk, 1.0), 0.0, 1.0);
+            1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
+                / std::max<Float64>(static_cast<Float64>(total_bytes_on_disk), 1.0),
+            0.0, 1.0);
     }
 
     return statuses;

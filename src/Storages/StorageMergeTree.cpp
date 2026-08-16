@@ -1392,10 +1392,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             parts_to_do_names.push_back(part_version.name);
             bytes_to_do += part_version.bytes_on_disk;
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
-                bytes_in_flight_done += part_version.bytes_on_disk * it->second;
+                bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
         Float64 progress = std::clamp(
-            1.0 - (bytes_to_do - bytes_in_flight_done) / std::max<Float64>(total_bytes_on_disk, 1.0), 0.0, 1.0);
+            1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
+                / std::max<Float64>(static_cast<Float64>(total_bytes_on_disk), 1.0),
+            0.0, 1.0);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
