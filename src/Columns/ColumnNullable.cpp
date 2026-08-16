@@ -331,6 +331,12 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
     if (length == 0)
         return;
 
+    if (length == 1)
+    {
+        insertFromNotNullable(src, position);
+        return;
+    }
+
     getNestedColumn().insertManyFrom(src, position, length);
     getNullMapData().resize_fill(getNullMapData().size() + length);
 }
