@@ -109,7 +109,9 @@ public:
     void insert(ColumnPtr values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
-    ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    /// `rows_passed` is set only when the probe can count the passed rows for free while producing
+    /// the mask; otherwise it is left untouched and the caller derives the count from the mask.
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     ColumnPtr getValuesColumn() const;
     void mergeFrom(const ExactSetRuntimeFilter & source);
     void releaseExactValues();
@@ -162,7 +164,9 @@ public:
     ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_);
 
     void insert(ColumnPtr values);
-    ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    /// Sets `rows_passed` to the number of rows that passed the filter: the bloom probe counts the
+    /// matches while filling the mask, so the caller must not rescan the mask to collect stats.
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const ApproximateSetRuntimeFilter & source);
     bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
 
@@ -190,7 +194,8 @@ public:
 
     void insert(ColumnPtr values);
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
-    ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    /// Forwards `rows_passed` to the underlying exact/approximate filter (see their docs).
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
@@ -237,7 +242,7 @@ public:
     void insert(ColumnPtr) { }
     void finishInsert(RuntimeFilterEvaluationState &) { }
     void mergeFrom(const SharedFixedHashTableRuntimeFilter &) { }
-    ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
     DataTypePtr getTargetType() const { return filter_column_target_type; }
     const std::optional<Range> & getInitialKeyRange() const { return key_range; }

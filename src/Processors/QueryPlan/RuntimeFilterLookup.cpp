@@ -324,7 +324,7 @@ void ExactSetRuntimeFilter<negate>::finishInsert(RuntimeFilterEvaluationState & 
 }
 
 template <bool negate>
-ColumnPtr ExactSetRuntimeFilter<negate>::find(const ColumnWithTypeAndName & values) const
+ColumnPtr ExactSetRuntimeFilter<negate>::find(const ColumnWithTypeAndName & values, std::optional<size_t> & /*rows_passed*/) const
 {
     if (!is_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter set is not ready for lookups");
@@ -425,18 +425,22 @@ void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values
         { bloom_filter.addHashPairs(hash_pairs, count); });
 }
 
-ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
     auto dst = ColumnVector<UInt8>::create();
     auto & dst_data = dst->getData();
     dst_data.resize(values.column->size());
 
+    /// `findHashPairs` counts the matches while filling the mask; report that count through
+    /// `rows_passed` so the caller does not rescan the mask to collect stats.
+    size_t found_count = 0;
     forEachColumnHashBatch(
         *values.column,
         bloom_filter.getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
-        { bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
+        { found_count += bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
 
+    rows_passed = found_count;
     return dst;
 }
 
@@ -526,12 +530,13 @@ static size_t countPassedStats(ColumnPtr values)
     return values->size();
 }
 
-ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
     return std::visit(
         Overloaded{
-            [&](const ExactFilter & exact_filter) -> ColumnPtr { return exact_filter.find(values); },
-            [&](const ApproximateSetRuntimeFilter & approximate_filter) -> ColumnPtr { return approximate_filter.find(values); },
+            [&](const ExactFilter & exact_filter) -> ColumnPtr { return exact_filter.find(values, rows_passed); },
+            [&](const ApproximateSetRuntimeFilter & approximate_filter) -> ColumnPtr
+            { return approximate_filter.find(values, rows_passed); },
         },
         filter);
 }
@@ -593,7 +598,7 @@ SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
 {
 }
 
-ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & values) const
+ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & /*rows_passed*/) const
 {
     return probe_fn(values);
 }
@@ -677,8 +682,10 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
             if (evaluation_state.shouldSkip(rows_in_block))
                 return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
-            auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values); }, filter_data->filter);
-            evaluation_state.updateStats(values.column->size(), countPassedStats(result));
+            std::optional<size_t> rows_passed;
+            auto result
+                = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, filter_data->filter);
+            evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
             return result;
         });
 }
