@@ -15,6 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -49,10 +51,15 @@ public:
         if (!isDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
             || !isDateTime64(removeNullable(arguments[2])))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} expects a datetime, a timespan and a datetime", getName());
-        return makeNullable(removeNullable(arguments[0]));
+
+        /// KQL datetimes have 100 ns precision. Preserve a more precise physical input, but
+        /// never truncate a valid bin merely because the source column uses a coarser carrier.
+        const auto & value_type = assert_cast<const DataTypeDateTime64 &>(*removeNullable(arguments[0]));
+        const UInt32 result_scale = std::max<UInt32>(value_type.getScale(), 7);
+        return makeNullable(std::make_shared<DataTypeDateTime64>(result_scale, value_type));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
     {
         struct Operand
         {
@@ -75,7 +82,8 @@ public:
         const auto & value_type = *removeNullable(arguments[0].type);
         const auto & fixed_type = *removeNullable(arguments[2].type);
         const auto kind = assert_cast<const DataTypeInterval &>(*removeNullable(arguments[1].type)).getKind();
-        auto nested = removeNullable(arguments[0].type)->createColumn();
+        const auto & result_datetime_type = *removeNullable(result_type);
+        auto nested = result_datetime_type.createColumn();
         auto nulls = ColumnUInt8::create();
         auto & null_map = nulls->getData();
 
@@ -102,7 +110,7 @@ public:
             Int128 quotient = span / bin;
             if (span % bin != 0 && span < 0)
                 --quotient;
-            insertNanoseconds(*nested, value_type, fixed + quotient * bin);
+            insertNanoseconds(*nested, result_datetime_type, fixed + quotient * bin);
             null_map.push_back(UInt8(0));
         }
         return ColumnNullable::create(std::move(nested), std::move(nulls));

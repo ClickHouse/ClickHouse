@@ -67,3 +67,4 @@ SELECT kqlDivide(toIntervalMonth(1), toIntervalHour(1)); -- { serverError ILLEGA
 
 SELECT '-- kqlBin over a datetime with a non-constant interval from SQL --';
 SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), materialize(toIntervalHour(1)));
+SELECT kqlBin(toDateTime64('2026-08-01 12:34:56.123', 3, 'UTC'), toIntervalMicrosecond(700));
