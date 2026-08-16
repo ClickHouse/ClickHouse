@@ -441,6 +441,43 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseDefaultStateDoesNotEstablishS
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
+/// Materializing a constant sparse state column repeats its non-default values, not the implicit default
+/// that `ColumnSparse` retains at `values[0]`. The repeated aggregate-state sample must use the same
+/// skipped-row offset as the one-copy sample, or it measures the default state instead of the payload.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedPayload)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 200;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    MutableColumnPtr values = ColumnAggregateFunction::create(function);
+    values->insertDefault();
+    values->insertFrom(*source_state, 0);
+    auto offsets = ColumnUInt64::create();
+    offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*rows=*/1);
+    auto constant = ColumnConst::create(std::move(sparse), rows);
+
+    const size_t cache_key = 0x111985 + 10;
+    const auto exact_compressed_bytes = compressedColumnSize({constant, state_type, "constant_sparse_state"});
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_sparse_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
 /// A state leaf can also sit inside a `ColumnDynamic` - `Dynamic` accepts `AggregateFunction` values, so
 /// e.g. `if(cond, CAST(groupArrayState(x), 'Dynamic'), CAST(s, 'Dynamic'))` emits a `ColumnDynamic` whose
 /// nested `ColumnVariant` holds a state leaf next to a plain string alternative. The walk that samples the

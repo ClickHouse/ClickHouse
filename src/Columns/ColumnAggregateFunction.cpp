@@ -610,7 +610,7 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
                 CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
                 for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
                     for (size_t i = 0; i < rows; i += period)
-                        func->serialize(data[i], repeated_compressed_buf, version);
+                        func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
                 repeated_compressed_buf.finalize();
                 const size_t measured_compressed_bytes = repeated_null_buf.count();
 
