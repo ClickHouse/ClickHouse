@@ -41,6 +41,7 @@ GRANT SELECT ON $db.filtering_view_none TO $user;
 GRANT SELECT ON $db.projecting_view TO $user;
 GRANT SELECT ON $db.invoker_view TO $user;
 GRANT SELECT ON $db.secrets TO $user;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 
 -- A policy on the view itself is also a security boundary, even though the stored query is only
 -- a projection. It must not be inlined before the policy is discovered and applied.
