@@ -17,6 +17,8 @@
 #include <base/scope_guard.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 namespace DB
 {
 
@@ -32,19 +34,6 @@ namespace Setting
 
 namespace
 {
-
-bool containsCustomNamedType(const IDataType * type)
-{
-    if (!type)
-        return false;
-
-    bool result = type->hasCustomName();
-    type->forEachChild([&](const IDataType & child)
-    {
-        result |= child.hasCustomName();
-    });
-    return result;
-}
 
 void addRequiredColumnsToHeader(Block & header, const ActionsDAG & dag)
 {
@@ -358,7 +347,7 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
                             continue;
 
                         auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                        if (containsCustomNamedType(subpath[i].data.type.get()))
+                        if (subpath[i].data.type->hasCustomName())
                             continue;
 
                         if (name == subcolumn_name)
@@ -472,7 +461,7 @@ NameSet getSupportedPrewhereColumnsForFormat(
     NameSet names = metadata_snapshot->getColumnsWithoutDefaultExpressions(exclude);
 
     /// Direct subcolumn reads in the file-like `PREWHERE` path are currently a `Parquet` reader feature.
-    if (format_name != "Parquet"
+    if (!boost::iequals(format_name, "Parquet")
         || !FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context, format_settings))
         return names;
 
