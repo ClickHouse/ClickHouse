@@ -101,20 +101,20 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
     state = state_;
 }
 
-void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & path, time_t since)
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & file_path, time_t since)
 {
     std::lock_guard lock(mutex);
-    if (!observations.contains(path) && observations.size() == max_entries)
+    if (!observations.contains(file_path) && observations.size() == max_entries)
     {
         observations.clear();
     }
-    observations[path] = since;
+    observations[file_path] = since;
 }
 
-time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & path) const
+time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path) const
 {
     std::lock_guard lock(mutex);
-    const auto it = observations.find(path);
+    const auto it = observations.find(file_path);
     return it == observations.end() ? 0 : it->second;
 }
 
