@@ -6,8 +6,8 @@ Array indices
 1	[2,4,1]	[8,0,0]
 2	[-2,-4,-1]	[-8,0,0]
 [20,40,10]
-[20,\N,0]	Array(Nullable(Float32))
-[20,\N,40]
+[20,NULL,0]	Array(Nullable(Float32))
+[20,NULL,40]
 Out-of-range index gives the default value, or NULL for arrayElementOrNull
 0	0	\N	1
 0	0	\N	-1
