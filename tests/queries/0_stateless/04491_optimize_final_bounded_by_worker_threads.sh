@@ -61,6 +61,7 @@ optimize_pid=$!
 # The paused merges never complete on their own, so the in-flight count only grows until the pool is
 # full and then stays constant. Wait for it to stabilise and record the peak.
 peak=0
+peak_helper_jobs=0
 prev=-1
 stable=0
 for _ in {1..600}; do
@@ -69,6 +70,10 @@ for _ in {1..600}; do
         WHERE database = currentDatabase() AND table = 't_optimize_worker_budget'")
     if [[ "$in_flight" -gt "$peak" ]]; then
         peak=$in_flight
+    fi
+    helper_jobs=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'OptimizeFinalThreadsScheduled'")
+    if [[ "$helper_jobs" -gt "$peak_helper_jobs" ]]; then
+        peak_helper_jobs=$helper_jobs
     fi
     if [[ "$in_flight" -eq "$prev" && "$in_flight" -gt 0 ]]; then
         stable=$((stable + 1))
@@ -89,6 +94,14 @@ if [[ "$peak" -gt 1 && "$peak" -le "$pool_size" ]]; then
     echo "concurrent partition merges within background_pool_size: yes"
 else
     echo "concurrent partition merges within background_pool_size: no (peak=$peak, background_pool_size=$pool_size)"
+fi
+
+# The local helper pool must be bounded too: unlike system.merges, this includes queued partition
+# jobs, so it catches a per-partition queue and its associated thread-stack / preselection growth.
+if [[ "$peak_helper_jobs" -le "$pool_size" ]]; then
+    echo "OPTIMIZE FINAL helper jobs within background_pool_size: yes"
+else
+    echo "OPTIMIZE FINAL helper jobs within background_pool_size: no (peak=$peak_helper_jobs, background_pool_size=$pool_size)"
 fi
 
 # Let the merges finish and wait for OPTIMIZE to complete.

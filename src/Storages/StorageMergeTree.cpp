@@ -2384,6 +2384,15 @@ bool StorageMergeTree::optimize(
             /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
             auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
 
+            /// Cap both workers and queued tasks by the foreground merge budget. Otherwise an
+            /// OPTIMIZE on a table with many partitions would create a waiting helper thread and
+            /// preselect (and tag) a merge for every partition before the executor has capacity
+            /// to run them. The executor can only grow its limits, so a smaller captured bound is
+            /// safe if configuration is reloaded while this query is running.
+            const size_t foreground_merge_budget = std::min(
+                partition_ids.size(),
+                std::min(merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()));
+
             /// Select before reserving a merge slot so no-op partitions do not wait behind
             /// unrelated background work. A successful selection reserves one slot before
             /// execution, which bounds running foreground merges by `background_pool_size`.
@@ -2391,7 +2400,7 @@ bool StorageMergeTree::optimize(
                 CurrentMetrics::OptimizeFinalThreads,
                 CurrentMetrics::OptimizeFinalThreadsActive,
                 CurrentMetrics::OptimizeFinalThreadsScheduled,
-                partition_ids.size());
+                foreground_merge_budget);
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGE_MUTATE);
 
             for (size_t i = 0; i < partition_ids.size(); ++i)
