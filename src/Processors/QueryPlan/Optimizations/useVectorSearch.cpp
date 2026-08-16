@@ -297,6 +297,20 @@ static bool anyOutputConsumesInput(const ActionsDAG & dag, const ActionsDAG::Nod
     return false;
 }
 
+/// Row-policy DAGs retain every required table column as a passthrough output. This output is
+/// removed by the no-rescoring rewrite together with the vector column, unlike an expression
+/// that consumes the input and must therefore prevent the rewrite.
+static const ActionsDAG::Node * findPassthroughOutput(const ActionsDAG & dag, const ActionsDAG::Node * input)
+{
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output == input || (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0) == input))
+            return output;
+    }
+
+    return nullptr;
+}
+
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
@@ -460,19 +474,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
             if (const auto * search_column_input = findSearchColumnInput(filter_expression, search_column))
             {
-                /// The vector column output which the rewrite below deletes from the filter step.
-                const ActionsDAG::Node * vector_column_output = nullptr;
-                for (const auto * output_node : filter_expression.getOutputs())
-                {
-                    if (output_node->result_name == search_column ||
-                        (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column))
-                    {
-                        vector_column_output = output_node;
-                        break;
-                    }
-                }
-
-                if (anyOutputConsumesInput(filter_expression, search_column_input, vector_column_output))
+                if (anyOutputConsumesInput(filter_expression, search_column_input, findPassthroughOutput(filter_expression, search_column_input)))
                     optimize_plan = false;
             }
         }
@@ -488,7 +490,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 const ActionsDAG & row_level_filter_expression = row_level_filter->actions;
                 if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column))
                 {
-                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, nullptr))
+                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, findPassthroughOutput(row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
                 }
             }
@@ -498,7 +500,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 const ActionsDAG & deferred_row_level_filter_expression = deferred_row_level_filter->actions;
                 if (const auto * search_column_input = findSearchColumnInput(deferred_row_level_filter_expression, search_column))
                 {
-                    if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, nullptr))
+                    if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, findPassthroughOutput(deferred_row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
                 }
             }
