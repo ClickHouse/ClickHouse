@@ -8,6 +8,7 @@
 
 SET allow_experimental_window_view = 1;
 SET allow_experimental_analyzer = 0;
+SET materialized_views_ignore_errors = 0;
 
 DROP TABLE IF EXISTS 04892_wv;
 DROP TABLE IF EXISTS 04892_src;
