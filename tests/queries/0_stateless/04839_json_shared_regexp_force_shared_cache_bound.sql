@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-replicated-database, long
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-replicated-database, long, no-tsan, no-asan, no-msan, no-ubsan
 
 SET enable_json_type = 1;
 
