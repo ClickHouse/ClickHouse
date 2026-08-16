@@ -62,7 +62,7 @@ void OwnSplitChannel::log(Poco::Message && msg)
         return;
 
     const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-    if (channels.empty() && (logs_queue == nullptr && !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
+    if (channels.empty() && (logs_queue == nullptr || !logs_queue->isNeeded(msg.getPriority(), msg.getSource())))
         return;
 
     if (const auto & masker = SensitiveDataMasker::getInstance())
