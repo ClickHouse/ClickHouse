@@ -30,19 +30,20 @@ namespace
 {
 
 /// Column-native conversion for the cases where CAST provably matches `convertFieldToType`:
-/// plain native-numeric-to-native-numeric, in the default AND `strict` modes. `castColumnAccurateOrNull`
-/// uses the same accurate numeric conversion (`accurate::convertNumeric`) as `convertFieldToType`'s
-/// default path (out-of-range / inexact-narrowing -> NULL). For native numbers `strict` and default
-/// agree with it too: `strict` only rejects additional cases for types that are already excluded here -
-/// `Bool` (10 is not a valid `Bool`) and `Decimal` (scale reduction; `castColumnAccurateOrNull` would
-/// round, so it must NOT be used for strict Decimal - and it isn't, `Decimal` is not a native number).
-/// The strict native-number equivalence is pinned by `gtest_convert_column_to_type`. Returns:
+/// native-numeric and wide-integer (`Int128`/`Int256`/`UInt128`/`UInt256`) values, in the default AND
+/// `strict` modes. `castColumnAccurateOrNull` uses the same accurate numeric conversion
+/// (`accurate::convertNumeric`) as `convertFieldToType`'s default path (out-of-range / inexact-narrowing
+/// -> NULL), and `convertFieldToType` dispatches wide integers through that same template, so they agree.
+/// For these types `strict` and default agree with it too: `strict` only rejects additional cases for
+/// types that are already excluded here - `Bool` (10 is not a valid `Bool`) and `Decimal` (scale
+/// reduction; `castColumnAccurateOrNull` would round, so it must NOT be used for strict Decimal - and it
+/// isn't, `Decimal` is excluded). The strict equivalence is pinned by `gtest_convert_column_to_type`. Returns:
 ///   - the converted size-1 column of `to` on success,
 ///   - a null `ColumnPtr{}` when not representable,
 ///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
 /// Excluded: `convert_inexact_floats` mode (allows rounding, so `castColumnAccurateOrNull` differs),
-/// `Bool` (clamp/validity semantics), and anything non-native-numeric
-/// (Decimal/Date/Enum/String/wide-int/wrappers/composite).
+/// `Bool` (clamp/validity semantics), `Decimal`/`BFloat16`, and anything non-numeric
+/// (Date/Enum/String/wrappers/composite).
 std::optional<ColumnPtr> tryConvertNumericColumnNative(
     const IColumn & value,
     const DataTypePtr & from,
@@ -51,7 +52,13 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 {
     if (convert_inexact_floats)
         return std::nullopt;
-    if (!isNativeNumber(from) || !isNativeNumber(to) || isBool(from) || isBool(to))
+    /// Native numbers plus wide integers (`Int128`/`Int256`/`UInt128`/`UInt256`): `convertFieldToType`
+    /// routes wide-integer sources and targets through the very same `accurate::convertNumeric<From, To>`
+    /// as native numbers, so `castColumnAccurateOrNull` matches it for them too (default AND `strict`).
+    /// `Decimal` and `BFloat16` stay on the `Field` path (a strict `Decimal` must reject scale loss that
+    /// the accurate cast would round; `BFloat16` has its own rounding semantics).
+    auto is_native_or_wide_number = [](const DataTypePtr & type) { return isNativeNumber(type) || isInteger(type); };
+    if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to))
         return std::nullopt;
     /// `strict` is intentionally not a parameter: for native numbers it is equivalent to the default
     /// accurate path (both reject non-representable values), so this fast path serves strict too.

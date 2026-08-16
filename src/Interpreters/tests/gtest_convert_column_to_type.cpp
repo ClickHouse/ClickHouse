@@ -106,6 +106,28 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Int64", Field(Int64(-128)), "Int8"},
         {"Int64", Field(Int64(-129)), "Int8"},            // overflow -> null
 
+        /// wide integers (Int128/256, UInt128/256): `convertFieldToType` routes them through the same
+        /// `accurate::convertNumeric` as native numbers, so the column-native fast path serves them too.
+        {"Int64", Field(Int64(5)), "Int128"},                           // widen native -> wide
+        {"UInt64", Field(UInt64(5)), "UInt256"},                        // widen native -> wide
+        {"Int128", Field(Int128(5)), "Int64"},                          // wide -> native, in range
+        {"Int128", Field(Int128(5)), "Int256"},                         // widen wide -> wide
+        {"Int256", Field(Int256(200)), "UInt8"},                        // wide -> native, in range
+        {"Int256", Field(Int256(300)), "UInt8"},                        // overflow -> null
+        {"Int128", Field(Int128(-1)), "UInt64"},                        // negative -> null
+        {"Int128", Field(Int128(1) << 70), "Int64"},                    // wide overflows native -> null
+        {"Int128", Field(Int128(1) << 70), "Int256"},                   // wide -> wider, exact
+        {"UInt256", Field(UInt256(255)), "UInt8"},                      // wide -> native, in range
+        {"Float64", Field(Float64(5.0)), "Int128"},                     // float -> wide, exact
+        {"Int128", Field(Int128(5)), "Float64"},                        // wide -> float
+        /// wide integers, strict
+        {"Int128", Field(Int128(5)), "Int64", true},                    // in range -> 5
+        {"Int128", Field(Int128(1) << 70), "Int64", true},              // overflow -> null
+        {"Int256", Field(Int256(300)), "UInt8", true},                  // overflow -> null
+        {"Float64", Field(Float64(3.0)), "Int128", true},               // exact -> 3
+        {"Float64", Field(Float64(3.5)), "Int128", true},               // non-integer -> null
+        {"UInt64", Field(UInt64(5)), "Int256", true},                   // widen across sign -> 5
+
         /// floats: exact / inexact in all three modes / overflow / NaN / inf
         {"Float64", Field(Float64(0.5)), "Float32"},
         {"Float64", Field(Float64(0.1)), "Float32"},                      // default: exact -> null
