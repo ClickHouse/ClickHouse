@@ -1017,8 +1017,9 @@ void resolveCredentialSource(
     /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
     /// which comes from the same query. So taking a path from SQL would let anyone who can define a `NATS`
     /// source probe the local filesystem and exfiltrate files the server can read to a NATS server they
-    /// control. Loading from previously-validated metadata (server startup, force-restore, and short-syntax
-    /// `ATTACH`) is exempt, so tables created before this restriction keep working after an upgrade.
+    /// control. Loading previously-validated metadata without a named collection, or with a collection
+    /// defined in the server configuration, is exempt so those tables keep working after an upgrade.
+    /// SQL named collections remain mutable, so their current contents must be validated on every reload.
     if (!loading_from_existing_metadata)
     {
         /// Checked on provenance, before the resulting value below: an override of a configured path with
@@ -1138,7 +1139,8 @@ void registerStorageNATS(StorageFactory & factory)
             token_assigned_by_query,
             destination_assigned_by_query,
             args.getLocalContext()->getSettingsRef()[Setting::allow_named_collection_override_by_default],
-            isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
+            (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
+                && (!named_collection || collection_defined_in_config));
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");

@@ -61,6 +61,16 @@ ATTACH TABLE nats_file_with_url_override_from_existing_metadata (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222');
 DROP TABLE nats_file_with_url_override_from_existing_metadata;
 
+-- SQL named collections stay mutable after a table is created. Consequently, an existing table
+-- definition that reads one must validate the collection's current credential-file path during
+-- metadata reload; otherwise changing the collection after an upgrade would bypass this restriction.
+CREATE NAMED COLLECTION 04891_nats_existing_sql_collection AS
+    nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1, nats_credential_file = '/etc/passwd';
+ATTACH TABLE nats_file_from_existing_sql_collection (key UInt64)
+ENGINE = NATS(04891_nats_existing_sql_collection); -- { serverError BAD_ARGUMENTS }
+DROP NAMED COLLECTION 04891_nats_existing_sql_collection;
+
 -- Basic authentication and token credentials configured in a named collection have the same
 -- destination-binding rule as a `.creds` file.
 CREATE TABLE nats_basic_credentials_in_config_collection (key UInt64)
