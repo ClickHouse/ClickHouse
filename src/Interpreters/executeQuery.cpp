@@ -273,6 +273,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+    extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
 }
 
 namespace ErrorCodes
