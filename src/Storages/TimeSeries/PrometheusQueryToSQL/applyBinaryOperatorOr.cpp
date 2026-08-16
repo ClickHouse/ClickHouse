@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
@@ -68,8 +69,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     /// an unsorted side.
     auto fallbackSortKeyComponent = [](const String & table_name) -> ASTPtr
     {
-        return makeASTFunction(
-            "toFloat64",
+        return makeExactSortKeyComponent(
             makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(Strings{table_name, ColumnNames::Group})));
     };
 
@@ -223,16 +223,20 @@ SQLQueryPiece applyBinaryOperatorOr(
                 left_sort_key = make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey});
             else
                 left_sort_key = makeASTFunction("array", fallbackSortKeyComponent(left));
-            left_sort_key
-                = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(0.0)), std::move(left_sort_key));
+            left_sort_key = makeASTFunction(
+                "arrayConcat",
+                makeASTFunction("array", makeValueSortKeyComponent(make_intrusive<ASTLiteral>(0.0))),
+                std::move(left_sort_key));
 
             ASTPtr right_sort_key;
             if (right_argument.has_sort_order)
                 right_sort_key = make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::SortKey});
             else
                 right_sort_key = makeASTFunction("array", fallbackSortKeyComponent(step2));
-            right_sort_key
-                = makeASTFunction("arrayConcat", makeASTFunction("array", make_intrusive<ASTLiteral>(1.0)), std::move(right_sort_key));
+            right_sort_key = makeASTFunction(
+                "arrayConcat",
+                makeASTFunction("array", makeValueSortKeyComponent(make_intrusive<ASTLiteral>(1.0))),
+                std::move(right_sort_key));
 
             auto left_has_value = makeASTFunction(
                 "and",

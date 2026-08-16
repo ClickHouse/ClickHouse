@@ -86,7 +86,7 @@ struct SQLQueryPiece
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs `group` (UInt64), `values` (Array(Nullable(scalar_data_type))),
-    /// and optionally `sort_key` (Array(Nullable(Float64))) when `has_sort_order` is true.
+    /// and optionally `sort_key` (Array(Tuple(Nullable(Float64), UInt64))) when `has_sort_order` is true.
     /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;

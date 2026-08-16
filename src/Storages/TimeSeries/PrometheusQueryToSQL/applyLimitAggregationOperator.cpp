@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <cmath>
@@ -312,13 +313,13 @@ SQLQueryPiece applyLimitAggregationOperator(
                 make_intrusive<ASTIdentifier>(Strings{vector_grid, ColumnNames::Values}),
                 make_intrusive<ASTLiteral>(1u));
             ASTPtr ranked = *impl_info->order_descending ? makeASTFunction("negate", value->clone()) : value->clone();
-            ASTPtr is_nan_component = makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value)));
-            ASTPtr value_component = makeASTFunction("toFloat64", std::move(ranked));
+            ASTPtr is_nan_component = makeValueSortKeyComponent(makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))));
+            ASTPtr value_component = makeValueSortKeyComponent(makeASTFunction("toFloat64", std::move(ranked)));
 
             ASTPtr sort_key;
             if (grouped)
                 sort_key = makeASTFunction("array",
-                    makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(ColumnNames::BucketSortKey)),
+                    makeExactSortKeyComponent(make_intrusive<ASTIdentifier>(ColumnNames::BucketSortKey)),
                     std::move(is_nan_component), std::move(value_component));
             else
                 sort_key = makeASTFunction("array", std::move(is_nan_component), std::move(value_component));

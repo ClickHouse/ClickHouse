@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Common/Exception.h>
 
 
@@ -64,8 +65,8 @@ SQLQueryPiece applySortFunction(
     /// Prometheus places `NaN` after all numeric samples for both `sort` and `sort_desc`.
     builder.select_list.push_back(makeASTFunction(
         "array",
-        makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))),
-        makeASTFunction("toFloat64", std::move(normalized_value))));
+        makeValueSortKeyComponent(makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value)))),
+        makeValueSortKeyComponent(makeASTFunction("toFloat64", std::move(normalized_value)))));
     builder.select_list.back()->setAlias(ColumnNames::SortKey);
 
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
