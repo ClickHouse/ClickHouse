@@ -15,11 +15,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_rmt_db engi
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_rmt_db.rmt_table (a UInt32, b String) ENGINE = ReplicatedMergeTree ORDER BY a"
 
 # Try to INSERT into the existing replicated table using AND INSERT - should fail
-echo "Test 1: AND INSERT on existing ReplicatedMergeTree should fail with SUPPORT_IS_DISABLED"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_DATABASE}_rmt_db.rmt_table (a UInt32, b String) ENGINE = MergeTree ORDER BY a AND INSERT SELECT 1 AS a, 'test' AS b" 2>&1 | grep -cm1 "AND INSERT into an existing table with a Replicated engine is not supported"
 
 # Try with database_replicated_allow_heavy_create=1 - should also fail for AND INSERT
-echo "Test 2: AND INSERT on existing ReplicatedMergeTree fails even with database_replicated_allow_heavy_create=1"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_heavy_create=1 --query "CREATE TABLE IF NOT EXISTS ${CLICKHOUSE_DATABASE}_rmt_db.rmt_table (a UInt32, b String) ENGINE = MergeTree ORDER BY a AND INSERT SELECT 2 AS a, 'test2' AS b" 2>&1 | grep -cm1 "AND INSERT into an existing table with a Replicated engine is not supported"
 
 # Cleanup

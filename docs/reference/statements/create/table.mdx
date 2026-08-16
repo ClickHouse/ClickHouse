@@ -111,6 +111,38 @@ If both a data type and a default value expression are specified, an implicit ty
 
 A default value expression `expr` may reference arbitrary table columns and constants. ClickHouse checks that changes of the table structure do not introduce loops in the expression calculation. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
+```sql
+### Create a table with AS INSERT {#as-insert}
+```
+
+The `CREATE TABLE ... AS INSERT` syntax creates a table and immediately inserts data into it in a single query.
+
+The data can be provided using `SELECT`, `VALUES`, or `FORMAT`.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)]
+ENGINE = engine
+AS INSERT ...
+```
+
+When IF NOT EXISTS is specified and the table already exists, the query does not insert the data.
+
+```sql
+### Create a table with AND INSERT {#and-insert}
+```
+
+The `CREATE TABLE ... AND INSERT` syntax creates the table if it does not exist and executes the `INSERT` even if the table already exists.
+
+The `AND INSERT` clause supports `SELECT`, `VALUES`, and `FORMAT` input.
+
+The AND INSERT syntax is useful when a single query should initialize a table on its first execution and insert data into the existing table on subsequent executions.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)]
+ENGINE = engine
+AND INSERT ...
+```
+
 ### DEFAULT {#default}
 
 `DEFAULT expr`
