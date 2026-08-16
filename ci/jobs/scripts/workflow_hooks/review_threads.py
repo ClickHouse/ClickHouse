@@ -109,6 +109,23 @@ def fetch_thread_state(info):
     return unresolved_count, override, force_all
 
 
+def record_limited_pipeline_status(info, unresolved_count):
+    """Record the marker needed to replay a limited pipeline.
+
+    This is deliberately strict. Without this status, the reconciliation
+    workflow cannot distinguish a limited pipeline from a full one after the
+    threads are resolved. Raising lets the config workflow skip its filters,
+    which fails toward running the full suite.
+    """
+    if not GH.post_commit_status(
+        name=REVIEW_THREADS_STATUS_NAME,
+        status=Result.Status.FAIL,
+        description=f"{unresolved_count} unresolved review thread(s) - running the limited CI suite",
+        url=info.get_report_url(),
+    ):
+        raise RuntimeError("Failed to post the `Review Threads` limited-pipeline status")
+
+
 if __name__ == "__main__":
     info = Info()
     if info.pr_number <= 0:
@@ -140,9 +157,4 @@ if __name__ == "__main__":
     if should_limit_pipeline(unresolved_count, override) and not force_all:
         # Immediate feedback on the PR; can_be_merged.py posts the final
         # verdict at finish time.
-        GH.post_commit_status(
-            name=REVIEW_THREADS_STATUS_NAME,
-            status=Result.Status.FAIL,
-            description=f"{unresolved_count} unresolved review thread(s) - running the limited CI suite",
-            url=info.get_report_url(),
-        )
+        record_limited_pipeline_status(info, unresolved_count)

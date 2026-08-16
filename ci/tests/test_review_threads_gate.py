@@ -41,6 +41,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
     fetch_thread_state,
     get_unresolved_review_threads_count,
     merge_gate_verdict,
+    record_limited_pipeline_status,
     review_threads_gate_bypassed,
     should_limit_pipeline,
 )
@@ -321,3 +322,28 @@ def test_check_review_threads_fails_when_the_status_write_fails(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Review Threads"):
         can_be_merged.check_review_threads()
+
+
+def test_limited_pipeline_status_write_failure_aborts_the_filtering_path(monkeypatch):
+    info = FakeInfo()
+    monkeypatch.setattr(GH, "post_commit_status", lambda **_: False)
+
+    with pytest.raises(RuntimeError, match="limited-pipeline"):
+        record_limited_pipeline_status(info, 1)
+
+
+def test_review_threads_marker_distinguishes_another_merge_gate(monkeypatch):
+    from ci.jobs.scripts.workflow_hooks import can_be_merged
+
+    info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
+    posted = []
+    monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (1, False, False))
+    monkeypatch.setattr(
+        can_be_merged.GH,
+        "post_commit_status",
+        lambda **kwargs: posted.append(kwargs) or True,
+    )
+
+    assert not can_be_merged.check_review_threads(other_merge_gate_blocked=True)
+    assert posted[0]["description"] == "review threads and another merge gate blocked"
