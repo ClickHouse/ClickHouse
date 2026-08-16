@@ -835,14 +835,28 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid)
+    try
     {
-        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
-        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        String actual_file_contents;
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
-            return true;
-        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+        if (!lock_file_name.empty() && uuid)
+        {
+            LOG_TRACE(log, "Checking lock file {}", lock_file_name);
+            ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+            String actual_file_contents;
+            if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+                return true;
+            LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+        }
+    }
+    catch (...)
+    {
+        if (throw_if_failed)
+        {
+            throw;
+        }
+
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not verify lock file {} for backup {}",
+            lock_file_name, backup_name_for_logging));
+        return false;
     }
 
     if (throw_if_failed)

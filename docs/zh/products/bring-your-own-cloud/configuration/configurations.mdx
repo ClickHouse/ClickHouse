@@ -32,7 +32,7 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 * 使用客户管理的 VPC 时，通常默认启用。
 * 使用 ClickHouse 管理的专用 VPC 时，通常默认禁用。
 
-您可以联系 **ClickHouse Cloud Support**，根据您的需求调整启用哪些端点。
+您可以直接在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施启用私有负载均衡器。如需进行其他端点调整 (例如移除公共负载均衡器) ，请联系 **ClickHouse Cloud Support**。
 
 <div id="private-load-balancer-security-group">
   ### AWS 的私有负载均衡器安全组 (Security Group)
@@ -53,10 +53,10 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink 或 Private Service Connect
+  ## PrivateLink、Private Service Connect 或 Private Link
 </div>
 
-为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink** 或 **GCP Private Service Connect**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC peering，也不必将端点暴露在公共互联网中。
+为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink**、**GCP Private Service Connect** 或 **Azure Private Link**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC/VNet peering，也不必将端点暴露在公共互联网中。
 
 如需分步设置说明，请参阅 [私有网络设置指南](/zh/products/bring-your-own-cloud/onboarding/network)。
 
