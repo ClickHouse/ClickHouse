@@ -20,9 +20,9 @@ CREATE NAMED COLLECTION nc_04826_empty_db AS addresses_expr = '127.0.0.1', datab
 CREATE NAMED COLLECTION nc_04826_fixed_db AS addresses_expr = '127.0.0.1', database = 'system', table = 'one';
 CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO bind_src VALUES (1), (2), (3);
-CREATE TABLE dist_nc_empty_db ENGINE = Distributed(test_shard_localhost, remote(nc_04826_empty_db));
+CREATE TABLE dist_nc_empty_db ENGINE = Distributed(test_shard_localhost, remote(nc_04826_empty_db, table = 'bind_src'));
 CREATE TABLE dist_nc_table_override ENGINE = Distributed(test_shard_localhost, remote(nc_04826_empty_db, table = 'bind_src'));
-CREATE TABLE dist_nc_fixed_db ENGINE = Distributed(test_shard_localhost, remote(nc_04826_fixed_db));
+CREATE TABLE dist_nc_fixed_db ENGINE = Distributed(test_shard_localhost, remote(nc_04826_fixed_db, table = 'one'));
 SHOW CREATE TABLE dist_nc_empty_db;
 SHOW CREATE TABLE dist_nc_table_override;
 SHOW CREATE TABLE dist_nc_fixed_db;
