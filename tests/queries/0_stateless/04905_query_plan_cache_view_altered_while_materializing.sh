@@ -42,7 +42,8 @@ done
 
 # Resolving `t` still succeeds, but `v` has no leaf to pin. The post-resolution validation must
 # notice the changed view metadata and fall back to normal planning with this new definition.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE v MODIFY QUERY SELECT a + 100 AS x FROM t"
+# `StorageView` does not support `MODIFY QUERY`, so replace the view definition in place instead.
+$CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW v AS SELECT a + 100 AS x FROM t"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_pause_after_validation"
 
