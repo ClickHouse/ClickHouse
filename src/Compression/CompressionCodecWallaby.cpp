@@ -1997,7 +1997,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 src += sizeof(UInt16);
 
                 if (alpha < Traits::min_alpha || alpha > Traits::max_alpha || bits >= Traits::width_bits
-                    || adjustment_bits >= Traits::width_bits || exception_count > count)
+                    || adjustment_bits > Traits::width_bits / 2 || exception_count > count)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal header");
 
                 const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);

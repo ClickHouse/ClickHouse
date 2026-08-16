@@ -3040,6 +3040,22 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 8);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputDecimalAdjustmentWidth)
+{
+    /// The Float32 encoder limits zigzag ULP adjustments to 16 bits. A 31-bit adjustment
+    /// could wrap the ordered-float representation during reconstruction.
+    const std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x21,                         // alpha = 1
+        0x00,                         // bits = 0
+        0x1F,                         // adjustment_bits = 31, above the encoder limit
+        0x19, 0x00, 0x00, 0x00,       // base = 25 -> 2.5f
+        0x00, 0x00                    // exception_count = 0
+    };
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 4);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputDecimalForReconstructionOverflow)
 {
     /// `base = INT32_MAX` plus a packed offset of one must not wrap to `INT32_MIN`.
