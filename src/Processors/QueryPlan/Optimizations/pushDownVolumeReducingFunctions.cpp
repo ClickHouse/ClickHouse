@@ -494,6 +494,35 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         if (child_filter && !child_filter_inputs.contains(name_below))
             continue;
 
+        /// Do not compute a scalar before a filter if its predicate already computes the same
+        /// scalar from the same argument. The filter is kept intact by this rewrite, so pushing
+        /// the parent's calculation below it would evaluate the scalar twice for rejected rows.
+        if (child_filter)
+        {
+            bool filter_computes_pushed_function = false;
+            for (const auto & filter_node : child_actions->getNodes())
+            {
+                if (filter_node.type != ActionsDAG::ActionType::FUNCTION || !filter_node.function_base || filter_node.children.size() != 1)
+                    continue;
+
+                if (resolveAliases(filter_node.children.front())->result_name != name_below)
+                    continue;
+
+                for (const auto * function : functions)
+                    if (filter_node.function_base->getName() == function->function_base->getName())
+                    {
+                        filter_computes_pushed_function = true;
+                        break;
+                    }
+
+                if (filter_computes_pushed_function)
+                    break;
+            }
+
+            if (filter_computes_pushed_function)
+                continue;
+        }
+
         const auto * column_below = child_input_header.findByName(name_below);
         if (!column_below || !column_below->type->equals(*argument->result_type))
             continue;

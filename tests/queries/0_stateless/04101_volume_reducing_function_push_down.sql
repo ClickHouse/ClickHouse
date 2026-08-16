@@ -53,6 +53,15 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE id > 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
 
+-- The filter already computes the same scalar. Since its predicate is not rewritten to consume
+-- the pushed result, moving the selected scalar below the filter would compute it twice for rows
+-- rejected by the predicate.
+SELECT 'plan: scalar computed by filter — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') = 0
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE lengthUTF8(s) > 2
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
+
 -- The wide column is selected as well, so it has to flow through the filter anyway and computing
 -- the function earlier would only add to the data being carried.
 SELECT 'plan: argument still needed above — not pushed';

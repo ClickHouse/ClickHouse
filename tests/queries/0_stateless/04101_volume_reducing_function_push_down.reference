@@ -4,6 +4,8 @@ plan: filter — no pushdown when disabled
 0
 plan: filter not reading the argument — not pushed
 0
+plan: scalar computed by filter — not pushed
+1
 plan: argument still needed above — not pushed
 0
 plan: sibling alias still needed above — not pushed
