@@ -25,6 +25,9 @@ public:
 
     String like;
 
+    /// `LIKE ''` is distinct from omitting the filter altogether.
+    bool has_like = false;
+
     String getID(char) const override { return "ShowColumns"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }

@@ -40,6 +40,9 @@ public:
     /// For specifying table name patterns for `TRUNCATE ALL TABLES` query
     String like;
 
+    /// `LIKE ''` is distinct from omitting the filter altogether.
+    bool has_like{false};
+
     bool not_like = false;
     bool case_insensitive_like = false;
 

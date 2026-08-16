@@ -368,6 +368,9 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP VIEW t"));
     EXPECT_NE(hashOf("DETACH TABLE t"), hashOf("DETACH TABLE t PERMANENTLY"));
     EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE 'x%'"), hashOf("TRUNCATE TABLES FROM db LIKE 'y%'"));
+    EXPECT_NE(hashOf("TRUNCATE TABLES FROM db"), hashOf("TRUNCATE TABLES FROM db LIKE ''"));
+    EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE ''"), hashOf("TRUNCATE TABLES FROM db NOT LIKE ''"));
+    EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE ''"), hashOf("TRUNCATE TABLES FROM db ILIKE ''"));
 
     std::string like_with_flag_byte = "TRUNCATE TABLES FROM db LIKE 'x";
     like_with_flag_byte += '\x01';
@@ -376,15 +379,21 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
 
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM u"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+    EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIKE ''"));
+    EXPECT_NE(hashOf("SHOW COLUMNS FROM t LIKE ''"), hashOf("SHOW COLUMNS FROM t ILIKE ''"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM bc FROM a"), hashOf("SHOW COLUMNS FROM c FROM ab"));
     EXPECT_NE(hashOf("SHOW INDEXES FROM bc FROM a"), hashOf("SHOW INDEXES FROM c FROM ab"));
     EXPECT_NE(hashOf("SHOW INDEXES FROM t"), hashOf("SHOW COLUMNS FROM t"));
     EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIMIT 1"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+    EXPECT_EQ(hashOfJSONRoundTrip("TRUNCATE TABLES FROM db LIKE ''"), hashOf("TRUNCATE TABLES FROM db LIKE ''"));
+    EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIKE ''"), hashOf("SHOW COLUMNS FROM t LIKE ''"));
 
     for (const std::string query : {
              "CREATE OR REPLACE VIEW v AS SELECT 1",
              "DETACH TABLE t PERMANENTLY",
              "SHOW COLUMNS FROM t LIMIT 1",
+             "TRUNCATE TABLES FROM db NOT LIKE ''",
+             "SHOW COLUMNS FROM t ILIKE ''",
              "SHOW INDEXES FROM t WHERE name = 'i'",
          })
     {
@@ -412,6 +421,9 @@ TEST(TreeHashCompleteness, AlterAndUndropMembersAreSignificant)
               hashOf("ALTER TABLE t DETACH PARTITION 1"));
     EXPECT_NE(hashOf("ALTER TABLE t REPLACE PARTITION 1 FROM db1.src"),
               hashOf("ALTER TABLE t REPLACE PARTITION 1 FROM db2.src"));
+
+    const std::string materialize_statistics = "ALTER TABLE tab MATERIALIZE STATISTICS no_such_column";
+    EXPECT_EQ(hashOf(materialize_statistics), hashOf(parse(materialize_statistics)->formatWithSecretsOneLine()));
 
     EXPECT_NE(hashOf("UNDROP TABLE t ON CLUSTER c1"),
               hashOf("UNDROP TABLE t ON CLUSTER c2"));

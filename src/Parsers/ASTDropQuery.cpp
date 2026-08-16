@@ -46,6 +46,7 @@ void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(if_empty);
     hash_state.update(has_all);
     hash_state.update(has_tables);
+    hash_state.update(has_like);
     update_string(like);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
@@ -97,7 +98,7 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("has_all", has_all);
     w.writeBool("has_tables", has_tables);
 
-    if (!like.empty())
+    if (has_like)
         w.writeString("like", like);
 
     w.writeBool("not_like", not_like);
@@ -174,6 +175,7 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     has_tables = r.getBool("has_tables");
 
     like = r.getString("like");
+    has_like = r.has("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
     is_dictionary = r.getBool("is_dictionary");
@@ -233,9 +235,9 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterDropQuery` consults it only when `kind == Truncate && has_tables`, so on any other
     /// shape the formatted SQL is parser-impossible and the filter is silently ignored. Reject it,
     /// including the orphaned modifier flags without a pattern.
-    if ((!like.empty() || not_like || case_insensitive_like) && !has_tables)
+    if ((has_like || not_like || case_insensitive_like) && !has_tables)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'like', 'not_like' and 'case_insensitive_like' are only valid for TRUNCATE [ALL] TABLES FROM during AST JSON deserialization");
-    if (like.empty() && (not_like || case_insensitive_like))
+    if (!has_like && (not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'not_like'/'case_insensitive_like' require a non-empty 'like' pattern during AST JSON deserialization");
 
     /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
@@ -320,7 +322,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
-    if (!like.empty())
+    if (has_like)
     {
         ostr
             << (not_like ? " NOT" : "")
