@@ -484,7 +484,7 @@ void StorageMergeTree::alter(
         local_context,
         /*with_alters=*/ false,
         (*old_storage_settings)[MergeTreeSetting::alter_column_secondary_index_mode],
-        /*storage_has_active_parts=*/ true,
+        /*storage_has_active_parts=*/ !getDataPartsVectorForInternalUsage().empty(),
         (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
