@@ -161,49 +161,77 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
     const auto * in_end = reinterpret_cast<const unsigned char *>(data) + compressed_size;
     auto * const out_begin = reinterpret_cast<unsigned char *>(out);
     auto * const out_end = out_begin + uncompressed_size;
-    /// `inflate` requires a non-empty output buffer even for an empty member. Keep a one-byte
-    /// scratch buffer in that case: filling it proves that the page expands to more bytes than
-    /// declared, while leaving it untouched still lets `inflate` validate the gzip trailer.
-    unsigned char empty_out{};
-    auto * const zlib_out_begin = uncompressed_size == 0 ? &empty_out : out_begin;
-    auto * const zlib_out_end = uncompressed_size == 0 ? &empty_out + 1 : out_end;
+    /// `inflate` requires a non-empty output buffer even for an empty member. The scratch buffer
+    /// also lets us inspect a possible member after the declared output is full without accepting
+    /// a member that would expand past the page header.
+    unsigned char scratch_out{};
+    auto * const zlib_out_begin = uncompressed_size == 0 ? &scratch_out : out_begin;
+    auto * const zlib_out_end = uncompressed_size == 0 ? &scratch_out + 1 : out_end;
     zstr.next_in = reinterpret_cast<unsigned char *>(const_cast<char *>(data));
     zstr.next_out = zlib_out_begin;
+    /// After the declared output is filled, `inflate` needs scratch output space to validate the
+    /// current member's trailer. A following member is different: malformed input there is page
+    /// padding, while a malformed current trailer is corruption.
+    bool checking_main_trailer = uncompressed_size == 0;
+    bool checking_extra_member = false;
 
     while (true)
     {
         if (zstr.avail_in == 0)
             zstr.avail_in = static_cast<uInt>(std::min<size_t>(in_end - zstr.next_in, max_chunk));
         if (zstr.avail_out == 0)
-            zstr.avail_out = static_cast<uInt>(std::min<size_t>(zlib_out_end - zstr.next_out, max_chunk));
+        {
+            const auto * current_out_end = (checking_main_trailer || checking_extra_member) ? &scratch_out + 1 : zlib_out_end;
+            zstr.avail_out = static_cast<uInt>(std::min<size_t>(current_out_end - zstr.next_out, max_chunk));
+        }
 
         const auto * prev_in = zstr.next_in;
         const auto * prev_out = zstr.next_out;
         rc = inflate(&zstr, Z_NO_FLUSH);
 
+        if ((checking_main_trailer || checking_extra_member) && zstr.next_out != &scratch_out)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
+
         if (rc == Z_STREAM_END)
         {
-            /// The trailer of this member is verified. If the page produced everything it promised,
-            /// only a suffix that cannot start another gzip member is padding.
-            if (zstr.next_out == zlib_out_begin + uncompressed_size)
+            /// The trailer of this member is verified. Once the declared output is complete,
+            /// validate a possible trailing member with the scratch buffer: an empty member is
+            /// valid, a member that produces a byte overflows, and malformed remainder is padding.
+            if (!checking_main_trailer && !checking_extra_member && zstr.next_out != zlib_out_begin + uncompressed_size)
             {
-                const size_t remaining = in_end - zstr.next_in;
-                if (remaining < 2 || zstr.next_in[0] != 0x1f || zstr.next_in[1] != 0x8b)
-                    return;
-            }
-            if (zstr.next_out == zlib_out_end)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
-            if (zstr.next_in == in_end)
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                     "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
                     uncompressed_size, zstr.next_out - zlib_out_begin);
+            }
+            if (zstr.next_in == in_end)
+                return;
 
             rc = inflateReset(&zstr);
             if (rc != Z_OK)
                 throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
+            zstr.next_out = &scratch_out;
+            zstr.avail_out = 0;
+            checking_main_trailer = false;
+            checking_extra_member = true;
             continue;
         }
+
+        /// zlib may need one more call after filling the output to validate the gzip trailer.
+        /// Use scratch space for that call, so a continuing member cannot silently overflow.
+        if (!checking_main_trailer && !checking_extra_member && zstr.next_out == zlib_out_end)
+        {
+            zstr.next_out = &scratch_out;
+            zstr.avail_out = 0;
+            checking_main_trailer = true;
+            continue;
+        }
+
+        /// `compressed_page_size` can include arbitrary padding. If parsing a possible next
+        /// member fails before producing data, the remainder is padding even if it starts with
+        /// the gzip magic bytes.
+        if (checking_extra_member && zstr.next_out == &scratch_out)
+            return;
 
         if (rc != Z_OK && rc != Z_BUF_ERROR)
             throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflate failed: {}", zError(rc));

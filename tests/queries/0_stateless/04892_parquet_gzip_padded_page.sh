@@ -20,6 +20,8 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 DATA_FILE="${WORK_DIR}/plain.parquet"
 PADDED_FILE="${WORK_DIR}/padded.parquet"
+EMPTY_MEMBER_FILE="${WORK_DIR}/empty-member.parquet"
+MAGIC_PADDING_FILE="${WORK_DIR}/magic-padding.parquet"
 OVERFLOW_FILE="${WORK_DIR}/overflow.parquet"
 
 # One fully dictionary-encoded `gzip`-compressed string column in a single row group. Checksums, the
@@ -35,10 +37,10 @@ ${CLICKHOUSE_LOCAL} --query="
         engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
-python3 - "${DATA_FILE}" "${PADDED_FILE}" "${OVERFLOW_FILE}" <<'PYEOF'
+python3 - "${DATA_FILE}" "${PADDED_FILE}" "${EMPTY_MEMBER_FILE}" "${MAGIC_PADDING_FILE}" "${OVERFLOW_FILE}" <<'PYEOF'
 import gzip, struct, sys
 
-src, padded_dst, overflow_dst = sys.argv[1], sys.argv[2], sys.argv[3]
+src, padded_dst, empty_member_dst, magic_padding_dst, overflow_dst = sys.argv[1:]
 PADDING = 4096
 
 # --- minimal Thrift compact protocol walker (records the byte range of every scalar integer field) ---
@@ -154,6 +156,10 @@ def make_file(dst, suffix):
     open(dst, "wb").write(out)
 
 make_file(padded_dst, b"\0" * PADDING)
+# A trailing empty member must be accepted, while padding that merely starts with the gzip magic
+# bytes must not be mistaken for a malformed member.
+make_file(empty_member_dst, gzip.compress(b""))
+make_file(magic_padding_dst, b"\x1f\x8bnot-a-gzip-member")
 # A second gzip member must not be treated as page padding after the first member filled the
 # declared output exactly: it expands past the page header and must be rejected.
 make_file(overflow_dst, gzip.compress(b"overflow"))
@@ -163,6 +169,13 @@ echo "the padded file reads back exactly like the original"
 ${CLICKHOUSE_LOCAL} --query="
     select (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
          = (select (groupBitXor(cityHash64(s)), count()) from file('${PADDED_FILE}', Parquet))"
+
+echo "an empty trailing member and magic-prefixed padding read back exactly"
+${CLICKHOUSE_LOCAL} --query="
+    select (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
+         = (select (groupBitXor(cityHash64(s)), count()) from file('${EMPTY_MEMBER_FILE}', Parquet))
+       and (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
+         = (select (groupBitXor(cityHash64(s)), count()) from file('${MAGIC_PADDING_FILE}', Parquet))"
 
 echo "a second gzip member beyond the declared output is rejected"
 ${CLICKHOUSE_LOCAL} --query="select count() from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'
