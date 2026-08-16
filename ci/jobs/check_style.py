@@ -244,11 +244,12 @@ FETCHES_SERVER_PATH_RE = re.compile(
     r"|\bselect\s+\*[^\"`|;]{0,300}?\bfrom\s+system\."
     r"(?:parts|detached_parts|projection_parts|tables|disks)\b)"
 )
-# The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
-# The `value` token is required so that queries that merely inspect the setting without
-# materializing the path (e.g. SELECT count() ...) are not classified as a path fetch.
+# The server data root fetched as `SELECT value` or `SELECT *` from
+# `system.server_settings` where `name = 'path'`. The `value` token (or `*`) is required
+# so that queries that merely inspect the setting without materializing the path (e.g.
+# `SELECT count()`) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
-    r"(?i)\bvalue\b[^\"`|;]{0,100}?\bfrom\s+system\.server_settings\b"
+    r"(?i)(?:\bvalue\b|\bselect\s+\*)[^\"`|;]{0,100}?\bfrom\s+system\.server_settings\b"
     r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b)"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,

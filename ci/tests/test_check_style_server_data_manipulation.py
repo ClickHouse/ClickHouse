@@ -187,6 +187,13 @@ def test_server_root_fetch_is_flagged(tmp_path):
         " WHERE 'path' = name\")\n"
         'rm -f "$root/flags/force_drop_table"\n',
     )
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.server_settings'
+        " WHERE name = 'path'\")\n"
+        'root=$(printf "%s" "$row" | cut -f2)\n'
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
 
 
 def test_server_settings_inspection_without_value_is_not_flagged(tmp_path):
