@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -202,6 +203,15 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
         subcolumn_path = "null";
     }
+    else if (function_name == "length" && function_arguments.size() == 1)
+    {
+        const auto type_id = column_node->getColumnType()->getTypeId();
+        if ((type_id != TypeIndex::String && type_id != TypeIndex::Array && type_id != TypeIndex::Map)
+            || !function_node.getResultType()->equals(*std::make_shared<DataTypeUInt64>()))
+            return {};
+
+        subcolumn_path = type_id == TypeIndex::String ? "size" : "size0";
+    }
     else if (function_name == "tupleElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Tuple)
     {
         const auto * constant_node = function_arguments[1]->as<ConstantNode>();
@@ -233,6 +243,20 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
             return {};
 
         subcolumn_path = element_names[*position];
+    }
+    else if (function_name == "variantElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Variant)
+    {
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
+            return {};
+
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*column_node->getColumnType());
+        const auto & variant_name = constant_node->getValue().safeGet<String>();
+        auto discriminator = variant_type.tryGetVariantDiscriminator(variant_name);
+        if (!discriminator || !function_node.getResultType()->equals(*variant_type.getVariant(*discriminator)))
+            return {};
+
+        subcolumn_path = variant_name;
     }
     else
         return {};
