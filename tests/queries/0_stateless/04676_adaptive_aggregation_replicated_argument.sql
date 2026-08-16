@@ -1,4 +1,7 @@
--- Tags: long
+-- Tags: long, no-parallel-replicas
+-- The staging asserted below happens inside one aggregating producer. With parallel replicas the
+-- partial aggregation runs on the replicas, whose ProfileEvents never reach this server's
+-- query_log, so the assertions would read zero.
 
 DROP TABLE IF EXISTS t_adaptive_repl_left;
 DROP TABLE IF EXISTS t_adaptive_repl_right;
