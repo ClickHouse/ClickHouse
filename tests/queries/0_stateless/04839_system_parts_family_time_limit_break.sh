@@ -57,7 +57,10 @@ NUM_DROPPED_TABLES=20
 NUM_WIDE_COLUMNS=640
 # A query that stops at the first checkpoint after the deadline takes about a second, while the
 # full result takes at least five seconds to build.
-MAX_DURATION_MS=3000
+# The debug flaky-check workers can take several seconds to initialize the system-table query
+# pipeline. The uninterruptible snapshot walk still takes at least ten seconds, leaving a wide
+# margin while avoiding a scheduler-sensitive bound.
+MAX_DURATION_MS=6000
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_WIDE_COLUMNS); do echo -n ", c$i UInt64"; done)
 DROPPED_TABLE="t_slowdown_system_parts_dropped_${CLICKHOUSE_TEST_UNIQUE_NAME}"
