@@ -40,7 +40,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 /// Auxiliary header bytes at the start of the fuzz input:
 ///   [0]    select inner type: 0 = LowCardinality(String), 1 = LowCardinality(Nullable(UInt64))
-///   [1]    native_format flag (0 or 1)
+///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes
 ///   [2..9] number of rows to read (uint64_t little-endian, capped at 65536)
 struct AuxiliaryRandomData
 {
@@ -63,7 +63,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         const auto * aux = reinterpret_cast<const AuxiliaryRandomData *>(data);
         size_t rows = aux->rows % 65536;
-        bool use_native_format = (aux->native_format & 1) != 0;
+        const bool use_native_format = (aux->native_format & 1) != 0;
+        const bool use_specialized_prefixes = (aux->native_format & 2) != 0;
 
         DataTypePtr inner_type;
         if (aux->type_selector % 2 == 0)
@@ -88,6 +89,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         settings.position_independent_encoding = false;
         settings.native_format = use_native_format;
         settings.format_settings = &format_settings;
+        settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 

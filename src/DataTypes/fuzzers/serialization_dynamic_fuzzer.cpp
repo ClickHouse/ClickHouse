@@ -42,7 +42,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 /// Auxiliary header at the start of the fuzz input:
 ///   [0]    max_types_selector: chooses max_dynamic_types (1, 4, 16, 255)
 ///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes,
-///          bit 2 = read_statistics
+///          bit 2 = read_statistics, bit 3 = decode_types_in_binary_format
 ///   [2..9] rows: uint64_t LE, capped at 65536
 ///
 /// SerializationDynamic binary layout (simplified):
@@ -92,6 +92,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// read path, and the V2/V3 statistics block in the prefix is only parsed
         /// when it is set, so fuzz both states.
         const bool read_statistics = (aux->flags & 4) != 0;
+        const bool decode_types_in_binary_format = (aux->flags & 8) != 0;
         const size_t max_dynamic_types = selectMaxTypes(aux->max_types_selector);
 
         auto dynamic_type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
@@ -105,6 +106,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         FormatSettings format_settings;
         format_settings.binary.max_binary_array_size = 100;
         format_settings.binary.max_binary_string_size = 100;
+        format_settings.native.decode_types_in_binary_format = decode_types_in_binary_format;
 
         ISerialization::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &in; };
