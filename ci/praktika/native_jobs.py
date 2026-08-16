@@ -742,12 +742,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                                 f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
+                            # The pre-hook only records that the gate could
+                            # apply. Persist whether it actually filtered a
+                            # job: missing changed-files data deliberately
+                            # bypasses all filters and therefore runs the full
+                            # pipeline.
+                            if "unresolved review thread" in reason:
+                                review_threads_pipeline_limited = True
                             continue
-                review_threads_pipeline_limited = bool(
-                    Info().get_kv_data("unresolved_review_threads")
-                ) and not bool(
-                    Info().get_kv_data("unresolved_review_threads_override")
-                )
             # Record the decision made by this filtering pass, rather than
             # reconstructing it later from review-thread state. In particular,
             # `ci-force-all` does not execute filter hooks and therefore runs

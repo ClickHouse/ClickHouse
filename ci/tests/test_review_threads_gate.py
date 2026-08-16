@@ -122,8 +122,19 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert "unresolved=$(api_with_retries graphql --paginate" in rerun_workflow
     assert 'runs=$(api_with_retries "repos/$GH_REPO/actions/runs?' in rerun_workflow
     assert 'pipeline_limited=false' in rerun_workflow
-    assert 'Refreshed the review-thread and mergeable-check statuses without rerunning full CI.' in rerun_workflow
+    assert '"running the limited CI suite"' in rerun_workflow
+    assert 'Refreshed the review-thread status without rerunning full CI.' in rerun_workflow
+    assert 'context="$MERGEABLE_CHECK_STATUS_NAME"' not in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
+    assert 'select(.created_at >= $finish_started_at)' in retry_workflow
+
+
+def test_pipeline_limited_is_recorded_only_after_an_actual_review_thread_skip():
+    repository_root = Path(__file__).resolve().parents[2]
+    native_jobs = (repository_root / "ci/praktika/native_jobs.py").read_text()
+
+    assert 'if "unresolved review thread" in reason:' in native_jobs
+    assert 'review_threads_pipeline_limited = True' in native_jobs
 
 
 def test_count_unresolved_threads(monkeypatch):

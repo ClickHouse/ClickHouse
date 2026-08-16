@@ -184,8 +184,14 @@ jobs:
               failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
                 .jobs[] | select(.conclusion == "failure") | .name
               ')
+              finish_started_at=$(echo "$jobs_raw" | jq -r '
+                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure") |
+                 .started_at] | first // empty
+              ')
               marker_state=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
-                --jq '.[] | select(.context == "Review Threads") | .state' | sed -n 1p) \
+                --jq '[.[] | select(.context == "Review Threads") |
+                       select(.created_at >= $finish_started_at)] | first // {} | .state // empty' \
+                --raw-field finish_started_at="$finish_started_at") \
                 || marker_state=""
               if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
                 && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then

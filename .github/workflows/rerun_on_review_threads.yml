@@ -142,7 +142,8 @@ jobs:
           marker_state=$(echo "$marker" | jq -r '.state // "none"')
           marker_description=$(echo "$marker" | jq -r '.description // ""')
           pipeline_limited=false
-          if [[ "$marker_description" == *"full CI suite was skipped"* ]] \
+          if [[ "$marker_description" == *"running the limited CI suite"* ]] \
+             || [[ "$marker_description" == *"full CI suite was skipped"* ]] \
              || [[ "$marker_description" == *"full CI suite will be re-run"* ]]; then
             pipeline_limited=true
           fi
@@ -174,11 +175,10 @@ jobs:
               -f state="$state" -f context="$STATUS_NAME" \
               -f description="$description" \
               -f target_url="https://github.com/$GH_REPO/pull/$pr"
-            gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
-              -f state="$state" -f context="$MERGEABLE_CHECK_STATUS_NAME" \
-              -f description="$description" \
-              -f target_url="https://github.com/$GH_REPO/pull/$pr"
-            echo "Refreshed the review-thread and mergeable-check statuses without rerunning full CI."
+            # `Mergeable Check` is the aggregate verdict of the PR workflow.
+            # Do not overwrite a real CI failure just because the independent
+            # review-thread gate state changed.
+            echo "Refreshed the review-thread status without rerunning full CI."
             exit 0
           fi
 
