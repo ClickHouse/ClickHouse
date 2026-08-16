@@ -15,7 +15,7 @@ import shutil
 import subprocess
 
 from praktika.result import Result
-from praktika.utils import Shell, Utils
+from praktika.utils import Utils
 
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
@@ -67,11 +67,7 @@ class Server:
     def start(self):
         kill_leftover_server_processes()
         print("Starting ClickHouse server")
-        server_env = {
-            name: value
-            for name, value in os.environ.items()
-            if name not in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
-        }
+        server_env = {name: value for name, value in os.environ.items() if name not in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY"}}
         self.process = subprocess.Popen(
             [f"{TEMP_DIR}/clickhouse-server", "--config-file=./config.xml"],
             cwd=SERVER_DIR,
@@ -83,7 +79,12 @@ class Server:
             if self.process.poll() is not None:
                 Utils.print_formatted_error("The server exited during startup", self.tail_log(), "")
                 return False
-            if Shell.check('clickhouse-client --query "SELECT 1"'):
+            readiness = subprocess.run(
+                [f"{TEMP_DIR}/clickhouse-client", "--host", "127.0.0.1", "--port", "9000", "--query", "SELECT 1"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if readiness.returncode == 0:
                 print("ClickHouse server ready")
                 return True
             Utils.sleep(2)
@@ -120,10 +121,7 @@ def write_html_report(outcomes, stale, info):
                 " tests/docs_examples/known_failures.txt with the reason.\n\n"
             )
         for outcome in unexpected:
-            f.write(
-                f"<b style='color: red;'>{html.escape(outcome['id'])}</b>"
-                f"  [{outcome['status']}]  {html.escape(outcome['source'])}\n"
-            )
+            f.write(f"<b style='color: red;'>{html.escape(outcome['id'])}</b>  [{outcome['status']}]  {html.escape(outcome['source'])}\n")
             f.write(block(outcome["query"], "    | ") + "\n")
             if outcome["status"] == "output":
                 f.write("    documented response:\n")
@@ -135,18 +133,12 @@ def write_html_report(outcomes, stale, info):
             f.write("\n")
 
         if fixed:
-            f.write(
-                f"\n<b style='color: green;'>{len(fixed)} example(s) now pass and must be removed"
-                " from tests/docs_examples/known_failures.txt:</b>\n"
-            )
+            f.write(f"\n<b style='color: green;'>{len(fixed)} example(s) now pass and must be removed from tests/docs_examples/known_failures.txt:</b>\n")
             for outcome in fixed:
                 f.write(f"  {html.escape(outcome['id'])}\n")
 
         if stale:
-            f.write(
-                f"\n<b style='color: red;'>{len(stale)} known failure(s) no longer exist and must be"
-                " removed from tests/docs_examples/known_failures.txt:</b>\n"
-            )
+            f.write(f"\n<b style='color: red;'>{len(stale)} known failure(s) no longer exist and must be removed from tests/docs_examples/known_failures.txt:</b>\n")
             for example_id in stale:
                 f.write(f"  {html.escape(example_id)}\n")
 
@@ -173,6 +165,7 @@ def main():
     results.append(Result.from_commands_run(name="Start ClickHouse", command=lambda: server.install() and server.start()))
 
     if results[-1].is_ok():
+
         def run():
             # Run without a shell, so that the exit code of the runner is the exit code observed
             # here and the interpolated paths cannot be reinterpreted.

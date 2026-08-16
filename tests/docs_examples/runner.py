@@ -64,7 +64,6 @@ import json
 import os
 import re
 import sys
-import threading
 import urllib.parse
 import uuid
 from collections import defaultdict
@@ -237,7 +236,7 @@ def split_statements(script):
 
 
 class Client:
-    """A minimal HTTP client for the server, with one connection per thread."""
+    """A minimal HTTP client for the server, with one fresh connection per statement."""
 
     def __init__(self, host, port, user, password, timeout):
         self.host = host
@@ -245,14 +244,6 @@ class Client:
         self.user = user
         self.password = password
         self.timeout = timeout
-        self.local = threading.local()
-
-    def _connection(self):
-        connection = getattr(self.local, "connection", None)
-        if connection is None:
-            connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
-            self.local.connection = connection
-        return connection
 
     def query(self, sql, **params):
         """Run one statement. Returns (ok, output_or_error_message)."""
@@ -265,27 +256,23 @@ class Client:
             **params,
         }
         url = "/?" + urllib.parse.urlencode(params)
-        for attempt in (1, 2):
-            try:
-                connection = self._connection()
-                connection.request("POST", url, body=sql.encode())
-                response = connection.getresponse()
-                body = response.read().decode("utf-8", "replace")
-                return response.status == 200, body
-            except (http.client.HTTPException, OSError) as e:
-                # A keep-alive connection can be closed by the server between requests; reconnect
-                # once before reporting the failure.
-                self.local.connection = None
-                if attempt == 2:
-                    return False, f"Connection error: {e}"
-        raise AssertionError("unreachable")
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=self.timeout)
+        try:
+            connection.request("POST", url, body=sql.encode())
+            response = connection.getresponse()
+            body = response.read().decode("utf-8", "replace")
+            return response.status == 200, body
+        except (http.client.HTTPException, OSError) as e:
+            # Retrying can replay a mutating statement after the server has accepted it.
+            return False, f"Connection error: {e}"
+        finally:
+            connection.close()
 
 
 def load_examples(client):
     """Read the documentation from the server and cut the examples out of it."""
     ok, body = client.query(
-        "SELECT name, toString(type) AS type, description, source FROM system.documentation"
-        " WHERE description LIKE '%```sql title=Query%' ORDER BY type, name",
+        "SELECT name, toString(type) AS type, description, source FROM system.documentation WHERE description LIKE '%```sql title=Query%' ORDER BY type, name",
         default_format="JSONEachRow",
     )
     if not ok:
@@ -332,15 +319,21 @@ def run_entity(client, entity_index, examples, global_objects, external_calls):
     try:
         for example in examples:
             if not global_objects and example.creates_global_objects:
-                outcomes.append(Outcome(
-                    example, SKIPPED,
-                    "The example creates global, server-wide objects; pass --global-objects to run it",
-                ))
+                outcomes.append(
+                    Outcome(
+                        example,
+                        SKIPPED,
+                        "The example creates global, server-wide objects; pass --global-objects to run it",
+                    )
+                )
             elif not external_calls and example.calls_external_services:
-                outcomes.append(Outcome(
-                    example, SKIPPED,
-                    "The example calls an external service; pass --external-calls to run it",
-                ))
+                outcomes.append(
+                    Outcome(
+                        example,
+                        SKIPPED,
+                        "The example calls an external service; pass --external-calls to run it",
+                    )
+                )
             else:
                 outcomes.append(run_example(client, database, session, example))
     finally:
@@ -378,8 +371,7 @@ def run_example(client, database, session, example):
             return Outcome(
                 example,
                 ERROR,
-                f"The example documents an exception, but statement {number} of {len(statements)}"
-                f" failed before the last one:\n{body.strip()}",
+                f"The example documents an exception, but statement {number} of {len(statements)} failed before the last one:\n{body.strip()}",
             )
         documented_code = error_code(example.result)
         actual_code = error_code(body)
@@ -387,8 +379,7 @@ def run_example(client, database, session, example):
             return Outcome(
                 example,
                 ERROR,
-                f"The example documents the error {documented_code}, and got {actual_code}"
-                f" instead:\n{body.strip()}",
+                f"The example documents the error {documented_code}, and got {actual_code} instead:\n{body.strip()}",
             )
         return Outcome(example, OK)
 
@@ -416,12 +407,8 @@ def load_known_failures(path):
             # whatever follows the status.
             fields = line.split(maxsplit=2)
             comment = fields[2].strip().lstrip("#").strip() if len(fields) > 2 else ""
-            if len(fields) < 2 or fields[1] not in (ERROR, OUTPUT, UNSTABLE) or (
-                len(fields) > 2 and not fields[2].lstrip().startswith("#")
-            ):
-                raise RuntimeError(
-                    f"{path}:{number}: expected '<example> {ERROR}|{OUTPUT}|{UNSTABLE}  # why',"
-                    f" got: {line.strip()}")
+            if len(fields) < 2 or fields[1] not in (ERROR, OUTPUT, UNSTABLE) or (len(fields) > 2 and not fields[2].lstrip().startswith("#")):
+                raise RuntimeError(f"{path}:{number}: expected '<example> {ERROR}|{OUTPUT}|{UNSTABLE}  # why', got: {line.strip()}")
             known[fields[0]] = (fields[1], comment)
     return known
 
@@ -496,12 +483,11 @@ def report(outcomes, known, example_ids, verbose):
     skipped = sum(1 for o in outcomes if o.status == SKIPPED)
     failing = sum(1 for o in outcomes if o.status not in (OK, SKIPPED))
     entities = {(o.example.entity_type, o.example.entity_name) for o in outcomes}
-    print(f"\nRan {total - skipped} examples of {len(entities)} entities: "
-          f"{total - skipped - failing} ok, {failing} not ok ({len(known)} known)")
+    print(f"\nRan {total - skipped} examples of {len(entities)} entities: {total - skipped - failing} ok, {failing} not ok ({len(known)} known)")
     if skipped:
-        print(f"{skipped} example(s) create global, server-wide objects or call external services"
-              " and were skipped; pass --global-objects and/or --external-calls to run them"
-              " against a dedicated server")
+        print(
+            f"{skipped} example(s) create global, server-wide objects or call external services and were skipped; pass --global-objects and/or --external-calls to run them against a dedicated server"
+        )
 
     if unexpected:
         print(f"\n{len(unexpected)} example(s) unexpectedly not ok:\n")
@@ -561,8 +547,7 @@ def main():
     parser.add_argument(
         "--external-calls",
         action="store_true",
-        help="run the examples that call an external service (the ai* functions);"
-        " on a server with provider credentials configured they make real outbound calls",
+        help="run the examples that call an external service (the ai* functions); on a server with provider credentials configured they make real outbound calls",
     )
     parser.add_argument("--report", help="write the outcome of every example to this file, as JSON")
     parser.add_argument("--verbose", action="store_true", help="list the outcome of every example")
