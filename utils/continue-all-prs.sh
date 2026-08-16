@@ -566,7 +566,10 @@ ensure_worktree()
 {
     local wt="$1"
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $wt"; then
+    # Do not use `grep -q` here: with a large worktree registry it closes the
+    # pipe after an early match, and `pipefail` turns Git's SIGPIPE into a false
+    # negative.
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $wt" >/dev/null; then
         banner "Reusing existing worktree: $wt"
         return 0
     fi
@@ -596,7 +599,7 @@ is_registered_worktree()
 {
     local candidate="$1"
     git -C "$MAIN_REPO" worktree list --porcelain \
-        | grep -qxF "worktree $candidate"
+        | grep -xF "worktree $candidate" >/dev/null
 }
 
 is_managed_worktree()
