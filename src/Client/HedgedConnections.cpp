@@ -126,6 +126,14 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
+    if (query_plan.getMaxThreads() || query_plan.getConcurrencyControl())
+    {
+        /// Future hedged replicas replay this action after their connection is established.
+        /// Exclude peers that cannot deserialize the plan instead of letting the replay
+        /// serialize it at an older version and lose its execution limits.
+        hedged_connections_factory.setMinQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS);
+    }
+
     auto send_query_plan = [&query_plan](ReplicaState & replica) { replica.connection->sendQueryPlan(query_plan); };
 
     for (auto & offset_state : offset_states)

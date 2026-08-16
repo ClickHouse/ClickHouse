@@ -314,7 +314,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
             if (result.is_up_to_date)
             {
                 ++up_to_date_count;
-                if (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry))
+                if ((!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry))
+                    && result.entry->getQueryPlanSerializationVersion() >= min_query_plan_serialization_version)
                 {
                     replicas[index].is_ready = true;
                     ++ready_replicas_count;
@@ -402,7 +403,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         if (!result.entry.isNull()
             && result.is_usable
             && !replicas[i].is_ready
-            && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry)))
+            && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry))
+            && result.entry->getQueryPlanSerializationVersion() >= min_query_plan_serialization_version)
             indexes.push_back(static_cast<int>(i));
     }
 

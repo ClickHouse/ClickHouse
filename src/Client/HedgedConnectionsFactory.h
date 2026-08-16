@@ -82,6 +82,9 @@ public:
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
+    /// Do not return replicas that cannot deserialize a query plan at this version.
+    void setMinQueryPlanSerializationVersion(UInt64 version) { min_query_plan_serialization_version = version; }
+
     size_t getFailedPoolsCount() const { return failed_pools_count; }
 
     ~HedgedConnectionsFactory();
@@ -132,6 +135,7 @@ private:
     /// If this flag is true, don't return connections with
     /// two level aggregation incompatibility
     bool skip_replicas_with_two_level_aggregation_incompatibility = false;
+    UInt64 min_query_plan_serialization_version = 0;
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
