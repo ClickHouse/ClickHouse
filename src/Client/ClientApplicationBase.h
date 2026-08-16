@@ -48,10 +48,10 @@ protected:
     bool isEmbeeddedClient() const override;
     void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
-    /// Reattaches the crash-report channel built by `init` to the logger the signal listener holds.
-    /// Must be called by any subclass that re-channels existing loggers (`Loggers::buildLoggers`),
-    /// otherwise a fatal signal is formatted into a channel with no destination.
-    void restoreFatalLogChannel();
+    /// Binds the crash-report channel built by `init` back to the logger the signal listener
+    /// holds, additively and at most once. Pass whether the logger's current channel already
+    /// writes to stderr, so the report goes there exactly once.
+    void restoreFatalLogChannel(bool configured_channel_writes_to_stderr);
 
     virtual void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) = 0;
 

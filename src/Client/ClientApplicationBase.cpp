@@ -282,19 +282,25 @@ void ClientApplicationBase::init(int argc, char ** argv)
 #endif
 }
 
-void ClientApplicationBase::restoreFatalLogChannel()
+void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_writes_to_stderr)
 {
     if (!fatal_log || !fatal_channel_ptr)
         return;
 
-    /// Keep whatever destination was configured meanwhile, so a crash report is added to stderr
-    /// rather than moved away from a log file the user asked for.
-    if (auto * configured = fatal_log->getChannel(); configured && configured != fatal_channel_ptr.get())
+    /// Re-entering would fan every record out once more, and nest the splitter inside itself.
+    if (fatal_log->getChannel() == fatal_channel_ptr.get())
+        return;
+
+    /// Additive, so a destination the user configured keeps receiving the report.
+    if (auto * configured = fatal_log->getChannel())
         fatal_channel_ptr->addChannel(configured);
 
+    /// Exactly one route to stderr.
+    if (configured_channel_writes_to_stderr && fatal_console_channel_ptr)
+        fatal_channel_ptr->removeChannel(fatal_console_channel_ptr.get());
+
     fatal_log->setChannel(fatal_channel_ptr.get());
-    /// Fatal severity only: this channel writes unformatted records straight to stderr, which is
-    /// the program's own output.
+    /// Anything below fatal reaches stderr, which is the program's own output.
     fatal_log->setLevel(Poco::Message::PRIO_FATAL);
 }
 
