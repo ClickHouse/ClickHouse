@@ -9,12 +9,16 @@ namespace DB
 
 class IObjectStorage;
 
+/// `skipped_keys`, when given, receives the already-existing candidates probed before the returned
+/// one. A caller deriving sequence numbers from a list of known names must append these as well,
+/// otherwise its next derivation repeats a name this call stepped over.
 std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
-    size_t sequence_number);
+    size_t sequence_number,
+    Strings * skipped_keys = nullptr);
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,

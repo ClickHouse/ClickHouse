@@ -203,8 +203,14 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::alloc
 
     auto paths = getPaths();
     /// The probes below are remote requests, so `paths_mutex` must not be held across them.
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(object_storage, *this, settings, paths.front().path, paths.size()))
+    Strings skipped_keys;
+    if (auto new_key
+        = checkAndGetNewFileOnInsertIfNeeded(object_storage, *this, settings, paths.front().path, paths.size(), &skipped_keys))
     {
+        /// The next name is derived from the size of this list, so every name the probe stepped over
+        /// belongs in it: leaving one out would let a later write derive that same name again.
+        for (auto & skipped_key : skipped_keys)
+            paths.push_back({std::move(skipped_key)});
         paths.push_back({*new_key});
         setPaths(paths);
     }
