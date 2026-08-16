@@ -48,15 +48,28 @@ HTTP_PORT=$(cat "$PORT_FILE")
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_after_pull"
 
+QUERY_ID="${CLICKHOUSE_DATABASE}_no_chunk_after_cancel"
 $CLICKHOUSE_CLIENT \
     --partial_result_on_first_cancel 1 \
     --parallel_replicas_for_cluster_engines 0 \
+    --query_id "$QUERY_ID" \
     --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64')" \
     >"$OUTPUT_FILE" 2>/dev/null &
 CLIENT_PID=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_after_pull PAUSE"
 kill -SIGINT $CLIENT_PID
+
+DELIVERED=0
+for _ in {1..300}; do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
+        DELIVERED=1
+        break
+    fi
+    sleep 0.1
+done
+
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_after_pull"
 
 wait $CLIENT_PID
@@ -66,6 +79,12 @@ if ((CLIENT_STATUS == 0)); then
     echo "the query succeeded"
 else
     echo "FAIL: the query failed with the status $CLIENT_STATUS"
+fi
+
+if ((DELIVERED == 1)); then
+    echo "the cancellation was delivered after the chunk was pulled"
+else
+    echo "FAIL: the cancellation was not delivered after the chunk was pulled"
 fi
 
 if [[ ! -s "$OUTPUT_FILE" ]]; then
