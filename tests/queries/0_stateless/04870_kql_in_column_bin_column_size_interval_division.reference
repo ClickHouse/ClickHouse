@@ -40,4 +40,4 @@ b
 2
 -- kqlBin over a datetime with a non-constant interval from SQL --
 2026-08-01 12:00:00.0000000
-2026-08-01 12:34:56.1225000
+2026-08-01 12:34:56.1230000
