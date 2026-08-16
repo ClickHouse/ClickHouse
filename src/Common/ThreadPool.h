@@ -61,7 +61,8 @@ public:
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_ = {});
+        void start(typename ThreadList::iterator & it);
+        void start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_);
 
         void join();
 
