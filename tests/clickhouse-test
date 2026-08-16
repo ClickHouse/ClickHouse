@@ -77,9 +77,9 @@ def write_text_atomic(path: Path, text: str) -> None:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
-# `stop_testing` (typically: server died / health check failed). Distinct from
-# the generic failure code 1 so the job side can populate the synthetic
-# "Server died" leaf without fragile log-line matching. Kept in sync with
+# `stop_testing` because a server death was observed. Distinct from the generic
+# failure code 1 so the job side can populate the synthetic "Server died" leaf
+# without fragile log-line matching. Kept in sync with
 # `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
@@ -1274,10 +1274,10 @@ def print_c_stacktraces(args) -> None:
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
-    run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
-    pause is on the order of seconds — acceptable in both cases against
-    the diagnostic value.
+    run (SERVER_DIED, liveness check, hung-check, check_server_started)
+    or terminating the one wedged test (timeout_handler).  lldb's "thread
+    backtrace all" pause is on the order of seconds — acceptable in both
+    cases against the diagnostic value.
 
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
@@ -4793,8 +4793,10 @@ def run_tests_array(
                 # could re-raise with the real cause's exit code.
                 break
             stop_tests()
+            # An unset carrier is 0, which is not a valid exit code.
             raise StopTesting(
-                "another component requested stop (see earlier output for the cause)"
+                "another component requested stop (see earlier output for the cause)",
+                exit_code=stop_exit_code.value or STOP_TESTING_EXIT_CODE,
             )
 
         if args.stop_time and time() > args.stop_time:
@@ -5303,6 +5305,18 @@ def try_claim_stop_cause(stop_exit_code, exit_code: int) -> bool:
         return False
 
 
+def raise_stop_from_carrier(stop_exit_code):
+    """Abort the run with the claimed cause, or the default when none was claimed.
+
+    A worker raises `StopTesting` inside its own process, so the parent has only
+    the carrier to go on. Always raises.
+    """
+    raise StopTesting(
+        "test run was stopped (see earlier output for the cause)",
+        exit_code=stop_exit_code.value or STOP_TESTING_EXIT_CODE,
+    )
+
+
 def run_tests_process(*args_, **kwargs):
     return run_tests_array(*args_, **kwargs)
 
@@ -5449,9 +5463,9 @@ def do_run_tests(
             # Stop the whole run once the global time limit is reached. This is
             # the *expected* stop condition for the flaky and targeted checks,
             # which rerun the selected tests until the time budget is exhausted -
-            # distinct from a server death or a hung check below. The claim goes
-            # through the carrier rather than a separate check-then-set, because a
-            # worker can claim its own cause while the event is still clear.
+            # distinct from a server death or a hung check below. It goes through
+            # the carrier like every other cause, so a worker that claimed while
+            # the event was still clear keeps precedence.
             if args.stop_time and time() > args.stop_time:
                 if try_claim_stop_cause(
                     stop_exit_code, GLOBAL_TIME_LIMIT_EXIT_CODE
@@ -5468,7 +5482,8 @@ def do_run_tests(
                     stop_testing.set()
 
             # Periodically check the server for hangs
-            # and stop all processes in this case
+            # and stop all processes in this case. The probe takes 65-165 s to
+            # conclude, so it is not started once a stop is already pending.
             if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
@@ -5507,17 +5522,7 @@ def do_run_tests(
                         p.join(timeout=5)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
-                # A worker's own `StopTesting` never reaches here, so the cause
-                # comes from the carrier; without it the job side would report
-                # every stop as "Server died".
-                if stop_exit_code.value != 0:
-                    raise StopTesting(
-                        "test run was stopped (see earlier output for the cause)",
-                        exit_code=stop_exit_code.value,
-                    )
-                raise StopTesting(
-                    "test run was stopped (see earlier output for the cause)"
-                )
+                raise_stop_from_carrier(stop_exit_code)
 
             for p in processes[:]:
                 if not p.is_alive():
@@ -5528,6 +5533,11 @@ def do_run_tests(
                         )
                         runner_process_killed.set()
                     processes.remove(p)
+
+        # The reap above is the loop's exit condition, so a cause claimed after
+        # the check at the top of the iteration is only observable here.
+        if stop_testing.is_set():
+            raise_stop_from_carrier(stop_exit_code)
 
     if test_suite.sequential_tests:
         # Sequential runner shares the total_failures_shared counter with parallel workers

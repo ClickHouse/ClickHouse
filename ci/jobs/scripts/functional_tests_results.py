@@ -247,32 +247,31 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
-                # Multiple tests failed when the server died - this is a parallel
-                # run where we can't tell which test (if any) caused the crash.
+                # Multiple tests failed before the run was aborted - this is a
+                # parallel run where we can't tell which test (if any) caused it.
                 # Mark them all as UNKNOWN so they don't pollute failure reports.
-                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
-                # entry added from the server log.
+                # The actual failure is captured by the synthetic leaf below and
+                # by the LOGICAL_ERROR entries added from the server log.
                 for result in failed_results:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
-                # Exactly one FAIL was captured before the server died. The
-                # runner may still have been parallel (`--jobs` is always
-                # passed), so this is best-effort attribution of the culprit,
-                # not proof of a single-test sequential run. Demote it to
-                # ERROR so a test that merely witnessed the server death is
-                # not reported as an ordinary test failure - except in bugfix
-                # validation, where the job runs only the PR's own changed
-                # tests: a server death while they run is the expected
-                # reproduction of the bug regardless of which of them got its
-                # FAIL printed first, so keep the FAIL for
+                # Exactly one FAIL was captured before the abort. The runner may
+                # still have been parallel (`--jobs` is always passed), so this
+                # is best-effort attribution of the culprit, not proof of a
+                # single-test sequential run. Demote it to ERROR so a test that
+                # merely witnessed the abort is not reported as an ordinary test
+                # failure - except in bugfix validation, where the job runs only
+                # the PR's own changed tests: a server death or hang while they
+                # run is the expected reproduction of the bug regardless of
+                # which of them got its FAIL printed first, so keep the FAIL for
                 # `invert_bugfix_validation_status` instead of tripping its
                 # fail-closed ERROR guard and reporting the run inconclusive
                 # (#105789). This matches the >1-failed path (UNKNOWN rows +
-                # flipped `Server died` row), which already validates the
+                # flipped synthetic row), which already validates the
                 # parallel-crash case. Accepted tradeoff:
                 # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
                 # 128+SIGKILL from an OOM of the runner), so in bugfix
-                # validation such a death with a single failed test reads as
+                # validation such an abort with a single failed test reads as
                 # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR

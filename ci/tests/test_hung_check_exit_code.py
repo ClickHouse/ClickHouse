@@ -19,10 +19,15 @@ job). They drive the probe with a stub instead of an unresponsive server, so the
 do not wait out the probe's real 65-165 s retry budget.
 """
 
+import contextlib
+import http.client
+import io
 import multiprocessing
 import os
 import subprocess
 import sys
+import threading
+import time
 import types
 from pathlib import Path
 
@@ -94,36 +99,80 @@ def test_carrier_keeps_the_first_writer_for_every_ordered_pair():
             assert carrier.value == first, (first, second)
 
 
-def test_carrier_uses_the_value_lock():
+class _LockScopeProbe:
+    """A carrier whose reads and writes assert the lock is held at that moment.
+
+    Asserting only that the lock was entered passes on an empty critical section
+    with the read-modify-write outside it, which is the shape a refactor
+    produces and the shape the unlocked race lives in.
+    """
+
+    def __init__(self, real_lock):
+        self._real_lock = real_lock
+        self._value = 0
+        self.lock_held = False
+        self.entered = 0
+
+    def _check(self, what):
+        assert self.lock_held, f"{what} of the carrier happened outside the lock"
+
+    @property
+    def value(self):
+        self._check("read")
+        return self._value
+
+    @value.setter
+    def value(self, new_value):
+        self._check("write")
+        self._value = new_value
+
+    def peek(self):
+        """Read for the test's own assertions, bypassing the lock check."""
+        return self._value
+
+    def get_lock(self):
+        outer = self
+
+        class RecordingLock:
+            def __enter__(self):
+                outer.entered += 1
+                outer.lock_held = True
+                return outer._real_lock.__enter__()
+
+            def __exit__(self, *exc):
+                outer.lock_held = False
+                return outer._real_lock.__exit__(*exc)
+
+        return RecordingLock()
+
+
+def test_carrier_reads_and_writes_inside_the_lock():
     """The read and the write must be one locked transition. Two workers can
     detect different causes at the same time, and an unlocked read-modify-write
     lets the later one displace the earlier."""
-    carrier = multiprocessing.Value("i", 0)
-    held = []
-
-    class RecordingLock:
-        def __init__(self, inner):
-            self._inner = inner
-
-        def __enter__(self):
-            held.append(True)
-            return self._inner.__enter__()
-
-        def __exit__(self, *exc):
-            return self._inner.__exit__(*exc)
-
-    real_lock = carrier.get_lock()
-
-    class Probe:
-        value = 0
-
-        def get_lock(self):
-            return RecordingLock(real_lock)
-
-    probe = Probe()
+    probe = _LockScopeProbe(multiprocessing.Value("i", 0).get_lock())
     assert _runner.try_claim_stop_cause(probe, HUNG_CHECK_EXIT_CODE) is True
-    assert probe.value == HUNG_CHECK_EXIT_CODE
-    assert held, "the claim did not take the carrier's lock"
+    assert probe.peek() == HUNG_CHECK_EXIT_CODE
+    assert probe.entered == 1, "the claim did not take the carrier's lock"
+
+
+def test_lock_scope_probe_rejects_an_unlocked_read_modify_write():
+    """The probe above is only an oracle if it actually rejects the defect. A
+    claim implemented with an empty critical section must not pass it."""
+
+    def claim_outside_the_lock(carrier, exit_code):
+        with carrier.get_lock():
+            pass
+        if carrier.value == 0:
+            carrier.value = exit_code
+
+    probe = _LockScopeProbe(multiprocessing.Value("i", 0).get_lock())
+    try:
+        claim_outside_the_lock(probe, HUNG_CHECK_EXIT_CODE)
+    except AssertionError as e:
+        assert "outside the lock" in str(e), e
+    else:
+        raise AssertionError("the probe accepted an unlocked read-modify-write")
 
 
 # --- The four decision sites --------------------------------------------------
@@ -260,6 +309,357 @@ def test_health_check_send_failure_with_a_live_server_is_not_the_probe(tmp_path)
     assert (
         _reason_for_failed_health_check(tmp_path, liveness=True)
         != FailureReason.LIVENESS_CHECK_FAILED
+    )
+
+
+def _reason_for_connection_error(tmp_path, liveness, exception):
+    """Drive `run`'s `except (ConnectionError, ImproperConnectionState)` handler.
+
+    The exception is raised from inside the try-block, past the health-check
+    site, so the reason comes from this handler's own probe and not from the
+    earlier one.
+    """
+    case = _make_test_case(tmp_path)
+    case.case = "00001_probe.sql"
+    case.case_file = str(tmp_path / "00001_probe.sql")
+    case.base_url_params = ""
+    case.base_client_options = ""
+    case.effective_settings = None
+    case.effective_merge_tree_settings = None
+    case.runs_count = 0
+
+    class Suite:
+        suite = "0_stateless"
+        suite_tmp_path = str(tmp_path)
+
+    class Args:
+        pass
+
+    args = Args()
+    args.testname = False
+    args.cloud = False
+
+    saved = {
+        "skip": _runner.TestCase.should_skip_test,
+        "configure": _runner.TestCase.configure_testcase_args,
+        "liveness": _runner.check_server_liveness,
+    }
+    _runner.TestCase.should_skip_test = lambda self, suite: None
+
+    def raise_connection_error(*a, **k):
+        raise exception
+
+    _runner.TestCase.configure_testcase_args = raise_connection_error
+    _runner.check_server_liveness = lambda *a, **k: liveness
+    try:
+        return case.run(args, Suite(), "").reason
+    finally:
+        _runner.TestCase.should_skip_test = saved["skip"]
+        _runner.TestCase.configure_testcase_args = saved["configure"]
+        _runner.check_server_liveness = saved["liveness"]
+
+
+def test_connection_error_with_a_failed_probe_reports_the_probe(tmp_path):
+    """The third probe-only site. A dropped connection plus a failed probe
+    establishes only that the probe failed."""
+    assert (
+        _reason_for_connection_error(
+            tmp_path, liveness=False, exception=ConnectionError("connection dropped")
+        )
+        == FailureReason.LIVENESS_CHECK_FAILED
+    )
+
+
+def test_connection_error_with_a_live_server_is_a_connection_error(tmp_path):
+    """Negative control: the fall-through arm is reached, so the reason above
+    comes from the probe rather than from the handler being entered at all."""
+    assert (
+        _reason_for_connection_error(
+            tmp_path, liveness=True, exception=ConnectionError("connection dropped")
+        )
+        == FailureReason.CONNECTION_ERROR
+    )
+
+
+def test_improper_connection_state_with_a_failed_probe_reports_the_probe(tmp_path):
+    """The handler catches two exception types and must treat them alike."""
+    assert (
+        _reason_for_connection_error(
+            tmp_path,
+            liveness=False,
+            exception=http.client.ImproperConnectionState("bad state"),
+        )
+        == FailureReason.LIVENESS_CHECK_FAILED
+    )
+
+
+# --- Consuming the carrier ----------------------------------------------------
+#
+# Claiming a cause is only half of it: both places that turn a claim into an exit
+# code have to read the carrier. These drive the two consumers directly, with the
+# interleaving forced rather than raced, so there are no sleeps and no flakiness.
+
+
+class _StubSuite:
+    suite = "0_stateless"
+    parallel_tests = ["00001_x"]
+    sequential_tests = []
+
+
+def _runner_args(**overrides):
+    class Args:
+        pass
+
+    args = Args()
+    args.jobs = 1
+    args.no_self_parallel = True
+    args.stop_time = None
+    args.hung_check = False
+    args.max_failures = 0
+    args.max_failures_chain = 10**9
+    args.client_option = []
+    args.force_color = False
+    args.sequential = None
+    args.timeout = 600
+    args.memory_limit = 0
+    args.no_random_settings = True
+    args.no_random_merge_tree_settings = True
+    for name, value in overrides.items():
+        setattr(args, name, value)
+    return args
+
+
+def _drive_sequential_stop_arm(carrier_value):
+    """Drive `run_tests_array`'s `stop_testing already set` arm as the sequential
+    runner, which owns the main process and raises rather than breaking."""
+    stop_testing = multiprocessing.Event()
+    stop_testing.set()
+    carrier = multiprocessing.Value("i", carrier_value)
+
+    saved = _runner.stop_tests
+    _runner.stop_tests = lambda: None
+    try:
+        _runner.run_tests_array(
+            (
+                ["00001_x"],
+                1,
+                _StubSuite(),
+                False,
+                _runner_args(),
+                multiprocessing.Value("i", 0),
+                stop_testing,
+                multiprocessing.Value("i", 0),
+                [],
+                1,
+                multiprocessing.Value("i", 0),
+                multiprocessing.Value("i", 0),
+                1,
+                carrier,
+            )
+        )
+        return None
+    except _runner.StopTesting as e:
+        return e.exit_code
+    finally:
+        _runner.stop_tests = saved
+
+
+def test_sequential_runner_forwards_a_claimed_cause():
+    """A suite with sequential tests reaches this arm after the parallel workers
+    are reaped, so it is the last chance to consume the carrier. Raising the
+    default here is what reports a liveness abort as `Server died`."""
+    assert _drive_sequential_stop_arm(HUNG_CHECK_EXIT_CODE) == HUNG_CHECK_EXIT_CODE
+    assert _drive_sequential_stop_arm(MAX_FAILURES_EXIT_CODE) == MAX_FAILURES_EXIT_CODE
+
+
+def test_sequential_runner_keeps_the_default_when_no_cause_was_claimed():
+    """Mirror arm. Without it the test above also passes on an implementation
+    that always returns the liveness code, and 0 must never become an exit
+    code."""
+    assert _drive_sequential_stop_arm(0) == STOP_TESTING_EXIT_CODE
+
+
+class _EventHiddenOnce:
+    """A real event whose first observation after `set()` reports False.
+
+    The parent checks `stop_testing` at the top of its monitor loop but reaps
+    workers at the bottom, and the reap is the loop's exit condition. This forces
+    the claim to land in that gap on every run instead of waiting for the parent
+    to be descheduled there.
+    """
+
+    def __init__(self):
+        self._inner = multiprocessing.Event()
+        self._observations_after_set = 0
+
+    def set(self):
+        self._inner.set()
+
+    def is_set(self):
+        if not self._inner.is_set():
+            return False
+        self._observations_after_set += 1
+        return self._observations_after_set > 1
+
+
+def _drive_parent_monitor_loop(worker, stop_testing):
+    saved = _runner.run_tests_process
+    _runner.run_tests_process = worker
+    output = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(output):
+            _runner.do_run_tests(
+                1,
+                _StubSuite(),
+                _runner_args(),
+                multiprocessing.Value("i", 0),
+                [],
+                stop_testing,
+                multiprocessing.Event(),
+            )
+        exit_code = None
+    except _runner.StopTesting as e:
+        exit_code = e.exit_code
+    finally:
+        _runner.run_tests_process = saved
+    # The in-loop consumer announces the teardown; the post-loop one does not.
+    took_in_loop_path = "terminating all processes" in output.getvalue()
+    return exit_code, took_in_loop_path
+
+
+def _worker_claiming(exit_code):
+    def worker(params):
+        _runner.try_claim_stop_cause(params[13], exit_code)
+        params[6].set()
+
+    return worker
+
+
+def _worker_claiming_nothing(params):
+    params[6].set()
+
+
+def test_parent_consumes_a_cause_claimed_after_its_last_check():
+    """A worker that claims and exits in the gap between the parent's check and
+    the reap that ends the loop. Without a post-loop consumer the run reports an
+    ordinary set of failures and the verdict is lost."""
+    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
+        _worker_claiming(HUNG_CHECK_EXIT_CODE), _EventHiddenOnce()
+    )
+    assert exit_code == HUNG_CHECK_EXIT_CODE
+    assert not took_in_loop_path, "the in-loop consumer ran, so the gap was not hit"
+
+
+def test_parent_keeps_the_default_for_a_stop_with_no_claimed_cause():
+    """Mirror arm for the test above."""
+    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
+        _worker_claiming_nothing, _EventHiddenOnce()
+    )
+    assert exit_code == STOP_TESTING_EXIT_CODE
+    assert not took_in_loop_path
+
+
+def test_parent_still_consumes_a_cause_seen_inside_the_loop():
+    """The unhidden path, so the two tests above cannot both pass on an
+    implementation that only ever consumes the carrier after the loop."""
+    exit_code, took_in_loop_path = _drive_parent_monitor_loop(
+        _worker_claiming(HUNG_CHECK_EXIT_CODE), multiprocessing.Event()
+    )
+    assert exit_code == HUNG_CHECK_EXIT_CODE
+    assert took_in_loop_path
+
+
+# --- Claiming before collecting -----------------------------------------------
+
+
+def _drive_abort_site_with_a_competitor(reason, competitor_code):
+    """Drive an abort site with a real stacktrace-collection window.
+
+    The competitor claims its own cause partway into the collection, which is the
+    only shape where the two claims genuinely compete. First-writer-wins keeps the
+    detected cause only because the site claims before it collects.
+    """
+    carrier = multiprocessing.Value("i", 0)
+    collect_seconds = 4.0
+    competitor_delay = 1.0
+
+    class FakeCase:
+        def __init__(self, suite, case, args, is_concurrent):
+            self.name = case
+
+        def run(self, args, suite, client_options):
+            return _runner.TestResult(
+                self.name, _runner.TestStatus.FAIL, reason, 0.1, "x"
+            )
+
+        def process_result(self, result, messages):
+            return result
+
+    collected = []
+
+    def fake_collect(*a, **k):
+        time.sleep(collect_seconds)
+        collected.append(True)
+
+    def competitor():
+        time.sleep(competitor_delay)
+        _runner.try_claim_stop_cause(carrier, competitor_code)
+
+    saved = (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase)
+    _runner.print_c_stacktraces = fake_collect
+    _runner.stop_tests = lambda: None
+    _runner.TestCase = FakeCase
+    thread = threading.Thread(target=competitor, daemon=True)
+    thread.start()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            _runner.run_tests_array(
+                (
+                    ["00001_x"],
+                    1,
+                    _StubSuite(),
+                    False,
+                    _runner_args(),
+                    multiprocessing.Value("i", 0),
+                    multiprocessing.Event(),
+                    multiprocessing.Value("i", 0),
+                    [],
+                    1,
+                    multiprocessing.Value("i", 0),
+                    multiprocessing.Value("i", 0),
+                    1,
+                    carrier,
+                )
+            )
+    except _runner.StopTesting:
+        pass
+    finally:
+        (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase) = saved
+        thread.join(timeout=collect_seconds + 5)
+    assert collected, "the collection window did not run, so nothing competed"
+    return carrier.value
+
+
+def test_death_claims_its_cause_before_collecting_stacktraces():
+    """The death path's claim, and its position before the collection. Asserting
+    the raised code cannot see this: the sequential arm raises the default, which
+    equals the death code either way. The carrier is the observable."""
+    assert (
+        _drive_abort_site_with_a_competitor(
+            FailureReason.SERVER_DIED, HUNG_CHECK_EXIT_CODE
+        )
+        == STOP_TESTING_EXIT_CODE
+    )
+
+
+def test_liveness_claims_its_cause_before_collecting_stacktraces():
+    """The same invariant on the liveness path, with the causes swapped so the
+    test above cannot pass merely because the death code is also the default."""
+    assert (
+        _drive_abort_site_with_a_competitor(
+            FailureReason.LIVENESS_CHECK_FAILED, STOP_TESTING_EXIT_CODE
+        )
+        == HUNG_CHECK_EXIT_CODE
     )
 
 
