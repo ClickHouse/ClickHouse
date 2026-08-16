@@ -1,8 +1,8 @@
 ---
-description: 'توثيق ROW POLICY'
-sidebarTitle: 'ROW POLICY'
+description: 'توثيق ROW سياسة'
+sidebarTitle: 'ROW سياسة'
 slug: /sql-reference/statements/create/row-policy
-title: 'CREATE ROW POLICY'
+title: 'CREATE ROW سياسة'
 doc_type: 'reference'
 ---
 
@@ -15,12 +15,81 @@ doc_type: 'reference'
 الصياغة:
 
 ```sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+-- Multiple names on one table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* }
     [IN access_storage_type]
     [FOR SELECT] USING condition
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- One name on multiple table targets
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* } [, ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- Mixed packing: each name paired with its own table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
+    policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
+    [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+يقبل `ParserRowPolicyNames` **ثلاث صيغ** للتجميع (وليس حاصل ضرب ديكارتي كامل):
+
+1. **أسماء متعددة، هدف واحد** — ينشئ `pol1, pol2 ON table1` كل اسم مُدرج على ذلك الجدول وحده (أو `db.*`).
+2. **اسم واحد، أهداف متعددة** — ينشئ `pol1 ON table1, table2` الاسم المختصر نفسه على كل هدف مُدرج.
+3. **أزواج مختلطة** — ينشئ `p1 ON t1, p2 ON t2` كل اسم على هدفه المقترن به فقط.
+
+لا يمكن دمج قائمة بأسماء متعددة مع قائمة `ON` متعددة الجداول ضمن مجموعة واحدة: يُرفض `p1, p2 ON t1, t2`. وبعد مجموعة بأسماء متعددة، لا يمكنك أيضًا إلحاق مجموعة أخرى من `name ON target` مفصولة بفواصل ضمن العبارة نفسها.
+
+ينطبق `ON CLUSTER` الاختياري على العبارة بأكملها (اسم عنقود واحد). لا يقبل ClickHouse `ON CLUSTER` مختلفًا لكل اسم سياسة مُجمّع ضمن عملية إنشاء واحدة — نفّذ عبارات `CREATE ROW POLICY` منفصلة عندما يلزم إنشاء سياسات على عناقيد مختلفة.
+
+<div id="multiple-names-and-tables">
+  ## أسماء وجداول متعددة
+</div>
+
+صحيح:
+
+```sql
+-- Several policy names, one table
+CREATE ROW POLICY pol1, pol2, pol3 ON table1
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- One policy name, several tables
+CREATE ROW POLICY IF NOT EXISTS pol1 ON table1, table2, table3
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Mixed packing: different name per table
+CREATE ROW POLICY p4 ON db.table, p5 ON db2.table2
+    USING a = b;
+
+-- Same policy on several tables, on a cluster
+CREATE ROW POLICY IF NOT EXISTS pol1 ON CLUSTER replicated_cluster ON table1, table2
+    FOR SELECT USING id = 1
+    TO accountant;
+```
+
+غير صالح:
+
+```sql
+-- Multi-name × multi-table in one ON-group (not a Cartesian product)
+CREATE ROW POLICY p1, p2 ON t1, t2
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Different clusters per name in one statement
+CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
 <div id="using-clause">
@@ -83,11 +152,28 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 يتيح للمستخدم `peter` رؤية صفوف table1 فقط إذا تحقّق الشرطان `b=1` AND `c=2` معًا، رغم أن أي جدول آخر في mydb لن تُطبَّق عليه للمستخدم سوى سياسة `b=1`.
 
+<div id="distributed-and-remote-backed-tables">
+  ## جداول Distributed والجداول المعتمدة على خوادم بعيدة
+</div>
+
+تُصفّي سياسة الصفوف الصفوف في الموضع الذي تُقرأ فيه بيانات الجدول فعليًا. فالجدول الذي يفوّض القراءة إلى خوادم بعيدة، مثل جدول [Distributed](/ar/reference/engines/table-engines/special/distributed) أو طبقة تغليف فوقه (مثل عرض مادي له هدف `Distributed`)، لا يرسل إلى الخوادم البعيدة سوى نص الاستعلام، ولا يمكنه تطبيق عامل تصفية السياسة على القراءة البعيدة. ولمنع إسقاط عامل التصفية بصمت، تُرفض الاستعلامات الموجّهة إلى هذه الجداول من المستخدمين الذين تنطبق عليهم السياسة، ويظهر الخطأ `ILLEGAL_PREWHERE`.
+
+بدلًا من ذلك، عرّف السياسة على الجداول المحلية الأساسية في كل خادم بعيد؛ إذ تُطبّق هناك عند قراءة الاستعلام المُرسَل لها:
+
+```sql
+-- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
+CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
+```
+
+<Warning>
+  يعمل هذا ما دام query تُرسَل كنص، وهو السلوك الافتراضي. عند استخدام [`serialize_query_plan = 1`](/ar/reference/settings/session-settings/serialize#serialize_query_plan)، يرسل initiator بدلاً من ذلك plan قراءة مُعدّة مسبقاً، ولا يطبّق remote server الذي ينفّذ هذه plan سياسات الصفوف الخاصة به. لذلك، تُرجع قراءة table من نوع `Distributed` عبر `local_table` صفوفاً غير مُرشّحة. أبقِ `serialize_query_plan = 0` للمستخدمين الذين يجب فرض سياسات الصفوف عليهم. راجع [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+</Warning>
+
 <div id="on-cluster-clause">
   ## عبارة ON CLUSTER
 </div>
 
-تسمح بإنشاء سياسات الصفوف على مستوى العنقود، راجع [DDL الموزع](/ar/reference/statements/distributed-ddl).
+تسمح بإنشاء سياسات الصفوف على مستوى العنقود، راجع [DDL الموزع](/ar/reference/statements/distributed-ddl). وهذه أيضًا طريقة ملائمة لإنشاء السياسة على الجداول المحلية لكل خادم في العنقود.
 
 <div id="examples">
   ## أمثلة

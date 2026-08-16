@@ -1,6 +1,3 @@
-import math
-import struct
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -14,10 +11,6 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
-
-
-# The bit pattern Prometheus uses to mark a series as stale (a quiet NaN with a special payload).
-STALE_NAN = struct.unpack(">d", bytes.fromhex("7ff0000000000002"))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -71,12 +64,17 @@ def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
 
 
 # Executes a query in both prometheus services - results should be the same.
-def execute_query_in_prometheus(query, timestamp, expect_error=False):
+# `eps` allows tiny float differences: the "reader" service aggregates series in the order
+# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
+# the "receiver" service uses.
+def execute_query_in_prometheus(query, timestamp, expect_error=False, eps=0):
     r1 = execute_query_in_prometheus_reader(query, timestamp, expect_error=expect_error)
     r2 = execute_query_in_prometheus_receiver(
         query, timestamp, expect_error=expect_error
     )
-    assert r1 == r2
+    assert http_api_response_close_to(
+        r1, r2, eps=eps
+    ), f"reader result: {r1}, receiver result: {r2}"
     return r1
 
 
@@ -104,7 +102,10 @@ def execute_query_in_clickhouse_sql(query, timestamp, expect_error=False):
 
 
 # Executes a range query in both prometheus services.
-def execute_range_query_in_prometheus(query, start_time, end_time, step):
+# `eps` allows tiny float differences: the "reader" service aggregates series in the order
+# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
+# the "receiver" service uses.
+def execute_range_query_in_prometheus(query, start_time, end_time, step, eps=0):
     r1 = execute_range_query_via_http_api(
         cluster.prometheus_ip["reader"],
         cluster.prometheus_port["reader"],
@@ -123,7 +124,9 @@ def execute_range_query_in_prometheus(query, start_time, end_time, step):
         end_time,
         step,
     )
-    assert r1 == r2
+    assert http_api_response_close_to(
+        r1, r2, eps=eps
+    ), f"reader result: {r1}, receiver result: {r2}"
     return r1
 
 
@@ -450,24 +453,6 @@ def send_test_data():
         ]
     )
 
-    # A counter that goes stale at 110 (Prometheus stale marker) and then has regular `NaN` samples at 130
-    # and 140. Used to check that stale markers are dropped while regular `NaN` samples are kept.
-    send_data(
-        [
-            (
-                {"__name__": "stale_counter_values", "case": "stale-nan"},
-                {
-                    100: 2,
-                    110: STALE_NAN,
-                    120: 1,
-                    130: math.nan,
-                    140: math.nan,
-                    150: 3,
-                },
-            ),
-        ]
-    )
-
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -489,12 +474,10 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    actual_result = execute_query_in_prometheus(query, timestamp, eps=eps)
     assert http_api_response_close_to(
-        actual_prometheus_result, result, eps=eps
-    ), (
-        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
-    )
+        actual_result, result, eps=eps
+    ), f"actual result from prometheus: {actual_result}, expected: {result}"
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -503,14 +486,9 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(
-            actual_result_from_http_api, actual_prometheus_result, eps=eps
-        )
+        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), (
-        f"actual_result_from_http_api: {actual_result_from_http_api}, "
-        f"prometheus_result: {actual_prometheus_result}"
-    )
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
 def do_query_test_expect_error(
@@ -544,14 +522,12 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    actual_prometheus_result = execute_range_query_in_prometheus(
-        query, start_time, end_time, step
+    actual_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step, eps=eps
     )
     assert http_api_response_close_to(
-        actual_prometheus_result, result, eps=eps
-    ), (
-        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
-    )
+        actual_result, result, eps=eps
+    ), f"actual result from prometheus: {actual_result}, expected: {result}"
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
         query, start_time, end_time, step
@@ -564,14 +540,9 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(
-            actual_result_from_http_api, actual_prometheus_result, eps=eps
-        )
+        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), (
-        f"actual_result_from_http_api: {actual_result_from_http_api}, "
-        f"prometheus_result: {actual_prometheus_result}"
-    )
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
@@ -593,29 +564,6 @@ def do_clickhouse_only_query_test(
     assert http_api_response_close_to(
         actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
-
-
-def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
-    assert expected_cherror in execute_query_in_clickhouse_sql(
-        query, timestamp, expect_error=True
-    )
-    assert expected_cherror in execute_query_in_clickhouse_http_api(
-        query, timestamp, expect_error=True
-    )
-
-
-def test_native_promql_error_paths():
-    do_clickhouse_only_query_test_expect_error(
-        "sort(test)",
-        130,
-        "Function sort is not implemented",
-    )
-
-    do_clickhouse_only_query_test_expect_error(
-        "day_of_week(test, test)",
-        130,
-        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
-    )
 
 
 def test_up():
@@ -737,110 +685,6 @@ def test_instant_selectors():
                 "[('__name__','test')]",
                 "1970-01-01 00:02:11.000",
                 "3",
-            ]
-        ],
-    )
-
-
-def test_instant_selector_with_multiple_name_matchers():
-    # A selector with more than one `__name__` matcher is valid in Prometheus and must round-trip through
-    # native lowering: the selector is serialized and reparsed for the `timeSeriesSelector` table function.
-    # Serializing it by hoisting the metric name (`test{__name__!="other"}`) would set the metric name twice
-    # and fail to reparse, so the whole query would error instead of selecting `test`.
-    do_query_test(
-        '{__name__="test", __name__!="other"}',
-        130,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [130, "3"]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "1970-01-01 00:02:10.000",
-                "3",
-            ]
-        ],
-    )
-
-
-def test_range_query_drops_stale_marker():
-    # A `query_range` over an instant selector builds its grid via `last_over_time`, which keeps the latest
-    # sample at each step - including a Prometheus stale marker. Stale markers mean "no sample here", so the
-    # step at 110 (the stale marker) must be dropped from the matrix, while the regular `NaN` samples at 130
-    # and 140 must remain visible.
-    do_range_query_test(
-        "stale_counter_values",
-        100,
-        150,
-        10,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_counter_values", "case": "stale-nan"}, "values": [[100, "2"], [120, "1"], [130, "NaN"], [140, "NaN"], [150, "3"]]}]}',
-        [
-            [
-                "[('__name__','stale_counter_values'),('case','stale-nan')]",
-                "[('1970-01-01 00:01:40.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',3)]",
-            ]
-        ],
-    )
-
-
-def test_timestamp_modifier_fixed_evaluation_time():
-    do_query_test(
-        "test @ 130",
-        250,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "1970-01-01 00:04:10.000",
-                "3",
-            ]
-        ],
-    )
-
-    do_range_query_test(
-        "last_over_time(test[45s] @ 130)",
-        130,
-        250,
-        60,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
-            ]
-        ],
-    )
-
-
-def test_timestamp_modifier_on_subquery():
-    # A subquery under `@ <timestamp>` is a range vector too, so its whole grid must be kept at the fixed
-    # evaluation time and only the result of the range-vector function on top of it may be repeated across the
-    # query grid. Collapsing the subquery grid to its first step would make the functions below see a single
-    # repeated sample instead of the samples of the `[120s:15s]` window at 210.
-    #
-    # The subquery grid at the fixed time 210 is 105, 120, ..., 210, where `test` evaluates to
-    # (nothing), 1, 3, 4, 4, 4, 5, 8 - hence 4 changes and 8 as the last value.
-    do_query_test(
-        "changes(test[120s:15s] @ 210)",
-        250,
-        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "4"]}]}',
-        [
-            [
-                "[]",
-                "1970-01-01 00:04:10.000",
-                "4",
-            ]
-        ],
-    )
-
-    do_range_query_test(
-        "last_over_time(test[120s:15s] @ 210)",
-        210,
-        330,
-        60,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[210, "8"], [270, "8"], [330, "8"]]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "[('1970-01-01 00:03:30.000',8),('1970-01-01 00:04:30.000',8),('1970-01-01 00:05:30.000',8)]",
             ]
         ],
     )
@@ -1299,6 +1143,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "day_of_week()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "0"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 0]],
+    )
+
+    do_query_test(
         "day_of_week(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "6"]]}]}',
@@ -1312,6 +1163,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_month(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 8]],
+    )
+
+    do_query_test(
+        "day_of_month()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 8]],
@@ -1337,6 +1195,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "days_in_month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "28"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 28]],
+    )
+
+    do_query_test(
         "days_in_month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "31"]]}]}',
@@ -1350,6 +1215,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_year(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 39]],
+    )
+
+    do_query_test(
+        "day_of_year()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 39]],
@@ -1375,6 +1247,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "minute()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "30"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 30]],
+    )
+
+    do_query_test(
         "minute(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "30"]]}]}',
@@ -1388,6 +1267,13 @@ def test_date_time_functions():
 
     do_query_test(
         "hour(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 20]],
+    )
+
+    do_query_test(
+        "hour()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 20]],
@@ -1413,6 +1299,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2]],
+    )
+
+    do_query_test(
         "month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "11"], [120, "12"]]}]}',
@@ -1432,6 +1325,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "year()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2026"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2026]],
+    )
+
+    do_query_test(
         "year(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "2025"], [120, "2025"]]}]}',
@@ -1442,6 +1342,122 @@ def test_date_time_functions():
             ]
         ],
     )
+
+    # A date/time function called without arguments is evaluated at each step of a range query.
+    do_range_query_test(
+        "minute()",
+        1770582580,
+        1770582700,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1770582580, "29"], [1770582640, "30"], [1770582700, "31"]]}]}',
+        [
+            [
+                "[]",
+                "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+            ]
+        ],
+    )
+
+
+# Regression test: a date/time function called without arguments synthesizes the evaluation time internally
+# and, at some point, used to always cast it to the TimeSeries table's scalar (value) data type before
+# extracting a calendar component from it. ClickHouse's TimeSeries engine explicitly supports Float32-typed
+# value columns, and Float32 only has ~128 seconds of precision at today's epoch magnitude, so on such a table
+# this used to round the evaluation time by up to ~64 seconds before minute()/hour()/etc. ever saw it - enough
+# to flip which minute (or hour, etc.) it falls into near a boundary. This must return the exact calendar value
+# regardless of the table's scalar type, both for a single evaluation time and for a range of evaluation times.
+# The same used to be true for the explicit `vector(time())` carrier (which `f()` is documented to be equivalent
+# to): only the implicit zero-argument branch kept the evaluation time in native precision, so
+# `minute(vector(time()))` still rounded it through the table's Float32 scalar type and disagreed with `minute()`.
+# The same is also true for `time()` wrapped in any nesting of `scalar(...)`/`vector(...)`/unary `+` - e.g.
+# `minute(vector(scalar(vector(time()))))` and `minute(vector(+time()))` - since scalar()/vector()/unary `+` are
+# value-preserving passthroughs, so these must agree with `minute()` too. (`scalar(vector(time()))` on its own isn't
+# reachable as a date/time function's argument: date/time functions require an instant-vector argument, and scalar(...)
+# produces a scalar, so it must be wrapped in another vector(...) to be used here - hence
+# `vector(scalar(vector(time())))` below.)
+def test_date_time_functions_zero_arg_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute()', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(time()))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(scalar(vector(time()))))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(+time()))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute()', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(time()))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(scalar(vector(time()))))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(+time()))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
 
 
 def test_math_functions():

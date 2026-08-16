@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
 }
 
@@ -618,6 +619,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    const auto & rows_to_read = format_filter_info->rows_to_read;
+    if (rows_to_read && !std::is_sorted(rows_to_read->begin(), rows_to_read->end()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows to read are not sorted");
+
     /// Phase B: build spatial KeyConditions now that SchemaConverter has set idx_in_output_block
     /// for the injected bbox columns. Also mark those primitives as used_by_key_condition so
     /// getHyperrectangleForRowGroup() reads their min/max stats.
@@ -701,6 +706,18 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
+        /// Lazy materialization: skip row groups that contain none of the requested rows.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+        if (rows_to_read)
+        {
+            size_t group_start_row = total_rows - size_t(meta->num_rows);
+            const auto * begin_it = std::lower_bound(rows_to_read->begin(), rows_to_read->end(), group_start_row);
+            const auto * end_it = std::lower_bound(begin_it, rows_to_read->end(), total_rows);
+            if (begin_it == end_it)
+                continue;
+            requested_rows_slice = {size_t(begin_it - rows_to_read->begin()), size_t(end_it - rows_to_read->begin())};
+        }
+
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
             || !spatial_key_conditions.empty())
@@ -750,6 +767,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
+        row_group.requested_rows_slice = requested_rows_slice;
         row_group.row_group_idx = row_group_idx;
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
@@ -774,6 +792,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
         }
     }
+
+    if (rows_to_read && !rows_to_read->empty() && rows_to_read->back() >= total_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Requested to read row {} of a parquet file that has only {} rows", rows_to_read->back(), total_rows);
 
     if (row_groups.empty())
         return; // all row groups were skipped
@@ -964,6 +986,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
+        || format_filter_info->rows_to_read
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -1042,6 +1065,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -1127,6 +1151,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -1304,6 +1329,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -1888,6 +1920,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+        size_t pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -1943,12 +1976,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
-                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
+                ++pruned_pages;
             }
         }
 
         if (size_t(row_group.meta->num_rows) > prev_row_idx)
             column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
+
+        if (pruned_pages)
+            ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
     }
     catch (Exception & e)
     {
@@ -2013,6 +2049,8 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 {
+    const auto & rows_to_read = format_filter_info->rows_to_read;
+
     std::vector<std::pair<size_t, size_t>> row_ranges;
     size_t num_rows = 0;
     {
@@ -2024,6 +2062,18 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         int num_range_sets = 1;
         events.emplace_back(0, +1);
         events.emplace_back(size_t(row_group.meta->num_rows), -1);
+
+        if (rows_to_read)
+        {
+            /// Lazy materialization: one coarse range covering the requested rows of this row group.
+            /// The exact row set is applied through the subgroup filters below; page-level reads
+            /// stay exact because `determinePagesToPrefetch` checks the filter per page.
+            const auto [slice_begin, slice_end] = row_group.requested_rows_slice;
+            chassert(slice_begin < slice_end); // row groups with no requested rows are skipped in prefilterAndInitRowGroups
+            num_range_sets += 1;
+            events.emplace_back((*rows_to_read)[slice_begin] - row_group.start_global_row_idx, +1);
+            events.emplace_back((*rows_to_read)[slice_end - 1] - row_group.start_global_row_idx + 1, -1);
+        }
 
         for (auto & col : row_group.columns)
         {
@@ -2100,6 +2150,28 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             row_subgroup.start_row_idx = substart;
             row_subgroup.filter.rows_pass = row_group.need_to_process ? subend - substart : 0;
             row_subgroup.filter.rows_total = subend - substart;
+
+            if (rows_to_read && row_group.need_to_process)
+            {
+                /// Lazy materialization: initialize the filter to keep only the requested rows,
+                /// the same way a prewhere filter would.
+                const UInt64 * slice_begin_ptr = rows_to_read->data() + row_group.requested_rows_slice.first;
+                const UInt64 * slice_end_ptr = rows_to_read->data() + row_group.requested_rows_slice.second;
+                const UInt64 * range_begin = std::lower_bound(slice_begin_ptr, slice_end_ptr, row_group.start_global_row_idx + substart);
+                const UInt64 * range_end = std::lower_bound(range_begin, slice_end_ptr, row_group.start_global_row_idx + subend);
+                size_t rows_pass = size_t(range_end - range_begin);
+                chassert(rows_pass <= row_subgroup.filter.rows_total);
+                if (rows_pass != row_subgroup.filter.rows_total)
+                {
+                    row_subgroup.filter.rows_pass = rows_pass;
+                    if (rows_pass != 0)
+                    {
+                        row_subgroup.filter.filter.resize_fill(row_subgroup.filter.rows_total, 0);
+                        for (const UInt64 * it = range_begin; it != range_end; ++it)
+                            row_subgroup.filter.filter[*it - row_group.start_global_row_idx - substart] = 1;
+                    }
+                }
+            }
 
             row_subgroup.columns.resize(primitive_columns.size());
             row_subgroup.output = std::vector<OutputColumnState>(extended_sample_block.columns());
@@ -2777,6 +2849,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     if (max_rep > 0 || column.need_null_map)
         decodeRepOrDefLevels(def_encoding, max_def, page.num_values, std::span(encoded_def, encoded_def_size), page.def);
 
+    ProfileEvents::increment(ProfileEvents::ParquetReadPages);
     page.initialized = true;
     return true;
 }

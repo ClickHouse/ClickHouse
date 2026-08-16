@@ -198,6 +198,11 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getStart()->getStartIndex());
         }
 
+        size_t getStartPos(const antlr4::Token * token) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
+        }
+
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
             String error_message;
