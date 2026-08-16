@@ -320,21 +320,15 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Dispatched by its tag -> recovery; behind the branch tip -> out of order; computed release tag already here -> recovery; else create.
-        self.is_tag_pushed = Git.tag_exists(commit_ref)
+        # Behind the tip and not the release tag itself -> out of order; else an existing release tag (at this commit) is recovery, a missing one is create.
+        self.is_tag_pushed = Git.tag_exists(release_tag)
+        assert not (self.is_bump_landed and commit_ref != release_tag), (
+            f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
+            f"branch [{release_branch}] tip is already ahead of it. Pass a "
+            f"release tag to recover an existing release, or the branch to "
+            f"release its next commit."
+        )
         if self.is_tag_pushed:
-            assert release_tag == commit_ref, (
-                f"ref [{commit_ref}] is a release tag but the version at its commit "
-                f"describes [{release_tag}]; refusing to re-publish a different release"
-            )
-        elif self.is_bump_landed:
-            raise RuntimeError(
-                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-                f"branch [{release_branch}] tip is already ahead of it. Pass a "
-                f"release tag to recover an existing release, or the branch to "
-                f"release its next commit."
-            )
-        elif Git.tag_exists(release_tag):
             tagged_sha = Git.get_commit_sha(release_tag)
             assert tagged_sha == commit_sha, (
                 f"release tag [{release_tag}] already exists at [{tagged_sha}] but this run "
@@ -342,7 +336,6 @@ class ReleaseInfo:
                 f"describes an already-published release); land the post-release bump and "
                 f"dispatch the tip, or pass the release tag to recover."
             )
-            self.is_tag_pushed = True
         else:
             if release_type == "patch":
                 # tweak == 1: the only commit since the previous release is the automated bump — nothing to release.
