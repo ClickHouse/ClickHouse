@@ -161,6 +161,7 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
     if (tokens.empty()
         || (!isKeyword(tokens[0], "ALTER")
             && !isKeyword(tokens[0], "DROP")
+            && !isKeyword(tokens[0], "ATTACH")
             && !isKeyword(tokens[0], "DETACH")
             && !isKeyword(tokens[0], "TRUNCATE")
             && !isKeyword(tokens[0], "OPTIMIZE")
@@ -258,7 +259,7 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
             .table_name = *table_name,
             .rename_to = {},
             .if_exists = false,
-            .removes_window_view = isKeyword(tokens[0], "DROP") || isKeyword(tokens[0], "DETACH") || isKeyword(tokens[0], "RENAME"),
+            .removes_window_view = isKeyword(tokens[0], "DROP") || isKeyword(tokens[0], "RENAME"),
         }};
     }
 
@@ -1075,7 +1076,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         if (!dry_run)
         {
             updateRemovedWindowViews(removed_window_views, followups, is_exchange);
-            persistRemovedWindowViews(zookeeper, entry_num);
+            persistRemovedWindowViews(zookeeper, (is_rename || is_exchange) && has_non_removed_window_view ? std::nullopt : std::optional(entry_num));
         }
         if ((!is_rename && !is_exchange) || !has_non_removed_window_view)
         {
