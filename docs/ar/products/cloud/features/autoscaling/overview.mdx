@@ -9,25 +9,25 @@ doc_type: 'guide'
 
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-التوسّع هو القدرة على تعديل الموارد المتاحة بما يلبي متطلبات العملاء. يمكن توسيع خدمات فئتَي Scale وEnterprise (باستخدام ملف التعريف القياسي 1:4) أفقيًا عبر استدعاء API برمجيًا، أو عبر تغيير الإعدادات في واجهة المستخدم لضبط موارد النظام. ويمكن أيضًا **توسيع** هذه الخدمات رأسيًا **تلقائيًا** لتلبية متطلبات التطبيق.
+التوسّع هو القدرة على تعديل الموارد المتاحة بما يلبي متطلبات العملاء. يمكن توسيع خدمات فئتَي Scale وEnterprise tier أفقيًا عبر استدعاء واجهة برمجة تطبيقات برمجيًا أو تغيير الإعدادات في UI. ويمكن أيضًا توسيع خدمات فئة Scale وخدمات فئة Enterprise tier ذات ملفات التعريف القياسية `1:4` رأسيًا **تلقائيًا** لتلبية متطلبات التطبيق.
 
 <ScalePlanFeatureBadge feature="التوسّع الرأسي التلقائي" />
 
 <Note>
-  تدعم فئتَا Scale وEnterprise الخدمات أحادية النسخة المتماثلة ومتعددة النسخ المتماثلة، في حين أن فئة Basic تدعم فقط الخدمات أحادية النسخة المتماثلة. وتكون الخدمات أحادية النسخة المتماثلة ذات حجم ثابت، ولا تتيح التوسّع الرأسي أو الأفقي. يمكنك الترقية إلى فئة Scale أو Enterprise لتوسيع خدماتك.
+  تدعم فئتَا Scale وEnterprise tier الخدمات أحادية النسخة المتماثلة ومتعددة النسخ المتماثلة. تدعم خدمات Scale أحادية النسخة المتماثلة وخدمات Enterprise ذات ملفات التعريف القياسية `1:4` التوسّع الرأسي التلقائي بالخدمة الذاتية. تتطلب خدمات Enterprise ذات ملفات التعريف المخصصة تغيير الحجم الرأسي بمساعدة فريق الدعم. يمكن لخدمات Scale وEnterprise التوسّع أفقيًا إلى نسخ متماثلة متعددة. تحتوي خدمات فئة Basic على نسخة متماثلة واحدة، وهي ثابتة الحجم، ولا تتيح التوسّع الرأسي أو الأفقي. لمزيد من المعلومات، راجع [خدمات أحادية النسخة المتماثلة الكبيرة](/ar/products/cloud/features/large-single-replica-services).
 </Note>
 
 <div id="how-scaling-works-in-clickhouse-cloud">
   ## كيف تعمل آلية التوسّع في ClickHouse Cloud
 </div>
 
-يدعم ClickHouse Cloud حاليًا التوسّع الرأسي التلقائي والتوسّع الأفقي اليدوي لخدمات Scale tier.
+يدعم ClickHouse Cloud التوسّع الأفقي اليدوي لخدمات فئة Scale وفئة Enterprise. كما تدعم خدمات فئة Scale التوسّع الرأسي التلقائي؛ ويعتمد دعم التوسّع الرأسي التلقائي في فئة Enterprise على ملف التعريف، كما هو موضح أدناه. يتوفر [التوسّع الأفقي التلقائي](/ar/products/cloud/features/autoscaling/horizontal-autoscaling) في Private Preview لخدمات فئة Scale وفئة Enterprise.
 
-أما خدمات Enterprise tier، فتعمل فيها آلية التوسّع على النحو التالي:
+أما خدمات فئة Enterprise، فتعمل فيها آلية التوسّع على النحو التالي:
 
-* **التوسّع الأفقي**: سيتوفر التوسّع الأفقي اليدوي عبر جميع الملفات التعريفية القياسية والمخصّصة في Enterprise tier.
+* **التوسّع الأفقي**: يتوفر التوسّع الأفقي اليدوي عبر جميع الملفات التعريفية القياسية والمخصّصة في فئة Enterprise.
 * **التوسّع الرأسي**:
-  * تدعم الملفات التعريفية القياسية (1:4) التوسّع الرأسي التلقائي.
+  * تدعم الملفات التعريفية القياسية `1:4` التوسّع الرأسي التلقائي.
   * لا تدعم الملفات التعريفية المخصّصة (`highMemory` و`highCPU`) التوسّع الرأسي التلقائي أو التوسّع الرأسي اليدوي. ومع ذلك، يمكن توسيع هذه الخدمات رأسيًا من خلال التواصل مع الدعم.
 
 <Note>
@@ -44,8 +44,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 </div>
 
 * [التوسّع الرأسي التلقائي](/ar/products/cloud/features/autoscaling/vertical) — توسّع تلقائي لـ CPU والذاكرة استنادًا إلى الاستخدام
+* [التوسّع الأفقي التلقائي](/ar/products/cloud/features/autoscaling/horizontal-autoscaling) — توسّع تلقائي للنسخ المتماثلة استنادًا إلى متطلبات أعباء العمل
 * [التوسّع الأفقي](/ar/products/cloud/features/autoscaling/horizontal) — توسّع يدوي للنسخ المتماثلة عبر API أو UI
 * [Make Before Break (MBB)](/ar/products/cloud/features/autoscaling/make-before-break) — كيف يُجري ClickHouse Cloud عمليات التوسّع بسلاسة
 * [التعطيل التلقائي عند الخمول](/ar/products/cloud/features/autoscaling/idling) — خفض التكاليف من خلال تعليق الخدمة تلقائيًا
 * [توصيات التوسّع](/ar/products/cloud/features/autoscaling/scaling-recommendations) — فهم توصيات التوسّع
 * [التوسّع المجدول](/ar/products/cloud/features/autoscaling/scheduled-scaling) — التعرّف على ميزة التوسّع المجدول، التي تتيح لك تحديد الوقت الذي ينبغي أن تتوسّع فيه خدمتك أو تتقلص بدقة، بمعزل عن المقاييس في الوقت الفعلي
+* [الخدمات الكبيرة ذات النسخة المتماثلة الواحدة](/ar/products/cloud/features/large-single-replica-services) — التوسّع الرأسي للخدمات ذات النسخة المتماثلة الواحدة في فئة Scale وEnterprise

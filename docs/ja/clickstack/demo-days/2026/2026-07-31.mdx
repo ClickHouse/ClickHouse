@@ -1,0 +1,144 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-31
+title: 'デモデイズ - 2026-07-31'
+sidebarTitle: '2026-07-31'
+description: '2026-07-31 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="exponential-histogram-metrics">
+  ## 指数ヒストグラムメトリクス
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/w45v3IMcXTY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+OpenTelemetry の指数ヒストグラムメトリクスに対する初期段階のクエリサポートが追加されました。これらのメトリクスはすでにログソースに登録できましたが、クエリする手段はありませんでした。現在は、クエリビルダーでカウントと分位点を使用できます。
+
+指数ヒストグラムは明示的バケットヒストグラムに似ていますが、各バケットの境界値を保存するのではなく、2 のべき乗からバケット境界を計算します。scale は使用する 2 のべき乗を制御します。scale を大きくするとバケットは小さくなり、offset は境界をより大きい、または小さい倍数へ移動します。各バケットカウントには、その範囲に含まれる観測値の数が記録されます。
+
+既存の明示的ヒストグラム実装と同様に、max、min、sum、avg は引き続きサポートされません。これらのフィールドは OpenTelemetry のデータモデルでは任意であるため、存在することを前提としていません。
+
+デモで示すように、生成された SQL は長く、特に見やすいものではありません。許容できる性能で動作し、メモリ不足にもなりませんが、これは初期段階の機能サポートにすぎません。次の作業はパフォーマンスの改善であり、これらのクエリを大幅に高速化するはずのスキーマ更新もすでに進行中です。
+
+現時点では、時系列表示タイプのみが正しくレンダリングされます。これは既存のヒストグラムメトリクスタイプと整合しています。
+
+**関連 PR:** [#2687](https://github.com/hyperdxio/hyperdx/pull/2687) feat: メトリクス名のドロップダウンに指数ヒストグラムメトリクスを表示、[#2697](https://github.com/hyperdxio/hyperdx/pull/2697) feat: 指数ヒストグラムメトリクスの分位点+sum を実装、[#2705](https://github.com/hyperdxio/hyperdx/pull/2705) feat: MCP で指数ヒストグラムをサポート、[#2707](https://github.com/hyperdxio/hyperdx/pull/2707) fix: Attribute 以外のカラムに対するヒストグラム分位点集計のグループ化をサポート
+
+<div id="validation-for-raw-sql-charts">
+  ## 生 SQL チャートの検証
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/zfZsehTqeCQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+生 SQL チャートでは、必要なマクロが不足している場合に警告が表示されるようになりました。この変更は、多数の生 SQL チャートを作成していたユーザーが分かりにくい結果に繰り返し遭遇したサポートケースがきっかけとなっています。
+
+ダッシュボードクエリには、フィルターとログソーステーブルのマクロを含める必要があります。時系列チャートには、時間範囲と interval のマクロも含める必要があります。以前は、これらのチェックはアラートがタイルに追加された後にのみ実行されていました。現在はすべての生 SQL チャートで実行されるため、マクロを削除すると、後から不可解なチャートが表示される代わりに、エディタに警告が表示されます。
+
+この検証では、各マクロの依存関係も考慮されます。生 SQL チャートではそれ以外にログソースを必要としませんが、ログソーステーブルとフィルターのマクロには、ログソースが選択されている必要があります。そのため、ログソースを選択せずにいずれかのマクロを使用すると、警告ではなくエラーが表示されます。
+
+小さな変更ですが、サポートに問い合わせることなく、生 SQL に関する問題を見つけやすくなるはずです。
+
+**関連 PR:** [#2742](https://github.com/hyperdxio/hyperdx/pull/2742) feat: SQL エディタで不足しているパラメータ/マクロを警告
+
+<div id="link-to-sources-by-name-not-id">
+  ## ID ではなく名前でログソースにリンクする
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/r2uNmcJXGSM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+LogHouse チームは、ログソースへのリンクにより安定した方法を求めていました。同チームは ClickHouse Cloud のログ環境を運用しており、Infrastructure as Code を使ってログソースをプログラムでプロビジョニングしています。ログソースを再作成するとログソース ID が変わり、開発、ステージング、本番の各環境でも異なるため、ID に基づくリンクは壊れやすくなります。アラートシステムや Grafana から ClickStack へリンクしているため、環境ごとに別々のログソース ID セットを管理するのは現実的ではありませんでした。
+
+`source` URL パラメータでは、ID に加えてログソース名も指定できるようになりました。ログソースのプロビジョニング時に名前を管理できるため、同じリンクをすべての環境で使用できます。このサポートは当初 Search ページに追加され、その後の PR で、Chart Explorer、service map、sessions、services ダッシュボード、Kubernetes ダッシュボードを含む、ログソース パラメータを持つすべてのページに拡張されました。
+
+後続の議論の大半は、この機能の見つけやすさに焦点が当てられました。これは実質的に URL API であり、偶然見つけられるものではありません。デフォルトで ID ではなく名前を使用する方法もありますが、名前が重複する可能性があるため安全ではありません。ほかにも、Share ボタンからリンクを公開する、agents が MCP を介してリンクを生成する、URL API を適切に文書化するといった提案がありました。相対的な time range についても、同様のドキュメントが役立つでしょう。
+
+名前ベースの参照は ダッシュボードにも拡張できます。そうすれば、Infrastructure as Code の workflow でログソースをプロビジョニングし、ダッシュボードをインポートして、すべてを自動的に接続できるようになります。UI 経由での ダッシュボード インポートでは、すでに名前でログソースを照合しているため、残る課題は主にプログラムによる workflow です。
+
+**関連 PR:** [#2746](https://github.com/hyperdxio/hyperdx/pull/2746) feat: URL パラメータで ID に加えてログソース名を受け入れる、[#2758](https://github.com/hyperdxio/hyperdx/pull/2758) feat: 追加ページでログソース名のディープリンクをサポート
+
+<div id="chart-display-settings-redesign">
+  ## チャート表示設定の再設計
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tO5yFKR-MLQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+チャート表示設定をどこに配置すべきかについて、現在検討を進めています。当初の変更では、別のドロワーで開くのではなく、タイルエディターの右側にインラインで配置しました。以前はタイルエディターがモーダルとして表示され、Display Settings はその上に重なるドロワーで開いていました。Escape を1回押すと両方が閉じられ、モーダルの上にドロワーを重ねる形には違和感がありました。
+
+系列設定もその上に重ねる必要が生じたことで PR はさらに複雑になったため、一歩引いてページ全体を見直すことにしました。作業はまだワイヤーフレーム段階です。現在の設計では、設定をドッキングパネルに配置し、変更を自動的に適用します。これにより、Apply ボタンを押さなくても結果をリアルタイムで確認できます。
+
+既存の PR に再び組み込む前に、再設計を完了する予定です。現在のものはプロトタイプとして扱われており、特に新しい設計ではダッシュボードページの一部も変更されるためです。
+
+**関連 PR:** [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) feat(ダッシュボード): ドッキング設定パネルを備えたドロワーにタイルエディターを移動
+
+<div id="new-explore-page">
+  ## 新しい Explore ページ
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/E1vEjJBw1gs" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これは、将来的に Search、Saved Searches、Chart Explorer を単一のエントリポイントに統合する可能性がある、新しい Explore ページの初期検討です。
+
+このロールアウトには、トレースビューアの再設計から得た知見が反映されています。すべてのユーザーの体験を一度に変更するのではなく、新しいページは少数のユーザーに対して機能フラグの背後で公開されます。その期間に問題を見つけて修正し、より広範にロールアウトする前に検証します。このアイデアがうまくいかなければ、実験のままでリリースされません。それも十分に有意義な結果です。
+
+ページはシグナルタイプの選択から始まります。トレース、ログ、メトリクスを選択すると、以降の画面がそれに合わせて変わります。たとえばログを選択すると、現在 Chart Explorer にあるリストビュー、イベントパターン、時系列、その他の可視化が表示されます。
+
+ページを切り替えることなく、調査を続けられるようにします。リストから始めて、数値表示やグループ化されたテーブルに移り、結果をダッシュボードに追加し、さらに細かく制御する必要があればカスタムクエリを記述できます。
+
+ユーザーフィードバックを受けた小規模な改善もいくつか含まれています。クエリエディタは SQL エディタにより近い動作となり、現在の自動補完動作の違いをなくします。エラーと警告はクエリの実行を待たず、編集時に表示されます。
+
+カラムには専用のピッカーが用意されます。少なくとも 1 人のユーザーは、`SELECT` 句を変更することでテーブルに表示されるカラムを制御できることに気付いていませんでした。ピッカーでは、フィールドをクリックすると SQL が更新され、そのフィールドでソートできます。`SELECT` 句は上級ユーザー向けに引き続き利用できます。
+
+保存済みビューもこのページに配置されるため、保存せずに調査を進め、現在のビューをその場で保存できます。生成された SQL はインラインで表示されます。
+
+現在 Chart Explorer で利用できる可視化の一部を含め、まだ不足しているものがかなりあります。これらの要素が追加されるにつれて、設計は引き続き変化していきます。
+
+**関連 PR:** まだありません。これはリリース済み機能ではなく、検討段階です
+
+<div id="dashboard-filter-linking">
+  ## ダッシュボードフィルターのリンク
+</div>
+
+*[@teeohhem](https://github.com/teeohhem)によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IQ4WtnNYS5s" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードフィルターのリンク機能がマージされました。この機能は数か月前にドラフト版として初めてデモを行いましたが、パフォーマンスへの影響を検討するため、一時的に作業を停止していました。リンクによりダッシュボードクエリの形状が変わり、materialized view を常に最適に活用できるとは限らないため、デフォルトではなくオプトインのトグルとして提供されます。
+
+リンクを有効にすると、あるフィルターで値を選択した際に、他のフィルターで選択可能な値が絞り込まれます。サービスを選択すると、そのサービスで見つかった重大度の値のみが残ります。trace ID を選択すると、関連する親 trace ID のみが残ります。これにより、データを返さない組み合わせをユーザーが選択するのを防げます。
+
+後続の PR では、リンクがログソースを認識するようになりました。フィルターはログソースごとにグループ化され、相互に絞り込める隣接フィルターの間にはチェーンアイコンが表示されます。2 つのログフィルターと 2 つのトレースフィルターがあるダッシュボードでは、どのフィルターが連動するかが明確になります。
+
+元のユースケースは Kubernetes dashboard でした。ポッドを選択すると、そのポッドを含むデプロイメントとノードのみが残るようにします。絞り込まれた値はドロップダウンを開いたときに遅延取得されるため、追加のルックアップに伴うコストを抑えられます。
+
+この議論では、未解決の点が 2 つ残りました。設定は現在、ユーザーごとにブラウザーストレージへ保存されます。通話では、いずれダッシュボードレベルで保存したいというニーズが出てくると考えられていました。その場合、後からダッシュボードレベルの動作と競合させるより、ユーザーレベルの設定は一時的なものにしておく方がよいかもしれません。
+
+もう 1 つは、値の読み込み中に依存フィルターがどのように動作するかという点です。現在は、値を選択すると依存先のドロップダウンをブロックするのではなく、その中に読み込み状態が表示されます。ただし、2 つ目の依存フィルターがある場合の動作は、まだ検証が必要です。絞り込み中もフィルターは使用可能な状態に保ち、リストの更新が完了していないことを示す方針が望まれました。必要な値をすでに把握しているユーザーは、メタデータの読み込みを待つ必要はありません。
+
+**関連 PR:** [#2423](https://github.com/hyperdxio/hyperdx/pull/2423) feat(dashboards): カスケード (ファセット) フィルター値、[#2760](https://github.com/hyperdxio/hyperdx/pull/2760) feat(dashboards): フィルターリンクトグルを永続化し、同一ログソース内のリンクを明確化
+
+<div id="remember-the-last-side-panel-tab">
+  ## 最後に使用したサイドパネルのタブを記憶する
+</div>
+
+*[@MikeShi42](https://github.com/MikeShi42) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/FlDWN7sGHMo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今週最小の PR は、修正すべき小さな不便さの好例でもあります。
+
+行のサイドパネルは、OpenTelemetry のログフィールド向けに設計された「概要」タブで常に開いていました。OTel 形式ではないログの場合、このタブには有用な情報がほとんど表示されません。そのため、行を開くたびに「カラムの値」へ切り替える必要がありました。
+
+パネルは最後に使用したタブを記憶し、次回もそのタブで開くようになりました。設定は不要です。「カラムの値」に切り替えた非 OTel ユーザーはそのタブが維持され、「概要」を使用するユーザーは従来どおりの動作になります。
+
+**関連 PR:** [#2752](https://github.com/hyperdxio/hyperdx/pull/2752) feat(app): 開くたびに最後に使用したサイドパネルのタブを記憶する
