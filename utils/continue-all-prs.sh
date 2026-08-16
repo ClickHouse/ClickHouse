@@ -69,7 +69,7 @@ set -euo pipefail
 #                         check and can perform a clean base-branch merge. If a
 #                         conflict or code change is needed, it hands
 #                         a task description to the coding model selected by
-#                         --model. Requires --model.
+#                         --model. Requires --model and `bwrap`.
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
@@ -204,6 +204,11 @@ esac
 
 if [[ -n "$TRIAGE_MODEL" && -z "$MODEL" ]]; then
     echo "${S}Error: --triage-model requires --model for the coding handoff${R}" >&2
+    exit 1
+fi
+
+if [[ -n "$TRIAGE_MODEL" ]] && ! command -v bwrap >/dev/null 2>&1; then
+    echo "${S}Error: --triage-model requires bwrap (Bubblewrap) to isolate Git credentials${R}" >&2
     exit 1
 fi
 
@@ -733,11 +738,10 @@ TRIAGE_NUDGE_PROMPT="Continue the initial triage. Only complete a clean base-bra
 # coding model receives the worktree.
 triage_state_is_safe()
 {
-    local wt="$1" start_head="$2" base_head="$3" config_checksum="$4"
+    local wt="$1" start_head="$2" base_head="$3"
     local head first_parent second_parent extra_parent expected_tree actual_tree
 
     [[ -z "$(git -C "$wt" status --porcelain)" ]] || return 1
-    [[ "$(sha256sum "$(git -C "$wt" rev-parse --git-path config)" | awk '{ print $1 }')" == "$config_checksum" ]] || return 1
     head=$(git -C "$wt" rev-parse HEAD) || return 1
     [[ "$head" == "$start_head" ]] && return 0
 
@@ -759,7 +763,7 @@ prepare_triage_worktree()
 {
     local wt="$1" number="$2"
     local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
-    local remote push_url pushable=0 config_path config_checksum config_snapshot
+    local remote push_url pushable=0
 
     meta=$(gh pr view "$number" --repo "$REPO" \
         --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
@@ -782,44 +786,37 @@ prepare_triage_worktree()
     git -C "$wt" checkout --detach -q "$remote/$head_ref" || return 1
     git -C "$wt" fetch -q origin "$base_ref" || return 1
     push_url=$(git -C "$wt" remote get-url --push "$remote") || return 1
-    config_path=$(git -C "$wt" rev-parse --git-path config) || return 1
-    config_checksum=$(sha256sum "$config_path" | awk '{ print $1 }') || return 1
-    config_snapshot="$wt/tmp/continue-all-prs/triage-git-config"
-    mkdir -p "${config_snapshot%/*}" || return 1
-    cp "$config_path" "$config_snapshot" || return 1
-
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable" "$config_checksum" "$config_snapshot"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable"
 }
 
 discard_untrusted_triage_changes()
 {
-    local wt="$1" start_head="$2" config_snapshot="$3" log="$4"
+    local wt="$1" start_head="$2" log="$3"
 
     echo "Discarding non-mechanical changes made by the triage model before coding handoff." >> "$log"
-    cp "$config_snapshot" "$(git -C "$wt" rev-parse --git-path config)" >> "$log" || return 1
     git -C "$wt" reset --hard "$start_head" >> "$log"
     git -C "$wt" clean -fd >> "$log"
 }
 
-prepare_triage_credential_guard()
+prepare_triage_sandbox_config()
 {
-    local wt="$1"
+    local wt="$1" config key
 
-    # A hook is not a security boundary: `git push --no-verify` bypasses it.
-    # Disable all Git credential helpers in the worktree-local configuration
-    # instead. The triage worker can still fetch public data and make a clean
-    # merge, but cannot authenticate a push. Keep the original configuration
-    # snapshot from `prepare_triage_worktree` and restore it before handing the
-    # worktree to the coding worker or making the orchestrator's validated push.
-    git -C "$wt" config --local --unset-all credential.helper 2>/dev/null || true
-    git -C "$wt" config --local --add credential.helper ''
-}
-
-restore_triage_config()
-{
-    local wt="$1" config_snapshot="$2"
-
-    cp "$config_snapshot" "$(git -C "$wt" rev-parse --git-path config)"
+    # Worktrees share the main repository's config. Never mutate it for
+    # triage: use a private copy mounted over the common config only in the
+    # Bubblewrap namespace. Besides credential helpers, remove all HTTPS
+    # extra headers and include files, which can carry authentication tokens.
+    config="$wt/tmp/continue-all-prs/triage-git-config"
+    mkdir -p "${config%/*}" || return 1
+    cp "$(git -C "$wt" rev-parse --git-path config)" "$config" || return 1
+    git config --file "$config" --unset-all credential.helper 2>/dev/null || true
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^http\..*\.extraheader$' || true)
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^(include|includeif\..*)\.path$' || true)
+    printf '%s\n' "$config"
 }
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
@@ -834,7 +831,7 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home
-    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot triage_common_git_dir triage_agent_home
+    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_common_git_dir triage_sandbox_config triage_agent_home
     local -a codex_env
     local u_i u_o u_ci u_co u_cost triage_cost coding_cost
     local -a model_args triage_git_args triage_sandbox_args
@@ -850,9 +847,7 @@ run_continue_pr()
     if [[ "$phase" == "triage" ]]; then
         local triage_metadata
         triage_metadata=$(prepare_triage_worktree "$wt" "$number") || return 1
-        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot <<< "$triage_metadata"
-        prepare_triage_credential_guard "$wt" || return 1
-        triage_config_checksum=$(sha256sum "$(git -C "$wt" rev-parse --git-path config)" | awk '{ print $1 }') || return 1
+        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
     fi
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
@@ -886,16 +881,19 @@ run_continue_pr()
 
     if [[ "$phase" == "triage" ]]; then
         triage_common_git_dir=$(git -C "$wt" rev-parse --git-common-dir) || return 1
+        triage_sandbox_config=$(prepare_triage_sandbox_config "$wt") || return 1
         # Keep the triage model's agent credentials available, but hide every
         # GitHub and SSH credential source from its mount namespace. Together
-        # with the empty worktree-local credential helper this prevents even
+        # with the sanitized read-only Git config this prevents even
         # `git push --no-verify` or an explicit URL from authenticating. The
         # coding model runs outside this sandbox after triage hands off.
         triage_sandbox_args=(
             bwrap
             --ro-bind / /
+            --dev /dev
             --bind "$wt" "$wt"
             --bind "$triage_common_git_dir" "$triage_common_git_dir"
+            --ro-bind "$triage_sandbox_config" "$triage_common_git_dir/config"
             --tmpfs "$HOME/.config/gh"
             --tmpfs "$HOME/.ssh"
         )
@@ -929,7 +927,7 @@ run_continue_pr()
         [[ -n "$active_model" ]] && model_args=(--model "$active_model")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
-            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u SSH_AUTH_SOCK)
+            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u SSH_AUTH_SOCK -u GIT_CONFIG -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM)
         fi
 
         echo "===== turn $iter ($phase model ${active_model:-default}, session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
@@ -1027,10 +1025,8 @@ ${system_prompt}"
         # accidental extra completion marker cannot suppress requested coding.
         if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
             handoff=$(cat "$log.last")
-            if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
-                discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
-            else
-                restore_triage_config "$wt" "$triage_config_snapshot" || return 1
+            if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+                discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
             fi
             echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
             phase="coding"
@@ -1045,9 +1041,8 @@ ${system_prompt}"
         # Codex reports a session ID, resume that session within the existing
         # turn and time limits instead of discarding its completed work.
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
-            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
+            if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
                 if [[ "$phase" == "triage" ]]; then
-                    restore_triage_config "$wt" "$triage_config_snapshot" || return 1
                     if [[ "$triage_pushable" != "1" ]]; then
                         if [[ "$triage_start_head" != "$(git -C "$wt" rev-parse HEAD)" ]]; then
                             handoff=$(cat "$log.last")
@@ -1071,7 +1066,7 @@ ${system_prompt}"
                 break
             fi
             handoff=$(cat "$log.last")
-            discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
+            discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
             echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after non-mechanical triage changes =====" >> "$log"
             phase="coding"
             phase_iter=0
@@ -1086,8 +1081,8 @@ ${system_prompt}"
         if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
             if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
                 handoff=$(cat "$log.last")
-                if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
-                    discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
+                if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
+                    discard_untrusted_triage_changes "$wt" "$triage_start_head" "$log"
                 fi
                 echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
                 phase="coding"
