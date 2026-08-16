@@ -127,6 +127,18 @@ std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
     return getTableName(tokens, pos);
 }
 
+std::optional<String> getCreateOrReplaceName(const Tokens & tokens)
+{
+    if (tokens.size() < 5
+        || !isKeyword(tokens[0], "CREATE")
+        || !isKeyword(tokens[1], "OR")
+        || !isKeyword(tokens[2], "REPLACE")
+        || (!isKeyword(tokens[3], "TABLE") && !isKeyword(tokens[3], "VIEW")))
+        return {};
+
+    return getTableName(tokens, 4);
+}
+
 struct WindowViewFollowup
 {
     String table_name;
@@ -144,7 +156,8 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
             && !isKeyword(tokens[0], "TRUNCATE")
             && !isKeyword(tokens[0], "OPTIMIZE")
             && !isKeyword(tokens[0], "CHECK")
-            && !isKeyword(tokens[0], "RENAME")))
+            && !isKeyword(tokens[0], "RENAME")
+            && !isKeyword(tokens[0], "EXCHANGE")))
         return {};
 
     if (isKeyword(tokens[0], "RENAME"))
@@ -185,6 +198,39 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
             ++pos;
         }
         return result;
+    }
+
+    if (isKeyword(tokens[0], "EXCHANGE"))
+    {
+        if (tokens.size() < 5 || !isKeyword(tokens[1], "TABLES"))
+            return {};
+
+        size_t pos = 2;
+        std::vector<WindowViewFollowup> result;
+        while (pos < tokens.size())
+        {
+            const auto from = getTableName(tokens, pos);
+            if (!from)
+                return {};
+            pos = getTableNameEnd(tokens, pos);
+
+            if (pos == tokens.size() || !isKeyword(tokens[pos], "AND"))
+                return {};
+            ++pos;
+
+            const auto to = getTableName(tokens, pos);
+            if (!to)
+                return {};
+            pos = getTableNameEnd(tokens, pos);
+
+            result.push_back({.table_name = *from, .rename_to = to, .if_exists = false, .removes_window_view = true});
+            if (pos == tokens.size())
+                return result;
+            if (tokens[pos].type != TokenType::Comma)
+                return {};
+            ++pos;
+        }
+        return {};
     }
 
     size_t pos = 1;
@@ -962,6 +1008,14 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
+    /// `CREATE OR REPLACE` is a committed replicated DDL entry even though it may
+    /// use an internal rename or exchange to publish the replacement. Retire the
+    /// obsolete-name marker before processing its later DDLs.
+    if (const auto create_or_replace_name = getCreateOrReplaceName(tokens); create_or_replace_name && removed_window_views.erase(*create_or_replace_name))
+    {
+        persistRemovedWindowViews(zookeeper);
+    }
+
     const auto followups = getWindowViewFollowups(tokens);
     const bool has_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
     {
@@ -1101,6 +1155,8 @@ void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr &
         const auto tokens = getSignificantTokens(entry.query);
         if (const auto window_view_name = getRemovedWindowViewName(tokens))
             removed_window_views.insert(*window_view_name);
+        else if (const auto create_or_replace_name = getCreateOrReplaceName(tokens))
+            removed_window_views.erase(*create_or_replace_name);
         else
             updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens));
     }
