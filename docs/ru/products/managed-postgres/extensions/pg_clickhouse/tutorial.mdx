@@ -192,8 +192,7 @@ docker exec -it pg_clickhouse psql -U postgres
 CREATE EXTENSION pg_clickhouse;
 ```
 
-Создайте внешний сервер, указав имя хоста, порт и имя базы данных вашей
-базы данных ClickHouse.
+Создайте внешний сервер, указав хост, порт и базу данных ClickHouse.
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -203,8 +202,16 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 Здесь мы решили использовать бинарный драйвер, который работает по бинарному
 протоколу ClickHouse. Вы также можете использовать драйвер &quot;http&quot;, который работает через HTTP-интерфейс.
 
+<Note>
+  Если вы используете консоль ClickHouse Cloud для выполнения SQL, предоставьте пользователю-администратору консоли доступ к внешнему серверу:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 Далее свяжите пользователя PostgreSQL с пользователем ClickHouse. Самый простой способ сделать это —
-просто сопоставить текущего пользователя PostgreSQL с удалённым пользователем для стороннего
+просто сопоставить текущего пользователя PostgreSQL с удалённым пользователем для внешнего
 сервера:
 
 ```sql

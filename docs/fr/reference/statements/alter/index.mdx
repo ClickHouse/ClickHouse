@@ -1,6 +1,6 @@
 ---
 description: 'Documentation d’ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'Vue d’ensemble'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,15 +73,37 @@ Les entrées des mutations terminées ne sont pas supprimées immédiatement (le
 
 Pour les tables non répliquées, toutes les requêtes `ALTER` sont exécutées de manière synchrone. Pour les tables répliquées, la requête se contente d&#39;ajouter dans `ZooKeeper` les instructions correspondant aux actions appropriées, et ces actions sont ensuite exécutées dès que possible. Toutefois, la requête peut attendre que ces actions soient terminées sur toutes les répliques.
 
-Pour les requêtes `ALTER` qui créent des mutations (par ex. : `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`, entre autres), le caractère synchrone est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync).
+Pour les requêtes `ALTER` qui créent des mutations (par ex. : `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`, entre autres), le caractère synchrone est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings/mutations#mutations_sync).
 
-Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vous pouvez utiliser le paramètre [alter&#95;sync](/fr/reference/settings/session-settings#alter_sync) pour définir l&#39;attente.
+Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vous pouvez utiliser le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) pour définir l&#39;attente.
 
-Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
+Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
 
 <Note>
   Pour toutes les requêtes `ALTER`, si `alter_sync = 2` et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
 </Note>
+
+<div id="concurrent-alter-assignment-on-one-table">
+  ### Attribution concurrente d’`ALTER` sur une même table
+</div>
+
+Sur les tables répliquées, l’envoi rapide de plusieurs instructions `ALTER` distinctes sur une même table peut échouer avec `CANNOT_ASSIGN_ALTER` (code 517). Le chemin de réplication déclenche cette erreur lorsque la réplique n’a pas encore appliqué certains `ALTER` précédents (la version des métadonnées est toujours en retard par rapport aux métadonnées communes — le serveur peut indiquer que la réplique « still not applied some of previous alters » ou « Probably too many alters executing concurrently »). Cette condition peut persister même lorsqu’un `ALTER` précédent a déjà été attribué. Il s’agit d’une condition **générale de concurrence entre `ALTER` de métadonnées et mutations** — elle ne se limite pas aux instructions produisant uniquement des mutations. Des modifications concurrentes ordinaires des métadonnées (`ADD` / `DROP` / `MODIFY` et similaires) peuvent déclencher le même code pouvant donner lieu à un réessai (voir, par exemple, le chemin de réessai couvert par `tests/queries/0_stateless/03518_alter_logical_race.sh`).
+
+Approches permettant d’éviter la condition de concurrence :
+
+* Regroupez les opérations de métadonnées indépendantes dans un **unique** `ALTER` comportant plusieurs clauses lorsque la grammaire le permet (par exemple, plusieurs clauses `ADD INDEX`).
+* Sérialisez les instructions `ALTER` et réessayez en cas de code 517 jusqu’à ce que les `ALTER` précédents aient été appliqués sur la réplique.
+* Pour les `ALTER` produisant des mutations, attendez la fin de la mutation précédente à l’aide d’un indicateur observable documenté, tel que [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync) ou `is_done` dans [`system.mutations`](/fr/reference/system-tables/mutations), avant d’envoyer la suivante.
+
+<div id="combining-materialize-index-clauses">
+  ### Combinaison de clauses `MATERIALIZE INDEX`
+</div>
+
+Plusieurs clauses `MATERIALIZE INDEX` peuvent figurer dans une même instruction `ALTER`. Le cas couvert dans le code source consiste à regrouper plusieurs clauses `ADD INDEX` et les clauses `MATERIALIZE INDEX` correspondantes pour ces nouveaux index dans une seule instruction (voir `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). Cette forme combinant `ADD INDEX` et `MATERIALIZE INDEX` mêle un segment `AlterCommand` à un segment `MutationCommand` ; **`DatabaseReplicated` la rejette donc** avec `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). Considérez l’exemple `02911` comme valide pour les bases de données ordinaires (non-`DatabaseReplicated`) ; avec `DatabaseReplicated`, conservez les modifications de métadonnées et les mutations de matérialisation dans des instructions distinctes.
+
+Dans l’implémentation actuelle, chaque clause `MATERIALIZE INDEX` est résolue par rapport à l’instantané des métadonnées de la table lors de la préparation de la mutation. Les formes à plusieurs clauses qui ne font que matérialiser des index déjà existants suivent donc le même chemin de préparation (mutation uniquement, elles restent donc dans un seul segment). Cette forme précise n’est pas encore couverte par un test stateless ciblé ; considérez-la comme un comportement de l’implémentation actuelle plutôt que comme une garantie distincte tant qu’une telle couverture n’existe pas.
+
+Si vous avez besoin d’appliquer les mutations dans un ordre précis, vous pouvez toujours émettre une instruction `MATERIALIZE INDEX` par instruction et attendre avec [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync).
 
 <div id="related-content">
   ## Articles connexes

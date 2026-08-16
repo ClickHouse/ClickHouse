@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/products/agentic-data-stack/overview",
         "ru/products/agentic-data-stack/docker-setup"
       ]
     },
     {
-      "group": "Компоненты",
+      "group": "Components",
       "pages": [
         "ru/products/agentic-data-stack/components/librechat",
         "ru/products/agentic-data-stack/components/mcp-server",
