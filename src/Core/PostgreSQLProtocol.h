@@ -823,7 +823,11 @@ public:
         readBinaryBigEndian(num_format_params_result, in);
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
+        {
             readBinaryBigEndian(format_param_result, in);
+            if (format_param_result != 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary result formats are not supported in the PostgreSQL wire protocol");
+        }
 
         /// Extended-protocol parameter values are typed values, not SQL fragments. Decoding their
         /// text and binary encodings requires the type OIDs from the corresponding `Parse` message;

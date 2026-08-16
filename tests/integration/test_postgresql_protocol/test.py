@@ -907,6 +907,32 @@ def test_extended_query_errors_recover_at_sync(started_cluster):
         sock.close()
 
 
+def test_bind_rejects_binary_result_format(started_cluster):
+    """The server always writes text `DataRow` values, so a binary result format requested in
+    `Bind` must fail rather than producing a wire-format mismatch. The complete Bind message is a
+    recoverable extended-query error and `Sync` restores the connection."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        send(b"P", b"binary_result_probe\x00SELECT 1\x00\x00\x00")
+        # No parameter formats or parameter values; one result-format code, `1` (binary).
+        send(b"B", b"\x00binary_result_probe\x00\x00\x00\x00\x00\x01\x00\x01")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+        assert b"Binary result formats are not supported" in seen[b"E"], seen[b"E"]
+
+        send(b"Q", b"SELECT 20260816\x00")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
 def test_kill_query_cancels_copy_from_stdin_stalled_inside_a_frame(started_cluster):
     """A `CopyData` frame is not read as a whole: a client may announce a large frame and then stall
     in the middle of it, and an external `KILL QUERY` must still take effect promptly - the frame

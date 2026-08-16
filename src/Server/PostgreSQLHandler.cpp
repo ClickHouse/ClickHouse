@@ -1786,11 +1786,11 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
 
 void PostgreSQLHandler::processParseQuery()
 {
+    std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
+
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
-
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = query->sql_query;
@@ -1809,11 +1809,11 @@ void PostgreSQLHandler::processParseQuery()
 
 void PostgreSQLHandler::processBindQuery()
 {
+    std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::BindQuery>();
+
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::BindQuery>();
-
         prepared_statements_manager.attachBindQuery(std::move(query));
         message_transport->send(PostgreSQLProtocol::Messaging::BindQueryComplete(), true);
     }
@@ -1847,11 +1847,11 @@ void PostgreSQLHandler::processDescribeQuery()
 
 void PostgreSQLHandler::processExecuteQuery()
 {
+    std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
+
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
-
         /// Only the unnamed portal is supported; the corresponding rejection
         /// for `Bind` lives in `PreparedStatemetsManager::attachBindQuery`.
         if (!query->portal_name.empty())
@@ -1889,11 +1889,11 @@ void PostgreSQLHandler::processExecuteQuery()
 
 void PostgreSQLHandler::processCloseQuery()
 {
+    std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
+
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
-
         /// 'S' means close a prepared statement, 'P' means close a portal.
         /// Closing a portal must not deallocate the prepared statement,
         /// otherwise a later Bind/Execute on the same statement would fail.
