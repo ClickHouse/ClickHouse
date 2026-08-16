@@ -28,7 +28,8 @@ namespace ErrorCodes
 }
 
 /// Varying-`predict_offset` sibling of `timeSeriesPredictLinearToGrid` (offset there is a fixed parameter).
-/// Deliberately isolated from `AggregateFunctionTimeseriesBase` to avoid risk to its ~10 other users; recomputes each grid point instead of the base's bucketed sliding window.
+/// Deliberately isolated from `AggregateFunctionTimeseriesBase` to avoid risk to its ~10 other users: it keeps a flat
+/// sample list instead of the base's bucket map, but slides the same regression summary over it.
 template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 class AggregateFunctionTimeseriesPredictLinearVarying final :
     public IAggregateFunctionHelper<AggregateFunctionTimeseriesPredictLinearVarying<TimestampType_, IntervalType_, ValueType_>>
@@ -44,6 +45,7 @@ public:
     /// constant-offset function: it is already generic (no dependency on AggregateFunctionTimeseriesBase).
     using RegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType, IntervalType, ValueType, /*is_predict=*/true>;
     using Summary = typename RegressionTraits::Summary;
+    using Aggregator = typename RegressionTraits::Aggregator;
 
     String getName() const override { return "timeSeriesPredictLinearVaryingToGrid"; }
 
@@ -191,6 +193,10 @@ public:
             sorted_samples.emplace_back(timestamp, value);
         });
 
+        /// The window's regression summary does not depend on the offset, so it is maintained slidingly by the
+        /// same aggregator `timeSeriesPredictLinearToGrid` uses; only `getResult` below reads the offset.
+        Aggregator aggregator{maxSamplesInWindow(sorted_samples), start_timestamp, 0.0, timestamp_scale_multiplier};
+
         size_t window_begin = 0; /// First sample index with timestamp > (grid_timestamp - window).
         size_t window_end = 0;   /// One past the last sample index with timestamp <= grid_timestamp.
 
@@ -198,29 +204,26 @@ public:
         {
             const TimestampType grid_timestamp = timestampAtIndex(grid_index);
 
-            while (window_end < sorted_samples.size() && sorted_samples[window_end].first <= grid_timestamp)
-                ++window_end;
+            for (; window_end < sorted_samples.size() && sorted_samples[window_end].first <= grid_timestamp; ++window_end)
+            {
+                Summary entering;
+                entering.add(sorted_samples[window_end].first, sorted_samples[window_end].second, start_timestamp);
+                aggregator.add(std::move(entering), sorted_samples[window_end].first);
+            }
+
+            const size_t stale_begin = window_begin;
             while (window_begin < window_end && isSampleOutOfWindow(sorted_samples[window_begin].first, grid_timestamp))
                 ++window_begin;
+            /// Cut off by the last departing sample's timestamp: the next sample's is strictly greater,
+            /// otherwise it would have been dropped by the loop above too.
+            if (window_begin != stale_begin)
+                aggregator.removeBefore(sorted_samples[window_begin - 1].first);
 
-            Summary summary;
-            for (size_t i = window_begin; i < window_end; ++i)
-                summary.add(sorted_samples[i].first, sorted_samples[i].second, start_timestamp);
-
-            std::optional<ValueType> result;
-            if (summary.count >= 2 && summary.m2_x != 0)
-            {
-                /// Offsets arrive in seconds (PromQL units); scaled to internal timestamp units here,
-                /// matching the constant-offset registration's pre-multiply.
-                const Float64 predict_offset = state->grid_offsets_captured
-                    ? grid_offsets[grid_index] * static_cast<Float64>(timestamp_scale_multiplier) : 0.0;
-                const Float64 slope = summary.c_xy / summary.m2_x;
-                const Float64 intercept = summary.mean_y - slope * summary.mean_x;
-                const Float64 predict_x = static_cast<Float64>(
-                    static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(start_timestamp)))
-                    + predict_offset;
-                result = static_cast<ValueType>(slope * predict_x + intercept);
-            }
+            /// Offsets arrive in seconds (PromQL units); scaled to internal timestamp units here,
+            /// matching the constant-offset registration's pre-multiply.
+            aggregator.predict_offset = state->grid_offsets_captured
+                ? grid_offsets[grid_index] * static_cast<Float64>(timestamp_scale_multiplier) : 0.0;
+            const std::optional<ValueType> result = aggregator.getResult(grid_timestamp);
 
             if (result)
             {
@@ -300,6 +303,21 @@ private:
         const UInt64 step_bits = static_cast<UInt64>(static_cast<Int64>(step));
         const UInt64 result_bits = start_bits + static_cast<UInt64>(grid_index) * step_bits;
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
+    }
+
+    /// Upper bound on the samples one window can hold, used to size the sliding summary's stacks. A window ending
+    /// at a grid point holds no more samples than the one ending at its last sample, which this scans for.
+    size_t maxSamplesInWindow(const VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> & sorted_samples) const
+    {
+        size_t result = 0;
+        size_t begin = 0;
+        for (size_t end = 0; end < sorted_samples.size(); ++end)
+        {
+            while (begin < end && isSampleOutOfWindow(sorted_samples[begin].first, sorted_samples[end].first))
+                ++begin;
+            result = std::max(result, end - begin + 1);
+        }
+        return result;
     }
 
     /// Same Int128 staleness-cutoff comparison as AggregateFunctionTimeseriesBase::isSampleOutOfWindow.
