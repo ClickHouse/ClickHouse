@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - 평가 범위의 종료 시간입니다.
 * `step` - `start_time`부터 `end_time`까지(양 끝 포함) 평가 시간을 순회할 때 사용하는 간격입니다.
 
-<div id="returned_value">
+<div id="returned-value">
   ## 반환 값
 </div>
 
@@ -60,7 +60,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 | 범주       | 함수                                                                                               |
 | -------- | ------------------------------------------------------------------------------------------------ |
-| 범위       | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 범위       | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | 수학       | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | 삼각함수     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
