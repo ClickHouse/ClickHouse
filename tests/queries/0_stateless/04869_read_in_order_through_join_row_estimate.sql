@@ -49,8 +49,8 @@ SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 
 -- An `INNER JOIN` can drop rows of the left side, so the `LIMIT` does not bound how much of it has
--- to be read and the announcement stays at the full part. This is the conservative estimate, not a
--- statement that the query would really read that much.
+-- to be read. Ordered reads deliberately do not enforce `max_rows_to_read` from this estimate:
+-- they can stop early, while an estimate must remain conservative.
 SELECT l.id
 FROM t_left_04869 AS l
 INNER JOIN t_right_04869 AS r ON l.id = r.id
@@ -62,9 +62,9 @@ SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0,
-    max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0; -- { serverError TOO_MANY_ROWS }
+    max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 
--- A filter above the join still drops the limit: it can reject every row the reading step produces.
+-- A filter above the join likewise prevents the `LIMIT` from bounding the number of rows read.
 SELECT l.id
 FROM t_left_04869 AS l
 LEFT JOIN t_right_04869 AS r ON l.id = r.id
@@ -77,7 +77,7 @@ SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0,
-    max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0; -- { serverError TOO_MANY_ROWS }
+    max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
 
 DROP TABLE t_left_04869;
 DROP TABLE t_right_04869;
