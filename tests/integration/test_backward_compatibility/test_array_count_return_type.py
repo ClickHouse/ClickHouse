@@ -83,8 +83,9 @@ def test_array_count_mixed_version_remote(start_cluster):
     # inherent to any function-signature change guarded by a per-server
     # compatibility setting (an old coordinator cannot forward a setting it
     # does not know, and rejects it as unknown when set explicitly); the
-    # mitigation is to set `array_count_legacy_uint32_result = 1` in the new
-    # servers' default profile for the duration of the rolling upgrade.
+    # mitigation is to set `array_count_legacy_uint32_result = 1` for the
+    # users/profiles under which shard-side queries execute (or for all users)
+    # for the duration of the rolling upgrade.
     wrapped_query = (
         "SELECT byteSize(arrayCount(x -> x >= 2, arr)) AS b "
         "FROM remote('old_node,new_node', default, tab) ORDER BY b"
