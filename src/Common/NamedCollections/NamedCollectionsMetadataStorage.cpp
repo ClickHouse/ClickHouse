@@ -129,7 +129,7 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
-        ReadBufferFromFile in(getPath(file_name));
+        ReadBufferFromFile in(pathToString(getPath(file_name)));
         std::string data;
         readStringUntilEOF(data, in);
         return readHook(data);
@@ -583,7 +583,7 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
     {
         const auto path = config.getString(
             named_collections_storage_config_path + ".path",
-            pathToGenericString(std::filesystem::path(context_->getPath()) / "named_collections"));
+            pathToGenericString(pathFromString(context_->getPath()) / "named_collections"));
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using local storage for named collections at path: {}", path);

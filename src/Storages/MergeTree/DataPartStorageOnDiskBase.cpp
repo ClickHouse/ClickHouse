@@ -108,18 +108,18 @@ DiskPtr DataPartStorageOnDiskBase::getDisk() const
 
 std::string DataPartStorageOnDiskBase::getFullPath() const
 {
-    return pathToGenericString(fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "");
+    return pathToGenericString(pathFromString(volume->getDisk()->getPath()) / pathFromString(root_path) / pathFromString(part_dir) / "");
 }
 
 std::string DataPartStorageOnDiskBase::getRelativePath() const
 {
-    return pathToGenericString(fs::path(root_path) / part_dir / "");
+    return pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / "");
 }
 
 std::string DataPartStorageOnDiskBase::getParentDirectory() const
 {
     /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
-    fs::path part_dir_without_slash = part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir;
+    fs::path part_dir_without_slash = pathFromString(part_dir.ends_with("/") ? part_dir.substr(0, part_dir.size() - 1) : part_dir);
 
     if (part_dir_without_slash.has_parent_path())
         return pathToGenericString(part_dir_without_slash.parent_path());
@@ -263,7 +263,7 @@ std::string DataPartStorageOnDiskBase::getPartDirectory() const
 
 std::string DataPartStorageOnDiskBase::getFullRootPath() const
 {
-    return pathToGenericString(fs::path(volume->getDisk()->getPath()) / root_path / "");
+    return pathToGenericString(pathFromString(volume->getDisk()->getPath()) / pathFromString(root_path) / "");
 }
 
 Poco::Timestamp DataPartStorageOnDiskBase::getLastModified() const
