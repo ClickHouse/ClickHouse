@@ -100,7 +100,7 @@ of the PR surface that existed when the worker began:
 ```bash
 git fetch origin "$BASE_BRANCH"
 git reset --hard "$HEAD_REMOTE/$HEAD_BRANCH"
-git clean -ffdx -e build/
+git clean -ffdx -e build/ -e tmp/continue-all-prs/
 test -z "$(git status --porcelain)"
 mkdir -p tmp
 PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
