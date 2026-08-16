@@ -37,11 +37,12 @@ def check_review_threads():
 
     Blocks the merge while the PR has unresolved review threads, and also when
     the threads were resolved only after the pipeline had already been limited
-    at config time (the full test suite did not run, so a re-run is required -
-    rerun_on_review_threads.yml triggers it automatically). Posts the final
-    `Review Threads` commit status, which that workflow reads as the recorded
-    verdict. Fails close: an API failure propagates, failing the post-hook and
-    thereby the Mergeable Check.
+    at config time (the full test suite did not run, so a re-run is required).
+    `rerun_on_review_threads.yml` detects this when threads resolve while the
+    PR workflow is still running; otherwise CI must be re-run manually. Posts
+    the final `Review Threads` commit status, which that workflow reads as the
+    recorded verdict. Fails close: an API failure propagates, failing the
+    post-hook and thereby the Mergeable Check.
     """
     info = Info()
     if info.pr_number <= 0:

@@ -5,26 +5,23 @@
 # and the preliminary checks, and its finish step records the verdict in the
 # `Review Threads` commit status (see
 # ci/jobs/scripts/workflow_hooks/review_threads.py). This workflow watches for
-# anything that can change that state - threads being resolved or unresolved,
-# new review comments, or the `ignore-unresolved-threads` label being added
-# or removed - and, when the recorded verdict disagrees with the live state,
-# re-runs the last completed `PR` workflow run for the current head commit.
+# a `PR` workflow completion or a change to the `ignore-unresolved-threads`
+# label can change that state. When the recorded verdict disagrees with the
+# live state, it re-runs the last completed `PR` workflow run for the current
+# head commit.
 # Previously succeeded jobs are restored from the CI cache, so such a re-run
 # only executes the jobs that were skipped (or newly need to be skipped).
 #
-# Review-thread events arrive indirectly, as completions of the `Review
-# Threads Signal` workflow: on PRs from forks those events carry a read-only
-# GITHUB_TOKEN, while a `workflow_run` workflow always runs in the trusted
-# default-branch context. Label events use `pull_request_target` for the same
-# reason. `PR` workflow completions are watched too, to catch state that
-# changed while a run was still in flight. This workflow never checks out or
-# executes PR code.
+# GitHub Actions has no supported trigger for review-thread resolution. `PR`
+# workflow completions catch threads resolved while CI is in flight. Label
+# events use `pull_request_target` so they can reconcile fork PRs with a
+# write-capable token. This workflow never checks out or executes PR code.
 
 name: Rerun On Review Threads
 
 on:
   workflow_run:
-    workflows: ["PR", "Review Threads Signal"]
+    workflows: ["PR"]
     types: [completed]
   pull_request_target:
     types: [labeled, unlabeled]

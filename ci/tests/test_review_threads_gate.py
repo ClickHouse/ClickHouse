@@ -118,6 +118,8 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     ).read_text()
 
     assert "OVERRIDE_LABEL: ignore-unresolved-threads" in rerun_workflow
+    assert 'workflows: ["PR"]' in rerun_workflow
+    assert "Review Threads Signal" not in rerun_workflow
     assert "FORCE_ALL_LABEL" not in rerun_workflow
     assert "api_with_retries" in rerun_workflow
     assert "|| true" not in rerun_workflow
