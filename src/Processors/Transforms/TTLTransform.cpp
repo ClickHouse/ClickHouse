@@ -88,10 +88,17 @@ TTLTransform::TTLTransform(
             /*old_ttl_timezone_fingerprint_*/ "", current_time_, force_));
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
-        algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
-                getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
-                old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_));
+    {
+        auto algorithm = std::make_unique<TTLAggregationAlgorithm>(
+            getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
+            old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
+            getInputPort().getHeader(), storage_);
+
+        /// The rows-TTL bounds are collected before GROUP BY TTL rewrites the block. Once the
+        /// aggregation can run, they no longer necessarily describe the rows written to the part.
+        rows_ttl_provenance_invalidated |= algorithm->isMinTTLExpired();
+        algorithms.emplace_back(std::move(algorithm));
+    }
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -217,6 +224,15 @@ void TTLTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+
+    if (rows_ttl_provenance_invalidated)
+    {
+        /// Do not let a later metadata-only MATERIALIZE TTL shift bounds computed before rows were
+        /// removed by GROUP BY TTL. The next materialization must rescan the part instead.
+        data_part->ttl_infos.table_ttl_expression.clear();
+        data_part->ttl_infos.table_ttl_timezone.clear();
+        data_part->ttl_infos.has_unknown_rows_ttl_provenance = true;
+    }
 
     if (delete_algorithm)
     {
