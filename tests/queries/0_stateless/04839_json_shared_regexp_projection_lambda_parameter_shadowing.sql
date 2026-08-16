@@ -4,11 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS lambda_parameter_shadowing_04839;
 
--- A lambda formal parameter is a bound name, not a column reference: it must be masked the same
--- way RequiredSourceColumnsVisitor masks it, or it can collide with an unrelated real column of
--- the same name and donate that column's SHARED REGEXP provenance to the wrong output. `arr` must
--- itself be JSON-shaped (not e.g. Array(UInt64)) so there's a node for the wrong provenance to
--- attach to -- otherwise the merge is a structural no-op regardless of over-attribution.
+-- A lambda's bound parameter must be masked like RequiredSourceColumnsVisitor masks it, or it can
+-- collide with a same-named real column and donate that column's SHARED REGEXP rule to the wrong output.
 CREATE TABLE lambda_parameter_shadowing_04839
 (
     id UInt64,

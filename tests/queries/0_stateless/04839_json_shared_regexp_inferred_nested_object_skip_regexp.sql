@@ -4,13 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS inferred_nested_skip_regexp_04839;
 
--- DataTypeObject::getTypeOfNestedObjects(path_prefix) used to always hand an inferred nested object
--- an empty path_regexps_to_skip, and ObjectJSONNode::shouldSkipPath matched SKIP REGEXP patterns
--- directly against the bare local path with no root-relative reconstruction at all (unlike SHARED
--- REGEXP, which already reconstructs the full path via shared_data_path_prefix before matching). A
--- schema like JSON(SKIP REGEXP '^arr[.]skip$', SHARED REGEXP '^arr[.]forced$') would then infer
--- arr's element type without the skip regexp at all, so "skip" started being stored inside an
--- inferred element instead of discarded.
+-- getTypeOfNestedObjects used to hand inferred nested objects an empty path_regexps_to_skip, and
+-- shouldSkipPath matched SKIP REGEXP against the bare local path (no root-relative reconstruction), so skip paths leaked into inferred array elements instead of being discarded.
 CREATE TABLE inferred_nested_skip_regexp_04839
 (
     id UInt64,

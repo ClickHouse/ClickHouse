@@ -121,8 +121,7 @@ FROM system.parts_columns AS p
 WHERE p.database=currentDatabase() AND p.table='alter_04839' AND p.column='j' AND p.active;
 
 -- Rewriting the JSON column under the current rule-free table type must retain the source part's
--- policy by default. A second reload proves the provenance was persisted in the mutated part,
--- rather than surviving only in memory.
+-- policy by default; a second reload proves it was persisted, not just held in memory.
 ALTER TABLE alter_04839
     UPDATE j = '{"force":100,"keep":100}' WHERE id=0
     SETTINGS mutations_sync=2;

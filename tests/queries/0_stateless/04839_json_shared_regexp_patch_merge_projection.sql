@@ -5,9 +5,8 @@ SET enable_lightweight_update = 1;
 
 DROP TABLE IF EXISTS patch_merge_projection_04839;
 
--- Projection analogue of 04839_json_shared_regexp_patch_merge.sql: a real merge that applies a
--- lightweight-update patch onto a JSON column must preserve SHARED REGEXP provenance for a
--- projection storing that column too, not just for the base part.
+-- Projection analogue of 04839_json_shared_regexp_patch_merge.sql: a merge applying a lightweight-
+-- update patch must preserve SHARED REGEXP provenance for a projection too, not just the base part.
 CREATE TABLE patch_merge_projection_04839
 (
     id UInt64,

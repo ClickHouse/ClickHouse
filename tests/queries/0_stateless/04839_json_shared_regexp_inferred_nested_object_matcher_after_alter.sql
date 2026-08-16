@@ -4,19 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS inferred_nested_matcher_after_alter_04839;
 
--- setSharedDataPathMatcherRecursively (ColumnObject.cpp) pushes the current SHARED REGEXP
--- matcher/prefix onto an in-memory column during reads/writes/merges/gathering, but its Object
--- branch only walked typed_paths -- a value dynamically inferred as its own nested JSON object
--- (see ObjectJSONNode::getDynamicNodeForPath in JSONExtractTree.cpp) lives under a *dynamic* path
--- instead, wrapped in Array for an inconsistent-shape array like `arr` below, so the update never
--- reached it and a policy-only ALTER left it on its original matcher/prefix. This is a
--- reachability/smoke regression test: it exercises the exact shape (inconsistent-shape array
--- forcing arr's elements to infer as nested objects, then a policy-only ALTER, then a read) that
--- the fix's code path depends on, and confirms it continues to parse and read back correctly
--- across a metadata reload. The internal matcher-propagation fix itself (does the new prefix
--- actually reach the nested ColumnObject) was verified separately by direct inspection of
--- setSharedDataPathMatcherRecursively's behavior, since the matcher is in-memory state with no
--- direct SQL-level introspection.
+-- setSharedDataPathMatcherRecursively's Object branch only walked typed_paths, missing values
+-- dynamically inferred as nested JSON (inconsistent-shape arrays); a policy-only ALTER left them on the stale matcher/prefix.
 CREATE TABLE inferred_nested_matcher_after_alter_04839
 (
     id UInt64,
