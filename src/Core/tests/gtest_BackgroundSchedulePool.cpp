@@ -28,8 +28,8 @@ TEST(BackgroundSchedulePool, Schedule)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
-        /// The notify must be issued under the waiter's mutex: otherwise the last iteration can
-        /// notify between the waiter's predicate check and its block, and nothing re-notifies.
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
         std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
@@ -39,18 +39,20 @@ TEST(BackgroundSchedulePool, Schedule)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    bool finished = false;
+    bool timed_out = false;
     {
         std::unique_lock lock(mutex);
-        /// Bounded wait so a regression fails the test instead of hanging it.
-        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return counter == ITERATIONS; });
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
     }
 
-    /// Join before asserting: the pool's destructor requires join(), so a fatal assertion here
-    /// would abort the binary instead of failing the test.
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
 
-    EXPECT_TRUE(finished) << "only " << counter << " of " << ITERATIONS << " iterations ran";
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
     ASSERT_EQ(counter, ITERATIONS);
 }
 
@@ -66,8 +68,8 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     BackgroundSchedulePoolTaskHolder task;
     task = pool->createTask(StorageID::createEmpty(), "test", [&]
     {
-        /// The notify must be issued under the waiter's mutex: otherwise the last iteration can
-        /// notify between the waiter's predicate check and its block, and nothing re-notifies.
+        /// counter is published under the waiter's mutex, so the increment that completes it is
+        /// visible to a waiter that has already evaluated its predicate.
         std::lock_guard lock(mutex);
         ++counter;
         if (counter < ITERATIONS)
@@ -77,18 +79,20 @@ TEST(BackgroundSchedulePool, ScheduleAfter)
     });
     ASSERT_EQ(task->activateAndSchedule(), true);
 
-    bool finished = false;
+    bool timed_out = false;
     {
         std::unique_lock lock(mutex);
-        /// Bounded wait so a regression fails the test instead of hanging it.
-        finished = condvar.wait_for(lock, std::chrono::seconds(60), [&] { return counter == ITERATIONS; });
+        /// The wait status decides, not the predicate: a dropped notification leaves the predicate
+        /// true, so the predicate overload of wait_for would report success after the deadline.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (counter != ITERATIONS && !timed_out)
+            timed_out = condvar.wait_until(lock, deadline) == std::cv_status::timeout;
     }
 
-    /// Join before asserting: the pool's destructor requires join(), so a fatal assertion here
-    /// would abort the binary instead of failing the test.
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
     pool->join();
 
-    EXPECT_TRUE(finished) << "only " << counter << " of " << ITERATIONS << " iterations ran";
+    EXPECT_FALSE(timed_out) << "timed out with " << counter << " of " << ITERATIONS << " iterations run";
     ASSERT_EQ(counter, ITERATIONS);
 }
 
