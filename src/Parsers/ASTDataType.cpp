@@ -230,14 +230,20 @@ ASTPtr * getTableFunctionStructureArgument(ASTFunction & table_function)
     if (equalsCaseInsensitiveString(table_function.name, "file")
         || equalsCaseInsensitiveString(table_function.name, "url")
         || equalsCaseInsensitiveString(table_function.name, "s3")
+        || equalsCaseInsensitiveString(table_function.name, "gcs")
+        || equalsCaseInsensitiveString(table_function.name, "oss")
+        || equalsCaseInsensitiveString(table_function.name, "cosn")
         || equalsCaseInsensitiveString(table_function.name, "hdfs")
         || equalsCaseInsensitiveString(table_function.name, "azureBlobStorage")
         || equalsCaseInsensitiveString(table_function.name, "executable"))
         return argument_at(2);
     if (equalsCaseInsensitiveString(table_function.name, "fileCluster")
         || equalsCaseInsensitiveString(table_function.name, "urlCluster")
-        || equalsCaseInsensitiveString(table_function.name, "hdfsCluster"))
+        || equalsCaseInsensitiveString(table_function.name, "hdfsCluster")
+        || equalsCaseInsensitiveString(table_function.name, "s3Cluster"))
         return argument_at(3);
+    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorageCluster"))
+        return argument_at(8);
     if (equalsCaseInsensitiveString(table_function.name, "mongodb"))
         return arguments.size() >= 6 ? argument_at(5) : arguments.size() >= 3 ? argument_at(2) : nullptr;
     if (equalsCaseInsensitiveString(table_function.name, "redis"))
