@@ -147,7 +147,7 @@ void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view 
 
 
 /// Vector containing the name of the element and a sorted list of attribute names and values
-/// (except "remove" and "replace" attributes).
+/// (except substitution and substitution-format attributes, and "remove" and "replace" attributes).
 /// Serves as a unique identifier of the element contents for comparison.
 using ElementIdentifier = std::vector<std::string>;
 
@@ -164,7 +164,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
     {
         std::string name = node->nodeName();
         const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
-        if (name == "replace" || name == "remove" ||
+        if (name == "replace" || name == "remove" || name == "yaml" ||
             subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
         std::string value = node->nodeValue();
@@ -528,6 +528,15 @@ void ConfigProcessor::doIncludesRecursive(
     bool merge = attributes->getNamedItem("merge");
     const auto * yaml_attr = attributes->getNamedItem("yaml");
 
+    if (yaml_attr)
+    {
+        if (!attr_nodes["from_zk"] || node->nodeName() != "include")
+            throw Poco::Exception("Attribute 'yaml' is allowed only on <include from_zk=...>");
+
+        if (yaml_attr->getNodeValue() != "true")
+            throw Poco::Exception("Attribute 'yaml' for <include from_zk=...> must be 'true'");
+    }
+
     bool included_something = false;
 
     auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
@@ -673,7 +682,7 @@ void ConfigProcessor::doIncludesRecursive(
                     /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
                     zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 }
-                else if (node->nodeName() == "include" && yaml_attr && yaml_attr->getNodeValue() == "true")
+                else if (yaml_attr)
                 {
                     /// An explicitly opted-in YAML subtree is expanded the same way as a
                     /// configuration file. Parsing errors intentionally propagate: `yaml="true"`

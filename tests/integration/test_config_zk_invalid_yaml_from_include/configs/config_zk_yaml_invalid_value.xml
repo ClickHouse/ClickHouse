@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <invalid_yaml_attribute>
+            <include from_zk="/value" yaml="false" />
+        </invalid_yaml_attribute>
+    </profiles>
+</clickhouse>

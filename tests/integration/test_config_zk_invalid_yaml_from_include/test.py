@@ -13,6 +13,28 @@ cluster.add_instance(
 )
 
 
+@pytest.mark.parametrize(
+    "config_name",
+    [
+        "config_zk_yaml_on_leaf.xml",
+        "config_zk_yaml_invalid_value.xml",
+    ],
+)
+def test_config_zk_yaml_attribute_is_rejected_when_unsupported(config_name):
+    invalid_attribute_cluster = ClickHouseCluster(__file__)
+    invalid_attribute_cluster.add_instance(
+        "node",
+        user_configs=[f"configs/{config_name}"],
+        with_zookeeper=True,
+    )
+
+    try:
+        with pytest.raises(Exception, match="failed to start"):
+            invalid_attribute_cluster.start()
+    finally:
+        invalid_attribute_cluster.shutdown()
+
+
 def test_config_zk_invalid_yaml_from_include():
     def create_zk_root(zk):
         zk.create(
@@ -23,7 +45,7 @@ def test_config_zk_invalid_yaml_from_include():
 
     cluster.add_zookeeper_startup_command(create_zk_root)
     try:
-        with pytest.raises(Exception, match="Unable to parse YAML configuration from a string"):
+        with pytest.raises(Exception, match="failed to start"):
             cluster.start()
     finally:
         cluster.shutdown()

@@ -14,6 +14,7 @@ of many sanitizer-built servers exceeds the job's memory cgroup.
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_manager import ConfigManager
 
 cluster = ClickHouseCluster(__file__)
 # Env var substitutions with XML special characters: one user/profile per env var.
@@ -137,6 +138,16 @@ def start_cluster():
             zk.create(
                 path="/merge_tree_yaml_subtree",
                 value=b"min_bytes_for_wide_part: 33\n",
+                makepath=True,
+            )
+            zk.create(
+                path="/yaml_merge_base",
+                value=b"max_threads: 11\n",
+                makepath=True,
+            )
+            zk.create(
+                path="/yaml_merge_override",
+                value=b"max_threads: 22\n",
                 makepath=True,
             )
 
@@ -323,3 +334,30 @@ def test_config_zk_ordinary_element_yaml_is_literal(start_cluster):
     splice a subtree into an ordinary element, an XML fragment (a value beginning with '<') is used.
     """
     assert node_zk_literal.query("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'") != "33\n"
+
+
+def test_config_zk_yaml_include_override_matches_regardless_of_yaml_attribute(start_cluster):
+    """A config.d override must replace a YAML from_zk include regardless of `yaml`.
+
+    Config fragments are merged before substitutions run. The `yaml` attribute selects the
+    format of the substitution result, not the identity of an `<include>` node, so adding or
+    removing it in a later fragment must still match the original include.
+    """
+    with ConfigManager() as config_manager:
+        config_manager.add_user_config(
+            node_zk,
+            "configs/010-users_zk_yaml_include.xml",
+            reload_config=False,
+        )
+        config_manager.add_user_config(
+            node_zk,
+            "configs/020-users_zk_yaml_include_override.xml",
+        )
+
+        assert (
+            node_zk.query(
+                "SELECT value FROM system.settings WHERE name = 'max_threads'",
+                user="zk_yaml_include_override",
+            )
+            == "22\n"
+        )
