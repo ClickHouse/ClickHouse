@@ -143,6 +143,8 @@ CREATE DICTIONARY t_dictionary_signed (x Int64, v String) PRIMARY KEY x
 SOURCE(CLICKHOUSE(TABLE 't_dictionary_signed_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(0);
 SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
 SELECT * FROM (SELECT CAST(18446744073709551615, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
+SELECT d.v FROM (SELECT CAST(1, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
+SELECT d.v FROM (SELECT CAST(18446744073709551615, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
 DROP DICTIONARY t_dictionary_signed;
 DROP TABLE t_dictionary_signed_source;
 
