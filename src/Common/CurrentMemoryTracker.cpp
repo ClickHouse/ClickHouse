@@ -183,12 +183,16 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
 
 void CurrentMemoryTracker::freeGlobal(Int64 size, MemoryTracker * credited_query_tracker)
 {
+    /// Drop the total charge before its query-ranking credit. This keeps a query's
+    /// overcommit ratio inclusive of its reservation for as long as that reservation
+    /// can still make another allocation exceed the server-wide limit.
+    std::ignore = total_memory_tracker.free(size);
+
     if (credited_query_tracker)
         credited_query_tracker->subSpeculativeReservation(size);
 
-    /// The reverse order of `allocGlobal`: subtract from the total tracker first, then lower
-    /// the reservations counter, so an interleaved external correction can only overcount.
-    std::ignore = total_memory_tracker.free(size);
+    /// Lower the reservations counter last, so an interleaved external correction can only
+    /// overcount.
     MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
 }
 
