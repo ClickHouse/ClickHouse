@@ -1,0 +1,34 @@
+-- { echo ON }
+SET optimize_use_projections = 1;
+
+DROP TABLE IF EXISTS normal_projection_materialize_constants;
+
+-- The `PREWHERE` condition makes the projection stream expose `v` as a constant while the
+-- regular read's header keeps it materialized. The normal-projection rewrite must materialize
+-- that output column before comparing headers, then keep the projection selected.
+CREATE TABLE normal_projection_materialize_constants
+(
+    k UInt64,
+    v UInt64,
+    PROJECTION by_v (SELECT * ORDER BY v)
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO normal_projection_materialize_constants SELECT number, number % 2 FROM numbers(20);
+
+-- The projection is beneficial because `by_v` narrows the `v = 1` read to 11 granules. The
+-- selected projection proves the const-to-materialized header conversion accepts this positive
+-- rewrite instead of declining it as a structure mismatch.
+SELECT count() = 1
+FROM
+(
+    EXPLAIN projections = 1
+    SELECT k FROM normal_projection_materialize_constants PREWHERE v = 1
+)
+WHERE explain ILIKE '%ReadFromMergeTree (by_v)%';
+
+SELECT groupArray(k) FROM (SELECT k FROM normal_projection_materialize_constants PREWHERE v = 1 ORDER BY k);
+
+DROP TABLE normal_projection_materialize_constants;
