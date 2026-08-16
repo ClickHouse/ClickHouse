@@ -1,0 +1,8 @@
+no_parts_to_do	m	0	\N	\N
+part_not_local	m	2	\N	\N
+all_local	m	2	200.00 B	0
+multi_command	m	1	400.00 B	0
+later_insert	m	1	100.00 B	0
+per_partition	m	1	50.00 B	0.5833
+in_progress_gate	credited	1	500.00 B	0.5
+in_progress_gate	not_credited	1	1000.00 B	0

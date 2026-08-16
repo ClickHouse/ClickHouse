@@ -44,7 +44,8 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "progress",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
             "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts relative to the size of the parts the mutation is "
             "responsible for rewriting, including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
-            "Parts inserted after the mutation started were never in its scope and do not count towards it. "
+            "A part is in that scope once its `min_block_number` precedes the mutation's block number, so a part inserted afterwards does not count towards it — unless a merge folded "
+            "that part into one that does, which the mutation then has to rewrite whole, and whose bytes therefore do reach `progress`. "
             "The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward. "
             "`NULL` when the remaining work is not known yet. On a replicated table that happens while a mutation that is not done waits for an in-flight INSERT whose part is not "
             "committed (`parts_to_do` = 0), and while any part it still has to rewrite has not been fetched or merged on this replica: neither has a size on disk to weigh."},
