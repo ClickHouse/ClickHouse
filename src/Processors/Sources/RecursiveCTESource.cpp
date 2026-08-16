@@ -330,7 +330,7 @@ ParallelReplicasEngagement mayEngageParallelReplicasForView(const StorageView & 
     if (context->hasInsertionTable())
         return {};
 
-    auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
+    auto view_context = Context::createCopy(StorageView::getViewSubqueryContext(context, storage_snapshot));
 
     /// This must mirror `StorageView::getViewContext`, which is the context used by
     /// `StorageView::readImpl`. When the outer planner unwraps a `VIEW` over an
