@@ -565,4 +565,3 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
-

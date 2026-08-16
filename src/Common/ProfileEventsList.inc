@@ -1587,4 +1587,3 @@ The server successfully detected this situation and will download merged part fr
     M(StatelessWorkerServerTenantBindings, "Number of times a stateless worker was assigned to a tenant to serve its queries.", ValueType::Number) \
     M(StatelessWorkerServerLeasesLost, "Number of times a stateless worker's lease ended and it began awaiting shutdown.", ValueType::Number) \
     \
-
