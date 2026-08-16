@@ -2486,8 +2486,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
 
+                /// A layer may produce an empty pipe (the in-order getter creates one source per part,
+                /// and a layer may end up with no parts). An empty pipe has no header, so it must not
+                /// reach `createProjection` or `addMergingFinal` below. Dropping it is safe here:
+                /// unlike the join-by-shards path, the per-layer pipes are simply united, so their
+                /// positions carry no meaning.
                 for (auto && merging_pipe : split_ranges_result.merging_pipes)
-                    pipes.push_back(std::move(merging_pipe));
+                {
+                    if (!merging_pipe.empty())
+                        pipes.push_back(std::move(merging_pipe));
+                }
             }
             else
             {
@@ -5816,9 +5824,10 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
                 required_final_output_positions.insert(pos);
         }
 
+        /// Merging columns absent from the output header are added by initializePipeline and projected back off there.
         for (size_t pos = 0; pos < all_column_names.size(); ++pos)
         {
-            if (required_for_final.contains(all_column_names[pos]))
+            if (required_for_final.contains(all_column_names[pos]) && output_header->has(all_column_names[pos]))
                 required_storage_column_positions.insert(pos);
         }
     }
@@ -6054,7 +6063,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
             auto split = splitIntersectingPartsRangesIntoLayers(
                 std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
             for (size_t i = 0; i < split.layers.size(); ++i)
-                buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+                if (!split.layers[i].empty())
+                    buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
         }
     }
 
