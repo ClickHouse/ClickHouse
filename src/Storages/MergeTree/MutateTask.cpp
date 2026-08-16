@@ -574,6 +574,10 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
+        NameSet mutated_columns;
+        NameSet extra_columns_for_indices;
+        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -582,7 +586,10 @@ static void splitAndModifyMutationCommands(
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
                 if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                {
                     for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
@@ -599,10 +606,40 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
+
+                /// The new part must describe every column the index's granules were built from, or
+                /// `isPartTypeCompatible` has no type to compare against and refuses the index. Only
+                /// parts lacking the index files qualify: those are the ones whose granules get
+                /// rebuilt. Elsewhere the granules are hardlinked, so writing the column at the
+                /// current type would make a stale granule look compatible.
+                if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+                {
+                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                    {
+                        if (index.name != command.index_name)
+                            continue;
+                        if (part->hasSecondaryIndex(index.name, metadata_snapshot))
+                            break;
+
+                        for (const auto & column : index.expression->getRequiredColumns())
+                        {
+                            auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                            if (column_in_storage && !part_columns.has(*column_in_storage))
+                                extra_columns_for_indices.emplace(*column_in_storage);
+                        }
+                        break;
+                    }
+                }
             }
             else if (command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
+
+                if (auto alter = command.ast(); alter && alter->update_assignments)
+                {
+                    for (const auto & child : alter->update_assignments->children)
+                        mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
+                }
 
                 /// Update column can change the set of substreams for column if it
                 /// changes serialization (for example from Sparse to not Sparse).
@@ -636,6 +673,22 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
+        }
+
+        for (const auto & column_name : extra_columns_for_indices)
+        {
+            if (mutated_columns.contains(column_name))
+                continue;
+
+            auto data_type = metadata_snapshot->getColumns().getColumn(GetColumnsOptions::AllPhysical, column_name).type;
+
+            for_interpreter.push_back(
+                MutationCommand
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = column_name,
+                    .data_type = std::move(data_type),
+                });
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
