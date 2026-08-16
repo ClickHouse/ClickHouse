@@ -101,7 +101,12 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(
+        size_t background_pool_tasks,
+        bool allow_experimental,
+        bool allow_private_preview,
+        bool allow_beta,
+        bool background_pool_auto_lowered) const;
 
     /// Reset any untyped compression-codec setting (`default_compression_codec`, `marks_compression_codec`,
     /// `primary_key_compression_codec`) that `sanityCheck` would reject. Used on the metadata-load path
