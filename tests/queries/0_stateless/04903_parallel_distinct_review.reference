@@ -1,17 +1,19 @@
 1
 (Distinct)
-DistinctTransform
-  Resize 2 → 1
-    (Union)
-      (Expression)
-      ExpressionTransform
-        (Limit)
-        Limit
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
-      (Expression)
-      ExpressionTransform
-        (Limit)
-        Limit
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+Resize 2 → 1
+  DistinctTransform × 2
+    Resize × 2 2 → 1
+      ScatterByPartitionTransform × 2 1 → 2
+        (Union)
+          (Expression)
+          ExpressionTransform
+            (Limit)
+            Limit
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
+          (Expression)
+          ExpressionTransform
+            (Limit)
+            Limit
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
