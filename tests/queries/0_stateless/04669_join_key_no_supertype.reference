@@ -91,6 +91,8 @@ A stored key wrapped in LowCardinality or Nullable is served by the prebuilt has
 A probe value converted to NULL does not match the NULL of the stored key
 1	a
 The wrappers of the stored key do not relax the unsupported direction
+A direct dictionary lookup keeps a stored subtype key and accurately converts only the probe key
+a
 A LEFT ANTI JOIN gets no runtime filter under the fallback: the values out of the common range become NULL, and `NOT IN` a set with NULL would drop the rows that have to be preserved
 The keys of the same type get a runtime filter
 1

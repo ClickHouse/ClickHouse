@@ -819,11 +819,13 @@ static void predicateOperandsToCommonType(
         if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             cast_right_node();
     }
-    else if (planning_context.is_storage_join && !cast_to_subtype)
+    else if (planning_context.is_storage_join
+        && (!cast_to_subtype || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type))))
     {
-        /// A direct dictionary lookup accepts its declared key type for an ordinary promotion.
-        /// In particular, a nullable probe key does not require converting the dictionary key to
-        /// `Nullable`, which would turn it into a derived expression and disable the direct algorithm.
+        /// A direct dictionary lookup accepts its declared key type for an ordinary promotion or
+        /// a subtype fallback where only the probe needs an accurate conversion. In particular,
+        /// a nullable probe key does not require converting the dictionary key to `Nullable`,
+        /// which would turn it into a derived expression and disable the direct algorithm.
         if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             cast_right_node();
     }

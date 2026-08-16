@@ -161,6 +161,22 @@ DROP TABLE t_join_unsigned_lc;
 DROP TABLE t_join_unsigned_nullable;
 DROP TABLE t_join_signed_lc;
 
+SELECT 'A direct dictionary lookup keeps a stored subtype key and accurately converts only the probe key';
+DROP DICTIONARY IF EXISTS t_direct_dictionary;
+DROP TABLE IF EXISTS t_direct_dictionary_source;
+CREATE TABLE t_direct_dictionary_source (x UInt64, v String) ENGINE = Memory;
+INSERT INTO t_direct_dictionary_source VALUES (1, 'a');
+CREATE DICTIONARY t_direct_dictionary (x UInt64, v String)
+PRIMARY KEY x
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DB currentDatabase() TABLE 't_direct_dictionary_source'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(HASHED());
+SELECT d.v FROM (SELECT CAST(1, 'Int64') AS x UNION ALL SELECT CAST(-1, 'Int64')) AS t
+INNER JOIN t_direct_dictionary AS d ON t.x = d.x
+SETTINGS join_algorithm = 'direct';
+DROP DICTIONARY t_direct_dictionary;
+DROP TABLE t_direct_dictionary_source;
+
 SELECT 'A LEFT ANTI JOIN gets no runtime filter under the fallback: the values out of the common range become NULL, and `NOT IN` a set with NULL would drop the rows that have to be preserved';
 DROP TABLE IF EXISTS t_probe;
 DROP TABLE IF EXISTS t_build_unsigned;
