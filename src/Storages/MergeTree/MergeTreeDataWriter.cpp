@@ -1175,9 +1175,8 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                     collectValueCarryingIdentifierNames(*args[i], names, masked_names);
             return;
         }
-        /// These lambdas only select/order/count/split the input's own elements; unlike arrayMap,
-        /// their return value never becomes part of the output, so skip them (like if()'s condition).
-        /// mapFilter/mapSort/... are thin Map adapters over the same array Impls (FunctionsMapMiscellaneous.cpp).
+        /// These (and mapFilter/mapSort/... Map adapters over the same array Impls) only select/order/
+        /// count/split the input's own elements, so skip their lambda entirely (like if()'s condition).
         static const std::unordered_set<String> predicate_only_higher_order_functions = {
             "arrayFilter", "arrayExists", "arrayAll", "arrayCount",
             "arrayFirst", "arrayFirstOrNull", "arrayLast", "arrayLastOrNull",
@@ -1197,6 +1196,33 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
             {
                 for (size_t i = 1; i < args.size(); ++i)
                     collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+                return;
+            }
+        }
+        if (function->name == "arrayFold" && args.size() >= 3)
+        {
+            const auto * lambda_arg = args[0]->as<ASTFunction>();
+            const auto * lambda_params_tuple = (lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
+                && lambda_arg->arguments->children.size() == 2)
+                ? lambda_arg->arguments->children[0]->as<ASTFunction>()
+                : nullptr;
+            /// arrayFold's params[0] is the accumulator, with no array of its own; seed can itself
+            /// become the result (e.g. an empty array), so unlike the arrays it's always a donor.
+            if (lambda_params_tuple && lambda_params_tuple->name == "tuple" && lambda_params_tuple->arguments
+                && lambda_params_tuple->arguments->children.size() == args.size() - 1)
+            {
+                IdentifierNameSet body_names;
+                std::unordered_set<String> no_masking;
+                collectValueCarryingIdentifierNames(*lambda_arg->arguments->children[1], body_names, no_masking);
+
+                const auto & params = lambda_params_tuple->arguments->children;
+                for (size_t i = 1; i < params.size(); ++i)
+                {
+                    const auto * param_identifier = params[i]->as<ASTIdentifier>();
+                    if (param_identifier && body_names.contains(param_identifier->name()))
+                        collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+                }
+                collectValueCarryingIdentifierNames(*args.back(), names, masked_names);
                 return;
             }
         }
@@ -1244,6 +1270,28 @@ struct ProjectionOutputProvenance
     bool is_map = false;
 };
 
+/// materialize(x)/CAST(x, T) don't change x's own AST structure; look through them so a wrapped
+/// tuple(...)/map(...)/arrayZip(...) still gets per-slot handling below (a reshaping CAST just fails the shape check at merge time and falls back safely).
+static const IAST * unwrapTransparentProjectionExpression(const IAST & node)
+{
+    const IAST * current = &node;
+    while (true)
+    {
+        const auto * function = current->as<ASTFunction>();
+        if (!function || !function->arguments)
+            break;
+
+        const auto & args = function->arguments->children;
+        if (function->name == "materialize" && args.size() == 1)
+            current = args[0].get();
+        else if ((function->name == "CAST" || function->name == "_CAST") && args.size() == 2)
+            current = args[0].get();
+        else
+            break;
+    }
+    return current;
+}
+
 static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
 {
     std::unordered_map<String, ProjectionOutputProvenance> output_to_sources;
@@ -1260,7 +1308,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
         collectValueCarryingIdentifierNames(*child, names, masked_names);
         provenance.flat_candidates.assign(names.begin(), names.end());
 
-        if (const auto * function = child->as<ASTFunction>(); function && function->arguments)
+        if (const auto * function = unwrapTransparentProjectionExpression(*child)->as<ASTFunction>(); function && function->arguments)
         {
             const auto & args = function->arguments->children;
             if ((function->name == "tuple" || function->name == "arrayZip") && args.size() >= 2)
