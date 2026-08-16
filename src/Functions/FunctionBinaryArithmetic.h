@@ -3744,7 +3744,8 @@ public:
                 // divisor computes through floating point and never wraps.
                 if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                 {
-                    if (intDivRangeCrossesSignedWrap(arithmetic_arg_type, left_point, right_point))
+                    if (intDivRangeCrossesSignedWrap(
+                            arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
@@ -3883,6 +3884,20 @@ public:
         if (isIPv6(type))
             return std::make_shared<DataTypeUInt128>();
         return type;
+    }
+
+    /// The value counterpart of `getArithmeticType`. An `IPv6` value must be cast instead of
+    /// reinterpreted because execution swaps its stored limbs and byteswaps each limb.
+    static Field getArithmeticField(const Field & field)
+    {
+        const bool is_ipv4 = field.getType() == Field::Types::IPv4;
+        if (!is_ipv4 && field.getType() != Field::Types::IPv6)
+            return field;
+
+        const DataTypePtr from = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeIPv4>()) : std::make_shared<DataTypeIPv6>();
+        const DataTypePtr to = is_ipv4 ? DataTypePtr(std::make_shared<DataTypeUInt32>()) : std::make_shared<DataTypeUInt128>();
+        const ColumnWithTypeAndName argument{from->createColumnConst(1, field), from, ""};
+        return (*castColumn(argument, to))[0];
     }
 
     /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
