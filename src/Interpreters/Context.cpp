@@ -32,6 +32,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
@@ -314,6 +315,7 @@ namespace Setting
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
     extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
+    extern const SettingsBool filesystem_cache_verbose_logging;
     extern const SettingsBool http_make_head_request;
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
@@ -363,6 +365,8 @@ namespace Setting
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
     extern const SettingsBool reader_executor_use_long_connections;
+    extern const SettingsUInt64 reader_executor_window_size;
+    extern const SettingsUInt64 reader_executor_block_size;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
@@ -1033,6 +1037,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        SQLDefinedHandlersFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
 
@@ -1363,6 +1368,7 @@ ContextData::ContextData(const ContextData &o) :
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
+    join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -7557,7 +7563,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
     /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
+    /// It makes it possible to change the value of experimental settings with a restrictive `allow_feature_tier`
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
@@ -8441,6 +8447,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
@@ -8464,6 +8471,16 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
     res.reader_executor.enabled = settings_ref[Setting::use_reader_executor];
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
+    res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
+    res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
+    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
+    static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
+    if (res.reader_executor.window_size < min_reader_executor_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
+            res.reader_executor.window_size, min_reader_executor_size);
+    if (res.reader_executor.block_size < min_reader_executor_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
+            res.reader_executor.block_size, min_reader_executor_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass

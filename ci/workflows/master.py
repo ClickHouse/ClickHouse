@@ -67,6 +67,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.clickhouse_wasm,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
