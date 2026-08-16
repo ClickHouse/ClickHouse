@@ -139,6 +139,12 @@ public:
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
+        if (is_nullable)
+        {
+            nested_column_nullable = nullptr;
+            nested_null_mask = IColumn::mutate(nested_null_mask);
+        }
+
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
@@ -163,10 +169,14 @@ public:
         /// `column_holder` (see `createNullMask`), so `column_holder->use_count() >= 2`.
         /// Drop that internal reference before exposing `column_holder` for mutation so the
         /// `assumeMutableRef` ownership check passes; re-create `nested_column_nullable`
-        /// after the in-place mutations are done. `nested_null_mask` is left untouched and
-        /// will be re-wrapped together with the (now-possibly-mutated) `column_holder`.
+        /// after the in-place mutations are done. Clone `nested_null_mask` because the
+        /// original dictionary's nullable view keeps it shared and `updateNullMask` can
+        /// later resize it.
         if (is_nullable)
+        {
             nested_column_nullable = nullptr;
+            nested_null_mask = IColumn::mutate(nested_null_mask);
+        }
 
         /// Restore the invariant even if `callback` or recursive descent throws,
         /// so the column does not stay in an inconsistent state.
