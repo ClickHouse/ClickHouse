@@ -2302,6 +2302,15 @@ struct ConvertImpl
             auto & vec_to = col_to->getData();
             vec_to.resize(input_rows_count);
 
+            const auto can_convert_exactly = [&](const auto & value)
+            {
+                if (col_from->getScale() <= col_to->getScale())
+                    return true;
+
+                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
+                return value.value % divisor == 0;
+            };
+
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
                 auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
@@ -2309,7 +2318,7 @@ struct ConvertImpl
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     ToFieldType result;
-                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (can_convert_exactly(vec_from[i]) && tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                         vec_to[i] = result;
                     else
                         vec_null_map_to[i] = true;
@@ -2321,7 +2330,7 @@ struct ConvertImpl
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     ToFieldType result;
-                    if (!tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (!can_convert_exactly(vec_from[i]) || !tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
                     vec_to[i] = result;
                 }
