@@ -11,6 +11,11 @@
 -- never sharded, its trailing key is an inequality, so it gets its own case asserting the group is absent.
 
 SET enable_analyzer = 1;
+-- `sorted_merge` variants are selectable only when the planner can use the tables' primary-key order.
+-- Pin the settings randomized by the flaky-check job so their coverage does not depend on its seed.
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1,
+    query_plan_join_shard_by_pk_ranges = 0, query_plan_join_swap_table = 0,
+    enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
