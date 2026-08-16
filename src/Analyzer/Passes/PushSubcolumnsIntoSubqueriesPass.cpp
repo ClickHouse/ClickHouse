@@ -425,6 +425,14 @@ bool canPushIntoTarget(const QueryTreeNodePtr & target)
     return std::ranges::all_of(branches, [](const auto & branch) { return canPushIntoTarget(branch); });
 }
 
+ContextPtr getTargetContext(const QueryTreeNodePtr & target)
+{
+    if (const auto * query_node = target->as<QueryNode>())
+        return query_node->getContext();
+
+    return target->as<const UnionNode &>().getContext();
+}
+
 void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bool inside_aggregate_function, QueryProcessingState & state)
 {
     if (!node)
@@ -483,7 +491,7 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .subcolumn_type = match->subcolumn_type,
                             .result_type = function_node->getResultType(),
                             .requires_tuple_element_guards = match->requires_tuple_element_guards,
-                            .context = query_node.getContext(),
+                            .context = getTargetContext(target_it->second),
                             .viable = true,
                             .occurrences = 0,
                             .applicable = false,
