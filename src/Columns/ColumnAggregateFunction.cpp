@@ -536,10 +536,11 @@ size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to
     return static_cast<size_t>(static_cast<double>(serialized_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
 }
 
-ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(size_t max_states_to_serialize, size_t repetitions) const
+ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(
+    size_t max_states_to_serialize, size_t repetitions, size_t skip_rows) const
 {
     SampledStateSizes res;
-    const size_t rows = data.size();
+    const size_t rows = data.size() - skip_rows;
     if (rows == 0 || repetitions == 0)
         return res;
 
@@ -553,7 +554,7 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     size_t serialized_states = 0;
     for (size_t i = 0; i < rows; i += period)
     {
-        func->serialize(data[i], compressed_buf, version);
+        func->serialize(data[skip_rows + i], compressed_buf, version);
         ++serialized_states;
     }
     compressed_buf.finalize();

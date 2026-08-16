@@ -203,25 +203,44 @@ static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const Colu
 /// recurses through the subcolumns of `isState()` results to attach the shared arenas to nested
 /// `ColumnAggregateFunction` leaves, so e.g. `SELECT tuple(uniqExactState(x))` emits a `ColumnTuple` around
 /// an aggregate-state leaf. Visit every such leaf, whether the column is one itself or wraps some.
-static void forEachAggregateStateLeaf(const IColumn & column, const std::function<void(const ColumnAggregateFunction &)> & callback)
+static void forEachAggregateStateLeaf(
+    const IColumn & column, const std::function<void(const ColumnAggregateFunction &, size_t skip_rows)> & callback)
 {
     if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
     {
-        callback(*aggregate_column);
+        callback(*aggregate_column, 0);
+        return;
+    }
+    if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// `ColumnSparse::values` keeps an implicit default at row zero for in-memory use. The sparse
+        /// serialization does not write it, so none of the aggregate-state samples or counts may include it.
+        const auto & values = sparse_column->getValuesPtr();
+        if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(values.get()))
+        {
+            callback(*aggregate_column, 1);
+            return;
+        }
+        values->forEachSubcolumnRecursively(
+            [&](const IColumn & subcolumn)
+            {
+                if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
+                    callback(*aggregate_column, 1);
+            });
         return;
     }
     column.forEachSubcolumnRecursively(
         [&](const IColumn & subcolumn)
         {
             if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                callback(*aggregate_column);
+                callback(*aggregate_column, 0);
         });
 }
 
 static bool hasAggregateStateLeaf(const IColumn & column)
 {
     bool has_leaf = false;
-    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &) { has_leaf = true; });
+    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &, size_t) { has_leaf = true; });
     return has_leaf;
 }
 
@@ -352,7 +371,12 @@ static void sampleNonStatePartsCompression(
     {
         sampleNonStatePartsCompression(
             sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
-        sampleNonStatePartsCompression(sparse_column->getValuesPtr(), type, repetitions, sample_bytes, compressed_bytes);
+        sampleNonStatePartsCompression(
+            sparse_column->getValuesPtr()->cut(1, sparse_column->getValuesPtr()->size() - 1),
+            type,
+            repetitions,
+            sample_bytes,
+            compressed_bytes);
         return;
     }
 
@@ -395,7 +419,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     /// Aggregate-state leaves of every column, top-level or wrapped: the wrappers' `byteSize` just sums the
     /// nested `byteSize`, so a wrapped leaf drops its shared-arena payload the same way a top-level one does.
     /// Every aggregate-state leaf with the number of times each of its rows appears on the wire.
-    std::vector<std::pair<const ColumnAggregateFunction *, size_t>> state_leaves;
+    struct StateLeaf
+    {
+        const ColumnAggregateFunction * column;
+        size_t repetitions;
+        size_t skip_rows;
+    };
+    std::vector<StateLeaf> state_leaves;
     /// Whether cols[i] contains (or is) an aggregate-state leaf.
     std::vector<UInt8> col_has_states(cols.size(), 0);
     size_t plain_bytes = 0;
@@ -414,10 +444,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         size_t state_leaves_byte_size = 0;
         forEachAggregateStateLeaf(
             *column,
-            [&](const ColumnAggregateFunction & leaf)
+            [&](const ColumnAggregateFunction & leaf, size_t skip_rows)
             {
                 col_has_states[i] = 1;
-                state_leaves.emplace_back(&leaf, repetitions);
+                state_leaves.emplace_back(&leaf, repetitions, skip_rows);
                 state_leaves_byte_size += leaf.byteSize();
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
@@ -441,9 +471,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// swings the extrapolation several-fold depending on whether the few giant states land on the
         /// sampled positions. Blocks of up to 1000 states are measured exactly.
         static constexpr size_t max_states_to_serialize = 1000;
-        for (const auto & [aggregate_column, repetitions] : state_leaves)
+        for (const auto & [aggregate_column, repetitions, skip_rows] : state_leaves)
         {
-            serialized_state_values += aggregate_column->size() * repetitions;
+            serialized_state_values += (aggregate_column->size() - skip_rows) * repetitions;
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
             /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
             /// population of states even when state size or compressibility changes with key order
@@ -454,7 +484,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// handling of the repetitions a constant carrier puts on the wire: identical copies
             /// compress far better than one copy suggests, so the repeated payload is measured there
             /// instead of scaling the one-copy figures, which would keep the one-copy ratio.
-            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions);
+            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions, skip_rows);
             serialized_state_bytes += sizes.bytes;
             sample_bytes += sizes.sample_bytes;
             compressed_bytes += sizes.compressed_bytes;
@@ -497,8 +527,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
         /// Extrapolate from the values that the Native serialization writes, not outer rows.
         size_t block_state_values = 0;
-        for (const auto & [aggregate_column, repetitions] : state_leaves)
-            block_state_values += aggregate_column->size() * repetitions;
+        for (const auto & [aggregate_column, repetitions, skip_rows] : state_leaves)
+            block_state_values += (aggregate_column->size() - skip_rows) * repetitions;
         block_bytes += static_cast<size_t>(
             static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(block_state_values)
             / static_cast<double>(statistics.serialized_state_values.load(std::memory_order_relaxed)));
