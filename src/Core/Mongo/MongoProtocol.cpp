@@ -111,7 +111,7 @@ String QueryExecutor::execute(const String & query)
     /// clients. Limit the query result before `FORMAT JSON` materializes it into `out`; the
     /// cursor encoder checks the exact BSON size afterwards, including its envelope.
     query_context->setSetting("max_result_bytes", Field(UInt64(MAX_BSON_OBJECT_SIZE)));
-    query_context->setSetting("result_overflow_mode", "throw");
+    query_context->setSetting("result_overflow_mode", String("throw"));
 
     /// The dates of the result are parsed back into BSON dates, so they must be formatted the
     /// way the parsing expects rather than the way the user's profile asks.

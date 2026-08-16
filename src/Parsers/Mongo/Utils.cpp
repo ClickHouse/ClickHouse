@@ -362,7 +362,7 @@ std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, 
     if (*number_begin == '+')
         ++number_begin;
 
-    Int64 result;
+    Int64 result = 0;
     const auto [position, error] = std::from_chars(
         number_begin, str_representation.data() + str_representation.size(), result);
     if (error != std::errc{} || position != str_representation.data() + str_representation.size())

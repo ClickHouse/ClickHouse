@@ -3,6 +3,7 @@
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Aggregate.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
+#include <Parsers/Mongo/DocumentCollection.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
