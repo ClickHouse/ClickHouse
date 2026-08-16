@@ -52,11 +52,13 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitIdentifier(ast);
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
-    else if (auto * select_query = ast->as<ASTSelectQuery>();
-             select_query && select_query->settings() && !select_query->settings()->query_parameters.empty())
+    else if (const auto * settings = ast->as<ASTSelectQuery>() && ast->as<ASTSelectQuery>()->settings()
+                                      ? ast->as<ASTSelectQuery>()->settings()->as<ASTSetQuery>()
+                                      : nullptr;
+             settings && !settings->query_parameters.empty())
     {
         NameToNameMap scoped_parameters = query_parameters;
-        for (const auto & [name, value] : select_query->settings()->query_parameters)
+        for (const auto & [name, value] : settings->query_parameters)
             scoped_parameters.insert_or_assign(name, value);
 
         ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
