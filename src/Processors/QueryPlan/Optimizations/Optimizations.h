@@ -98,6 +98,10 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+/// When an aggregation feeds ORDER BY <its lone count() output> LIMIT n, let every two-level
+/// bucket of the aggregation output materialize only its n best groups by that count.
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -220,6 +224,7 @@ inline const auto & getOptimizations()
         {tryShortCircuitConstantFalseJoin, "shortCircuitConstantFalseJoin", &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
+        {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
