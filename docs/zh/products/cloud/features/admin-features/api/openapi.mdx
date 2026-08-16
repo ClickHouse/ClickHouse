@@ -38,7 +38,7 @@ ClickHouse Cloud 提供基于 OpenAPI 的 API，便于您以编程方式管理�
     <Tip>
       **查询 API 端点**
 
-      要将 API Key 用于 [Query API Endpoints](/zh/products/cloud/guides/sql-console/query-endpoints)，请将 Organization Role 设置为 `Member` (最低要求) ，并为 Service Role 授予 `Query Endpoints` 的访问权限。
+      要将 API Key 用于 [查询 API 端点](/zh/products/cloud/guides/sql-console/query-endpoints)，请将 Organization Role 设置为 `Member` (最低要求) ，并为 Service Role 授予 `Query Endpoints` 的访问权限。
     </Tip>
 
     <Image img="/images/cloud/manage/openapi3.png" size="md" alt="创建 API Key 表单" border />
@@ -47,7 +47,7 @@ ClickHouse Cloud 提供基于 OpenAPI 的 API，便于您以编程方式管理�
   <Step title="添加允许的 IP 地址">
     要限制哪些客户端可以使用该 API Key，请在 **Allow access to this API Key** 部分中选择 **Specific locations**。输入一个 IP 地址或 CIDR 范围，例如 `203.0.113.1` 或 `203.0.113.0/24`，并根据需要添加更多条目。
 
-    查询 API 端点遵循 API Key 级别的 IP 允许列表。由于请求是从 ClickHouse 基础设施内部代理的，因此服务级别的 IP 允许列表不适用。详情请参阅 [IP Access Control](/zh/cloud/features/query-api-endpoints#ip-access-control)。
+    查询 API 端点遵循 API Key 级别的 IP 允许列表。由于请求是从 ClickHouse 基础设施内部代理的，因此服务级别的 IP 允许列表不适用。详情请参阅 [IP Access Control](/zh/products/cloud/features/sql-console-features/query-endpoints#ip-access-control)。
 
     <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="为 API Key 配置的允许 IP 地址" border />
 
