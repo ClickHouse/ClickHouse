@@ -63,6 +63,7 @@ private:
             ASTExpressionList columns_ast;
             Int32 relation_id;
             std::vector<size_t> key_column_indices;
+            std::unordered_set<size_t> rows_with_defaulted_key_values;
             std::vector<UnchangedToastValue> unchanged_toast_values;
 
             explicit Buffer(
@@ -125,7 +126,8 @@ private:
     bool isSyncAllowed(Int32 relation_id, const String & relation_name);
 
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
-    void insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
+    /// Returns true if a source-value conversion failure was replaced with the column default.
+    bool insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
     void preserveUnchangedToastValues(StorageData & storage_data, StorageData::Buffer & buffer);
 
     enum class PostgreSQLQuery : uint8_t

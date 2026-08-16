@@ -236,7 +236,7 @@ void MaterializedPostgreSQLConsumer::StorageData::Buffer::assertInsertIsPossible
 }
 
 
-void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, const std::string & value, size_t column_idx)
+bool MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, const std::string & value, size_t column_idx)
 {
     auto & buffer = storage_data.getLastBuffer();
     buffer.assertInsertIsPossible(column_idx);
@@ -266,6 +266,8 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                 *column, value, type_description.first, column_type_and_name.type,
                 storage_data.array_info, column_idx_in_table);
         }
+
+        return false;
     }
     catch (const pqxx::conversion_error & e)
     {
@@ -273,6 +275,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                   "will insert default value. Error: {}", value, e.what());
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
+        return true;
     }
     catch (const Exception & e)
     {
@@ -288,6 +291,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                   "will insert default value. Error: {}", value, e.message());
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
+        return true;
     }
 }
 
@@ -389,7 +393,12 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
                 for (Int32 i = 0; i < col_len; ++i)
                     value += static_cast<char>(readInt8(message, pos, size));
 
-                insertValue(storage_data, value, column_idx);
+                if (insertValue(storage_data, value, column_idx)
+                    && std::find(buffer.key_column_indices.begin(), buffer.key_column_indices.end(), static_cast<size_t>(column_idx))
+                        != buffer.key_column_indices.end())
+                {
+                    buffer.rows_with_defaulted_key_values.insert(row_idx);
+                }
                 break;
             }
             case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
@@ -578,7 +587,16 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
     for (size_t row_idx = 0; row_idx < rows; ++row_idx)
     {
         for (const auto * value : unchanged_values_by_row[row_idx])
+        {
+            if (buffer.rows_with_defaulted_key_values.contains(value->key_source_row_idx))
+            {
+                throw Exception(
+                    ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot preserve an unchanged TOAST value for table {} because replica identity column conversion failed for the source row",
+                    storage_data.storage->getStorageID().getNameForLogs());
+            }
             keys_to_read.insert(get_key(value->key_source_row_idx));
+        }
     }
 
     std::vector<size_t> affected_column_indices(affected_columns.begin(), affected_columns.end());
