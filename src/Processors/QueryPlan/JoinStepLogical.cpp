@@ -1215,9 +1215,11 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
 
     /// Collect the equality key pairs the same way `addJoinPredicatesToTableJoin` will during
     /// physicalization, in the same order (the merge-join sort description is the keys in clause order).
-    /// The raw operand names are used - without the type-cast wrapping the physicalization may add; such
-    /// wrapped keys are almost never readable in table order anyway, and a too-optimistic answer only costs
-    /// a full sort (see `joinInputCanBeReadInJoinKeyOrder`). The null-safe `tuple` wrapping is different:
+    /// The raw operand names are used - without the type-cast wrapping the physicalization may add. A
+    /// conversion can change the input order (for example, `Enum` to `String`), so do not predict an
+    /// in-order read if the operands do not already have equal types. This is deliberately conservative:
+    /// it can make a monotonic conversion fall through, but it cannot select `sorted_merge` when the
+    /// physical sort needs a full re-sort. The null-safe `tuple` wrapping is different:
     /// it applies to every nullable `<=>` key, so those joins are excluded below outright. An `ASOF`
     /// inequality key is appended last in the clause, so leaving it out keeps the probed prefix valid.
     ///
@@ -1250,6 +1252,8 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
+            return false;
+        if (!lhs.getType()->equals(*rhs.getType()))
             return false;
         if (!is_equality)
             continue;
