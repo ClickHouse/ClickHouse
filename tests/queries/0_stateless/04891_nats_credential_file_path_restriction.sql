@@ -73,6 +73,17 @@ CREATE TABLE nats_basic_credentials_with_server_list_override (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials)
 SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMENTS }
 
+-- The `SETTINGS` clause must follow the ordinary named-collection override policy for basic
+-- credentials as well. In particular, replacement and empty-string clearing cannot bypass keys
+-- the operator marked `overridable="false"`.
+CREATE TABLE nats_locked_basic_password_in_settings (key UInt64)
+ENGINE = NATS(nats_config_locked_basic_credentials)
+SETTINGS nats_password = 'other'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_locked_basic_token_cleared_in_settings (key UInt64)
+ENGINE = NATS(nats_config_locked_basic_credentials)
+SETTINGS nats_token = ''; -- { serverError BAD_ARGUMENTS }
+
 -- But an override of the path on top of the configuration-defined collection comes from SQL again.
 CREATE TABLE nats_file_over_config_collection (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_credential_file = '/etc/shadow'); -- { serverError BAD_ARGUMENTS }

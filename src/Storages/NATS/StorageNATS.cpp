@@ -879,8 +879,7 @@ namespace
 {
 
 constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
-    = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file, "
-      "or as `nats.credential_file` in the server configuration itself. "
+    = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file. "
       "Pass the contents of the file in `nats_credentials` instead";
 
 /// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials - a path to a
@@ -970,7 +969,7 @@ void resolveCredentialSource(
     /// `nats_credentials`, this is a same-key override and uses `allow_named_collection_override_by_default`.
     /// Replacing `nats_credential_file` uses `true`: passing the contents is the only way to supply these
     /// credentials from SQL, so the operator states the permission with the attribute.
-    if (credentials_assigned_by_query && named_collection)
+    if (named_collection)
     {
         /// This exactly mirrors `findOverrideForbiddingKey`: inline credentials replace a configured
         /// file path, but otherwise they are either a same-key override or a new key. The collection
@@ -980,12 +979,30 @@ void resolveCredentialSource(
             return named_collection->isQueryOverridden(key) ? named_collection->getValueBeforeQueryOverride(key).has_value()
                                                             : named_collection->has(key);
         };
-        const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
-            ? "nats_credentials"
-            : "nats_credential_file";
-        const bool default_value = std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default;
-        if (!named_collection->isOverridable(key, default_value))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        const auto check_override_allowed = [&](const char * key, bool default_value)
+        {
+            if (!named_collection->isOverridable(key, default_value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        };
+
+        if (credentials_assigned_by_query)
+        {
+            const auto * key = is_defined_in_collection("nats_credentials") || !is_defined_in_collection("nats_credential_file")
+                ? "nats_credentials"
+                : "nats_credential_file";
+            check_override_allowed(key, std::string_view{key} == "nats_credential_file" || allow_named_collection_override_by_default);
+        }
+
+        /// `nats_username`, `nats_password`, and `nats_token` do not have an alternative spelling,
+        /// so their query overrides follow the regular named-collection policy. In particular, this
+        /// prevents a `SETTINGS` clause from clearing operator-provided credentials and bypassing the
+        /// destination-binding check above.
+        if (username_assigned_by_query)
+            check_override_allowed("nats_username", allow_named_collection_override_by_default);
+        if (password_assigned_by_query)
+            check_override_allowed("nats_password", allow_named_collection_override_by_default);
+        if (token_assigned_by_query)
+            check_override_allowed("nats_token", allow_named_collection_override_by_default);
     }
 
     /// A path to a credentials file is only accepted from the server configuration file: the server opens
