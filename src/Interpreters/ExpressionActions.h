@@ -258,6 +258,7 @@ private:
     mutable size_t current_round_input_rows = 0;
 
     void accumulateProfile(size_t action_index, const FunctionExecutionProfile & profile) const;
+    size_t getActionInputRows(size_t action_index) const;
     void updateActionsParentsProfile() const;
     void updateActionParentProfile(size_t action_index, size_t extra_elapsed) const;
     void identifyNonBeneficialLazyActions() const;

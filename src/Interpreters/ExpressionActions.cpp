@@ -349,11 +349,11 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 /// True if the node and all its descendants are deterministic functions which cannot throw an exception on invalid input values.
 static bool isSafeForEagerExecutionNode(const ActionsDAG::Node * node)
 {
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isNoExcept() || !node->function_base->isDeterministic())
-        return false;
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+    {
+        if (!node->function_base->isNoExcept() || !node->function_base->isDeterministic())
+            return false;
+    }
 
     for (const auto * child : node->children)
     {
@@ -1283,6 +1283,45 @@ void AdaptiveExpressionActions::accumulateProfile(size_t action_index, const Fun
     }
 }
 
+size_t AdaptiveExpressionActions::getActionInputRows(size_t action_index) const
+{
+    /// A nested lazy action is executed only on the rows passed to its nearest lazy ancestor.
+    /// Walk through non-lazy wrappers to find that input domain. A DAG node may have several parents;
+    /// use the largest domain at the closest level to avoid underestimating the eager alternative.
+    std::vector<size_t> current_level{action_index};
+    std::vector<size_t> next_level;
+    std::vector<bool> visited(actions.size());
+    visited[action_index] = true;
+
+    while (!current_level.empty())
+    {
+        size_t input_rows = 0;
+        next_level.clear();
+
+        for (auto child_action_index : current_level)
+        {
+            for (auto parent_action_index : actions[child_action_index].parents_actions_pos)
+            {
+                if (visited[parent_action_index])
+                    continue;
+
+                visited[parent_action_index] = true;
+                if (shouldExecuteLazily(parent_action_index))
+                    input_rows = std::max(input_rows, action_states[parent_action_index].current_round_profile.executed_rows);
+                else
+                    next_level.push_back(parent_action_index);
+            }
+        }
+
+        if (input_rows)
+            return input_rows;
+
+        current_level.swap(next_level);
+    }
+
+    return current_round_input_rows;
+}
+
 void AdaptiveExpressionActions::finalizeBlockExecution(size_t num_rows) const
 {
     /// Revisit the decisions only after enough rows were processed, otherwise the measurements are too noisy.
@@ -1363,7 +1402,8 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
         }
         else
         {
-            auto estimated_full_execution_elapsed = round_per_row_elapsed * static_cast<double>(current_round_input_rows);
+            auto input_rows = getActionInputRows(i);
+            auto estimated_full_execution_elapsed = round_per_row_elapsed * static_cast<double>(input_rows);
             if (estimated_full_execution_elapsed < static_cast<double>(round_profile.execution_elapsed))
             {
                 LOG_TRACE(
@@ -1371,7 +1411,7 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
                     "Lazy execution is not beneficial for {}: round input rows {}, executed rows {}, "
                     "round execution elapsed {}, additional elapsed {}, estimated full execution elapsed {}",
                     action.node->result_name,
-                    current_round_input_rows,
+                    input_rows,
                     round_profile.executed_rows,
                     round_profile.execution_elapsed,
                     round_profile.lazy_executed_additional_elapsed,
