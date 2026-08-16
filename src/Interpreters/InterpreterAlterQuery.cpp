@@ -112,6 +112,8 @@ void normalizeLegacyToTimeInAlterKeyDefinitions(ASTAlterQuery & alter)
         auto * command = child->as<ASTAlterCommand>();
         if (command->type == ASTAlterCommand::MODIFY_ORDER_BY)
             replaceLegacyToTimeInAlterExpression(command->order_by);
+        else if (command->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
+            replaceLegacyToTimeInAlterExpression(command->sample_by);
         else if (command->type == ASTAlterCommand::MODIFY_TTL)
             replaceLegacyToTimeInAlterExpression(command->ttl);
     }
@@ -420,10 +422,6 @@ BlockIO InterpreterAlterQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & alter = query_ptr->as<ASTAlterQuery &>();
 
-    if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
-        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterKeyDefinitions(alter);
-
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -454,6 +452,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        normalizeLegacyToTimeInAlterKeyDefinitions(query_ptr->as<ASTAlterQuery &>());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
