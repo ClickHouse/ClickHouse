@@ -2777,6 +2777,7 @@ void ClientBase::processParsedSingleQuery(
     client_exception.reset();
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
+    const Dialect old_dialect = client_context->getSettingsRef()[Setting::dialect];
 
     /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
     /// In batch mode we only do this when we are going to print the query_id, so that the printed
@@ -2936,8 +2937,6 @@ void ClientBase::processParsedSingleQuery(
 
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
-            const Dialect old_dialect = old_settings[Setting::dialect];
-
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
             replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
@@ -3653,7 +3652,7 @@ bool ClientBase::processQueryText(const String & text)
             }
             catch (...)
             {
-                /// Do not reinterpret a possible SQL/data line as a meta-command when the
+                /// Ok: do not reinterpret a possible SQL/data line as a meta-command when the
                 /// preceding text cannot be parsed. Let the normal script path report the error.
                 return true;
             }
