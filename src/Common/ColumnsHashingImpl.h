@@ -320,6 +320,15 @@ public:
                 if (row + derived.prefetch_look_ahead < hashes.size())
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
 
+                if constexpr (consecutive_keys_optimization)
+                {
+                    /// Preserve the repeated-miss shortcut in `no_more_keys` mode. The
+                    /// empty-cell shortcut below cannot update the cache, so look up the
+                    /// packed key with its already computed hash instead.
+                    auto key_holder = derived.getKeyHolder(row, pool);
+                    return findKeyImpl(keyHolderGetKey(key_holder), data, hashes[row]);
+                }
+
                 if (data.isEmptyCell(hashes[row]))
                 {
                     if constexpr (has_mapped)
@@ -513,6 +522,54 @@ protected:
         }
 
         auto it = data.find(key);
+
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(it != nullptr);
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = key;
+                if (it)
+                    cache.value.second = it->getMapped();
+            }
+            else
+            {
+                cache.value = key;
+            }
+        }
+
+        size_t offset = 0;
+        if constexpr (FindResult::has_offset)
+            offset = it ? data.offsetInternal(it) : 0;
+
+        if constexpr (has_mapped)
+            return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
+        else
+            return FindResult(it != nullptr, offset);
+    }
+
+    template <typename Data, typename Key>
+    ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data, size_t hash_value)
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            /// It's possible to support such combination, but code will became more complex.
+            /// Now there's not place where we need this options enabled together
+            static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
+            if (likely(!cache.empty) && cache.check(key))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&cache.value.second, cache.found, 0);
+                else
+                    return FindResult(cache.found, 0);
+            }
+        }
+
+        auto it = data.find(key, hash_value);
 
         if constexpr (consecutive_keys_optimization)
         {
