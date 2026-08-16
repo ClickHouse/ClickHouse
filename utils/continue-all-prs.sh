@@ -64,12 +64,12 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers. `claude` reads
-#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
-#                         `CODEX_HOME`. NOTE: visible in `ps`
+#   --api-key KEY         Use a custom credential for the workers. `claude`
+#                         reads it as `ANTHROPIC_API_KEY`; `codex` reads it as
+#                         `CODEX_ACCESS_TOKEN`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
-#   --api-key-file FILE   Read the custom API key from FILE (not shown
-#                         in `ps`). Default: whatever API key or login the
+#   --api-key-file FILE   Read the custom credential from FILE (not shown
+#                         in `ps`). Default: whatever credential or login the
 #                         selected agent already uses.
 #   --no-status           Disable the persistent bottom status bar (two lines:
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
@@ -140,7 +140,7 @@ EFFORT="medium"        # reasoning effort passed to each worker
 AGENT="claude"         # agent CLI used by workers: claude or codex
 MODEL=""               # model passed to the selected agent (empty -> its configured default)
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
-API_KEY=""             # custom provider API key for worker processes (--api-key)
+API_KEY=""             # custom provider credential for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 API_KEY_PROVIDED=0      # whether either custom-key option was supplied
 MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
@@ -208,9 +208,10 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for worker processes. `claude` reads its key from the environment.
-# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
-# so it cannot inherit or overwrite an ambient Codex login.
+# Custom credential for worker processes. `claude` reads its API key from the
+# environment. `codex` receives its ChatGPT/Codex access token only in the worker
+# process and uses a worker-local `CODEX_HOME`, so it cannot fall back to or
+# overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
@@ -772,16 +773,6 @@ NAFILE="$LOGDIR/needs-attention"
 CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
 declare -a WORKER_PIDS=()
 
-cleanup_worker_codex_auth()
-{
-    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
-
-    local wt
-    for wt in "${WT[@]-}"; do
-        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
-    done
-}
-
 stop_workers()
 {
     local roots own_pgid entry pid pgid
@@ -799,7 +790,7 @@ stop_workers()
     for pid in "${live_jobs[@]}"; do
         [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
     done
-    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
+    (( ${#active_workers[@]} )) || return 0
     roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
@@ -857,7 +848,6 @@ stop_workers()
     if (( ${#active_workers[@]} )); then
         wait "${active_workers[@]}" 2>/dev/null || true
     fi
-    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
@@ -912,25 +902,15 @@ run_continue_pr()
     iter=0
     ec=0
 
-    # Codex API-key authentication is configured state, not an environment
-    # variable consumed by `codex exec`. Keep that state private to this worker
-    # and remove it after the run, so a requested key cannot fall back to or
-    # modify the caller's ambient Codex login.
+    # Keep custom Codex access-token runs private to this worker, so a bad token
+    # cannot fall back to or modify the caller's ambient Codex login.
     codex_home=""
     codex_env=()
     if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
         codex_home="$wt/tmp/continue-all-prs/codex-home"
         codex_env=("CODEX_HOME=$codex_home")
         mkdir -p "$codex_home"
-        rm -f "$codex_home/auth.json"
-        now=$(date +%s)
-        remaining=$(( deadline - now ))
-        (( remaining > 0 )) || return 124
-        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
-            ec=$?
-            rm -f "$codex_home/auth.json"
-            return "$ec"
-        }
+        export CODEX_ACCESS_TOKEN="$API_KEY"
     fi
 
     while :; do
@@ -970,7 +950,8 @@ run_continue_pr()
                 prompt="/continue-pr-auto $url
 
 ${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec \
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -981,7 +962,8 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec resume \
+                ( cd "$wt" || exit; \
+                    timeout "$remaining" env "${codex_env[@]}" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
@@ -1024,7 +1006,6 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
-    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
     return "$ec"
 }
 
@@ -1284,7 +1265,13 @@ if [[ "$AGENT" == "codex" ]]; then
 fi
 banner "Effort:          ${EFFORT}"
 banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
-(( CUSTOM_KEY )) && banner "API key:         custom (…${API_KEY: -4})"
+if (( CUSTOM_KEY )); then
+    if [[ "$AGENT" == "codex" ]]; then
+        banner "Access token:    custom (…${API_KEY: -4})"
+    else
+        banner "API key:         custom (…${API_KEY: -4})"
+    fi
+fi
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
