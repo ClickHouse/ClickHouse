@@ -12,6 +12,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -52,9 +53,17 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitIdentifier(ast);
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
-    else if (const auto * settings = ast->as<ASTSelectQuery>() && ast->as<ASTSelectQuery>()->settings()
-                                      ? ast->as<ASTSelectQuery>()->settings()->as<ASTSetQuery>()
-                                      : nullptr;
+    else if (const auto * settings = [&] -> const ASTSetQuery *
+             {
+                 if (const auto * select_query = ast->as<ASTSelectQuery>(); select_query && select_query->settings())
+                     return select_query->settings()->as<ASTSetQuery>();
+
+                 if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+                     query_with_output && query_with_output->settings_ast)
+                     return query_with_output->settings_ast->as<ASTSetQuery>();
+
+                 return nullptr;
+             }();
              settings && !settings->query_parameters.empty())
     {
         NameToNameMap scoped_parameters = query_parameters;
