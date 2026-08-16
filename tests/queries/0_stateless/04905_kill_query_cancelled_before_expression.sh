@@ -37,7 +37,9 @@ run_cancelled_query()
         return 1
     fi
 
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
+    # The query is deliberately held at the failpoint, so a synchronous `KILL QUERY`
+    # waits for it to finish and prevents this test from releasing the failpoint.
+    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '${query_id}' ASYNC" >/dev/null
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
 
     wait "$client_pid"
