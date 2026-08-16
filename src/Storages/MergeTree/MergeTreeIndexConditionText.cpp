@@ -510,7 +510,7 @@ bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyze
 bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
 {
     if (query.getTokens().empty())
-        return true;
+        return query.hasPatternLookup() ? hasAnyPatternsInRange(query, query_builder, current_range) : true;
 
     /// JSON path-values equality may expand into alternative tokens (e.g. "0" and "-0")
     /// folded in `Any` mode. A partially-read `Any` union is not a superset of the result,
@@ -1946,7 +1946,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     const bool try_unwrap_lhs = !(lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
         && columns.size() == 1
-        && WhichDataType(columns.front()->getDataType()).isStringOrFixedString();
+        && WhichDataType(columns.front()->getDataType()).isString();
 
     const std::optional<RPNBuilderTreeNode> normalized_lhs
         = try_unwrap_lhs ? tryUnwrapIndexArgument(lhs, is_fallback_safe) : std::optional<RPNBuilderTreeNode>(lhs);

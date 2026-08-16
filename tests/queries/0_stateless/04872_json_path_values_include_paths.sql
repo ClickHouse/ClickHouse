@@ -50,20 +50,20 @@ WHERE startsWith(hex(token), concat(hex('payload.ids.secret'), '0000'));
 SELECT 'exact unrelated dynamic excluded', count() > 0 FROM mergeTreeTextIndex(currentDatabase(), 'json_path_values_include_paths', 'exact_tokens')
 WHERE startsWith(hex(token), concat(hex('ignored'), '0000'));
 
-SELECT 'exact query', groupArray(id) FROM json_path_values_include_paths WHERE data.request_id = 'req-2'
+SELECT 'exact query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.request_id = 'req-2'
 SETTINGS force_data_skipping_indices = 'exact_tokens';
-SELECT 'exact nested query', groupArray(id) FROM json_path_values_include_paths WHERE data.payload.ids.primary = 'primary-1'
+SELECT 'exact nested query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.payload.ids.primary = 'primary-1'
 SETTINGS force_data_skipping_indices = 'exact_tokens';
-SELECT 'exact array query', groupArray(id) FROM json_path_values_include_paths WHERE has(data.items[].item_id, 'item-2')
+SELECT 'exact array query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE has(data.items[].item_id, 'item-2')
 SETTINGS force_data_skipping_indices = 'exact_tokens';
-SELECT 'exact map query', groupArray(id) FROM json_path_values_include_paths WHERE data.m['k'] = 'map-1'
+SELECT 'exact map query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.m['k'] = 'map-1'
 SETTINGS force_data_skipping_indices = 'exact_tokens';
 
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.request = 'request-1';
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.request = 'request-1'
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.request = 'request-1';
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.request = 'request-1'
 SETTINGS force_data_skipping_indices = 'exact_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.payload.ids.secret = 'secret-1';
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.payload.ids.secret = 'secret-1'
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.payload.ids.secret = 'secret-1';
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.payload.ids.secret = 'secret-1'
 SETTINGS force_data_skipping_indices = 'exact_tokens'; -- { serverError INDEX_NOT_USED }
 
 ALTER TABLE json_path_values_include_paths DROP INDEX exact_tokens;
@@ -84,16 +84,16 @@ WHERE startsWith(hex(token), concat(hex('message'), '0000'));
 SELECT 'regexp skip wins', count() > 0 FROM mergeTreeTextIndex(currentDatabase(), 'json_path_values_include_paths', 'regexp_tokens')
 WHERE startsWith(hex(token), concat(hex('private_id'), '0000'));
 
-SELECT 'regexp query', groupArray(id) FROM json_path_values_include_paths WHERE data.created_at = 'time-2'
+SELECT 'regexp query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.created_at = 'time-2'
 SETTINGS force_data_skipping_indices = 'regexp_tokens';
-SELECT 'regexp nested query', groupArray(id) FROM json_path_values_include_paths WHERE data.payload.updated_at = 'updated-1'
+SELECT 'regexp nested query', arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.payload.updated_at = 'updated-1'
 SETTINGS force_data_skipping_indices = 'regexp_tokens';
 
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.message = 'message-1';
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.message = 'message-1'
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.message = 'message-1';
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.message = 'message-1'
 SETTINGS force_data_skipping_indices = 'regexp_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.private_id = 'private-1';
-SELECT groupArray(id) FROM json_path_values_include_paths WHERE data.private_id = 'private-1'
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.private_id = 'private-1';
+SELECT arraySort(groupArray(id)) FROM json_path_values_include_paths WHERE data.private_id = 'private-1'
 SETTINGS force_data_skipping_indices = 'regexp_tokens'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE json_path_values_include_paths;

@@ -17,7 +17,7 @@ INSERT INTO json_path_values_nested_column VALUES (1, ('{"s":"hit"}',));
 INSERT INTO json_path_values_nested_column VALUES (2, ('{"s":"miss"}',));
 OPTIMIZE TABLE json_path_values_nested_column FINAL;
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_nested_column
 WHERE t.j.s = 'hit'
 SETTINGS force_data_skipping_indices = 'values_idx';

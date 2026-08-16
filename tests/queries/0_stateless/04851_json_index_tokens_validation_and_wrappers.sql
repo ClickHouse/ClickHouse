@@ -50,7 +50,7 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO json_index_tokens_low_cardinality VALUES
     (1, '{"s":""}', '{"s":""}'),
     (2, '{"s":"x"}', '{"s":"x"}');
-SELECT groupArray(id) FROM json_index_tokens_low_cardinality WHERE one_arg_data.s = 'x'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_low_cardinality WHERE one_arg_data.s = 'x'
 SETTINGS force_data_skipping_indices = 'one_arg_tokens';
 SELECT count() FROM json_index_tokens_low_cardinality WHERE one_arg_data.s = ''
 SETTINGS optimize_empty_string_comparisons = 0, force_data_skipping_indices = 'one_arg_tokens'; -- { serverError INDEX_NOT_USED }

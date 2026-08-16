@@ -38,35 +38,35 @@ INSERT INTO json_path_values_typed_maps VALUES
 SELECT 'key existence';
 SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, 'normal')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE mapContains(data.attrs, 'dotted.key')
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE mapContains(data.attrs, 'dotted.key')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE mapContainsKey(data.attrs, 'quoted"key')
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE mapContainsKey(data.attrs, 'quoted"key')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE has(data.attrs, concat('zero', char(0), 'key'))
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, concat('zero', char(0), 'key'))
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE has(data.attrs, 'empty')
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, 'empty')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE has(data.attrs, '')
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, '')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'keyed equality';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['normal'] = 'value'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['normal'] = 'value'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs[''] = 'empty-key'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs[''] = 'empty-key'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['dotted.key'] = 'dot'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['dotted.key'] = 'dot'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['quoted"key'] = 'quote'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['quoted"key'] = 'quote'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs[concat('zero', char(0), 'key')] = 'zero'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs[concat('zero', char(0), 'key')] = 'zero'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['truncated'] = repeat('x', 100)
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['truncated'] = repeat('x', 100)
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['dup'] = 'first'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['dup'] = 'first'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['dup'] = 'second'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['dup'] = 'second'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.lc['low'] = 'card'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.lc['low'] = 'card'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'direct read';
@@ -91,7 +91,7 @@ SELECT count() FROM json_path_values_typed_maps WHERE data.attrs['missing'] = ''
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM json_path_values_typed_maps WHERE has(data.attrs, repeat('k', 300))
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE has(data.attrs, repeat('k', 300));
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, repeat('k', 300));
 SELECT count() FROM json_path_values_typed_maps WHERE data.attrs['normal'] IN ('value', 'other')
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM json_path_values_typed_maps WHERE data.attrs['normal'] LIKE 'val%'
@@ -113,7 +113,7 @@ OPTIMIZE TABLE json_path_values_typed_maps FINAL;
 SELECT 'merged';
 SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE has(data.attrs, 'normal')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_typed_maps WHERE data.attrs['normal'] = 'value'
+SELECT arraySort(groupArray(id)) FROM json_path_values_typed_maps WHERE data.attrs['normal'] = 'value'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 DROP TABLE json_path_values_typed_maps;

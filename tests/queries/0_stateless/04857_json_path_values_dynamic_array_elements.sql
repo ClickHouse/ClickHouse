@@ -34,39 +34,39 @@ INSERT INTO json_path_values_dynamic_arrays VALUES
     (5, '{}', '{}');
 
 SELECT 'exact dynamic array types';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, 'foo')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, '');
 SELECT count() FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, '')
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, repeat('x', 100))
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(Int64))`, 2)
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, CAST(NULL, 'Nullable(String)'));
 SELECT count() FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, CAST(NULL, 'Nullable(String)'))
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'shared dynamic arrays';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(shared.tags.:`Array(Nullable(String))`, 'foo')
 SETTINGS force_data_skipping_indices = 'shared_tokens';
 
 SELECT 'converting casts';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(CAST(data.cast_tags AS Array(Nullable(String))), '1')
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(CAST(data.cast_tags AS Array(Nullable(String))), '1')
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(CAST(data.cast_tags AS Array(Nullable(Int64))), 2)
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
@@ -99,10 +99,10 @@ SYSTEM START MERGES json_path_values_dynamic_arrays;
 OPTIMIZE TABLE json_path_values_dynamic_arrays FINAL;
 
 SELECT 'merged';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(data.tags.:`Array(Nullable(String))`, 'foo')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_path_values_dynamic_arrays
+SELECT arraySort(groupArray(id)) FROM json_path_values_dynamic_arrays
 WHERE has(CAST(data.cast_tags AS Array(Nullable(String))), '1')
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 

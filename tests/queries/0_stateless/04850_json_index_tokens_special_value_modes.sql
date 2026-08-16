@@ -30,22 +30,22 @@ SETTINGS optimize_empty_string_comparisons = 0;
 SELECT count() FROM json_path_values_special_values WHERE data.s = ''
 SETTINGS optimize_empty_string_comparisons = 0, force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id) FROM json_path_values_special_values WHERE has(data.tags, '');
+SELECT arraySort(groupArray(id)) FROM json_path_values_special_values WHERE has(data.tags, '');
 SELECT count() FROM json_path_values_special_values WHERE has(data.tags, '')
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id) FROM json_path_values_special_values
+SELECT arraySort(groupArray(id)) FROM json_path_values_special_values
 WHERE has(data.tags, CAST(NULL, 'Nullable(String)'));
 SELECT count() FROM json_path_values_special_values
 WHERE has(data.tags, CAST(NULL, 'Nullable(String)'))
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id) FROM json_path_values_special_values WHERE dynamic.s = ''
+SELECT arraySort(groupArray(id)) FROM json_path_values_special_values WHERE dynamic.s = ''
 SETTINGS optimize_empty_string_comparisons = 0;
 SELECT count() FROM json_path_values_special_values WHERE dynamic.s = ''
 SETTINGS optimize_empty_string_comparisons = 0, force_data_skipping_indices = 'dynamic_tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id) FROM json_path_values_special_values WHERE shared.s = ''
+SELECT arraySort(groupArray(id)) FROM json_path_values_special_values WHERE shared.s = ''
 SETTINGS optimize_empty_string_comparisons = 0;
 SELECT count() FROM json_path_values_special_values WHERE shared.s = ''
 SETTINGS optimize_empty_string_comparisons = 0, force_data_skipping_indices = 'shared_tokens'; -- { serverError INDEX_NOT_USED }
@@ -53,7 +53,7 @@ SETTINGS optimize_empty_string_comparisons = 0, force_data_skipping_indices = 's
 SYSTEM START MERGES json_path_values_special_values;
 OPTIMIZE TABLE json_path_values_special_values FINAL;
 
-SELECT groupArray(id) FROM json_path_values_special_values WHERE has(data.tags, '');
+SELECT arraySort(groupArray(id)) FROM json_path_values_special_values WHERE has(data.tags, '');
 SELECT count() FROM json_path_values_special_values WHERE has(data.tags, '')
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 

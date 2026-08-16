@@ -25,7 +25,7 @@ FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'json_stream_horizontal' AND event_type = 'MergeParts'
 ORDER BY event_time_microseconds DESC LIMIT 1;
-SELECT groupArray(id) FROM json_stream_horizontal WHERE data.s = 'five'
+SELECT arraySort(groupArray(id)) FROM json_stream_horizontal WHERE data.s = 'five'
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_horizontal SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_horizontal;
@@ -64,7 +64,7 @@ FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'json_stream_vertical' AND event_type = 'MergeParts'
 ORDER BY event_time_microseconds DESC LIMIT 1;
-SELECT groupArray(id) FROM json_stream_vertical WHERE data.s = 'two'
+SELECT arraySort(groupArray(id)) FROM json_stream_vertical WHERE data.s = 'two'
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_vertical SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_vertical;
@@ -88,7 +88,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'json_stream_materialize_wide' AND event_type = 'MutatePart'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 ALTER TABLE json_stream_materialize_wide UPDATE data = '{"s":"updated"}' WHERE id = 1;
-SELECT groupArray(id) FROM json_stream_materialize_wide WHERE data.s = 'updated'
+SELECT arraySort(groupArray(id)) FROM json_stream_materialize_wide WHERE data.s = 'updated'
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_materialize_wide SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_materialize_wide;
@@ -112,7 +112,7 @@ FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'json_stream_materialize_compact' AND event_type = 'MutatePart'
 ORDER BY event_time_microseconds DESC LIMIT 1;
-SELECT groupArray(id) FROM json_stream_materialize_compact WHERE data.s = 'three'
+SELECT arraySort(groupArray(id)) FROM json_stream_materialize_compact WHERE data.s = 'three'
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_materialize_compact SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_materialize_compact;
@@ -141,9 +141,9 @@ FROM system.part_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'json_stream_replacing' AND event_type = 'MergeParts'
 ORDER BY event_time_microseconds DESC LIMIT 1;
-SELECT groupArray(id) FROM json_stream_replacing WHERE data.s = 'new'
+SELECT arraySort(groupArray(id)) FROM json_stream_replacing WHERE data.s = 'new'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_stream_replacing WHERE data.s = 'keep'
+SELECT arraySort(groupArray(id)) FROM json_stream_replacing WHERE data.s = 'keep'
 SETTINGS force_data_skipping_indices = 'tokens';
 CHECK TABLE json_stream_replacing SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_replacing;

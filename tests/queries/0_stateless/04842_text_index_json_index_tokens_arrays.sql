@@ -39,26 +39,26 @@ INSERT INTO json_index_tokens_arrays VALUES
     (4, '{}', '{}', '{}');
 
 SELECT 'typed arrays';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, 'foo')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, 'foo')
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, '');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, '');
 SELECT count() FROM json_index_tokens_arrays WHERE has(typed.tags, '')
 SETTINGS force_data_skipping_indices = 'typed_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.numbers, 2)
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.numbers, 2)
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, repeat('x', 100))
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, repeat('x', 100))
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, 'bar')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, 'bar')
 SETTINGS force_data_skipping_indices = 'typed_tokens';
 
 SELECT 'nullable and float arrays';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.nullable_tags, 'ᴺᵁᴸᴸ')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.nullable_tags, 'ᴺᵁᴸᴸ')
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.floats, toFloat64(0.0))
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.floats, toFloat64(0.0))
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.floats, toFloat64(-0.0))
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.floats, toFloat64(-0.0))
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.nullable_tags, CAST(NULL, 'Nullable(String)'));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.nullable_tags, CAST(NULL, 'Nullable(String)'));
 SELECT count() = 0
 FROM
 (
@@ -68,29 +68,29 @@ FROM
 WHERE position(explain, '__text_index') > 0;
 
 SELECT 'path isolation and array equality';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, 'bar') AND has(typed.other, 'bar')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, 'bar') AND has(typed.other, 'bar')
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE typed.tags = ['foo', ''];
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE typed.tags = ['foo', ''];
 SELECT count() FROM json_index_tokens_arrays WHERE typed.tags = ['foo', '']
 SETTINGS force_data_skipping_indices = 'typed_tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'shared Dynamic arrays';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, 'foo');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, '');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, repeat('x', 100));
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.floats.:`Array(Nullable(Float64))`, toFloat64(0.0));
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE shared.tags.:`Array(Nullable(String))` = ['foo', ''];
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, 'foo');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, '');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.tags.:`Array(Nullable(String))`, repeat('x', 100));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.floats.:`Array(Nullable(Float64))`, toFloat64(0.0));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE shared.tags.:`Array(Nullable(String))` = ['foo', ''];
 SELECT count() FROM json_index_tokens_arrays WHERE shared.tags.:`Array(Nullable(String))` = ['foo', '']
 SETTINGS force_data_skipping_indices = 'shared_tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'Dynamic path arrays';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, 'foo');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, '');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, repeat('x', 100));
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.floats.:`Array(Nullable(Float64))`, toFloat64(-0.0));
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE dynamic.tags.:`Array(Nullable(String))` = ['foo', ''];
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, 'foo');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, '');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.tags.:`Array(Nullable(String))`, repeat('x', 100));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.floats.:`Array(Nullable(Float64))`, toFloat64(-0.0));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE dynamic.tags.:`Array(Nullable(String))` = ['foo', ''];
 SELECT count() FROM json_index_tokens_arrays WHERE dynamic.tags.:`Array(Nullable(String))` = ['foo', '']
 SETTINGS force_data_skipping_indices = 'dynamic_tokens'; -- { serverError INDEX_NOT_USED }
 
@@ -107,9 +107,9 @@ SYSTEM START MERGES json_index_tokens_arrays;
 OPTIMIZE TABLE json_index_tokens_arrays FINAL;
 
 SELECT 'merged arrays';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(typed.tags, 'foo')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(typed.tags, 'foo')
 SETTINGS force_data_skipping_indices = 'typed_tokens';
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(shared.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
-SELECT groupArray(id) FROM json_index_tokens_arrays WHERE has(dynamic.floats.:`Array(Nullable(Float64))`, toFloat64(0.0));
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(shared.nullable_tags.:`Array(Nullable(String))`, 'ᴺᵁᴸᴸ');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_arrays WHERE has(dynamic.floats.:`Array(Nullable(Float64))`, toFloat64(0.0));
 
 DROP TABLE json_index_tokens_arrays;

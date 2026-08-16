@@ -21,18 +21,18 @@ INSERT INTO json_index_tokens_in VALUES
     (3, '{"lc":"gamma","s":"gamma"}'),
     (4, '{"lc":"beta","s":"beta"}');
 
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'json_tokens';
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.lc IN ['beta', 'gamma']
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.lc IN ['beta', 'gamma']
 SETTINGS force_data_skipping_indices = 'json_tokens';
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.lc IN ('missing', 'alpha')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.lc IN ('missing', 'alpha')
 SETTINGS force_data_skipping_indices = 'json_tokens';
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.lc IN ('missing')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.lc IN ('missing')
 SETTINGS force_data_skipping_indices = 'json_tokens';
 
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
 SETTINGS query_plan_direct_read_from_text_index = 0, force_data_skipping_indices = 'json_tokens';
-SELECT groupArray(id) FROM json_index_tokens_in WHERE data.s IN ('alpha', 'gamma')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_in WHERE data.s IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'json_tokens';
 
 SELECT count() > 0
@@ -53,7 +53,7 @@ FROM
 )
 WHERE explain LIKE '%LowCardinality(UInt8)%';
 
-SELECT toTypeName(data.lc IN ('alpha', 'gamma')), groupArray(id)
+SELECT toTypeName(data.lc IN ('alpha', 'gamma')), arraySort(groupArray(id))
 FROM json_index_tokens_in
 WHERE data.lc IN ('alpha', 'gamma')
 GROUP BY 1

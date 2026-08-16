@@ -26,50 +26,50 @@ INSERT INTO json_path_values_pattern_correctness VALUES
     (2, '{"value":"other","like_pattern":null,"ilike_pattern":null,"start_needle":null,"end_needle":null,"regexp":null}');
 
 SELECT 'right-side wrappers';
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE 'abc' LIKE ifNull(data.like_pattern, '');
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE 'ABC' ILIKE ifNull(data.ilike_pattern, '');
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE startsWith('abcdef', ifNull(data.start_needle, 'zzz'));
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE endsWith('abcdef', ifNull(data.end_needle, 'zzz'));
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE match('abc', ifNull(data.regexp, '^z'));
 
 SELECT 'commutative equality';
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE 'abc-value' = ifNull(data.value, '')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'dictionary scan setting';
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE startsWith(data.value, 'abc')
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE startsWith(data.value, 'abc')
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
     text_index_like_min_pattern_length = 3,
     force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE data.value LIKE '%value%'
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
     force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'minimum pattern length';
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE startsWith(data.value, 'ab')
 SETTINGS text_index_like_min_pattern_length = 3,
     force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE endsWith(data.value, 'ue')
 SETTINGS text_index_like_min_pattern_length = 3,
     force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE data.value LIKE 'ab%'
 SETTINGS text_index_like_min_pattern_length = 3,
     force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_pattern_correctness
+SELECT arraySort(groupArray(id)) FROM json_path_values_pattern_correctness
 WHERE startsWith(data.value, 'abc')
 SETTINGS text_index_like_min_pattern_length = 3,
     force_data_skipping_indices = 'tokens';

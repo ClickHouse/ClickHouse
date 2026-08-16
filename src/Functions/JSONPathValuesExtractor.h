@@ -72,7 +72,6 @@ public:
     {
     }
 
-    void beginRow() {}
     void consumeNull(std::string_view, bool) {}
     bool shouldConsumePath(std::string_view path) const { return shouldVisitPath(path); }
     void setRow(size_t row) { consumer.setRow(row); }
@@ -156,7 +155,7 @@ public:
         if (cached_base_type->getTypeId() == TypeIndex::Object)
         {
             PrefixedConsumer nested_consumer(*this, path);
-            DB::enumerateJSONValues<true>(
+            DB::enumerateJSONValues(
                 assert_cast<const ColumnObject &>(*value_column),
                 assert_cast<const DataTypeObject &>(*cached_base_type),
                 nested_consumer,
@@ -304,7 +303,7 @@ private:
                 if (const auto * nullable = typeid_cast<const ColumnNullable *>(value_column))
                     value_column = &nullable->getNestedColumn();
                 ArrayJSONConsumer nested_consumer(extractor, full_path);
-                DB::enumerateJSONValues<true>(
+                DB::enumerateJSONValues(
                     assert_cast<const ColumnObject &>(*value_column),
                     assert_cast<const DataTypeObject &>(*base_type),
                     nested_consumer,
@@ -442,7 +441,7 @@ private:
                 for (size_t element = begin; element != end; ++element)
                 {
                     if (!nullable_column->isNullAt(element))
-                        DB::enumerateJSONValues<true>(
+                        DB::enumerateJSONValues(
                             object_column,
                             assert_cast<const DataTypeObject &>(*nested_type),
                             nested_consumer,
@@ -452,7 +451,7 @@ private:
             }
             else
             {
-                DB::enumerateJSONValues<true>(
+                DB::enumerateJSONValues(
                     assert_cast<const ColumnObject &>(nested_column),
                     assert_cast<const DataTypeObject &>(*nested_type),
                     nested_consumer,

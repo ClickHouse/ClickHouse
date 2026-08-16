@@ -33,64 +33,64 @@ INSERT INTO json_index_tokens_analyzer_matrix VALUES
     (6, '{"s":"Äpfel-東京","other":"none","n":60,"tags":["東京"]}', '{"value":-0.0}');
 
 SELECT 'exact predicates';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle'
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s IN ('Alpha-needle', 'beta-suffix')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s IN ('Alpha-needle', 'beta-suffix')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE has(data.tags, 'red')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE has(data.tags, 'red')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.opt = 'set'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.opt = 'set'
 SETTINGS force_data_skipping_indices = 'data_tokens';
 
 SELECT 'patterns';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE startsWith(data.s, 'Alpha-')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE startsWith(data.s, 'Alpha-')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE 'beta-%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE 'beta-%'
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s ILIKE '%ALPHA%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s ILIKE '%ALPHA%'
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE endsWith(data.s, '-tail')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE endsWith(data.s, '-tail')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE match(data.s, '^Alpha-.*le$')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE match(data.s, '^Alpha-.*le$')
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE multiSearchAny(data.s, ['needle', 'suffix'])
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE multiSearchAny(data.s, ['needle', 'suffix'])
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE multiSearchAnyUTF8(data.s, ['Äpf', '東京'])
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE multiSearchAnyUTF8(data.s, ['Äpf', '東京'])
 SETTINGS force_data_skipping_indices = 'data_tokens';
 
 SELECT 'path and boolean composition';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.other LIKE '%needle%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.other LIKE '%needle%'
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix PREWHERE data.s = 'Alpha-needle';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle' AND data.n = 10
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix PREWHERE data.s = 'Alpha-needle';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle' AND data.n = 10
 SETTINGS force_data_skipping_indices = 'data_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle' OR data.n = 20
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s = 'Alpha-needle' OR data.n = 20
 SETTINGS force_data_skipping_indices = 'data_tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE NOT data.s = 'Alpha-needle';
 
 SELECT 'dynamic equality';
 SET dynamic_throw_on_type_mismatch = 0;
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = 42
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = 42
 SETTINGS force_data_skipping_indices = 'dynamic_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = '42'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = '42'
 SETTINGS force_data_skipping_indices = 'dynamic_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = 0.0
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.value = 0.0
 SETTINGS force_data_skipping_indices = 'dynamic_tokens';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE CAST(dynamic_data.value AS String) = '42';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE CAST(dynamic_data.value AS String) = '42';
 
 SELECT 'ground truth and read modes';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%'
 SETTINGS query_plan_direct_read_from_text_index = 0;
 SET allow_experimental_text_index_lazy_apply = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s LIKE '%needle%';
 
 SELECT 'unsupported analyzer forms';
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE data.s = ''
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE data.s = ''
 SETTINGS optimize_empty_string_comparisons = 0;
 SELECT count() = 0 FROM
 (
@@ -99,14 +99,14 @@ SELECT count() = 0 FROM
     SETTINGS optimize_empty_string_comparisons = 0
 )
 WHERE position(explain, '__text_index') > 0;
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE CAST(data.n AS String) = '10';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE CAST(data.n AS String) = '10';
 SELECT count() = 0 FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM json_index_tokens_analyzer_matrix WHERE CAST(data.n AS String) = '10'
 )
 WHERE position(explain, '__text_index') > 0;
-SELECT groupArray(id) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.unsupported = 1
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_analyzer_matrix WHERE dynamic_data.unsupported = 1
 SETTINGS dynamic_throw_on_type_mismatch = 0, force_data_skipping_indices = 'dynamic_tokens';
 
 SELECT 'supported plans';

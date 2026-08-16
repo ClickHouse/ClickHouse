@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <bool path_major = false, typename Consumer>
+template <typename Consumer>
 void enumerateJSONValues(
     const ColumnObject & column_object,
     const DataTypeObject & type_object,
@@ -99,7 +99,7 @@ void enumerateJSONValues(
         const auto & cache = getSimpleDataTypesCache();
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
 
-        if constexpr (path_major && requires { consumer.consumeSharedScalar(path, binary_type_index, std::string_view{}); })
+        if constexpr (requires { consumer.consumeSharedScalar(path, binary_type_index, std::string_view{}); })
         {
             if (binary_type_index == BinaryTypeIndex::String)
             {
@@ -229,55 +229,25 @@ void enumerateJSONValues(
     chassert(start_row <= shared_data_offsets.size());
     const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
 
-    if constexpr (path_major)
+    for (auto & path : sorted_paths)
     {
-        for (auto & path : sorted_paths)
-        {
-            for (size_t row = start_row; row != end_row; ++row)
-            {
-                consumer.setRow(row - start_row);
-                consume_path(path, row);
-            }
-        }
-
         for (size_t row = start_row; row != end_row; ++row)
         {
             consumer.setRow(row - start_row);
-            const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
-            const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
-            for (size_t shared_index = start; shared_index != end; ++shared_index)
-                consume_shared(shared_data_paths->getDataAt(shared_index), shared_data_values->getDataAt(shared_index));
+            consume_path(path, row);
         }
-
-        consumer.finishRows(end_row - start_row);
     }
-    else
+
+    for (size_t row = start_row; row != end_row; ++row)
     {
-        for (size_t row = start_row; row != end_row; ++row)
-        {
-            consumer.beginRow();
-            const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
-            const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
-            size_t sorted_paths_index = 0;
-
-            for (size_t shared_index = start; shared_index != end; ++shared_index)
-            {
-                const auto shared_path = shared_data_paths->getDataAt(shared_index);
-                while (sorted_paths_index < sorted_paths.size() && sorted_paths[sorted_paths_index].path < shared_path)
-                {
-                    consume_path(sorted_paths[sorted_paths_index], row);
-                    ++sorted_paths_index;
-                }
-
-                consume_shared(shared_path, shared_data_values->getDataAt(shared_index));
-            }
-
-            for (; sorted_paths_index < sorted_paths.size(); ++sorted_paths_index)
-                consume_path(sorted_paths[sorted_paths_index], row);
-
-            consumer.endRow();
-        }
+        consumer.setRow(row - start_row);
+        const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
+        const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
+        for (size_t shared_index = start; shared_index != end; ++shared_index)
+            consume_shared(shared_data_paths->getDataAt(shared_index), shared_data_values->getDataAt(shared_index));
     }
+
+    consumer.finishRows(end_row - start_row);
 }
 
 }

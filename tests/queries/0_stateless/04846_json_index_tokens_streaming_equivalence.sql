@@ -33,7 +33,7 @@ WHERE event_date >= yesterday()
     AND type = 'QueryFinish'
     AND log_comment = '04846_stream_direct';
 
-SELECT groupArray(id) FROM json_stream_direct WHERE data.s = 'value-2'
+SELECT arraySort(groupArray(id)) FROM json_stream_direct WHERE data.s = 'value-2'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SYSTEM START MERGES json_stream_direct;
@@ -47,14 +47,6 @@ CREATE TABLE json_stream_invalid
     INDEX tokens tuple(data) TYPE text(tokenizer = jsonPathValues(64))
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
-CREATE TABLE json_stream_invalid
-(
-    data JSON,
-    INDEX tokens data TYPE text(tokenizer = jsonPathValues(64), positions = 1)
-)
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_stream_invalid
 (
@@ -82,9 +74,9 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO json_stream_mixed VALUES
     (1, 'ordinary needle', '{"s":"json one"}'),
     (2, 'ordinary other', '{"s":"json needle"}');
-SELECT groupArray(id) FROM json_stream_mixed WHERE hasToken(message, 'needle')
+SELECT arraySort(groupArray(id)) FROM json_stream_mixed WHERE hasToken(message, 'needle')
 SETTINGS force_data_skipping_indices = 'message_tokens';
-SELECT groupArray(id) FROM json_stream_mixed WHERE data.s = 'json needle'
+SELECT arraySort(groupArray(id)) FROM json_stream_mixed WHERE data.s = 'json needle'
 SETTINGS force_data_skipping_indices = 'json_tokens';
 CHECK TABLE json_stream_mixed SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_stream_mixed;

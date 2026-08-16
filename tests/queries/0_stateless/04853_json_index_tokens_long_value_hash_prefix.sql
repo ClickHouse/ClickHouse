@@ -22,26 +22,26 @@ INSERT INTO json_index_tokens_long_value VALUES
     (4, '{"url":"https://example.com/other"}');
 
 SELECT 'long equality';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE data.url = concat('https://posthog.com/', repeat('a', 100), 'x')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'exact bounded prefixes';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE startsWith(data.url, 'https://posthog.com/')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE data.url LIKE 'https://posthog.com/%'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE data.url ILIKE 'https://posthog.com/%'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'validated prefixes beyond retained bytes';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE startsWith(data.url, concat('https://posthog.com/', repeat('a', 80)))
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_long_value
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
 WHERE data.url ILIKE concat('https://posthog.com/', repeat('a', 80), '%')
 SETTINGS force_data_skipping_indices = 'tokens';
 
@@ -56,7 +56,7 @@ FROM
 WHERE position(explain, '__text_index') > 0;
 
 SELECT 'sparse typed paths';
-SELECT groupArray(id) FROM json_index_tokens_long_value WHERE data.sparse_b = 'two'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value WHERE data.sparse_b = 'two'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 CHECK TABLE json_index_tokens_long_value SETTINGS check_query_single_value_result = 1;

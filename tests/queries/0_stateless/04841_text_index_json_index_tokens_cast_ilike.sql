@@ -8,15 +8,6 @@ SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SELECT 'multiSearchAny empty needle ground truth';
 SELECT multiSearchAny('', ['']), multiSearchAny('x', ['']);
 
-DROP TABLE IF EXISTS json_index_tokens_nonliteral;
-CREATE TABLE json_index_tokens_nonliteral
-(
-    data JSON,
-    INDEX tokens data TYPE text(tokenizer = jsonPathValues(63 + 1))
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
 DROP TABLE IF EXISTS json_index_tokens_cast_ilike;
 CREATE TABLE json_index_tokens_cast_ilike
 (

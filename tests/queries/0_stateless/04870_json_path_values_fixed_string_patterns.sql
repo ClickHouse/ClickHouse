@@ -22,19 +22,19 @@ INSERT INTO json_pv_fixed_string_patterns VALUES
     (2, '{"k":"ab"}'),
     (3, '{"k":"b"}');
 
-SELECT groupArray(id) FROM json_pv_fixed_string_patterns
+SELECT arraySort(groupArray(id)) FROM json_pv_fixed_string_patterns
 WHERE startsWith(json.k, 'a')
 SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT groupArray(id) FROM json_pv_fixed_string_patterns
+SELECT arraySort(groupArray(id)) FROM json_pv_fixed_string_patterns
 WHERE endsWith(json.k, 'a')
 SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT groupArray(id) FROM json_pv_fixed_string_patterns
+SELECT arraySort(groupArray(id)) FROM json_pv_fixed_string_patterns
 WHERE json.k LIKE 'a%'
 SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT groupArray(id) FROM json_pv_fixed_string_patterns
+SELECT arraySort(groupArray(id)) FROM json_pv_fixed_string_patterns
 WHERE json.k ILIKE 'a%'
 SETTINGS force_data_skipping_indices = 'idx';
 

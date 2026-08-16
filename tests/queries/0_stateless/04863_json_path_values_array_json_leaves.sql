@@ -43,32 +43,32 @@ SELECT count() > 0
 FROM mergeTreeTextIndex(currentDatabase(), 'json_path_values_array_json_leaves', 'tokens')
 WHERE startsWith(hex(token), '6974656D735B5D2E70726963650000');
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].price, 10)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].name, 'second')
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].nested.score, 8)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].nullable, 5)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].dynamic.:`Int64`, 99)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.nullable_items[].name, 'kept');
 
@@ -77,56 +77,56 @@ FROM json_path_values_array_json_leaves
 WHERE has(data.nullable_items[].name, 'kept')
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.nullable_items[].name.:`String`, 'kept')
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.nullable_items[].price.:`Int64`, 0)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(shared.nullable_items[].name.:`String`, 'shared')
 SETTINGS force_data_skipping_indices = 'shared_tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].price, 99)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.`items[].price`, 10)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE length(data.items[]) = 2;
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE length(data.items[]) = 2
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].nullable, NULL)
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].tags, ['x'])
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].labels, map('k', 'v'))
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.items[].t, tuple(1))
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
@@ -134,12 +134,12 @@ SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED
 SYSTEM START MERGES json_path_values_array_json_leaves;
 OPTIMIZE TABLE json_path_values_array_json_leaves FINAL;
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(data.nullable_items[].price.:`Int64`, 0)
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id)
+SELECT arraySort(groupArray(id))
 FROM json_path_values_array_json_leaves
 WHERE has(shared.nullable_items[].name.:`String`, 'shared')
 SETTINGS force_data_skipping_indices = 'shared_tokens';

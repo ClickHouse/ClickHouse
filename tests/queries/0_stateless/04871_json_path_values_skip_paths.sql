@@ -37,24 +37,24 @@ WHERE startsWith(hex(token), concat(hex('m'), '0000'));
 SELECT count() > 0 FROM mergeTreeTextIndex(currentDatabase(), 'json_path_values_skip_paths', 'tokens')
 WHERE startsWith(hex(token), concat(hex('items[].secret'), '0000'));
 
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.keep = 'hit'
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.keep = 'hit'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.skip_size = 'prefix-hit'
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.skip_size = 'prefix-hit'
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE has(data.items[].keep, 'array-hit')
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE has(data.items[].keep, 'array-hit')
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.skip.leaf = 'hidden';
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.skip.leaf = 'hidden'
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.skip.leaf = 'hidden';
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.skip.leaf = 'hidden'
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.regex_token = 'regex-hit';
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.regex_token = 'regex-hit'
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.regex_token = 'regex-hit';
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.regex_token = 'regex-hit'
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.m['k'] = 'v';
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE data.m['k'] = 'v'
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.m['k'] = 'v';
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE data.m['k'] = 'v'
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE has(data.items[].secret, 'array-secret');
-SELECT groupArray(id) FROM json_path_values_skip_paths WHERE has(data.items[].secret, 'array-secret')
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE has(data.items[].secret, 'array-secret');
+SELECT arraySort(groupArray(id)) FROM json_path_values_skip_paths WHERE has(data.items[].secret, 'array-secret')
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE json_path_values_skip_paths;

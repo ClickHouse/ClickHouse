@@ -34,7 +34,7 @@ SELECT 'is not null';
 SELECT trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT * FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence))
 WHERE explain LIKE '%Name:%';
-SELECT groupArray(id) FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence);
+SELECT arraySort(groupArray(id)) FROM json_path_values_bloom_suppression WHERE isNotNull(data.presence);
 
 SELECT 'mixed';
 SELECT trimLeft(explain)

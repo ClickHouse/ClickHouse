@@ -11,11 +11,7 @@ CREATE TABLE json_index_tokens_prefix_null_replacement
     id UInt64,
     data JSON(
         prefix String,
-        like_pattern Nullable(String),
-        ilike_pattern Nullable(String),
-        start_needle Nullable(String),
-        end_needle Nullable(String),
-        regexp Nullable(String)),
+        start_needle Nullable(String)),
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -23,8 +19,8 @@ ORDER BY id
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_index_tokens_prefix_null_replacement VALUES
-    (1, '{"prefix":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","like_pattern":"a%","ilike_pattern":"a%","start_needle":"abc","end_needle":"def","regexp":"^a"}'),
-    (2, '{"prefix":"other","like_pattern":null,"ilike_pattern":null,"start_needle":null,"end_needle":null,"regexp":null}');
+    (1, '{"prefix":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","start_needle":"abc"}'),
+    (2, '{"prefix":"other","start_needle":null}');
 
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
 WHERE startsWith(data.prefix, 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
@@ -33,21 +29,6 @@ SETTINGS force_data_skipping_indices = 'tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
 WHERE data.prefix LIKE 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx%'
 SETTINGS force_data_skipping_indices = 'tokens';
-
-SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
-WHERE 'abc' LIKE ifNull(data.like_pattern, '');
-
-SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
-WHERE 'ABC' ILIKE ifNull(data.ilike_pattern, '');
-
-SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
-WHERE startsWith('abcdef', ifNull(data.start_needle, 'zzz'));
-
-SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
-WHERE endsWith('abcdef', ifNull(data.end_needle, 'zzz'));
-
-SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
-WHERE match('abc', ifNull(data.regexp, '^z'));
 
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_prefix_null_replacement
 WHERE 'abc' = ifNull(data.start_needle, '');

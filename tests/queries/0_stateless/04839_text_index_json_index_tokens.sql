@@ -23,14 +23,14 @@ INSERT INTO json_index_tokens VALUES
     (5, concat('{"url":"https://posthog.com/', repeat('a', 50), 'b"}'));
 
 SELECT 'equality direct read off';
-SELECT groupArray(id) FROM json_index_tokens WHERE data.email = 'alice@example.com'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.email = 'alice@example.com'
 SETTINGS query_plan_direct_read_from_text_index = 0;
 
 SELECT 'equality complete';
-SELECT groupArray(id) FROM json_index_tokens WHERE data.email = 'alice@example.com';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.email = 'alice@example.com';
 
 SELECT 'equality empty string';
-SELECT groupArray(id) FROM json_index_tokens WHERE data.email = ''
+SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.email = ''
 SETTINGS optimize_empty_string_comparisons = 0;
 
 SELECT 'empty string predicates';
@@ -46,67 +46,67 @@ SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE multiSearchAny(dat
 SETTINGS text_index_like_min_pattern_length = 0;
 
 SELECT 'equality typed values';
-SELECT groupArray(id) FROM json_index_tokens WHERE data.count = 42;
-SELECT groupArray(id) FROM json_index_tokens WHERE data.flag = true;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.count = 42;
+SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.flag = true;
 
 SELECT 'equality truncated';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.url = concat('https://posthog.com/', repeat('a', 160));
 
 SELECT 'in';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.email IN ('alice@example.com', 'carol@example.com');
 
 SELECT 'startsWith bounded prefix';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE startsWith(data.url, 'https://posthog.com/');
 
 SELECT 'like prefix';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.url LIKE 'https://posthog.com/%';
 
 SELECT 'startsWith fallback';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE startsWith(data.url, 'https://posthog.com/')
 SETTINGS text_index_like_max_postings_to_read = 0;
 
 SELECT 'startsWith beyond stored prefix';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE startsWith(data.url, concat('https://posthog.com/', repeat('a', 80)));
 
 SELECT 'like';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.email LIKE '%example.com%';
 
 SELECT 'like after stored prefix';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.url LIKE '%b%';
 
 SELECT 'like dictionary fallback';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.email LIKE '%example.com%'
 SETTINGS text_index_like_max_postings_to_read = 0;
 
 SELECT 'ilike';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.email ILIKE '%EXAMPLE.COM%';
 
 SELECT 'endsWith';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE endsWith(data.url, 'docs');
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE endsWith(data.url, 'b');
 
 SELECT 'match hint';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE match(data.email, '^alice@.*\\.com$');
 
 SELECT 'multiSearchAny';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE multiSearchAny(data.email, ['alice@', 'carol@']);
 
 SELECT 'path isolation';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.other LIKE '%example.com%';
 
 SELECT 'direct read plan';
@@ -131,14 +131,16 @@ SET allow_experimental_text_index_lazy_apply = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 
 SELECT 'lazy patterns';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.email LIKE '%example.com%';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE data.url LIKE '%b%';
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE endsWith(data.url, 'b');
-SELECT groupArray(id) FROM json_index_tokens
+SELECT arraySort(groupArray(id)) FROM json_index_tokens
 WHERE multiSearchAny(data.email, ['alice@', 'carol@']);
+
+CHECK TABLE json_index_tokens SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE json_index_tokens;
 

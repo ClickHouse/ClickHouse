@@ -1795,7 +1795,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
             json_path_values->max_token_bytes,
             *json_path_values->path_matcher,
             consumer);
-        enumerateJSONValues<true>(column_object, type_object, extractor, *pos, rows_read);
+        enumerateJSONValues(column_object, type_object, extractor, *pos, rows_read);
         ProfileEvents::increment(ProfileEvents::JSONPathValuesTextIndexInputRows, rows_read);
         *pos += rows_read;
         return;

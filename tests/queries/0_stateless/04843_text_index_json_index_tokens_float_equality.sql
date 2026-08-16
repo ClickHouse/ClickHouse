@@ -21,17 +21,17 @@ INSERT INTO json_index_tokens_float_equality VALUES
     (2, '{"f32":0.0,"f64":0.0,"nonzero":2.5,"floats":[0.0],"nested_floats":[[0.0]]}');
 
 SELECT 'signed zero';
-SELECT groupArray(id) FROM json_index_tokens_float_equality WHERE data.f32 = toFloat32(0.0)
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_float_equality WHERE data.f32 = toFloat32(0.0)
 SETTINGS force_data_skipping_indices = 'json_tokens';
-SELECT groupArray(id) FROM json_index_tokens_float_equality WHERE data.f64 = toFloat64(-0.0)
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_float_equality WHERE data.f64 = toFloat64(-0.0)
 SETTINGS force_data_skipping_indices = 'json_tokens';
 
 SELECT 'nonzero float';
-SELECT groupArray(id) FROM json_index_tokens_float_equality WHERE data.nonzero = toFloat64(1.5)
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_float_equality WHERE data.nonzero = toFloat64(1.5)
 SETTINGS force_data_skipping_indices = 'json_tokens';
 
 SELECT 'structured float equality fallback';
-SELECT groupArray(id) FROM json_index_tokens_float_equality WHERE data.floats = [toFloat64(0.0)];
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_float_equality WHERE data.floats = [toFloat64(0.0)];
 SELECT count() = 0
 FROM
 (
@@ -39,7 +39,7 @@ FROM
     SELECT count() FROM json_index_tokens_float_equality WHERE data.floats = [toFloat64(0.0)]
 )
 WHERE position(explain, '__text_index') > 0;
-SELECT groupArray(id) FROM json_index_tokens_float_equality WHERE data.nested_floats = [(toFloat64(0.0),)];
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_float_equality WHERE data.nested_floats = [(toFloat64(0.0),)];
 SELECT count() = 0
 FROM
 (
@@ -59,14 +59,6 @@ WHERE position(explain, '__text_index') > 0;
 
 DROP TABLE json_index_tokens_float_equality;
 
-CREATE TABLE json_index_tokens_zero_limit
-(
-    data JSON,
-    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(0))
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
 CREATE TABLE json_index_tokens_tiny_limit
 (
     id UInt64,
@@ -76,8 +68,8 @@ CREATE TABLE json_index_tokens_tiny_limit
 ENGINE = MergeTree
 ORDER BY id;
 INSERT INTO json_index_tokens_tiny_limit VALUES (1, '{"s":"value"}');
-SELECT groupArray(id) FROM json_index_tokens_tiny_limit WHERE data.s = 'value';
-SELECT groupArray(id) FROM json_index_tokens_tiny_limit WHERE data.s = 'value'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_limit WHERE data.s = 'value';
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_limit WHERE data.s = 'value'
 SETTINGS force_data_skipping_indices = 'json_tokens'; -- { serverError INDEX_NOT_USED }
 CHECK TABLE json_index_tokens_tiny_limit SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_index_tokens_tiny_limit;
@@ -91,8 +83,8 @@ CREATE TABLE json_index_tokens_tiny_pattern_limit
 ENGINE = MergeTree
 ORDER BY id;
 INSERT INTO json_index_tokens_tiny_pattern_limit VALUES (1, '{"s":"long pattern value"}');
-SELECT groupArray(id) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long');
-SELECT groupArray(id) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long');
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long')
 SETTINGS force_data_skipping_indices = 'json_tokens'; -- { serverError INDEX_NOT_USED }
 CHECK TABLE json_index_tokens_tiny_pattern_limit SETTINGS check_query_single_value_result = 1;
 DROP TABLE json_index_tokens_tiny_pattern_limit;

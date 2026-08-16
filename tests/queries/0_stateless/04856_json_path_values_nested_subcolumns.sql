@@ -26,15 +26,15 @@ INSERT INTO json_path_values_nested_subcolumns VALUES
     (3, '{"str":"c","arr":["z"],"tuple":{"value":"x"},"map":{"q":"w"}}');
 
 SELECT 'optimized subcolumns';
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE data.str = '';
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE empty(data.str);
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE length(data.arr) = 2;
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE empty(data.arr);
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE data.str = '';
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE empty(data.str);
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE length(data.arr) = 2;
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE empty(data.arr);
 
 SELECT 'nested typed subcolumns';
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE data.tuple.value = 'x';
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE has(data.map.keys, 'k');
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE data.n.null = 1;
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE data.tuple.value = 'x';
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE has(data.map.keys, 'k');
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE data.n.null = 1;
 
 SELECT count() FROM json_path_values_nested_subcolumns WHERE data.str = ''
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
@@ -42,13 +42,13 @@ SELECT count() FROM json_path_values_nested_subcolumns WHERE length(data.arr) = 
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM json_path_values_nested_subcolumns WHERE data.tuple.value = 'x'
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE has(data.map.keys, 'k')
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE has(data.map.keys, 'k')
 SETTINGS force_data_skipping_indices = 'data_tokens';
 SELECT count() FROM json_path_values_nested_subcolumns WHERE data.n.null = 1
 SETTINGS force_data_skipping_indices = 'data_tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'direct typed path';
-SELECT groupArray(id) FROM json_path_values_nested_subcolumns WHERE data.str = ''
+SELECT arraySort(groupArray(id)) FROM json_path_values_nested_subcolumns WHERE data.str = ''
 SETTINGS
     optimize_empty_string_comparisons = 0,
     optimize_functions_to_subcolumns = 0;

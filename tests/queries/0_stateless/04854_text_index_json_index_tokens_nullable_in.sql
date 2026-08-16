@@ -25,16 +25,16 @@ INSERT INTO json_index_tokens_nullable_in VALUES
 
 SET transform_null_in = 1;
 
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', 'gamma')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE data.s GLOBAL IN ('beta')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.s GLOBAL IN ('beta')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE data.fixed IN ('one')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.fixed IN ('one')
 SETTINGS force_data_skipping_indices = 'tokens';
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE (data.s, id) IN (('alpha', 1), ('gamma', 3))
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE (data.s, id) IN (('alpha', 1), ('gamma', 3))
 SETTINGS force_data_skipping_indices = 'tokens';
 
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', NULL);
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', NULL);
 SELECT count() = 0
 FROM
 (
@@ -44,7 +44,7 @@ FROM
 WHERE explain LIKE '%Name: tokens%';
 
 SET transform_null_in = 0;
-SELECT groupArray(id) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', 'gamma')
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_nullable_in WHERE data.s IN ('alpha', 'gamma')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 DROP TABLE json_index_tokens_nullable_in;

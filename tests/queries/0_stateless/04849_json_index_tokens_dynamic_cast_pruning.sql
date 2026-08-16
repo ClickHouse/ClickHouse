@@ -22,14 +22,14 @@ INSERT INTO json_index_tokens_dynamic_cast VALUES
     (4, '{"value":[1,2,3,4,5]}'),
     (5, '{}');
 
-SELECT groupArray(id) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '42'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '42'
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
-SELECT groupArray(id) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '[1,2,3,4,5]'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '[1,2,3,4,5]'
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
-SELECT groupArray(id) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '__missing__'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '__missing__'
 SETTINGS use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 
-SELECT groupArray(id) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '42'
+SELECT arraySort(groupArray(id)) FROM json_index_tokens_dynamic_cast WHERE CAST(data.value AS String) = '42'
 SETTINGS force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
 
 SELECT count() = 0
