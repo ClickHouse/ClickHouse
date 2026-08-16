@@ -471,6 +471,19 @@ TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyz
     /// An outer filter that belongs only to a joined source is not a filter on the query-backed external source.
     EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
 
+    ast = parseQuery(
+        parser,
+        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num PREWHERE table2.num = 1",
+        1000,
+        1000,
+        1000000);
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
+    query_info.query = ast;
+
+    /// A foreign-table PREWHERE must likewise not be treated as a filter on the query-backed source.
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+
     state.context->setSetting("external_table_strict_query", false);
 }
 

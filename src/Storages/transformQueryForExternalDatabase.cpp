@@ -863,6 +863,8 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         /// make a query-backed external table fail under `external_table_strict_query`.
         auto & where = clone_query->as<ASTSelectQuery &>().refWhere();
         removeUnknownSubexpressionsFromWhere(where, available_columns);
+        auto & prewhere = clone_query->as<ASTSelectQuery &>().refPrewhere();
+        removeUnknownSubexpressionsFromWhere(prewhere, available_columns);
     }
     else
         return;
