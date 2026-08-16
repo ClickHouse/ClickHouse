@@ -843,6 +843,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
     size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
 
+    /// A trivial LIMIT bounds the rows that all child reads can produce. More sources than that
+    /// cannot improve the read and, in particular, would reject safe limited reads before a
+    /// child storage (such as `GenerateRandom`) gets the opportunity to apply the same bound.
+    if (query_info_.trivial_limit)
+        num_streams = std::min(num_streams, static_cast<size_t>(query_info_.trivial_limit));
+
     /// Some child storages create one source for every stream. Check the aggregate before
     /// building child plans: checking only `ReadFromMergeTree` is insufficient because the
     /// `Merge` fan-out can keep every child below the limit while exceeding it in total, and
