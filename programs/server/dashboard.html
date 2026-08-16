@@ -510,7 +510,7 @@ const dashboardSearchQuery = (dashboard_name) => `SELECT title, query FROM syste
 let dashboard_queries = {
     "Overview": dashboardSearchQuery("Overview"),
 };
-const default_dashboard = 'Cloud overview';
+const default_dashboard = 'Overview';
 
 /// Query to fill `queries` list for the dashboard
 let search_query = dashboardSearchQuery(default_dashboard);
