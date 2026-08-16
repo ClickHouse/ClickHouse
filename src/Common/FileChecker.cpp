@@ -91,12 +91,6 @@ void FileChecker::updateAndSave(const std::vector<String> & full_file_paths)
         candidate[fileName(full_file_path)] = exists ? getRealFileSize(full_file_path) : 0;
     }
 
-    fiu_do_on(FailPoints::file_checker_update_and_save_fail_persisting,
-    {
-        if (candidate != map)
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while persisting the file sizes");
-    });
-
     save(candidate);
     map = std::move(candidate);
 }
@@ -210,6 +204,13 @@ void FileChecker::save(const Map & map_to_save) const
         out->sync();
         out->finalize();
     }
+
+    /// A sink commits an empty baseline before it writes anything, where no size has changed yet.
+    fiu_do_on(FailPoints::file_checker_update_and_save_fail_persisting,
+    {
+        if (map_to_save != map)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while persisting the file sizes");
+    });
 
     if (disk)
         disk->replaceFile(tmp_files_info_path, files_info_path);

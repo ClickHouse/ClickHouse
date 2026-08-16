@@ -23,25 +23,40 @@ def started_cluster():
         cluster.shutdown()
 
 
-def create_table(node, table, engine):
-    """Fills a table with 500 rows of Array(Array(Int64)) and detaches it, returning its data path.
+def create_table(node, table, engine, inserts=1):
+    """Fills a table with 500 rows of Array(Array(Int64)) per insert and detaches it.
 
-    The outer offsets then describe 1000 inner arrays, the inner offsets 1500 leaf elements.
+    Returns the data path and the size of the elements stream after each insert. One insert makes
+    the outer offsets describe 1000 inner arrays and the inner offsets 1500 leaf elements.
     """
     node.query(f"DROP TABLE IF EXISTS {table}")
     node.query(
         f"CREATE TABLE {table} (a UInt64, arr Array(Array(Int64))) ENGINE = {engine}"
     )
-    node.query(
-        f"INSERT INTO {table} SELECT number, [[number, number + 1], [number + 2]] FROM numbers(500)"
-    )
-    assert node.query(f"SELECT count() FROM {table}").strip() == "500"
 
     table_path = node.query(
         f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
     ).strip()
+
+    sizes = []
+    for i in range(inserts):
+        node.query(
+            f"INSERT INTO {table} SELECT number, [[number, number + 1], [number + 2]] "
+            f"FROM numbers({i * 500}, 500)"
+        )
+        sizes.append(stream_size(node, table_path, "arr.bin"))
+    assert node.query(f"SELECT count() FROM {table}").strip() == str(500 * inserts)
+
     node.query(f"DETACH TABLE {table}")
-    return table_path
+    return table_path, sizes
+
+
+def stream_size(node, table_path, stream):
+    return int(
+        node.exec_in_container(
+            ["bash", "-c", f"stat -c%s {table_path}{stream}"], user="root"
+        ).strip()
+    )
 
 
 def record_size(node, table_path, stream, size):
@@ -66,7 +81,7 @@ def record_size(node, table_path, stream, size):
 def test_read_array_with_missing_elements(started_cluster, engine, damaged_stream):
     node = started_cluster.instances["node"]
     table = f"damaged_{engine.lower()}_{damaged_stream.replace('.', '_')}"
-    table_path = create_table(node, table, engine)
+    table_path, _ = create_table(node, table, engine)
 
     node.exec_in_container(
         ["bash", "-c", f"truncate -s 0 {table_path}{damaged_stream}"], user="root"
@@ -89,32 +104,37 @@ def test_read_array_with_missing_elements(started_cluster, engine, damaged_strea
     node.query(f"DROP TABLE {table}")
 
 
-# An elements stream that is short but not empty is rejected while it is being read, before the
-# offsets can be compared with it, so it fails with a different error. Pinned here so that the
-# contract holds for both shapes: no inconsistent array column reads successfully.
+# An elements stream that holds some but not all of the elements the offsets promise is rejected
+# while it is being read, before the offsets can be compared with it, so it fails with a different
+# error. Pinned here so that the contract holds for both shapes: no inconsistent array column reads
+# successfully.
+#
+# The truncation has to land on a compression frame boundary, which is what the second insert is
+# for: cutting inside a frame destroys it and the read dies in the decompressor instead, without a
+# short elements column ever being built. Each insert is well under max_compress_block_size, so the
+# size of the elements stream after the first insert is exactly that boundary.
 @pytest.mark.parametrize("engine", ["Log", "TinyLog"])
 def test_read_array_with_partial_elements(started_cluster, engine):
     node = started_cluster.instances["node"]
     table = f"partial_{engine.lower()}"
-    table_path = create_table(node, table, engine)
+    table_path, sizes = create_table(node, table, engine, inserts=2)
 
-    full_size = int(
-        node.exec_in_container(
-            ["bash", "-c", f"stat -c%s {table_path}arr.bin"], user="root"
-        ).strip()
-    )
-    assert full_size > 1, full_size
+    boundary = sizes[0]
+    assert 0 < boundary < sizes[1], sizes
     node.exec_in_container(
-        ["bash", "-c", f"truncate -s {full_size // 2} {table_path}arr.bin"], user="root"
+        ["bash", "-c", f"truncate -s {boundary} {table_path}arr.bin"], user="root"
     )
-    record_size(node, table_path, "arr.bin", full_size // 2)
+    record_size(node, table_path, "arr.bin", boundary)
 
     node.query(f"ATTACH TABLE {table}")
 
+    # One reading thread keeps the whole prefix in a single deserialization, so the offsets of both
+    # inserts are compared against the elements of one.
     error = node.query_and_get_error(
-        f"SELECT a, arr FROM {table} ORDER BY a DESC LIMIT 10 FORMAT Null"
+        f"SELECT a, arr FROM {table} ORDER BY a DESC LIMIT 10 SETTINGS max_threads = 1 FORMAT Null"
     )
     assert "CANNOT_READ_ALL_DATA" in error, error
+    assert "Cannot read all array values" in error, error
 
     assert node.query("SELECT 1").strip() == "1"
 
