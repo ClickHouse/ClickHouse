@@ -23,6 +23,30 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+inline std::pair<DataTypePtr, SerializationPtr> decodeJSONDataType(
+    ReadBuffer & buffer,
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> & serializations_cache)
+{
+    char type_index = 0;
+    if (!buffer.peek(type_index))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse binary JSON value: no type index found");
+
+    const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
+    const auto & simple_types_cache = getSimpleDataTypesCache();
+    if (simple_types_cache.hasElement(binary_type_index))
+    {
+        ++buffer.position();
+        const auto & element = simple_types_cache.getElement(binary_type_index);
+        return {element.type, element.serialization};
+    }
+
+    auto type = decodeDataType(buffer);
+    auto [it, inserted] = serializations_cache.try_emplace(type->getName());
+    if (inserted)
+        it->second = type->getDefaultSerialization();
+    return {std::move(type), it->second};
+}
+
 template <typename Consumer>
 void enumerateJSONValues(
     const ColumnObject & column_object,
@@ -40,14 +64,13 @@ void enumerateJSONValues(
         const IColumn * column = nullptr;
         SerializationPtr serialization;
         bool is_dynamic = false;
-        bool is_nullable = false;
     };
 
     const auto & typed_path_types = type_object.getTypedPaths();
     const auto & typed_path_columns = column_object.getTypedPaths();
     const auto & dynamic_path_columns = column_object.getDynamicPaths();
-    VectorWithMemoryTracking<PathInfo> sorted_paths;
-    sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
+    VectorWithMemoryTracking<PathInfo> paths;
+    paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
     for (const auto & [path, type] : typed_path_types)
     {
@@ -56,21 +79,18 @@ void enumerateJSONValues(
         const auto full_column = recursiveRemoveLowCardinality(column);
         const auto value_type = removeNullableOrLowCardinalityNullable(full_type);
         const bool is_dynamic = DB::isDynamic(value_type);
-        sorted_paths.push_back({
+        paths.push_back({
             path,
             full_type,
             is_dynamic ? String{} : full_type->getName(),
             full_column,
             full_column.get(),
             full_type->getDefaultSerialization(),
-            is_dynamic,
-            canContainNull(*full_type)});
+            is_dynamic});
     }
 
     for (const auto & [path, column] : dynamic_path_columns)
-        sorted_paths.push_back({path, nullptr, {}, column, column.get(), nullptr, true, false});
-
-    std::sort(sorted_paths.begin(), sorted_paths.end(), [](const PathInfo & lhs, const PathInfo & rhs) { return lhs.path < rhs.path; });
+        paths.push_back({path, nullptr, {}, column, column.get(), nullptr, true});
 
     UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
@@ -81,36 +101,11 @@ void enumerateJSONValues(
 
     auto consume_shared = [&](std::string_view path, std::string_view value_data)
     {
-        if constexpr (requires { consumer.shouldConsumePath(path); })
-            if (!consumer.shouldConsumePath(path))
-                return;
+        if (!consumer.shouldConsumePath(path))
+            return;
 
         ReadBufferFromMemory buffer(value_data);
-
-        char type_index = 0;
-        if (!buffer.peek(type_index))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
-
-        DataTypePtr type;
-        SerializationPtr serialization;
-        const auto & cache = getSimpleDataTypesCache();
-        const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
-
-        if (cache.hasElement(binary_type_index))
-        {
-            ++buffer.position();
-            const auto & element = cache.getElement(binary_type_index);
-            type = element.type;
-            serialization = element.serialization;
-        }
-        else
-        {
-            type = decodeDataType(buffer);
-            auto [it, inserted] = serializations_cache.try_emplace(type->getName());
-            if (inserted)
-                it->second = type->getDefaultSerialization();
-            serialization = it->second;
-        }
+        auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
 
         if (isNothing(type))
             return;
@@ -127,15 +122,11 @@ void enumerateJSONValues(
 
     auto consume_path = [&](PathInfo & entry, size_t row)
     {
-        if constexpr (requires { consumer.shouldConsumePath(entry.path); })
-            if (!consumer.shouldConsumePath(entry.path))
-                return;
-
-        if ((entry.is_dynamic || entry.is_nullable) && entry.column->isNullAt(row))
-        {
-            consumer.consumeNull(entry.path, entry.is_nullable);
+        if (!consumer.shouldConsumePath(entry.path))
             return;
-        }
+
+        if (entry.column->isNullAt(row))
+            return;
 
         if (!entry.is_dynamic)
         {
@@ -177,27 +168,13 @@ void enumerateJSONValues(
 
     for (size_t row = start_row; row != end_row; ++row)
     {
-        consumer.beginRow();
+        for (auto & path : paths)
+            consume_path(path, row);
+
         const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
-        size_t sorted_paths_index = 0;
-
         for (size_t shared_index = start; shared_index != end; ++shared_index)
-        {
-            const auto shared_path = shared_data_paths->getDataAt(shared_index);
-            while (sorted_paths_index < sorted_paths.size() && sorted_paths[sorted_paths_index].path < shared_path)
-            {
-                consume_path(sorted_paths[sorted_paths_index], row);
-                ++sorted_paths_index;
-            }
-
-            consume_shared(shared_path, shared_data_values->getDataAt(shared_index));
-        }
-
-        for (; sorted_paths_index < sorted_paths.size(); ++sorted_paths_index)
-            consume_path(sorted_paths[sorted_paths_index], row);
-
-        consumer.endRow();
+            consume_shared(shared_data_paths->getDataAt(shared_index), shared_data_values->getDataAt(shared_index));
     }
 }
 

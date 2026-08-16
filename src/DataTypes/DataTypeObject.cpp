@@ -2215,7 +2215,7 @@ ENGINE = MergeTree
 ORDER BY tuple()
 ```
 
-Runtime `Dynamic` types that cannot be represented make the containing index granule conservative, so ClickHouse reads it instead of risking a false negative.
+Runtime `Dynamic` types that cannot be represented make predicates on that path conservative. Predicates on other paths can still prune the granule.
 
 See [`jsonbf_v1`](/concepts/features/performance/skip-indexes#bloom-filter-types) in the data skipping index documentation for details.
 

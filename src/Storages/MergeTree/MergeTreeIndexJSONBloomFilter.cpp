@@ -18,8 +18,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -214,9 +212,9 @@ UInt64 alwaysPresentHash()
     return hashToken({}, JSONBloomRole::Scalar, JSONBloomDomain::AlwaysPresent, {}, {});
 }
 
-UInt64 unsupportedDynamicTypeHash()
+UInt64 unsupportedDynamicTypeHash(std::string_view path, JSONBloomRole role)
 {
-    return hashToken({}, JSONBloomRole::Scalar, JSONBloomDomain::UnsupportedDynamicType, {}, {});
+    return hashToken(path, role, JSONBloomDomain::UnsupportedDynamicType, {}, {});
 }
 
 UInt64 dynamicTypePresenceHash(std::string_view path, JSONBloomRole role, const IDataType & type)
@@ -362,9 +360,6 @@ public:
     {
     }
 
-    void beginRow() {}
-    void endRow() {}
-    void consumeNull(std::string_view, bool) {}
     bool shouldConsumePath(std::string_view path) const { return path_matcher.shouldVisit(path); }
 
     void consumeValue(
@@ -392,9 +387,6 @@ private:
         {
         }
 
-        void beginRow() {}
-        void endRow() {}
-        void consumeNull(std::string_view, bool) {}
         bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(appendPath(logical_prefix, path)); }
 
         void consumeValue(
@@ -441,26 +433,7 @@ private:
         if (discriminator == dynamic_column.getSharedVariantDiscriminator())
         {
             ReadBufferFromMemory buffer(dynamic_column.getSharedVariant().getDataAt(variant_row));
-            char type_index = 0;
-            if (!buffer.peek(type_index))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse shared `Dynamic` value in `jsonbf_v1`");
-
-            DataTypePtr type;
-            SerializationPtr serialization;
-            const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
-            const auto & cache = getSimpleDataTypesCache();
-            if (cache.hasElement(binary_type_index))
-            {
-                ++buffer.position();
-                const auto & element = cache.getElement(binary_type_index);
-                type = element.type;
-                serialization = element.serialization;
-            }
-            else
-            {
-                type = decodeDataType(buffer);
-                serialization = type->getDefaultSerialization();
-            }
+            auto [type, serialization] = decodeJSONDataType(buffer, serializations_cache);
 
             auto column = type->createColumn();
             serialization->deserializeBinary(*column, buffer, {});
@@ -508,6 +481,7 @@ private:
     void emitMap(
         std::string_view hash_path,
         std::string_view logical_path,
+        JSONBloomRole role,
         const DataTypeMap & map_type,
         const ColumnMap & map_column,
         size_t row,
@@ -515,7 +489,7 @@ private:
     {
         if (is_dynamic)
         {
-            hashes.insert(unsupportedDynamicTypeHash());
+            hashes.insert(unsupportedDynamicTypeHash(hash_path, role));
             return;
         }
 
@@ -575,10 +549,7 @@ private:
             hashes.insert(dynamicTypePresenceHash(path, role, *type));
 
         if (is_dynamic && !isKnownDynamicScalar(*type))
-        {
-            hashes.insert(unsupportedDynamicTypeHash());
-            return;
-        }
+            hashes.insert(unsupportedDynamicTypeHash(path, role));
 
         hashes.insert(hashTypedValue(path, role, type, column, row));
     }
@@ -639,7 +610,7 @@ private:
         {
             if (is_dynamic && !index_path)
                 return;
-            emitMap(hash_path, logical_path, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
+            emitMap(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
             return;
         }
 
@@ -657,7 +628,7 @@ private:
             return;
         if (which.isVariant() || type->hasDynamicStructure())
         {
-            hashes.insert(unsupportedDynamicTypeHash());
+            hashes.insert(unsupportedDynamicTypeHash(hash_path, role));
             return;
         }
 
@@ -666,6 +637,7 @@ private:
 
     HashSet<UInt64> & hashes;
     const JSONBloomPathMatcher & path_matcher;
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
 };
 
 bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t hash_functions)
@@ -762,8 +734,13 @@ bool isStructuralJSONSubcolumn(
                 parent_type = low_cardinality_type->getDictionaryType();
                 continue;
             }
-            if (typeid_cast<const DataTypeArray *>(parent_type.get()))
-                return is_array_size;
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(parent_type.get()))
+            {
+                if (is_array_size)
+                    return true;
+                parent_type = array_type->getNestedType();
+                continue;
+            }
             if (typeid_cast<const DataTypeMap *>(parent_type.get()))
                 return is_array_size
                     || last_component == "keys"
@@ -1041,6 +1018,7 @@ std::vector<UInt64> makeDynamicCastProbes(
             hashes.push_back(dynamicTypePresenceHash(path, role, *runtime_type));
     }
     hashes.push_back(dynamicComplexPresenceHash(path, role));
+    hashes.push_back(unsupportedDynamicTypeHash(path, role));
 
     return hashes;
 }
@@ -1067,13 +1045,15 @@ std::vector<UInt64> makeValueProbes(
                 hashes.push_back(dynamicTypePresenceHash(path, role, *dynamic_type));
         }
         hashes.push_back(dynamicComplexPresenceHash(path, role));
+        hashes.push_back(unsupportedDynamicTypeHash(path, role));
         return hashes;
     }
 
     if (target_type->hasDynamicStructure()
         || typeid_cast<const DataTypeArray *>(target_type.get())
         || typeid_cast<const DataTypeMap *>(target_type.get())
-        || typeid_cast<const DataTypeTuple *>(target_type.get()))
+        || typeid_cast<const DataTypeTuple *>(target_type.get())
+        || typeid_cast<const DataTypeVariant *>(target_type.get()))
         return hashes;
 
     const auto unwrapped_source_type = removeJSONBloomWrappers(source_type);
@@ -1232,9 +1212,6 @@ bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`jsonbf_v1` received an incompatible granule");
 
     const auto & filter = bloom_granule->getFilters().front();
-    if (hashMatchesFilter(filter, unsupportedDynamicTypeHash(), hash_functions))
-        return true;
-
     std::vector<BoolMask> stack;
     size_t element_index = 0;
     for (const auto & element : rpn)
