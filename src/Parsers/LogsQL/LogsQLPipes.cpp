@@ -764,7 +764,7 @@ void LogsQLParser::applySortWithExtras(
     wrapLayerIf(layer,
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
         || layer.has_aggregation
-        || (!rank_name.empty() || !partition_fields.empty()) && (layer.has_projection || !layer.select.empty()));
+        || ((!rank_name.empty() || !partition_fields.empty()) && (layer.has_projection || !layer.select.empty())));
 
     auto make_order_elements = [&]
     {
