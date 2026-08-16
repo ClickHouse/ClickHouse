@@ -61,3 +61,20 @@ SELECT count() FROM test_null_set WHERE x IN (SELECT arrayJoin(CAST([NULL], 'Arr
 SELECT count() FROM test_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))')));
 
 DROP TABLE test_null_set;
+
+-- A NULL set element must be preserved for a Nullable key. It matches the NULL key row, so the
+-- negated form can skip that one-row granule.
+DROP TABLE IF EXISTS test_nullable_null_set;
+CREATE TABLE test_nullable_null_set (x Nullable(UInt64)) ENGINE = MergeTree
+ORDER BY x
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_nullable_null_set VALUES (NULL), (1), (2);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x);
+SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))')));
+SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))'))) SETTINGS use_primary_key = 0;
+
+DROP TABLE test_nullable_null_set;

@@ -2612,16 +2612,28 @@ static bool tryPrepareSetColumnsForIndex(
         const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
         size_t set_size = cast_failure_null_map.size();
 
-        /// The key column type is not Nullable here (checked via canBeInsideNullable above), so a NULL
-        /// set element can never match any key value - under regular `IN`, `nullIn` and `has` semantics
-        /// alike. Drop NULL elements together with the values the accurate cast could not represent.
+        const bool key_is_nullable = isNullable(key_column_type);
+
+        /// A NULL set element can match a Nullable key, so preserve it in that case. Otherwise it
+        /// cannot match any key value - under regular `IN`, `nullIn` and `has` semantics alike.
         for (size_t i = 0; i < set_size; ++i)
         {
             const bool null_in_source = source_null_map && (*source_null_map)[i];
-            if (null_in_source || cast_failure_null_map[i])
+            if ((!key_is_nullable && null_in_source) || cast_failure_null_map[i])
                 filter[i] = 0;
         }
-        set_column = cast_nullable_column->getNestedColumnPtr();
+
+        if (key_is_nullable && source_null_map)
+        {
+            auto null_map = ColumnUInt8::create(cast_failure_null_map);
+            auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumnPtr(), std::move(null_map));
+            nullable_set_column->applyNullMap(*source_null_map);
+            set_column = std::move(nullable_set_column);
+        }
+        else
+        {
+            set_column = cast_nullable_column->getNestedColumnPtr();
+        }
         filter_used = true;
 
         transformed_set_columns[set_element_index] = std::move(set_column);
