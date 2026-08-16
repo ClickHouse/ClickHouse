@@ -338,9 +338,10 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
         setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt), DB::Exception);
 }
 
-/// A state nested in a `JSON` column keeps the version spelled in its own type name: `JSON` (like
-/// `Dynamic`) announces its nested types through the binary type encoding, which has no version
-/// field, so a revision-derived version could never reach the reader.
+/// `DataTypeObject` does not traverse typed `JSON` paths when assigning aggregate-state versions.
+/// This parses a type declaration that `JSON` serialization subsequently rejects, and protects that
+/// traversal boundary; it does not describe a `Native` wire-format exception. Binary type encoding
+/// does contain an explicit aggregate-state version field.
 GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNotAssigned)
 {
     tryRegisterAggregateFunctions();
