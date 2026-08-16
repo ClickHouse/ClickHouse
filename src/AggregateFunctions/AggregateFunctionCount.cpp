@@ -164,6 +164,11 @@ public:
         data(place).count += !assert_cast<const ColumnVariant &>(*columns[0]).isNullAt(row_num);
     }
 
+    void addManyDefaults(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
+    {
+        /// The default `Variant` value is NULL, and `count` does not count NULLs.
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
