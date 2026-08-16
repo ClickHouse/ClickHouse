@@ -1,5 +1,3 @@
 (5)
-Tuple(
-    v UInt64)
-Tuple(
-    a UInt64)
+Tuple(UInt64)
+Tuple(\n    a UInt64)
