@@ -2283,8 +2283,7 @@ enum class StdinState
 
 /// Checks stdin without blocking. An open pipe/socket with neither data nor EOF is
 /// ambiguous: it can be an intentionally unused inherited stdin or a delayed writer.
-/// Callers with another INSERT data source must reject that state instead of deciding
-/// based on a timing-dependent snapshot.
+/// Callers decide whether that is valid for their particular INSERT source.
 ///
 /// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
 /// `POLLERR`/`POLLNVAL`) is reported as end of file rather than failing the INSERT.
@@ -2445,14 +2444,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    /// When INSERT already has a primary data source (inline data or INFILE), use a
-    /// non-blocking poll to check stdin. Reject an open pipe without data/EOF because
-    /// it can be a delayed writer and silently ignoring it would lose data.
-    /// When there is no other data source, use the blocking check as before.
+    /// Inline data is the complete payload of an INSERT, so an open inherited stdin
+    /// must not prevent executing it. For INFILE, use a non-blocking check to reject
+    /// an ambiguous stdin instead of waiting for a possible delayed writer. When
+    /// there is no other data source, use the blocking check as before.
     bool have_data_in_stdin = false;
     if (!is_interactive && !stdin_is_a_tty)
     {
-        if (parsed_insert_query->data || parsed_insert_query->infile)
+        if (parsed_insert_query->infile)
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
             if (stdin_state == StdinState::Ambiguous)
@@ -2952,7 +2951,7 @@ void ClientBase::processParsedSingleQuery(
                 stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
 
             const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
-            bool have_external_data = stdin_state == StdinState::Ambiguous || have_data_in_stdin || insert->infile;
+            bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2966,7 +2965,7 @@ void ClientBase::processParsedSingleQuery(
                 stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
 
             const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
-            bool have_external_data = stdin_state == StdinState::Ambiguous || have_data_in_stdin || insert->infile;
+            bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,

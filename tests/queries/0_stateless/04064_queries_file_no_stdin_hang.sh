@@ -23,10 +23,9 @@ SELECT sum(x) FROM test_04064;
 DROP TABLE test_04064;
 EOF
 
-# Run with stdin as an open pipe (no data, no EOF). It is ambiguous whether this is an
-# unused inherited stdin or a delayed writer, so INSERT with another data source must
-# reject it promptly rather than hang or silently ignore later input. Use a FIFO so stdin
-# never gets EOF.
+# Run with stdin as an open pipe (no data, no EOF). Inline INSERT data is the complete
+# payload, so an unused inherited stdin must not prevent it from executing. Use a FIFO
+# so stdin never gets EOF.
 FIFO="${CLICKHOUSE_TMP}/04064_fifo_$$"
 mkfifo "$FIFO"
 
@@ -34,18 +33,18 @@ mkfifo "$FIFO"
 # Use fd 4 to avoid conflicting with BASH_XTRACEFD (which uses fd 3).
 exec 4<>"$FIFO"
 
-run_ambiguous_stdin_test()
+run_unused_stdin_test()
 {
     local output_file="${CLICKHOUSE_TMP}/04064_empty_stdin_$$.out"
 
-    if timeout 30 "$@" <&4 > "$output_file" 2>&1
+    if ! timeout 30 "$@" <&4 > "$output_file" 2>&1
     then
-        echo "Expected INSERT with an ambiguous inherited stdin to be rejected" >&2
+        echo "Expected INSERT with an unused inherited stdin to succeed" >&2
         cat "$output_file" >&2
         exit 1
     fi
 
-    grep -Eq 'open stdin without data or EOF|both inlined and external data' "$output_file" ||
+    grep -qx '6' "$output_file" ||
     {
         cat "$output_file" >&2
         exit 1
@@ -54,10 +53,10 @@ run_ambiguous_stdin_test()
     rm -f "$output_file"
 }
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
+run_unused_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
 
 # Also test with async_insert enabled — the async insert path has its own
-# stdin check that must reject an ambiguous pipe without hanging either.
+# stdin check that must ignore an unused inherited pipe without hanging.
 QUERIES_FILE_ASYNC="${CLICKHOUSE_TMP}/04064_queries_async_$$.sql"
 cat > "$QUERIES_FILE_ASYNC" <<EOF
 CREATE TABLE IF NOT EXISTS test_04064_async (x UInt32) ENGINE = MergeTree ORDER BY x;
@@ -68,10 +67,10 @@ SELECT sum(x) FROM test_04064_async;
 DROP TABLE test_04064_async;
 EOF
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
+run_unused_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
 
 # Also test with --inline-insert-data — this path has its own stdin check
-# (in `is_inline_insert_data` branch) that must reject an ambiguous pipe without hanging.
+# (in `is_inline_insert_data` branch) that must ignore an unused pipe without hanging.
 QUERIES_FILE_INLINE="${CLICKHOUSE_TMP}/04064_queries_inline_$$.sql"
 cat > "$QUERIES_FILE_INLINE" <<'EOF'
 CREATE TABLE IF NOT EXISTS test_04064_inline (x UInt32) ENGINE = MergeTree ORDER BY x;
@@ -80,22 +79,22 @@ SELECT sum(x) FROM test_04064_inline;
 DROP TABLE test_04064_inline;
 EOF
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
+run_unused_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
 
 # Also test the `-q` / `--query` entrypoint with the same open-empty-pipe stdin.
 # The parser/entrypoint differs from `--queries-file`, so cover it explicitly to
 # guard against regressions in either CLI mode.
 QUERY_Q="CREATE TABLE IF NOT EXISTS test_04064_q (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q VALUES (1000), (2000), (3000); SELECT sum(x) FROM test_04064_q; DROP TABLE test_04064_q;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q"
+run_unused_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q"
 
 QUERY_Q_ASYNC="CREATE TABLE IF NOT EXISTS test_04064_q_async (x UInt32) ENGINE = MergeTree ORDER BY x; SET async_insert = 1; SET wait_for_async_insert = 1; INSERT INTO test_04064_q_async VALUES (10000), (20000), (30000); SELECT sum(x) FROM test_04064_q_async; DROP TABLE test_04064_q_async;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
+run_unused_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
 
 QUERY_Q_INLINE="CREATE TABLE IF NOT EXISTS test_04064_q_inline (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q_inline VALUES (100000), (200000), (300000); SELECT sum(x) FROM test_04064_q_inline; DROP TABLE test_04064_q_inline;"
 
-run_ambiguous_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
+run_unused_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
 
 exec 4>&-
 rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE"
