@@ -873,7 +873,23 @@ String getInsertDataSchemaMismatchDescription(
                             return true;
                         if (const auto arrays_have_expected_size
                             = sampled_values_are_arrays_of_size(*evidence.column_index, evidence.path, expected_elements.size()))
-                            return *arrays_have_expected_size;
+                        {
+                            if (!*arrays_have_expected_size)
+                                return false;
+
+                            /// The arity alone is not enough: each scalar inferred from the homogeneous
+                            /// array must also be acceptable for its corresponding tuple element. For
+                            /// example, `[1, 2]` does not fit `Tuple(Array(UInt8), Array(UInt8))`, and
+                            /// `["oops", "text"]` does not fit `Tuple(UInt8, UInt8)`.
+                            const auto element_evidence
+                                = nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements});
+                            return std::ranges::all_of(
+                                expected_elements,
+                                [&](const auto & expected_element)
+                                {
+                                    return types_are_compatible(inferred_array->getNestedType(), expected_element, element_evidence);
+                                });
+                        }
                         return true;
                     }
 
