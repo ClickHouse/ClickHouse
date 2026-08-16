@@ -1149,8 +1149,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
             }
 
-            /// When the right side is a single column and the left side is a tuple kept as one key,
-            /// regular IN does not unpack the tuple: the whole left value is one set key, and
+            /// When the right side is a single column and the left side is kept as one key,
+            /// regular IN does not unpack the left value: the whole left value is one set key, and
             /// `Set::execute` accurately casts it to the right column type before probing (so
             /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
             /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
@@ -1164,7 +1164,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
             /// structure, which regular `IN` rejects before building the set, and for plain
             /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Unwrap the wrappers before identifying these types.
+            /// member. Scalar values also need that cast when their type differs from the sole
+            /// subquery column type. Unwrap the wrappers before identifying the structural types.
             bool left_value_compared_as_single_key = false;
             if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
             {
@@ -1172,7 +1173,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
                 left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
                     && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type));
+                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
+                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
             }
 
             if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)

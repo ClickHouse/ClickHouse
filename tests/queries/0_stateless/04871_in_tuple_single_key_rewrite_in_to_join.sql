@@ -38,3 +38,8 @@ SELECT number, (number, number + 1) IN (SELECT number, number + 1 FROM numbers(3
 
 -- The plain single-column rewrite (a scalar left side) must keep working as well.
 SELECT number, number IN (SELECT number FROM numbers(3)) FROM numbers(5) ORDER BY number;
+
+-- A scalar whose type differs from the one-key subquery column needs the same accurate set-key
+-- cast as a tuple. In particular, `Set::execute` parses `String` '01' as `UInt8` 1; rewriting to
+-- `equals(String, UInt8)` would instead fail with `NO_COMMON_TYPE`.
+SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELECT toUInt8(1));
