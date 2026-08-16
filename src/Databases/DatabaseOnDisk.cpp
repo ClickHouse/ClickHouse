@@ -227,6 +227,16 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    createTableImpl(local_context, table_name, table, query, true);
+}
+
+void DatabaseOnDisk::createTableImpl(
+    ContextPtr local_context,
+    const String & table_name,
+    const StoragePtr & table,
+    const ASTPtr & query,
+    bool check_rows_limit)
+{
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     auto db_disk = getDisk();
     createDirectories();
@@ -255,7 +265,8 @@ void DatabaseOnDisk::createTable(
     /// Enforce `max_rows` on ATTACH. After waitDatabaseStarted() so the count sees
     /// background-loaded tables (async_load_databases); after the name-collision check but
     /// before the `attach_short_syntax` early return, so a real `ATTACH TABLE t` is covered.
-    checkRowsLimit(table, table_name);
+    if (check_rows_limit)
+        checkRowsLimit(table, table_name);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -566,7 +577,10 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    if (this == &to_database)
+        createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else
+        to_database.createTable(local_context, to_table_name, table, attach_query);
 
     db_disk->removeFileIfExists(table_metadata_path);
 
