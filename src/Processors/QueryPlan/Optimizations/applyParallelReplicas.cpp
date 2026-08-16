@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -35,6 +36,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool parallel_replicas_allow_merge_tables;
 extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
 
@@ -448,6 +450,39 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
     return false;
 }
 
+/// A `Merge` table is opaque to the collectors above: `ReadFromMerge` unites the pipelines of its
+/// per-table subplans instead of their plans, so the underlying `MergeTree` reads do not exist yet while
+/// the plan is transformed. Expand every eligible `ReadFromMerge` into a plan-level union of those reads
+/// first, so that the rest of the pass treats a `Merge` exactly like a `UNION ALL` over its underlying
+/// tables. Ineligible ones (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read)
+/// are left as they are and read by a single replica.
+static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
+{
+    auto * root = query_plan.getRootNode();
+    if (!root)
+        return;
+
+    /// Collect first: the expansion replaces the step of a visited node.
+    std::vector<QueryPlan::Node *> merge_nodes;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        *root,
+        [&](QueryPlan::Node & node)
+        {
+            const auto * merge = typeid_cast<const ReadFromMerge *>(node.step.get());
+            if (merge && merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                merge_nodes.push_back(&node);
+        });
+
+    for (auto * node : merge_nodes)
+    {
+        auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
+        if (auto expanded = merge.expandForParallelReplicas())
+            query_plan.replaceNodeWithPlan(node, std::move(*expanded));
+    }
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -465,6 +500,11 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
     if (planHasSubquerySet(root))
         return;
+
+    /// Expand the `Merge` reads before collecting the reads to distribute, so that a `Merge` participates in
+    /// the same union and aggregation splitting as a plain `MergeTree` table. Done after the bail-outs above
+    /// so that the plan of a query which is not distributed anyway is left alone.
+    expandMergeReadsForParallelReplicas(query_plan);
 
     std::unordered_set<const QueryPlan::Node *> eligible;
     for (auto * node : collectReadsToDistribute(root))

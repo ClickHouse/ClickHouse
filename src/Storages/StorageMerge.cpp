@@ -55,6 +55,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -92,6 +93,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace MergeTreeSetting
@@ -852,6 +855,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     auto logger = getLogger("StorageMerge");
 
+    /// A `FINAL` read is never distributed, so leave its children exactly as before.
+    const auto & settings = context->getSettingsRef();
+    const bool keep_parallel_replicas_for_children = settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables] && !InterpreterSelectQuery::isQueryWithFinal(query_info);
+
     /** Cache getModifiedQueryInfo results per column structure.
       * For tables with identical columns, getModifiedQueryInfo produces functionally identical results
       * (same cloned query tree, same aliases, same column names). The only differences are the table
@@ -895,7 +903,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// nested interpreters (e.g. for a `View` child) derive their own settings from this
             /// context. `make_distributed_plan` is cleared under the same condition as in
             /// `getChildPlanOptimizationSettings`.
-            modified_context->setSetting("enable_parallel_replicas", Field(0));
+            ///
+            /// The exception is a plain `MergeTree` child of a `Merge` read which is going to be expanded
+            /// for the plan-based parallel replicas (see `expandForParallelReplicas`): its read becomes an
+            /// ordinary read of the outer plan, which is distributed there, and that conversion needs the
+            /// setting in the context this read captures. Such a child is read directly, without a nested
+            /// interpreter, and its own plan is still never distributed - `getChildPlanOptimizationSettings`
+            /// disables the transformation for it regardless of the context.
+            if (!keep_parallel_replicas_for_children || !storage->isMergeTree())
+                modified_context->setSetting("enable_parallel_replicas", Field(0));
             if (queryHasSubquerySets(query_info))
                 modified_context->setSetting("make_distributed_plan", Field(0));
 
@@ -2077,6 +2093,65 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
         plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
 
     return plans;
+}
+
+std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
+{
+    /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
+    /// them. This step is opaque to it: the per-table subplans are built lazily and their pipelines - not
+    /// their plans - are united in `initializePipeline`, so the underlying reads are invisible while the
+    /// plan is transformed. Materialize the very same subplans here and unite them at plan level instead,
+    /// which turns the `Merge` into exactly the shape the transformation already distributes: a union of
+    /// `MergeTree` reads.
+    filterTablesAndCreateChildrenPlans();
+
+    if (selected_tables.empty() || child_plans->empty())
+        return {};
+
+    /// Every child must be a plain `MergeTree` read, reachable by descending the converting expressions on
+    /// top of it, and none of them may be `FINAL`. A child read by an interpreter (a `View`, a nested
+    /// `Merge`, a non-`MergeTree` table) has no marks to coordinate, and a `FINAL` read is incompatible with
+    /// parallel reading; either way the child would be read in full by every replica and its rows
+    /// duplicated. One such child disables the expansion for the whole `Merge`: keeping the plan-level union
+    /// for the remaining children would split the `Merge` between two different reading mechanisms.
+    for (const auto & child : *child_plans)
+    {
+        if (!child.plan.isInitialized())
+            return {};
+
+        const auto * node = child.plan.getRootNode();
+        while (node && node->children.size() == 1 && !typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+            node = node->children.front();
+
+        const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
+        if (!reading || reading->isQueryWithFinal())
+            return {};
+    }
+
+    SharedHeaders input_headers;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    input_headers.reserve(child_plans->size());
+    plans.reserve(child_plans->size());
+    for (auto & child : *child_plans)
+    {
+        input_headers.push_back(child.plan.getCurrentHeader());
+        plans.push_back(std::make_unique<QueryPlan>(std::move(child.plan)));
+    }
+
+    QueryPlan union_plan;
+    union_plan.unitePlans(std::make_unique<UnionStep>(std::move(input_headers)), std::move(plans));
+
+    /// This step is destroyed once it is replaced by the union, so the tables it holds must be kept alive by
+    /// the plan instead - the same holders `initializePipeline` attaches to the pipeline.
+    QueryPlanResourceHolder resources;
+    for (const auto & table : selected_tables)
+    {
+        resources.storage_holders.push_back(std::get<1>(table));
+        resources.table_locks.push_back(std::get<2>(table));
+    }
+    union_plan.addResources(std::move(resources));
+
+    return union_plan;
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const

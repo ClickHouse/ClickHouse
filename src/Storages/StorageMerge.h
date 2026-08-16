@@ -205,6 +205,13 @@ public:
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
     std::vector<QueryPlan *> getAllChildPlans();
 
+    /// For parallel replicas only: expand this opaque `Merge` read into a plan-level `UnionStep` over the
+    /// per-table child plans, so that the parallel-replicas plan transformation can coordinate the
+    /// underlying `MergeTree` reads and distribute the steps above them. Returns `nullopt` when the `Merge`
+    /// is not eligible (a child which is not a plain `MergeTree` read, a `FINAL` read, or nothing to read);
+    /// the caller then leaves this step untouched and the `Merge` is read by a single replica.
+    std::optional<QueryPlan> expandForParallelReplicas();
+
     void addFilter(FilterDAGInfo filter);
 
 private:
