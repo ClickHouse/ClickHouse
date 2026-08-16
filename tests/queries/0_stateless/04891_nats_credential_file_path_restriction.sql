@@ -55,10 +55,15 @@ ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222'); -- { 
 CREATE TABLE nats_file_with_server_list_override (key UInt64) ENGINE = NATS(nats_config_credentials)
 SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMENTS }
 
--- Existing metadata is accepted during an upgrade, including a destination override that was valid
--- before this validation was added. The table does not attempt to connect while it is attached.
+-- Inline credentials replace the configured file before connecting, so their destination may be
+-- selected in SQL: the file is not opened and cannot be sent to that endpoint.
+CREATE TABLE nats_credentials_with_url_override (key UInt64)
+ENGINE = NATS(nats_config_credentials, nats_credentials = 'user JWT and seed', nats_url = '127.0.0.1:1'); -- { serverError CANNOT_CONNECT_NATS }
+
+-- A full-definition `ATTACH` is fresh user input and is validated like `CREATE`, rather than an
+-- existing-metadata replay. Therefore its destination override is rejected.
 ATTACH TABLE nats_file_with_url_override_from_existing_metadata UUID 'c6d2423a-9ab2-4a37-8e56-10e479541001' (key UInt64)
-ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222');
+ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
 DROP TABLE nats_file_with_url_override_from_existing_metadata;
 
 -- SQL named collections stay mutable after a table is created. Consequently, an existing table

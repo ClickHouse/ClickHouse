@@ -938,8 +938,12 @@ void resolveCredentialSource(
     const bool username_from_collection = !username_in_collection.empty() && !username_assigned_by_query;
     const bool password_from_collection = !password_in_collection.empty() && !password_assigned_by_query;
     const bool token_from_collection = !token_in_collection.empty() && !token_assigned_by_query;
+    /// Query-supplied inline credentials replace a configured credentials file before `libnats`
+    /// opens the connection. In that case the file is no longer a credential source that needs
+    /// to stay bound to the collection's destination.
+    const bool credential_file_remains_from_collection = credential_file_from_collection && !credentials_assigned_by_query;
     const bool trusted_credentials_from_collection = collection_defined_in_config
-        && (credential_file_from_collection || credentials_from_collection || username_from_collection || password_from_collection
+        && (credential_file_remains_from_collection || credentials_from_collection || username_from_collection || password_from_collection
             || token_from_collection);
 
     const bool credential_file_from_query
