@@ -179,7 +179,7 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
                 return {};
             pos = getTableNameEnd(tokens, pos);
 
-            result.push_back({.table_name = *from, .rename_to = *to, .if_exists = if_exists, .removes_window_view = true});
+            result.push_back({.table_name = *from, .rename_to = to, .if_exists = if_exists, .removes_window_view = true});
             if (pos == tokens.size() || tokens[pos].type != TokenType::Comma)
                 return result;
             ++pos;
@@ -267,7 +267,7 @@ String serializeRemovedWindowViews(const NameSet & removed_window_views)
 NameSet deserializeRemovedWindowViews(const String & serialized)
 {
     ReadBufferFromString buffer(serialized);
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, buffer);
 
     NameSet result;
