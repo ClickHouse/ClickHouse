@@ -574,23 +574,26 @@ setup_worktree_submodules()
 ensure_worktree()
 {
     local wt="$1"
+    local canonical_wt
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $wt"; then
-        banner "Reusing existing worktree: $wt"
+    canonical_wt=$(realpath -m "$wt")
+
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $canonical_wt"; then
+        banner "Reusing existing worktree: $canonical_wt"
         return 0
     fi
-    if [[ -e "$wt" ]]; then
-        echo "${S}ERROR: path exists but is not a registered worktree: $wt${R}" >&2
+    if [[ -e "$canonical_wt" ]]; then
+        echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
         return 1
     fi
 
-    banner "Creating worktree: $wt"
-    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$wt" HEAD
+    banner "Creating worktree: $canonical_wt"
+    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$canonical_wt" HEAD
 
     if (( SKIP_SUBMODULES )); then
-        git -C "$wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+        git -C "$canonical_wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
     else
-        setup_worktree_submodules "$wt"
+        setup_worktree_submodules "$canonical_wt"
     fi
 }
 

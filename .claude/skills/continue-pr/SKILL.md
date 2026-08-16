@@ -105,17 +105,22 @@ authoritative record of the PR surface that existed when the worker began:
 ```bash
 git fetch origin "$BASE_BRANCH"
 mkdir -p tmp
-PR_BASELINE_DIR=$(mktemp -d "$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline.XXXXXX")
+PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+rm -rf "$PR_BASELINE_DIR"
+mkdir -p "$PR_BASELINE_DIR"
 INITIAL_PR_HEAD=$(git rev-parse "$HEAD_REMOTE/$HEAD_BRANCH")
 test "$(git rev-parse HEAD)" = "$INITIAL_PR_HEAD"
 INITIAL_BASE_HEAD=$(git rev-parse "origin/$BASE_BRANCH")
+printf '%s\n%s\n' "$INITIAL_PR_HEAD" "$INITIAL_BASE_HEAD" > "$PR_BASELINE_DIR/state"
 git diff --name-status "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/name-status"
 git diff --stat "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/stat"
 git diff --binary "origin/$BASE_BRANCH"...HEAD > "$PR_BASELINE_DIR/diff"
 ```
 
 Do not modify, stage, or delete this artifact during the session. It must remain
-available through the push safety gate in step 7.
+available through the push safety gate in step 7. The deterministic path and
+`state` file are required because each resumed worker turn starts a fresh shell
+process.
 
 ### 3. Resolve conflicts with the base branch (if any)
 
@@ -300,7 +305,18 @@ PUSH_REMOTE="$REMOTE_NAME"
 
 Before every commit and push, run this safety gate. It is a hard stop:
 
-1. Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+1. Restore and validate the recorded state before using it; resumed turns do not inherit shell variables:
+   ```bash
+   PR_BASELINE_DIR="$(pwd)/tmp/continue-pr-${PR_NUMBER}-baseline"
+   mapfile -t BASELINE_STATE < "$PR_BASELINE_DIR/state"
+   test "${#BASELINE_STATE[@]}" = 2
+   INITIAL_PR_HEAD=${BASELINE_STATE[0]}
+   INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
+   git cat-file -e "$INITIAL_PR_HEAD^{commit}"
+   git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
+   git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   ```
+   Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
 2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
 3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
    ```bash

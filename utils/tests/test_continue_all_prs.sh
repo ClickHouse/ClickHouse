@@ -33,6 +33,23 @@ printf '%s\n' \
     '    sleep "${CODEX_TEST_LOGIN_SLEEP:-0}"' \
     '    exit 0' \
     'fi' \
+    'output_last_message=""' \
+    'for (( i = 1; i <= $#; ++i )); do' \
+    '    if [[ "${!i}" == "--output-last-message" ]]; then' \
+    '        next=$(( i + 1 ))' \
+    '        output_last_message="${!next}"' \
+    '    fi' \
+    'done' \
+    'if [[ "$1" == exec && "$2" == resume ]]; then' \
+    '    printf "%s\\n" "<<<CONTINUE-PR-DONE>>>" > "$output_last_message"' \
+    '    printf "%s\\n" "{\\"type\\":\\"turn.completed\\"}"' \
+    '    exit 0' \
+    'fi' \
+    'if [[ "$1" == exec ]]; then' \
+    '    printf "%s\\n" "working" > "$output_last_message"' \
+    '    printf "%s\\n" "{\\"type\\":\\"thread.started\\",\\"thread_id\\":\\"mock-session\\"}"' \
+    '    exit 0' \
+    'fi' \
     'exit 0' > "$bin/codex"
 chmod +x "$bin/codex"
 
@@ -42,6 +59,16 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
 
 grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
+
+relative_worktree_base=${worktree_base#"$repo/"}
+(
+    cd "$repo"
+    PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
+        "$repo/utils/continue-all-prs.sh" --agent codex --timeout 10 --once --skip-submodules --no-status \
+            --worktree-base "$relative_worktree_base" --color never
+) > "$scratch/relative-reuse.log" 2>&1
+grep -q "Reusing existing worktree: ${worktree_base}-0" "$scratch/relative-reuse.log"
+grep -q 'turn 2 (session mock-session' "$scratch/relative-reuse.log"
 
 mkdir -p "${worktree_base}-0"
 if PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
