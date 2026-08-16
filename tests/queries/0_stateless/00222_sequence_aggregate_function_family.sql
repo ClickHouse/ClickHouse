@@ -75,4 +75,12 @@ select [4,5,6] = sequenceMatchEvents('(?2)(?3)(?1)')(time, data = 0, data = 1, d
 select [4] = sequenceMatchEvents('(?1)(?t==2)(?2)')(time, data = 1, data = 2) from sequence_test;
 select [4,5] = sequenceMatchEvents('(?1)(?t==1)(?2)')(time, data = 1, data = 2) from sequence_test;
 
+-- Event numbers are 1-based; 0 must be rejected, not underflow the condition index.
+select sequenceMatch('(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+select sequenceMatch('(?1)(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+select sequenceMatch('(?18446744073709551616)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+select sequenceMatch('(?+)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+select sequenceCount('(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+select sequenceMatchEvents('(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
+
 drop table sequence_test;
