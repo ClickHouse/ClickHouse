@@ -655,9 +655,16 @@ prepare_worktree_for_task()
     remove_registered_descendants "$wt"
     git -C "$wt" checkout --detach -q
     git -C "$wt" reset --hard -q HEAD
+    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
     git -C "$wt" submodule foreach --quiet --recursive \
-        'git reset --hard -q HEAD && git clean -ffdx -e "/build*/"' >/dev/null
-    git -C "$wt" clean -ffdx -e '/build*/'
+        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+    if ! git -C "$wt" clean -ffdx -e '/build*/'; then
+        # Integration tests run services in containers and can leave
+        # root-owned untracked files behind. Retry the identical, path-scoped
+        # cleanup non-interactively; if elevation is unavailable, fail closed.
+        echo "Retrying cleanup with elevated permissions: $wt" >&2
+        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/'
+    fi
 }
 
 remove_managed_cache_dir()
@@ -762,6 +769,7 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
+CLEANUP_FAILURE_FILE="$LOGDIR/cleanup-failure"
 declare -a WORKER_PIDS=()
 
 cleanup_worker_codex_auth()
@@ -901,7 +909,6 @@ run_continue_pr()
     # worktree so rebuilds are incremental instead of cold each pass.
     build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
     deadline=$(( $(date +%s) + TIMEOUT ))
-    : > "$log"
     iter=0
     ec=0
 
@@ -1045,6 +1052,7 @@ process_pr()
             cat "$log.last" >> "$log"
             ec=1
             cleanup_failed=1
+            printf '%s\t%s\n' "$i" "$wt" >> "$CLEANUP_FAILURE_FILE"
         else
             ec=0
         fi
@@ -1309,6 +1317,7 @@ status_start
 ROUND=0
 while true; do
     cleanup_worktrees_if_disk_low
+    rm -f "$CLEANUP_FAILURE_FILE"
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0
     na_reset
@@ -1341,6 +1350,11 @@ while true; do
     set +m
     wait "${WORKER_PIDS[@]}" || true
     WORKER_PIDS=()
+
+    if [[ -s "$CLEANUP_FAILURE_FILE" ]]; then
+        banner "Worktree cleanup failed; stopping instead of retrying in another round"
+        exit 1
+    fi
 
     echo ""
     banner "===== Round ${ROUND} complete ====="
