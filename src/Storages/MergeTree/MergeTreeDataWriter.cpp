@@ -1200,6 +1200,32 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 return;
             }
         }
+        /// arrayMap((x, y) -> y, arr, meta_arr): only arrays whose bound parameter is actually
+        /// referenced in the body feed the output, not every array argument unconditionally.
+        if (!args.empty() && !predicate_only_higher_order_functions.contains(function->name))
+        {
+            const auto * lambda_arg = args[0]->as<ASTFunction>();
+            const auto * lambda_params_tuple = (lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
+                && lambda_arg->arguments->children.size() == 2)
+                ? lambda_arg->arguments->children[0]->as<ASTFunction>()
+                : nullptr;
+            if (lambda_params_tuple && lambda_params_tuple->name == "tuple" && lambda_params_tuple->arguments
+                && lambda_params_tuple->arguments->children.size() == args.size() - 1)
+            {
+                IdentifierNameSet body_names;
+                std::unordered_set<String> no_masking;
+                collectValueCarryingIdentifierNames(*lambda_arg->arguments->children[1], body_names, no_masking);
+
+                const auto & params = lambda_params_tuple->arguments->children;
+                for (size_t i = 0; i != params.size(); ++i)
+                {
+                    const auto * param_identifier = params[i]->as<ASTIdentifier>();
+                    if (param_identifier && body_names.contains(param_identifier->name()))
+                        collectValueCarryingIdentifierNames(*args[1 + i], names, masked_names);
+                }
+                return;
+            }
+        }
     }
 
     for (const auto & child : node.children)
