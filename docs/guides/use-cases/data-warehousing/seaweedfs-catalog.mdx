@@ -35,7 +35,7 @@ For local development and testing, you can run SeaweedFS and ClickHouse with Doc
 ### Prerequisites {#local-prerequisites}
 
 1. **Docker and Docker Compose**: Ensure Docker is installed and running
-2. **Versions**: SeaweedFS 4.42 or later; ClickHouse 26.4 or later (versions back to 25.8 can read and insert, but creating tables through the catalog requires 26.4)
+2. **Versions**: SeaweedFS 4.42 or later; ClickHouse 26.8 or later (versions back to 25.8 can read and insert, but creating tables through the catalog requires 26.8)
 3. **Python with PyIceberg** (optional): used below to seed sample data
 
 ### Setting up the local SeaweedFS catalog {#setting-up-local-seaweedfs-catalog}
@@ -225,7 +225,7 @@ SELECT * FROM lake.`sales.returns` ORDER BY id;
 The `IcebergS3` engine clause names the storage path for the new table, and `write_full_path_in_iceberg_metadata` makes ClickHouse register the full table location with the catalog.
 
 <Note>
-Creating tables through a catalog requires ClickHouse 26.4 or later. On older versions the statement appears to succeed, but the table files are written to object storage without being registered in the catalog.
+Creating tables through a catalog requires ClickHouse 26.8 or later. Versions 26.4 through 26.7 write the table files before registering the namespace, which SeaweedFS rejects unless the namespace already exists in the catalog; versions before 26.4 appear to succeed, but the table files are written to object storage without being registered in the catalog.
 </Note>
 
 When ClickHouse commits an insert, the SeaweedFS catalog repairs metadata the experimental writer does not yet produce: it fills in missing field IDs in manifests, rewrites bucket-relative file paths as absolute locations, and stamps a default name mapping on the table. Strict readers such as PyIceberg and Spark can then read the rows ClickHouse wrote. This requires SeaweedFS 4.42 or later.
