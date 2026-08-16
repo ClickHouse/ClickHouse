@@ -2063,7 +2063,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
-            if (processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+            if (!cancelled && processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
                 error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";

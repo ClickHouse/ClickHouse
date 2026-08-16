@@ -26,12 +26,12 @@ trap cleanup EXIT
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_cancel_exception_teardown_pager"
 
-# Small server blocks ensure that the client has output to finalize before the server exception.
-# `sleep 1000` neither reads nor exits, so after that exception the client remains in the
-# exception-reset teardown until the signal below releases it.
+# The server sends the result header, then fails before the first data block with
+# `DEADLOCK_AVOIDED`. `sleep 1000` neither reads nor exits, so after that exception the client
+# remains in the exception-reset teardown until the signal below releases it.
 $CLICKHOUSE_CLIENT --pager 'sleep 1000' --partial_result_on_first_cancel=1 --query_id="$QUERY_ID" \
-    --query "SELECT number, sleep(0.05), throwIf(number = 10, 'injected exception')
-             FROM numbers(20) SETTINGS max_block_size = 1, max_threads = 1" \
+    --query "SELECT number, throwIf(number = 0, 'injected deadlock', 473)
+             FROM numbers(20) SETTINGS allow_custom_error_code_in_throwif = 1, max_block_size = 1, max_threads = 1" \
     > "$CLIENT_OUT" 2> "$CLIENT_ERR" &
 CLIENT=$!
 
@@ -93,4 +93,9 @@ then
     kill -9 "$CLIENT" 2>/dev/null
 else
     echo "OK: client terminated after the first Ctrl+C in exception teardown"
+fi
+
+if grep -Fq 'will retry' "$CLIENT_ERR"
+then
+    echo "FAIL: client retried DEADLOCK_AVOIDED after Ctrl+C during teardown"
 fi
