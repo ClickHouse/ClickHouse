@@ -90,6 +90,10 @@
     M(IOBufferAllocBytes, "Number of bytes allocated for IO buffers (for ReadBuffer/WriteBuffer).", ValueType::Bytes) \
     M(ArenaAllocChunks, "Number of chunks allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Number) \
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Bytes) \
+    M(FiberStackAllocs, "Number of stacks allocated for fibers (fibers are used for asynchronous communication with remote replicas).", ValueType::Number) \
+    M(FiberStackAllocBytes, "Number of bytes allocated for fiber stacks, including guard pages (guard pages are only used in debug and sanitizer builds).", ValueType::Bytes) \
+    M(FiberStackAllocNanoseconds, "Amount of time spent allocating fiber stacks. Nanoseconds are used because a single allocation is normally faster than a microsecond, unless the allocator or the kernel is contended.", ValueType::Nanoseconds) \
+    M(FiberStackFreeNanoseconds, "Amount of time spent deallocating fiber stacks.", ValueType::Nanoseconds) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \
