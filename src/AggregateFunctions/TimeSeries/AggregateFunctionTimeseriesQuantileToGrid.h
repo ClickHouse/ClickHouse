@@ -24,17 +24,18 @@ std::optional<ValueType> computeTimeseriesQuantile(VectorWithMemoryTracking<Valu
     if (values.empty())
         return std::nullopt;
 
-    /// NaNs are not compatible with comparison sorting, so they are skipped like QuantileExactBase::add does;
-    /// a window whose samples are all NaN still yields NaN rather than no value.
-    std::erase_if(values, [](ValueType value) { return isNaN(value); });
-    if (values.empty())
-        return static_cast<ValueType>(std::numeric_limits<Float64>::quiet_NaN());
-
     const size_t n = values.size();
     if (n == 1)
         return values[0];
 
-    std::sort(values.begin(), values.end());
+    /// NaN samples are kept and ordered before every real value, like Prometheus' `vectorByValueHeap.Less`.
+    /// Spelled as a strict weak ordering (all NaNs equivalent), which plain `<` on floats is not.
+    std::sort(values.begin(), values.end(), [](ValueType lhs, ValueType rhs)
+    {
+        if (isNaN(lhs))
+            return !isNaN(rhs);
+        return !isNaN(rhs) && lhs < rhs;
+    });
 
     /// rank = phi * (n - 1), interpolated. Callers wrap the output for out-of-range/NaN phi.
     Float64 rank = phi * static_cast<Float64>(n - 1);

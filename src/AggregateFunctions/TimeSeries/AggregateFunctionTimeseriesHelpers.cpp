@@ -1232,7 +1232,7 @@ timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
 
     /// timeSeriesQuantileToGrid documentation
     FunctionDocumentation::Description description_timeSeriesQuantileToGrid = R"(
-Aggregate function that takes time series data as pairs of timestamps and values and calculates the [PromQL `quantile_over_time`](https://prometheus.io/docs/prometheus/latest/querying/functions/#quantile_over_time) function on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the quantile are considered within the specified time window. The quantile is computed using the R-7 (inclusive) method, matching `quantileExactInclusive`. NaN samples are ignored, also matching `quantileExactInclusive`; a window whose samples are all NaN gives NaN.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates the [PromQL `quantile_over_time`](https://prometheus.io/docs/prometheus/latest/querying/functions/#quantile_over_time) function on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating the quantile are considered within the specified time window. The quantile is computed using the R-7 (inclusive) method, matching `quantileExactInclusive` for real values. NaN samples are not skipped the way `quantileExactInclusive` skips them: like in Prometheus they are kept and sorted before every real value, so a window of `[1, NaN, 2]` has median `1`, and a window whose samples are all NaN gives NaN.
 
 :::note
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
