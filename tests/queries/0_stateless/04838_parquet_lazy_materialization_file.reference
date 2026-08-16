@@ -18,6 +18,10 @@
 2978	val_2978
 2961	val_2961
 2944	val_2944
+-- a preserved PREWHERE expression stays on the main branch
+1	val_0
+2	val_1
+3	val_2
 -- expressions on lazy columns are applied after the LIMIT
 18	VAL_2900
 19	VAL_2901
@@ -77,6 +81,10 @@ Lazily read columns: s, arr
 2978	val_2978
 2961	val_2961
 2944	val_2944
+-- a preserved PREWHERE expression stays on the main branch
+1	val_0
+2	val_1
+3	val_2
 -- expressions on lazy columns are applied after the LIMIT
 18	VAL_2900
 19	VAL_2901

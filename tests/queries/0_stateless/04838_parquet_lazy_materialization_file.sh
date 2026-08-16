@@ -60,6 +60,8 @@ SELECT '-- ORDER BY ... DESC LIMIT across files';
 SELECT k, s, arr FROM ${TABLE_FN} ORDER BY k DESC LIMIT 7;
 SELECT '-- with a filter (moved to PREWHERE)';
 SELECT k, s FROM ${TABLE_FN} WHERE f = 3 ORDER BY k DESC LIMIT 4;
+SELECT '-- a preserved PREWHERE expression stays on the main branch';
+SELECT f + 1, s FROM ${TABLE_FN} WHERE f + 1 > 0 ORDER BY k LIMIT 3;
 SELECT '-- expressions on lazy columns are applied after the LIMIT';
 SELECT length(s) + f AS x, upper(s) FROM ${TABLE_FN} ORDER BY intDiv(k, 100) DESC, k LIMIT 3;
 SELECT '-- sorting by a column with duplicate values';

@@ -460,6 +460,21 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             columns_to_keep.insert(column.name);
 
+    /// `updateFormatPrewhereInfo` preserves filter outputs that are used by the rest of the
+    /// query in `source_header` and `requested_columns`. They are produced by the filter DAG,
+    /// not read from the format, so a lazy reread cannot reconstruct them without replaying the
+    /// filter. Keep them on the main branch together with the filter itself.
+    auto keep_filter_outputs = [&](const ActionsDAG & actions)
+    {
+        for (const auto * output : actions.getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT)
+                columns_to_keep.insert(output->result_name);
+    };
+    if (info.row_level_filter)
+        keep_filter_outputs(info.row_level_filter->actions);
+    if (info.prewhere_info)
+        keep_filter_outputs(info.prewhere_info->prewhere_actions);
+
     /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
     for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
         columns_to_keep.insert(column.name);
