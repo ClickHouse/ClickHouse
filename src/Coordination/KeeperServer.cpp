@@ -956,14 +956,21 @@ void KeeperServer::collectLeaderMetrics()
         }
         else
         {
-            if (leader_unavailable_since_ms != 0 && raft_instance->is_leader())
+            const bool is_leader = raft_instance->is_leader();
+            if (leader_unavailable_since_ms != 0 && is_leader)
             {
                 last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
                 sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
                 ++cnt_leader_unavailable_time;
             }
             leader_unavailable_since_ms = 0;
-            election_since_ms = 0;
+
+            /// NuRaft changes the local leader state before invoking the
+            /// BecomeLeader callback. Preserve a locally observed election
+            /// window for finishLeaderElectionMetrics to consume from that
+            /// callback; a live leader on another node ends the window here.
+            if (!is_leader)
+                election_since_ms = 0;
         }
 
         polling_task = *leader_unavailable_polling_task;
