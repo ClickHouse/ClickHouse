@@ -7,7 +7,9 @@
 -- precomputed per-set values. The values bake in `force_grouping_standard_compatibility`.
 
 DROP TABLE IF EXISTS t_grouping_dist;
-CREATE TABLE t_grouping_dist (k1 String, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- Pin the granularity: the EXPLAIN below prints the granule count of the read.
+CREATE TABLE t_grouping_dist (k1 String, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192;
 INSERT INTO t_grouping_dist SELECT 'k' || (number % 3)::String, number % 2, number FROM numbers(1000);
 
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
