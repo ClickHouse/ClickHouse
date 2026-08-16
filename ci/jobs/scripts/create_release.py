@@ -320,19 +320,16 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Decide the operation from the ref and the branch version:
-        #   * ref is a release tag -> recovery (re-publish, even if superseded);
-        #   * ref older than the branch tip (a raw SHA behind it) -> out of order, refuse;
-        #   * ref whose computed release tag already exists here -> recovery (a rerun of the same SHA);
-        #   * otherwise -> create the next release.
-        # The tag ref is checked before the is_bump_landed guard so a release whose bump already landed can still be recovered by its tag.
-        if Git.tag_exists(commit_ref):
-            self.is_tag_pushed = True
-            assert release_tag == commit_ref, (
-                f"ref [{commit_ref}] is a release tag but the version at its commit "
-                f"describes [{release_tag}]; refusing to re-publish a different "
-                f"release"
+        # Recovery if the release tag exists (must sit on this commit); out-of-order if the ref is behind the tip; else create. Tag check runs first so a superseded release recovers by its tag.
+        if Git.tag_exists(release_tag):
+            tagged_sha = Git.get_commit_sha(release_tag)
+            assert tagged_sha == commit_sha, (
+                f"release tag [{release_tag}] already exists at [{tagged_sha}] but this run "
+                f"targets [{commit_sha}]: the version file at [{commit_ref}] is stale (it still "
+                f"describes an already-published release); land the post-release bump and "
+                f"dispatch the tip, or pass the release tag to recover."
             )
+            self.is_tag_pushed = True
         elif self.is_bump_landed:
             raise RuntimeError(
                 f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
@@ -340,28 +337,6 @@ class ReleaseInfo:
                 f"release tag to recover an existing release, or the branch to "
                 f"release its next commit."
             )
-        elif Git.tag_exists(release_tag):
-            tagged_sha = Git.get_commit_sha(release_tag)
-            if tagged_sha != commit_sha:
-                # The version computed from the file at this ref describes a
-                # release that already exists at a different commit. This is the
-                # stale-version-file hazard for a branch ref: the post-release
-                # version bump has not been applied to the branch, so the tip
-                # still describes an already-published release. Fail closed with
-                # an actionable message rather than assert or silently mint a
-                # colliding tag. (Detecting the wider "computed release is below
-                # the branch's latest" case would need to scan release tags,
-                # which the release job deliberately does not do — see
-                # 80c722e39ae.)
-                raise RuntimeError(
-                    f"release tag [{release_tag}] already exists at [{tagged_sha}] "
-                    f"but this run targets [{commit_sha}]. The version file at "
-                    f"[{commit_ref}] is stale (it still describes an "
-                    f"already-published release); land the post-release version "
-                    f"bump on the branch, then dispatch its tip, or pass a "
-                    f"release tag to recover an existing release."
-                )
-            self.is_tag_pushed = True
         else:
             # Creating (not recovering). The recovery branches above are exempt.
             if release_type == "patch":

@@ -918,15 +918,14 @@ def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
     assert info["is_bump_landed"] is True
 
 
-def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
-    """A bare SHA of an older *tagged* release is still out-of-order, not recovery.
+def test_prepare_recovers_superseded_release_from_raw_sha(tmp_path):
+    """A bare SHA of an older *tagged* release recovers that release.
 
-    Recovery is expressed by the ref being a release *tag name*; passing the raw
-    commit that an older release tag points at must not be mistaken for recovery
-    of that release. The branch tip is a newer release (``26.6.3``) than the
-    dispatched commit (``26.6.2``), so ``prepare`` must refuse it as out-of-order
-    rather than re-publish the stale ``v26.6.2.1-stable`` sitting at that commit.
-    This mirrors dispatching e.g. the commit behind an existing ``v25.8.24.21-lts``.
+    Recovery is recognized whenever the computed release tag already exists at
+    the target commit — the ref need not be the tag name. The branch tip is a
+    newer release (``26.6.3``) than the dispatched commit (``26.6.2``), but the
+    superseded ``v26.6.2.1-stable`` at that commit is recovered (re-published),
+    not refused: the tag isn't re-pushed and the branch version stays put.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -1013,8 +1012,15 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0, "stale tagged commit should have failed"
-    assert "out-of-order release" in (result.stdout + result.stderr)
+    assert result.returncode == 0, (
+        f"superseded recovery by raw SHA failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.2.1-stable"
+    assert info["is_tag_pushed"] is True
+    assert info["is_bump_landed"] is True  # branch ahead -> superseded, don't rewrite
 
 
 def test_prepare_creates_from_branch_ref(tmp_path):
