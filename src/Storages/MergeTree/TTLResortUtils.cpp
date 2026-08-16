@@ -881,8 +881,14 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         required_columns.emplace_back(column.name, column.type);
     required_columns.insert(required_columns.end(), columns_to_recompute.begin(), columns_to_recompute.end());
 
-    auto recompute_dag
-        = evaluateMissingDefaults(header_after_drop, required_columns, columns_desc, context, /*save_unneeded_columns=*/true);
+    /// A recomputed default may read a subcolumn of another recomputed column (`z MATERIALIZED
+    /// toYYYYMM(y.d)` over MATERIALIZED `y`): both are dropped above, so `y.d` is resolvable only
+    /// against the sibling `y` built in the same expression list, which the old analyzer cannot do.
+    auto expressions_context = Context::createCopy(context);
+    expressions_context->setSetting("enable_analyzer", true);
+
+    auto recompute_dag = evaluateMissingDefaults(
+        header_after_drop, required_columns, columns_desc, expressions_context, /*save_unneeded_columns=*/true);
     if (!recompute_dag)
         return drop_stale_dag;
 
@@ -892,7 +898,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     /// re-extractable subcolumn is now missing from `header_after_drop` and is rebuilt fresh from its
     /// post-`SET` physical parent.
     auto extracting_subcolumns_dag
-        = createSubcolumnsExtractionActions(header_after_drop, recompute_dag->getRequiredColumnsNames(), context);
+        = createSubcolumnsExtractionActions(header_after_drop, recompute_dag->getRequiredColumnsNames(), expressions_context);
 
     auto result = ActionsDAG::merge(
         std::move(drop_stale_dag),
