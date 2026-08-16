@@ -34,7 +34,11 @@ attach_with_gate_disabled() {
     local rel_path meta
     rel_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE database = currentDatabase() AND name = '$table'")
     meta="$data_path$rel_path"
-    ${CLICKHOUSE_CLIENT} -q "DETACH TABLE $table"
+    # Rewriting the metadata of a still-attached table corrupts a Replicated database's digest,
+    # so a refused DETACH must fail the test rather than let the sed below run.
+    local detach_out
+    detach_out=$(${CLICKHOUSE_CLIENT} -q "DETACH TABLE $table" 2>&1) \
+        || { echo "FAIL: DETACH TABLE $table failed: $detach_out"; exit 1; }
     # sed exits 0 even when it rewrites nothing, so assert the enabled spelling exists before the edit
     # and the disabled spelling exists after it. Otherwise a SHOW CREATE formatting drift away from
     # "$setting = 1" would leave the metadata untouched and re-attach it -- a false positive.
