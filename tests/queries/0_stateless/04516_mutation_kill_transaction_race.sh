@@ -9,7 +9,7 @@
 # that window (e.g. KILL TRANSACTION) called `killMutation` before the entry existed,
 # found nothing to remove, and the entry registered afterwards was orphaned: its
 # transaction was gone and its CSN could never be assigned. Background jobs then raised
-# a logical error ("Cannot find transaction ... that has started mutation ...") and all
+# an exception ("Cannot find transaction ... that has started mutation ...") and all
 # subsequent mutations of the affected parts were blocked.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
