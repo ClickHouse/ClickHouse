@@ -220,6 +220,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -2739,6 +2741,24 @@ void addNamedCollectionDependenciesForTableFunctionTarget(const ASTPtr & ast, co
         addNamedCollectionDependenciesForTableFunctionTarget(child, table_id);
 }
 
+/// A table-function target with explicit columns may refer to an object that exists only on the remote
+/// shard. Its absence is therefore deferred to the shard, but syntactically invalid arguments must still
+/// reject the persistent table definition at `CREATE` time.
+void validateTableFunctionTargetArguments(const ASTPtr & ast, const ContextPtr & context)
+{
+    try
+    {
+        /// Parsing table-function arguments may normalize their AST, while this AST is persisted in the
+        /// storage definition. Validate a copy so the stored target remains exactly the bound target.
+        TableFunctionFactory::instance().get(ast->clone(), context);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE)
+            throw;
+    }
+}
+
 }
 
 /// Validate the distributed table settings and propagate the global `distributed_background_insert_*`
@@ -2901,6 +2921,8 @@ void registerStorageDistributed(StorageFactory & factory)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Table function '{}' cannot be used to create a Distributed table",
                                     table_function_ast->name);
+
+                validateTableFunctionTargetArguments(engine_args[1], local_context);
             }
 
             remote_table_function_ptr = engine_args[1];
@@ -3486,6 +3508,7 @@ void registerStorageRemote(StorageFactory & factory)
             add_default_database_visitor.visit(parsed.remote_table_function_ptr);
             add_default_database_visitor.visitDDL(parsed.remote_table_function_ptr);
             bindTableFunctionTargetsToCurrentDatabase(parsed.remote_table_function_ptr, args.getLocalContext());
+            validateTableFunctionTargetArguments(parsed.remote_table_function_ptr, args.getLocalContext());
         }
 
         ColumnsDescription columns = args.columns;
@@ -3576,6 +3599,9 @@ void registerStorageRemote(StorageFactory & factory)
             args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
             args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
         }
+
+        if (parsed.remote_table_function_ptr)
+            addNamedCollectionDependenciesForTableFunctionTarget(parsed.remote_table_function_ptr, args.table_id);
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

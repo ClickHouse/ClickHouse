@@ -1,0 +1,4 @@
+NAMED_COLLECTION_IS_USED
+NAMED_COLLECTION_IS_USED
+Table function ('dictionary') requires 1 arguments
+Argument 'table_name_regexp' must be a literal with type String, got UInt64
