@@ -146,6 +146,7 @@ SELECT timeSeriesResampleToGridWithStaleness('abc', 150, 15, 50)(timestamp::Date
 SELECT timeSeriesResampleToGridWithStaleness([100], 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesResampleToGridWithStaleness(inf, 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 SELECT timeSeriesResampleToGridWithStaleness('1970-01-01 00:01:40junk', 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesResampleToGridWithStaleness('1970-13-01 00:01:40', 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 
 SELECT timeSeriesResampleToGridWithStaleness(-100, 150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesResampleToGridWithStaleness(100, -150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

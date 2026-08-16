@@ -1,5 +1,6 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
+#include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <Common/quoteString.h>
 #include <Core/DecimalFunctions.h>
@@ -167,8 +168,11 @@ namespace
             if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
                 return result;
 
+            /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
             ReadBufferFromString buf{str};
-            if (tryReadDateTime64Text(result, scale, buf) && buf.eof())
+            if (tryReadDateTime64Text(result, scale, buf, DateLUT::instance(),
+                    /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
+                && buf.eof())
                 return result;
         }
         else
