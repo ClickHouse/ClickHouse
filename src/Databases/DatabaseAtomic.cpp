@@ -271,7 +271,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     bool inside_database = this == &other_db;
 
     if (!inside_database)
+    {
         other_db.createDirectories();
+        /// Row-limit checks below use the exact table total of both databases.
+        /// Wait before taking either database mutex because startup itself takes it.
+        other_db.waitDatabaseStarted();
+    }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);

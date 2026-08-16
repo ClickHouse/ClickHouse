@@ -513,6 +513,8 @@ void DatabaseOnDisk::renameTable(
 
     createDirectories();
     waitDatabaseStarted();
+    if (this != &to_database)
+        to_database.waitDatabaseStarted();
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
