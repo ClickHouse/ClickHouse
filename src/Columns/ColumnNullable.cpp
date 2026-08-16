@@ -328,8 +328,11 @@ void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t star
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
 {
-    for (size_t i = 0; i < length; ++i)
-        insertFromNotNullable(src, position);
+    if (length == 0)
+        return;
+
+    getNestedColumn().insertManyFrom(src, position, length);
+    getNullMapData().resize_fill(getNullMapData().size() + length);
 }
 
 void ColumnNullable::popBack(size_t n)
