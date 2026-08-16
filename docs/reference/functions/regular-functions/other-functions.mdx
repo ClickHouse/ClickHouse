@@ -967,6 +967,42 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+## currentHandler {#currentHandler}
+
+Introduced in: v26.6.0
+
+Returns the name of the SQL-defined HTTP handler (created with `CREATE HANDLER`) that invoked the query.
+Returns an empty string if the query was not invoked through such a handler.
+
+Useful to customize query behavior depending on the invoked handler.
+    
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+currentHandler()
+```
+
+**Arguments**
+
+- None.
+
+**Returned value**
+
+Returns the current handler name. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 ## currentProfiles {#currentProfiles}
 
 Introduced in: v21.9.0
@@ -1041,6 +1077,43 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+## currentRequestURL {#currentRequestURL}
+
+Introduced in: v26.6.0
+
+Returns the HTTP request URL (path and query string) that invoked the query.
+Returns an empty string if the query was not invoked through HTTP.
+
+Useful, in combination with SQL-defined HTTP handlers (`CREATE HANDLER`), to extract parameters
+embedded in the request path.
+    
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+currentRequestURL()
+```
+
+**Arguments**
+
+- None.
+
+**Returned value**
+
+Returns the current HTTP request URL. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 ## currentRoles {#currentRoles}
@@ -4414,7 +4487,7 @@ Introduced in: v26.8.0
 
 Parses a SQL query string into its AST (Abstract Syntax Tree) and returns a JSON representation of that tree.
 The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL query, or sent directly
-to the server using the `clickhouse_json` value of the `dialect` setting (gated by `allow_experimental_json_ast_dialect`).
+to the server using the `clickhouse_json` value of the `dialect` setting (gated by `enable_json_ast_dialect`).
 
 This is useful for tools that want to inspect or transform queries programmatically without going through
 the SQL grammar.
