@@ -1623,7 +1623,8 @@
            textarea's metrics, so the highlighting overlay stays aligned. */
         @media (hover: none) and (pointer: coarse)
         {
-            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status
+            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status,
+            .md-backdrop, .query-preview, .cell-text-view
             {
                 font-size: 16px;
             }
@@ -1822,6 +1823,10 @@
 
         .cell-text-view
         {
+            /* Monospace, exactly like a query: a notebook reads as one document, and the font
+               must not jump when a cell switches between its source and the rendered result. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 11pt;
             padding: 0.25rem 0.25rem 0.25rem 0;
             cursor: text;
             /* Long words in rendered Markdown must not widen the page. */
@@ -1856,10 +1861,9 @@
 
         .cell-text-view ul, .cell-text-view ol { padding-left: 1.5em; }
 
+        /* The whole cell is already monospace, so a code span is set apart by its tint alone. */
         .cell-text-view code
         {
-            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
-            font-size: 0.9em;
             background-color: var(--element-background-color);
             border-radius: 0.2rem;
             padding: 0 0.2em;
@@ -1923,7 +1927,7 @@
             color: transparent;
             caret-color: var(--text-color-active);
             line-height: 1.4;
-            font-family: inherit;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
         }
 
         .md-backdrop
@@ -1934,6 +1938,7 @@
             pointer-events: none;
             z-index: 0;
             /* Typography MUST match the textarea exactly. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
             font-size: 11pt;
             line-height: 1.4;
             padding: 0.25rem;
@@ -8933,41 +8938,44 @@ function renderMarkdown(source) {
 /// and every character keeps its position, so the transparent textarea on top stays aligned.
 function highlightMarkdown(source) {
     const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
-    let html = '';
+    /// One entry per source line, joined below: appending a newline per line instead would
+    /// leave the backdrop one line taller than the textarea it is laid over.
+    const out = [];
     let in_fence = false;
 
     for (const line of lines) {
         const escaped = escapeHTML(line);
         if (/^\s*(```|~~~)/.test(line)) {
             in_fence = !in_fence;
-            html += '<span class="md-marker">' + escaped + '</span>\n';
+            out.push('<span class="md-marker">' + escaped + '</span>');
             continue;
         }
-        if (in_fence) { html += '<span class="md-code">' + escaped + '</span>\n'; continue; }
+        if (in_fence) { out.push('<span class="md-code">' + escaped + '</span>'); continue; }
 
         const heading = escaped.match(/^(\s*#{1,6}\s+)(.*)$/);
         if (heading) {
-            html += '<span class="md-marker">' + heading[1] + '</span>'
-                  + '<span class="md-head">' + highlightMarkdownInline(heading[2]) + '</span>\n';
+            out.push('<span class="md-marker">' + heading[1] + '</span>'
+                   + '<span class="md-head">' + highlightMarkdownInline(heading[2]) + '</span>');
             continue;
         }
         const quote = escaped.match(/^(\s*&gt;\s?)(.*)$/);
         if (quote) {
-            html += '<span class="md-marker">' + quote[1] + '</span>'
-                  + '<span class="md-quote">' + highlightMarkdownInline(quote[2]) + '</span>\n';
+            out.push('<span class="md-marker">' + quote[1] + '</span>'
+                   + '<span class="md-quote">' + highlightMarkdownInline(quote[2]) + '</span>');
             continue;
         }
         const bullet = escaped.match(/^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$/);
         if (bullet) {
-            html += '<span class="md-marker">' + bullet[1] + '</span>'
-                  + highlightMarkdownInline(bullet[2]) + '\n';
+            out.push('<span class="md-marker">' + bullet[1] + '</span>'
+                   + highlightMarkdownInline(bullet[2]));
             continue;
         }
-        html += highlightMarkdownInline(escaped) + '\n';
+        out.push(highlightMarkdownInline(escaped));
     }
-    /// Browsers collapse a trailing newline in a block element; keep the box in step with the
-    /// textarea by giving it something to hold the last line open.
-    return html + ' ';
+    const html = out.join('\n');
+    /// Browsers collapse a trailing newline in a block element; when the source ends with one,
+    /// give the last (empty) line something to hold it open, as `renderQueryBackdrop` does.
+    return html.endsWith('\n') ? html + ' ' : html;
 }
 
 /// Inline markers are wrapped WITH their delimiters, so the character count never changes.
