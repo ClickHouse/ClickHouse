@@ -122,7 +122,7 @@ private:
     /// Recovery shared by `beforeDropDatabase`'s catch and `onDropDatabaseFailed`: if the refused drop had
     /// already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
     /// task so replication is rebuilt. Must be called under `handler_mutex`.
-    void recoverAfterRefusedDrop();
+    void recoverAfterRefusedDrop(bool force_resnapshot = false);
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 

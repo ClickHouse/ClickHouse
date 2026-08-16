@@ -514,6 +514,17 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
             "(materialized_postgresql_keeper_path is set). "
             "Recreate the database with an updated materialized_postgresql_tables_list instead");
 
+    /// `attachTable` needs a live handler to update the PostgreSQL publication. Check this before
+    /// `DatabaseAtomic::createTable`: otherwise a startup-window refusal leaves a physical nested
+    /// table and UUID mapping behind, and the retry collides with that orphan.
+    {
+        std::lock_guard lock(handler_mutex);
+        if (!replication_handler)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot add table `{}` to replication: the database has not finished starting replication yet. "
+                "Retry once synchronization has started", table_name);
+    }
+
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
@@ -1085,7 +1096,7 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
 }
 
 
-void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop()
+void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapshot)
 {
     /// Undo the `deactivate` from `beforeDropDatabase`: a database whose background startup had not run yet
     /// (attach/restart window) must still be able to build its handler and start (or, in coordinated mode,
@@ -1103,6 +1114,14 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop()
     {
         replication_handler.reset();
         synchronization_started = false;
+
+        /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
+        /// later removal throws. On an attached database the normal recovery path would reuse the
+        /// surviving slot and expect every nested table to still exist, leaving the database in a
+        /// permanent startup retry loop. Rebuild it as a CREATE-style startup instead: it recreates
+        /// missing nested tables and reloads a snapshot from an empty slot.
+        if (force_resnapshot)
+            is_attach = false;
     }
     if (!shutdown_called)
     {
@@ -1135,7 +1154,7 @@ void DatabaseMaterializedPostgreSQL::onDropDatabaseFailed(ContextPtr)
     /// re-arm is needed for a plain database just as much. Recovery is idempotent, so a double call (a failure
     /// inside `beforeDropDatabase`, which recovers in its own catch, is also routed here) is harmless.
     std::lock_guard lock(handler_mutex);
-    recoverAfterRefusedDrop();
+    recoverAfterRefusedDrop(/* force_resnapshot */ true);
 }
 
 

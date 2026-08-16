@@ -306,12 +306,13 @@ namespace
         const bool schema_as_a_part_of_table_name
             = !schema_list.empty() || settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema];
         return fmt::format(
-            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\n"
+            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\nuse_extended_date_and_time_types: {}\n"
             "postgres_database: {}\npostgres_table: {}\n",
             settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine].value,
             schema,
             schema_list,
             schema_as_a_part_of_table_name,
+            settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].value,
             postgres_database,
             postgres_table);
     }
@@ -1234,6 +1235,21 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     {
         if (user_managed_slot)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Having replication slot `{}` from settings, but it does not exist", replication_slot);
+
+        /// A missing shared slot after a completed snapshot is not a first startup. The old slot
+        /// may have acknowledged mutations which are absent from the current PostgreSQL snapshot;
+        /// loading that snapshot on top of the replicated nested tables would preserve deleted rows.
+        /// Start from empty, exactly as the interrupted-snapshot recovery below does.
+        if (coordination_enabled && isInitialSnapshotCompleted())
+        {
+            LOG_WARNING(log,
+                "Replication slot {} disappeared after the initial snapshot completed. Clearing the nested tables "
+                "and reloading all of them from a new snapshot",
+                replication_slot);
+            assertReplicationLeadershipIsLive();
+            truncateNestedTables();
+            assertReplicationLeadershipIsLive();
+        }
 
         initial_sync();
     }
