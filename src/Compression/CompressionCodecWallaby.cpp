@@ -2028,28 +2028,35 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 {
                     return bitsFromOrdered<T>(orderedFromBits(reconstructed_bits) + zigzagDecode(adjustments[i]));
                 };
+                const auto checkedAdd = [](SignedType lhs, SignedType rhs) ALWAYS_INLINE
+                {
+                    if ((rhs > 0 && lhs > std::numeric_limits<SignedType>::max() - rhs)
+                        || (rhs < 0 && lhs < std::numeric_limits<SignedType>::min() - rhs))
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows");
+                    return static_cast<SignedType>(lhs + rhs);
+                };
                 if (mode == VectorMode::DecimalFor)
                 {
-                    Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, static_cast<T>(base));
+                    Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
                     if (adjustment_bits == 0)
                         for (UInt32 i = 0; i < count; ++i)
-                            emit(i, reconstruct(static_cast<SignedType>(unpacked[i])));
+                            emit(i, reconstruct(checkedAdd(base, static_cast<SignedType>(unpacked[i]))));
                     else
                         for (UInt32 i = 0; i < count; ++i)
-                            emit(i, adjust(i, reconstruct(static_cast<SignedType>(unpacked[i]))));
+                            emit(i, adjust(i, reconstruct(checkedAdd(base, static_cast<SignedType>(unpacked[i])))));
                 }
                 else
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
-                    T accumulator = static_cast<T>(base);
+                    SignedType accumulator = base;
                     for (UInt32 i = 0; i < count; ++i)
                     {
                         if (i > 0)
                         {
-                            const T zigzag = unpacked[i];
-                            accumulator += (zigzag >> 1) ^ (T{0} - (zigzag & T{1}));
+                            const SignedType delta = std::bit_cast<SignedType>(zigzagDecode(unpacked[i]));
+                            accumulator = checkedAdd(accumulator, delta);
                         }
-                        const T reconstructed = reconstruct(static_cast<SignedType>(accumulator));
+                        const T reconstructed = reconstruct(accumulator);
                         emit(i, adjustment_bits == 0 ? reconstructed : adjust(i, reconstructed));
                     }
                 }

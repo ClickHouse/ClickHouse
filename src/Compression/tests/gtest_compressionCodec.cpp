@@ -3040,6 +3040,40 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 8);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputDecimalForReconstructionOverflow)
+{
+    /// `base = INT32_MAX` plus a packed offset of one must not wrap to `INT32_MIN`.
+    std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x20,                         // alpha = 0
+        0x01,                         // bits = 1
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // base = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 128, 0x00);
+    vectors[11] = 0x01; // first packed offset = 1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 4);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaReconstructionOverflow)
+{
+    /// `first_q = INT32_MAX` followed by a zigzag-encoded delta of one must not wrap.
+    std::vector<UInt8> vectors = {
+        0x02,                         // mode = DECIMAL_DELTA
+        0x20,                         // alpha = 0
+        0x02,                         // bits = 2
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // first_q = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 256, 0x00);
+    vectors[15] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 2), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 8);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
 {
     const std::vector<UInt8> vectors = {
