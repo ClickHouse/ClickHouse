@@ -30,6 +30,6 @@ $CLICKHOUSE_CLIENT --query "CREATE USER ${target} IDENTIFIED WITH no_password DE
 $CLICKHOUSE_CLIENT --query "GRANT IMPERSONATE ON ${target} TO ${caller}"
 $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${caller_database}.t TO ${target}"
 
-$CLICKHOUSE_CLIENT --user "${caller}" --query "EXECUTE AS ${target} SELECT value FROM t"
+$CLICKHOUSE_CLIENT --user "${caller}" --database "${caller_database}" --query "EXECUTE AS ${target} SELECT value FROM t"
 
 cleanup
