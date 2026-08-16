@@ -4,12 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS force_shared_cache_bound_04839;
 
--- ColumnObject::shouldForceSharedData memoizes every distinct path matched by a SHARED REGEXP rule
--- in force_shared_data_paths, unbounded -- for a broad rule over a high-cardinality document where
--- most matched paths are seen exactly once, that cache grows without limit. The cache is now capped
--- at MAX_SHARED_DATA_STATISTICS_SIZE (10000); this is a pure memory fix, so the regression to guard
--- is that paths matched *after* the cache is full must still be correctly forced into shared data
--- (falling back to a direct regex re-evaluation) rather than accidentally treated as unmatched.
+-- ColumnObject::shouldForceSharedData's match cache is now capped at MAX_SHARED_DATA_STATISTICS_SIZE
+-- (10000); paths matched after it fills must still fall back to direct regex re-evaluation, not go unmatched.
 CREATE TABLE force_shared_cache_bound_04839
 (
     id UInt64,

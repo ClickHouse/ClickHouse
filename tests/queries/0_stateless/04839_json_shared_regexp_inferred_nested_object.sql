@@ -4,14 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS inferred_nested_04839;
 
--- DataTypeObject::getTypeOfNestedObjects used to manufacture a single bare, pathless JSON type,
--- reused by ObjectJSONNode for every dynamically-inferred nested object regardless of where it
--- was found. A directly-nested object (e.g. {"outer": {...}}) doesn't exercise this: it gets
--- flattened into top-level paths during the initial object walk (traverseAndInsert), evaluated
--- against the root matcher directly. An array of objects with inconsistent shapes does exercise
--- it: `arr` itself becomes one Dynamic value of type Array(JSON(...)), and each element's own
--- type is built via the nested-object path -- so `forced` inside an element must still be
--- evaluated as "arr.forced" against the rule, not bare "forced".
+-- DataTypeObject::getTypeOfNestedObjects used to manufacture a bare, pathless JSON type for every
+-- inferred nested object; array elements must still resolve as "arr.forced", not bare "forced".
 CREATE TABLE inferred_nested_04839
 (
     id UInt64,

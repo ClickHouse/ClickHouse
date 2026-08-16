@@ -4,11 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS projection_rebuild_04839;
 
--- A merge can rebuild a projection sub-part that predates a later ADD COLUMN (see
--- MergeTask::prepareProjectionsToMergeAndRebuild): the sub-part's own historical column list
--- doesn't include the new column, so provenance for it can only be recovered by falling back to
--- that source part's own physical column -- per column, not only when the source has no
--- projection sub-part at all.
+-- A merge rebuilding a projection sub-part that predates a later ADD COLUMN must recover that
+-- column's provenance by falling back to the source part's own physical column, per column.
 CREATE TABLE projection_rebuild_04839
 (
     id UInt64,

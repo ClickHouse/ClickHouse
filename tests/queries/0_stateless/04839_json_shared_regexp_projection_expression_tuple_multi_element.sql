@@ -4,10 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS tuple_ambiguity_04839;
 
--- 04839_json_shared_regexp_projection_expression_tuple(_element).sql cover the single-element
--- wrapper case (tuple(j) / tupleElement(t, 1) over a single-element t). A tuple with more than one
--- element is ambiguous in general, but not when exactly one element is JSON-shaped: there is then
--- only one element the policy could unambiguously belong to.
+-- Unlike the single-element wrapper case covered elsewhere, a multi-element tuple is ambiguous in
+-- general -- except when exactly one element is JSON-shaped, since only that one can own the policy.
 CREATE TABLE tuple_ambiguity_04839
 (
     id UInt64,

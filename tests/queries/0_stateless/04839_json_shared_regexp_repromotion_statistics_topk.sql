@@ -4,13 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS shared_stats_topk_04839;
 
--- ColumnObject::getOrCalculateStatistics and the shared-data statistics recalculation in
--- SerializationObject both used to truncate shared_data_paths_statistics at
--- MAX_SHARED_DATA_STATISTICS_SIZE (10000) by first-encounter order rather than by actual
--- frequency, so a path that first appears after 10000 other distinct paths were already seen
--- could never be tracked (or repromoted), no matter how frequent it later turned out to be.
--- Reproduce with 10000 paths that each appear once (encountered first) plus one path that
--- appears 5000 times (encountered only after the statistics map would already be full).
+-- Statistics used to truncate shared_data_paths_statistics at MAX_SHARED_DATA_STATISTICS_SIZE
+-- (10000) by first-encounter order, not frequency, so a late-arriving hot path could never be tracked. Reproduce with 10000 once-seen paths plus one path appearing 5000 times, after the map is full.
 CREATE TABLE shared_stats_topk_04839
 (
     id UInt64,
