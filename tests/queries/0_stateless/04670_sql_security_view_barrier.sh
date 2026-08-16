@@ -25,6 +25,11 @@ CREATE VIEW $db.projecting_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.secrets;
 
+-- The stored query projects every row; the policy itself is the security boundary.
+CREATE VIEW $db.policy_view
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT owner, secret FROM $db.secrets;
+
 -- The same view without a security context switch, as the optimization baseline.
 CREATE VIEW $db.projecting_view_invoker
 SQL SECURITY INVOKER
@@ -39,13 +44,14 @@ CREATE USER $user;
 GRANT SELECT ON $db.filtering_view TO $user;
 GRANT SELECT ON $db.filtering_view_none TO $user;
 GRANT SELECT ON $db.projecting_view TO $user;
+GRANT SELECT ON $db.policy_view TO $user;
 GRANT SELECT ON $db.invoker_view TO $user;
 GRANT SELECT ON $db.secrets TO $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
 
 -- A policy on the view itself is also a security boundary, even though the stored query is only
 -- a projection. It must not be inlined before the policy is discovered and applied.
-CREATE ROW POLICY ${user}_view_policy ON $db.projecting_view FOR SELECT USING owner = currentUser() TO $user;
+CREATE ROW POLICY ${user}_view_policy ON $db.policy_view FOR SELECT USING owner = currentUser() TO $user;
 EOF
 
 echo "===== the view exposes one row ====="
@@ -55,7 +61,7 @@ echo "===== an outer predicate cannot observe the filtered-out row ====="
 # Without the barrier the outer WHERE and the view's WHERE are merged into one filter over the
 # source table, and throwIf fires on a row the view is supposed to hide. `analyzer_inline_views`
 # is a third way in: it replaces the view with its defining subquery before a plan even exists.
-for view in filtering_view filtering_view_none projecting_view; do
+for view in filtering_view filtering_view_none policy_view; do
     for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
         # shellcheck disable=SC2086
         ${CLICKHOUSE_CLIENT} $settings --user "$user" --query \
@@ -82,7 +88,7 @@ for serialize in 1 0; do
          SETTINGS serialize_query_plan = $serialize, enable_analyzer = 1" 2>&1 | grep -c -F "LEAKED"
 done
 
-# The checks below run as the restricted user so the row policy on `projecting_view` applies. They
+# The checks below run as the restricted user so the row policy on `policy_view` applies. They
 # pin every setting the shape depends on, because the test also runs with randomized settings. The
 # settings are pinned on the client and not with a SETTINGS clause inside the subquery, because changing
 # `enable_analyzer` in a subquery is rejected when the server default differs.
@@ -138,5 +144,5 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query \
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "SELECT count() FROM $db.filtering_view WHERE secret = 'HIDDEN'"
 
-${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${user}_view_policy ON $db.projecting_view"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${user}_view_policy ON $db.policy_view"
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
