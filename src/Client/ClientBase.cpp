@@ -2937,11 +2937,8 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            auto availability = !is_interactive && !stdin_is_a_tty
-                ? getStdinDataAvailabilityNonBlocking(*std_in, stdin_fd)
-                : StdinDataAvailability::Empty;
-            throwOnAmbiguousStdin(availability);
-            bool have_data_in_stdin = availability == StdinDataAvailability::Data
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
                 && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
@@ -2952,11 +2949,8 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            auto availability = !is_interactive && !stdin_is_a_tty
-                ? getStdinDataAvailabilityNonBlocking(*std_in, stdin_fd)
-                : StdinDataAvailability::Empty;
-            throwOnAmbiguousStdin(availability);
-            bool have_data_in_stdin = availability == StdinDataAvailability::Data
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
                 && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
