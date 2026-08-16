@@ -105,4 +105,32 @@ TEST(ColumnAggregateFunction, ViewsAndCopiesPreserveVersion)
 
     auto copy = ColumnAggregateFunction::create(assert_cast<const ColumnAggregateFunction &>(*column));
     EXPECT_EQ((*copy)[0].safeGet<AggregateFunctionStateData>().name, expected_type_string);
+
+    /// An explicit version 0 is not shown in the type name, even though it must still be
+    /// used to serialize and deserialize the aggregate state.
+    auto version_zero_column = ColumnAggregateFunction::create(aggregate_function, size_t{0});
+    auto keys = ColumnUInt8::create();
+    keys->insert(1);
+    auto key_offsets = ColumnArray::ColumnOffsets::create();
+    key_offsets->insert(1);
+    auto values = ColumnUInt8::create();
+    values->insert(2);
+    auto value_offsets = ColumnArray::ColumnOffsets::create();
+    value_offsets->insert(1);
+    auto keys_array = ColumnArray::create(std::move(keys), std::move(key_offsets));
+    auto values_array = ColumnArray::create(std::move(values), std::move(value_offsets));
+    const IColumn * columns[] = {keys_array.get(), values_array.get()};
+
+    version_zero_column->insertDefault();
+    Arena arena;
+    aggregate_function->add(version_zero_column->getData()[0], columns, 0, &arena);
+
+    const auto expected_version_zero_state = (*version_zero_column)[0].safeGet<AggregateFunctionStateData>();
+    EXPECT_TRUE(expected_version_zero_state.name.starts_with("AggregateFunction(sumMap")) << expected_version_zero_state.name;
+
+    auto version_zero_view = version_zero_column->permute({0}, 0);
+    EXPECT_EQ((*version_zero_view)[0].safeGet<AggregateFunctionStateData>().data, expected_version_zero_state.data);
+
+    auto version_zero_copy = ColumnAggregateFunction::create(assert_cast<const ColumnAggregateFunction &>(*version_zero_column));
+    EXPECT_EQ((*version_zero_copy)[0].safeGet<AggregateFunctionStateData>().data, expected_version_zero_state.data);
 }

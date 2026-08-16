@@ -101,7 +101,7 @@ public:
         /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
         /// must be deep-unshared here rather than borrowed.
         return create(
-            IColumn::mutate(variant_column_),
+            IColumn::mutate(std::move(variant_column_)),
             variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
