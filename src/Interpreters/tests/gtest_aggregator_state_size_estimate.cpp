@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -194,6 +195,29 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     const auto default_version_size = serializedStateSize(*aggregate_function, input_column.getData()[0], std::nullopt);
     ASSERT_NE(version_0_size, default_version_size);
     EXPECT_EQ(result_column.getDataAt(0).size(), version_0_size);
+}
+
+TEST(AggregatorStateSizeEstimate, BitmapBuildPreservesDefaultStateVersion)
+{
+    tryRegisterAggregateFunctions();
+    tryRegisterFunctions();
+
+    auto values = ColumnUInt8::create();
+    values->insert(1);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insert(1);
+    auto array = ColumnArray::create(std::move(values), std::move(offsets));
+    auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+
+    ColumnsWithTypeAndName arguments;
+    arguments.emplace_back(array, array_type, "array");
+    auto function = FunctionFactory::instance().get("bitmapBuild", getContext().context)->build(arguments);
+    const auto result_type = function->getResultType();
+    const auto result = function->execute(arguments, result_type, /*input_rows_count=*/1, /*dry_run=*/false);
+
+    const auto & result_column = assert_cast<const ColumnAggregateFunction &>(*result);
+    const Field state = result_column[0];
+    EXPECT_NO_THROW(result_type->createColumn()->insert(state));
 }
 
 TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
