@@ -22,9 +22,10 @@ CREATE TABLE t_04907_dist (n UInt64)
 
 -- `0` and `1` belong to different shards, so both local jobs write a quorum part into
 -- `t_04907_target_r1`.
-INSERT INTO t_04907_dist VALUES (0), (1)
+INSERT INTO t_04907_dist
     SETTINGS distributed_foreground_insert = 1, prefer_localhost_replica = 1,
-        insert_quorum = 2, insert_quorum_parallel = 0, max_distributed_connections = 2;
+        insert_quorum = 2, insert_quorum_parallel = 0, max_distributed_connections = 2
+    VALUES (0), (1);
 
 SELECT count(), sum(n) FROM t_04907_target_r1 SETTINGS select_sequential_consistency = 1;
 
