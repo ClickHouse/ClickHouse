@@ -33,6 +33,8 @@ void ExpressionTransform::transform(Chunk & chunk)
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
         expression->execute(block, num_rows, false, false, &getCancellationFlag());
+        if (isCancelled())
+            block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
         chunk.setColumns(block.getColumns(), num_rows);
         updater->recordOutputChunk(chunk, block);
         return;
@@ -42,6 +44,8 @@ void ExpressionTransform::transform(Chunk & chunk)
     auto columns = expression->executeOnColumns(
         chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, &getCancellationFlag());
 
+    if (isCancelled())
+        columns = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns()).getColumns();
     chunk.setColumns(std::move(columns), num_rows);
 }
 
@@ -69,6 +73,8 @@ void ConvertingTransform::onConsume(Chunk chunk)
 
     expression->execute(block, num_rows, false, false, &getCancellationFlag());
 
+    if (isCancelled())
+        block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
     chunk.setColumns(block.getColumns(), num_rows);
     cur_chunk = std::move(chunk);
 }
