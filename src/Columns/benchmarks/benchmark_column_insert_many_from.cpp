@@ -62,6 +62,17 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
     return std::move(column);
 }
 
+static ColumnPtr mockNonEmptyStringColumn(size_t rows)
+{
+    auto column = DataTypeFactory::instance().get("String")->createColumn();
+    const String value = "helloworld123456";
+
+    for (size_t i = 0; i < rows; ++i)
+        column->insert(value);
+
+    return column;
+}
+
 static ColumnPtr mockRepeatedArrayColumn(const DataTypePtr & type, size_t array_size)
 {
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
@@ -184,7 +195,10 @@ template <const std::string & str_type>
 static void BM_insertManyFromNotNullable(benchmark::State & state)
 {
     auto nullable_type = DataTypeFactory::instance().get(str_type);
-    auto src = mockColumn(removeNullable(nullable_type), ROWS);
+    auto type_not_nullable = removeNullable(nullable_type);
+    auto src = isString(type_not_nullable)
+        ? mockNonEmptyStringColumn(ROWS)
+        : mockColumn(type_not_nullable, ROWS);
     const size_t length = state.range(0);
 
     for ([[maybe_unused]] auto _ : state)
