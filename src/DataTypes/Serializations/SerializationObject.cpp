@@ -954,18 +954,34 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     object_state->shared_data_serialization->serializeBinaryBulkWithMultipleStreams(*shared_data, offset, limit, settings, object_state->shared_data_state);
     if (object_state->recalculate_statistics)
     {
-        /// Calculate statistics for paths in shared data.
+        /// Count every distinct shared-data path in this range (merged with any already accumulated
+        /// from earlier ranges) before capping to MAX_SHARED_DATA_STATISTICS_SIZE, below.
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         size_t start = shared_data_offsets[offset - 1];
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
+
+        UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
+        for (auto & [path, size] : object_state->statistics.shared_data_paths_statistics)
+            shared_data_candidates[path] = size;
         for (size_t i = start; i != end; ++i)
+            ++shared_data_candidates[String(shared_data_paths->getDataAt(i))];
+
+        object_state->statistics.shared_data_paths_statistics.clear();
+        if (shared_data_candidates.size() <= ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
         {
-            auto path = shared_data_paths->getDataAt(i);
-            if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
-                ++it->second;
-            else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
-                object_state->statistics.shared_data_paths_statistics.emplace(path, 1);
+            for (auto & [path, size] : shared_data_candidates)
+                object_state->statistics.shared_data_paths_statistics.emplace(path, size);
+        }
+        else
+        {
+            VectorWithMemoryTracking<std::pair<size_t, std::string_view>> candidates_with_sizes;
+            candidates_with_sizes.reserve(shared_data_candidates.size());
+            for (const auto & [path, size] : shared_data_candidates)
+                candidates_with_sizes.emplace_back(size, path);
+            sortAndKeepTop(candidates_with_sizes, ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE, std::greater<>());
+            for (const auto & [size, path] : candidates_with_sizes)
+                object_state->statistics.shared_data_paths_statistics.emplace(path, size);
         }
     }
     settings.path.pop_back();
