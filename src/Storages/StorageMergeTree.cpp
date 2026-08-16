@@ -2396,7 +2396,7 @@ bool StorageMergeTree::optimize(
         /// pool is already busy with background merges.
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
-        if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
+        if (txn == nullptr && merge_mutate_executor)
         {
             reserved_merge_slots = merge_mutate_executor->reserveTaskSlots(partition_ids.size());
 
