@@ -63,6 +63,7 @@ Settings:
 | `port` | none | Port that serves ClickHouse metrics. |
 | `endpoint` | `/metrics` | HTTP endpoint for scraping metrics. It starts with `/`. Should not be used with the `<handlers>` section. |
 | `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/concepts/features/interfaces/http) section. |
+| `info` | true | Exposes the `ClickHouse_Info` gauge with server identity labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`). |
 | `metrics` | true | Exposes metrics from [`system.metrics`](/reference/system-tables/metrics). |
 | `asynchronous_metrics` | true | Exposes metrics from [`system.asynchronous_metrics`](/reference/system-tables/asynchronous_metrics). |
 | `events` | true | Exposes metrics from [`system.events`](/reference/system-tables/events). |
