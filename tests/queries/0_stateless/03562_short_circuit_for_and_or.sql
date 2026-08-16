@@ -100,4 +100,7 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT true AND (true OR (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 
+SELECT 'Test folded scalar subquery in an aggregate projection';
+SELECT DISTINCT (1 OR ((SELECT count(*) FROM test_03562) > 1)), count() IGNORE NULLS AS `count()` FROM test_03562 LIMIT 7;
+
 DROP TABLE IF EXISTS test_03562;

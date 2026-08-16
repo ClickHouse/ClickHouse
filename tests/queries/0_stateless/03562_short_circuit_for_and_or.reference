@@ -47,6 +47,8 @@ Check the read_rows of the above queries to ensure that the short circuit is wor
 1
 1
 1
+Test folded scalar subquery in an aggregate projection
+1	10000
 0
 1
 1
