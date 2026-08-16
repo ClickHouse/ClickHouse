@@ -39,7 +39,19 @@ then
     exit 1
 fi
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}' ASYNC" >/dev/null
+
+# Do not release the failpoint until the asynchronous kill has reached the query. Otherwise,
+# the query can resume and park at the post-expression failpoint before cancellation is set.
+cancelled=0
+for _ in {1..300}
+do
+    cancelled=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
+    [[ "$cancelled" -ge 1 ]] && break
+    sleep 0.1
+done
+[[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; exit 1; }
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_totals_before_expression_pause"
 
 wait "$client_pid"
