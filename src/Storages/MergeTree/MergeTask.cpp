@@ -978,10 +978,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// codec while rewriting the projection data.
         chassert(global_ctx->parent_part->default_codec);
         global_ctx->compression_codec = global_ctx->parent_part->default_codec;
-        global_ctx->is_explicit_recompression = isExplicitRecompression(
-            global_ctx->metadata_snapshot->getRecompressionTTLs(),
-            global_ctx->parent_part->ttl_infos.recompression_ttl,
-            global_ctx->time_of_merge);
+        global_ctx->is_explicit_recompression = global_ctx->parent_is_explicit_recompression;
     }
     else
     {
@@ -2264,6 +2261,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_merging_params,
             projection,
             global_ctx->new_data_part.get(),
+            global_ctx->is_explicit_recompression,
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
             ".proj",
             NO_TRANSACTION_PTR,

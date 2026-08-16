@@ -470,6 +470,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         std::move(merging_params),
         projection,
         parent_part,
+        /*parent_is_explicit_recompression=*/ false,
         nullptr,
         suffix,
         std::move(txn),
