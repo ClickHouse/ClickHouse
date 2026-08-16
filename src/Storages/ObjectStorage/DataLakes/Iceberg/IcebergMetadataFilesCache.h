@@ -229,6 +229,13 @@ public:
     LatestMetadataVersionPtr getOrSetLatestMetadataVersion(
         const String & data_source_description, const String & table_path, const std::optional<String> & table_uuid, LoadFunc && load_fn, time_t tolerated_staleness_ms)
     {
+        /// NOTE: `table_path` and `table_uuid` reference the same cell under two independent keys,
+        ///       so a cell stored under one table's UUID is visible to any query supplying that
+        ///       UUID, and a cell stored under a table path is visible to any query on that path.
+        ///       Callers whose selection of the latest metadata file depends on *both* (namely the
+        ///       explicit `iceberg_metadata_table_uuid` way, which filters `metadata/` by
+        ///       `table-uuid`) must not use this cache at all.
+
         /// This caching method for latest metadata version:
         /// 1.    Takes two keys to reference a table - path and [optional] uuid
         /// 2.    Probes the cache only if stale values are tolerated - sometimes we just have to force the latest value from the remote catalog and to cache it
