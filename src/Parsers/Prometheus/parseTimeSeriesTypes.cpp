@@ -168,7 +168,7 @@ namespace
                 return result;
 
             ReadBufferFromString buf{str};
-            if (tryReadDateTime64Text(result, scale, buf))
+            if (tryReadDateTime64Text(result, scale, buf) && buf.eof())
                 return result;
         }
         else
@@ -195,7 +195,14 @@ namespace
             }
             case Field::Types::UInt64:
             {
-                return getFromInt<T>(field.safeGet<UInt64>(), scale);
+                UInt64 uint_value = field.safeGet<UInt64>();
+                if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                {
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                    "Cannot convert {} to {}: Overflow, the number is too big",
+                                    uint_value, getTypeName<T>());
+                }
+                return getFromInt<T>(static_cast<Int64>(uint_value), scale);
             }
             case Field::Types::Float64:
             {

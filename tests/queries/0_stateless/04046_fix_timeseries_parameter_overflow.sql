@@ -10,4 +10,10 @@ INSERT INTO ts_data_overflow VALUES ('2020-01-01 00:00:00.000', 1.0), ('2020-01-
 
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 9223372036854775806, 50)(timestamp, value) AS res FROM ts_data_overflow FORMAT Null; -- { serverError DECIMAL_OVERFLOW }
 
+-- A UInt64 value above Int64 max must not wrap to a negative timestamp (scale 0: no multiplier to catch it)
+SELECT timeSeriesResampleToGridWithStaleness(9223372036854775808, 150, 15, 50)(timestamp::DateTime64(0, 'UTC'), value) FROM ts_data_overflow FORMAT Null; -- { serverError DECIMAL_OVERFLOW }
+
+-- UInt64 max wraps to -1, which every scale multiplier accepts silently
+SELECT timeSeriesResampleToGridWithStaleness(18446744073709551615, 150, 15, 50)(timestamp, value) FROM ts_data_overflow FORMAT Null; -- { serverError DECIMAL_OVERFLOW }
+
 DROP TABLE ts_data_overflow;
