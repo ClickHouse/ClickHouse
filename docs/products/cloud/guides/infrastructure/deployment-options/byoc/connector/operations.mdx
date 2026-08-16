@@ -12,7 +12,7 @@ This page covers day-2 operation of the ClickHouse Connector on both install tar
 
 ### Kubernetes {#upgrades-kubernetes}
 
-Upgrade the Helm release from the public chart repository, reusing the values overlay that `init` staged:
+Day-2 Kubernetes operations use the `helm` CLI on your workstation; only `init` carries a built-in Helm client, so install `helm` before your first upgrade. Upgrade the release from the public chart repository, reusing the values overlay that `init` staged:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
