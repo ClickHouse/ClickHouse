@@ -327,6 +327,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
     PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
     PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \
+    PAUSEABLE_ONCE(storage_url_pause_before_request_attempt) \
     PAUSEABLE_ONCE(storage_url_pause_before_retry_attempt) \
     PAUSEABLE_ONCE(storage_url_pause_before_input_format_initialization) \
     PAUSEABLE_ONCE(storage_url_pause_after_pull) \

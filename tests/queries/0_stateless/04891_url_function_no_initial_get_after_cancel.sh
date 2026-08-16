@@ -6,9 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ReadBuffer::eof` starts a lazy HTTP GET when it is called to skip empty URL files.  Once the
+# `ReadBuffer::eof` starts a lazy HTTP GET when it is called to skip empty URL files. Once the
 # buffer has been selected, cancelling the query must prevent that GET. The failpoint holds the
-# source immediately before `eof`, then a controlled soft cancellation is delivered with SIGINT.
+# first request after the source's outer cancellation guard, then a controlled soft cancellation
+# is delivered with SIGINT.
 
 PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 
@@ -60,7 +61,7 @@ with open('$PORT_FILE', 'w') as f:
 server.serve_forever()
 " &
 HTTP_PID=$!
-trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_empty_file_probe" 2>/dev/null; kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_request_attempt" 2>/dev/null; kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
 for _ in {1..300}; do
     [[ -s "$PORT_FILE" ]] && break
@@ -78,7 +79,7 @@ stat_count()
     curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('$1', 0))"
 }
 
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_empty_file_probe"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_request_attempt"
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_no_initial_get_after_cancel"
 $CLICKHOUSE_CLIENT \
@@ -90,9 +91,8 @@ $CLICKHOUSE_CLIENT \
     >/dev/null 2>/dev/null &
 CLIENT_PID=$!
 
-# Wait until the source has selected the single URL and paused immediately before its `eof` probe,
-# which would otherwise initiate the first GET.
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_empty_file_probe PAUSE"
+# Wait until the first request is about to begin after all outer cancellation guards.
+$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_request_attempt PAUSE"
 
 kill -SIGINT $CLIENT_PID
 
@@ -106,7 +106,7 @@ for _ in {1..300}; do
     sleep 0.1
 done
 
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_empty_file_probe"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_request_attempt"
 
 wait $CLIENT_PID
 CLIENT_STATUS=$?

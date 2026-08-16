@@ -76,6 +76,7 @@ ReadInterruptedException::ReadInterruptedException(std::exception_ptr original_e
 namespace FailPoints
 {
     extern const char http_read_buffer_pause_before_metadata_fallback[];
+    extern const char storage_url_pause_before_request_attempt[];
     extern const char storage_url_pause_before_retry_attempt[];
 }
 
@@ -341,8 +342,15 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
         String error_message;
 
-        /// `waitBeforeRetry` cannot protect the interval after it returns and before this attempt
-        /// starts. Do not issue another request after cancellation in that interval.
+        /// The callers cannot protect the interval after their last cancellation check and before
+        /// this attempt starts. Do not issue a request after cancellation in that interval.
+        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
+        CurrentThread::checkIfNotCancelled();
+        if (isReadCancelled())
+            throw ReadInterruptedException(exception);
+
+        /// `waitBeforeRetry` also cannot protect the interval after it returns and before a retry
+        /// starts. Keep a dedicated failpoint for the retry regression test.
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
