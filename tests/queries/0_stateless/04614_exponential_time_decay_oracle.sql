@@ -454,8 +454,10 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 SET enable_analyzer = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+-- Full ATTACH definitions are rejected before type validation, so they cannot
+-- bypass the experimental setting.
 ATTACH VIEW time_decay_parameterized_view_attach_gate AS
-SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError BAD_ARGUMENTS }
 
 -- Identifier parameters are query syntax, not data types, and must remain valid.
 DROP TABLE IF EXISTS time_decay_identifier_source;
@@ -470,11 +472,8 @@ DROP TABLE time_decay_identifier_source;
 SET allow_experimental_time_decay_aggregate_functions = 1;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1);
-ATTACH VIEW time_decay_parameterized_view_attach_gate AS
-SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1);
-SELECT 'typed parameters preserved';
+SELECT 'typed parameter preserved';
 DROP VIEW time_decay_parameterized_view_gate;
-DROP VIEW time_decay_parameterized_view_attach_gate;
 
 -- A short ATTACH reloads existing metadata and remains available while disabled.
 CREATE VIEW time_decay_parameterized_view_reattach AS
