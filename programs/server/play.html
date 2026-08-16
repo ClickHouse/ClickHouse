@@ -1161,38 +1161,38 @@
             color: var(--syntax-default);
         }
 
-        #query-backdrop .q-active { background-color: var(--current-query-background-color); }
+        .q-syntax .q-active { background-color: var(--current-query-background-color); }
 
         /* Per-token syntax highlighting classes. */
-        #query-backdrop .q-kw  { color: var(--syntax-keyword); font-weight: bold; }
-        #query-backdrop .q-id  { color: var(--syntax-identifier); }
-        #query-backdrop .q-fn  { color: var(--syntax-function); }
-        #query-backdrop .q-num { color: var(--syntax-number); }
-        #query-backdrop .q-str { color: var(--syntax-string); }
-        #query-backdrop .q-qid { color: var(--syntax-qident); }
-        #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
-        #query-backdrop .q-op  { color: var(--syntax-operator); }
-        #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
+        .q-syntax .q-kw  { color: var(--syntax-keyword); font-weight: bold; }
+        .q-syntax .q-id  { color: var(--syntax-identifier); }
+        .q-syntax .q-fn  { color: var(--syntax-function); }
+        .q-syntax .q-num { color: var(--syntax-number); }
+        .q-syntax .q-str { color: var(--syntax-string); }
+        .q-syntax .q-qid { color: var(--syntax-qident); }
+        .q-syntax .q-com { color: var(--syntax-comment); font-style: italic; }
+        .q-syntax .q-op  { color: var(--syntax-operator); }
+        .q-syntax .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
         /* The token where the server reported a syntax error is painted with a red
            background. It is cleared as soon as the user returns focus to the editor. */
-        #query-backdrop .q-err-pos { background-color: color-mix(in srgb, var(--syntax-error) 40%, transparent); border-radius: 2px; }
+        .q-syntax .q-err-pos { background-color: color-mix(in srgb, var(--syntax-error) 40%, transparent); border-radius: 2px; }
         /* An "(end of query)" error has no token to paint: mark the statement boundary with
            a thin vertical bar. Zero content width (border + negative margins), so the
            backdrop stays aligned with the textarea. */
-        #query-backdrop .q-err-pos-end { display: inline-block; width: 0; border-left: 2px solid var(--syntax-error); margin: 0 -1px; }
+        .q-syntax .q-err-pos-end { display: inline-block; width: 0; border-left: 2px solid var(--syntax-error); margin: 0 -1px; }
 
         /* Rainbow parentheses: colored by nesting depth, cycling. */
-        #query-backdrop .q-br0 { color: var(--syntax-bracket-0); }
-        #query-backdrop .q-br1 { color: var(--syntax-bracket-1); }
-        #query-backdrop .q-br2 { color: var(--syntax-bracket-2); }
-        #query-backdrop .q-br3 { color: var(--syntax-bracket-3); }
-        #query-backdrop .q-br4 { color: var(--syntax-bracket-4); }
-        #query-backdrop .q-br5 { color: var(--syntax-bracket-5); }
-        #query-backdrop .q-br6 { color: var(--syntax-bracket-6); }
+        .q-syntax .q-br0 { color: var(--syntax-bracket-0); }
+        .q-syntax .q-br1 { color: var(--syntax-bracket-1); }
+        .q-syntax .q-br2 { color: var(--syntax-bracket-2); }
+        .q-syntax .q-br3 { color: var(--syntax-bracket-3); }
+        .q-syntax .q-br4 { color: var(--syntax-bracket-4); }
+        .q-syntax .q-br5 { color: var(--syntax-bracket-5); }
+        .q-syntax .q-br6 { color: var(--syntax-bracket-6); }
 
         /* The bracket pair around the cursor: bold plus a faint box. Bold monospace has
            the same advance width, so the surrounding text does not shift. */
-        #query-backdrop .q-br-match
+        .q-syntax .q-br-match
         {
             font-weight: bold;
             background-color: color-mix(in srgb, var(--syntax-default) 20%, transparent);
@@ -1201,7 +1201,7 @@
 
         /* Underline used both for every occurrence of the identifier under the cursor and
            for the digit-group separators inside long numbers (matching `clickhouse-client`). */
-        #query-backdrop .q-underline { text-decoration: underline; }
+        .q-syntax .q-underline { text-decoration: underline; }
 
         /* Off-screen mirror used to measure the pixel coordinates of the caret inside the
            textarea. Its typography and box model MUST match the textarea exactly (same as
@@ -1638,6 +1638,377 @@
             transition: background-color 600000s 0s, color 600000s 0s;
         }
 
+        /* ----- Notebook mode -------------------------------------------------------------
+           Every tab holds a notebook: a list of cells, each either a query (editor + its own
+           result) or a text cell (Markdown). While a tab has exactly one cell the notebook is
+           invisible — no headers, no collapsing, the editor stays in `#editor-home` and the
+           result renders exactly as before. Adding a second cell turns notebook mode on for
+           that tab alone (`.tab-panel.notebook-mode`). */
+
+        .cell
+        {
+            position: relative;
+        }
+
+        /* Cell chrome only exists once the tab actually became a notebook. */
+        .tab-panel:not(.notebook-mode) .cell-header,
+        .tab-panel:not(.notebook-mode) .cell-gutter
+        {
+            display: none;
+        }
+
+        .tab-panel.notebook-mode .cell
+        {
+            margin: 0.75rem 0;
+            /* A quiet frame around the cell; the active one is picked out by its left edge. */
+            border-left: 3px solid transparent;
+            padding-left: 0.5rem;
+        }
+
+        .tab-panel.notebook-mode .cell.cell-active
+        {
+            border-left-color: color-mix(in srgb, var(--link-color) 50%, transparent);
+        }
+
+        .cell-header
+        {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 80%;
+            color: var(--misc-text-color);
+            /* Keep the row from jumping when the buttons fade in on hover. */
+            min-height: 1.5rem;
+            user-select: none;
+        }
+
+        .cell-label
+        {
+            white-space: nowrap;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            opacity: 0.7;
+        }
+
+        /* The status dot mirrors the cell's own run state (a notebook can hold several
+           results at once, so the shared progress bar alone is not enough). */
+        .cell-status
+        {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background-color: transparent;
+            flex: none;
+        }
+
+        .cell-status.cell-status-running { background-color: var(--link-color); animation: cell-pulse 1s ease-in-out infinite; }
+        .cell-status.cell-status-done    { background-color: var(--element-color-ok); }
+        .cell-status.cell-status-error   { background-color: var(--syntax-error); }
+
+        @keyframes cell-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+        .cell-actions
+        {
+            display: flex;
+            gap: 0.125rem;
+            margin-left: auto;
+            /* Muted until the cell is hovered or focused, so a long notebook stays calm. */
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+
+        .cell:hover .cell-actions,
+        .cell:focus-within .cell-actions
+        {
+            opacity: 1;
+        }
+
+        .cell-actions button
+        {
+            background: none;
+            cursor: pointer;
+            color: var(--misc-text-color);
+            font-size: 100%;
+            line-height: 1;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.2rem;
+        }
+
+        .cell-actions button:hover
+        {
+            color: var(--text-color-active);
+            background-color: var(--element-background-color);
+        }
+
+        .cell-actions button[disabled]
+        {
+            opacity: 0.3;
+            cursor: default;
+        }
+
+        .cell-actions button:hover[disabled]
+        {
+            color: var(--misc-text-color);
+            background-color: transparent;
+        }
+
+        /* A query cell that is not the active one shows its query collapsed to a single line:
+           runs of whitespace become one space and the tail fades out on the right. Unlike the
+           editor and the Markdown text area it has no background of its own — an inactive cell
+           reads as text on the page rather than as an input box. */
+        .query-preview
+        {
+            display: block;
+            width: 100%;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 11pt;
+            white-space: pre;
+            overflow: hidden;
+            cursor: text;
+            background: none;
+            border: none;
+            padding: 0.25rem 0;
+            /* Exactly one line high. */
+            line-height: 1.4;
+            height: calc(1.4em + 0.5rem);
+        }
+
+        /* Only a query that does not fit fades out; a short one must not lose its last word. */
+        .query-preview.query-preview-clipped
+        {
+            mask-image: linear-gradient(to right, black calc(100% - 4rem), transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black calc(100% - 4rem), transparent 100%);
+        }
+
+        .query-preview:hover
+        {
+            /* The only affordance an inactive cell needs: it is clickable. */
+            background-color: color-mix(in srgb, var(--element-background-color) 60%, transparent);
+        }
+
+        .query-preview.query-preview-empty
+        {
+            color: var(--misc-text-color);
+            font-style: italic;
+        }
+
+        /* A notebook is read top to bottom, so the docked editor is shorter than the standalone
+           one: a cell holds one statement, and its result should stay in view under it. The
+           drag handle still overrides this (it writes an inline height). */
+        .tab-panel.notebook-mode #query
+        {
+            height: 10vh;
+            min-height: 4.5em;
+        }
+
+        /* In notebook mode a result is a small pane of its own: a quarter of the viewport,
+           scrolled internally rather than pushing the rest of the notebook down the page. */
+        .tab-panel.notebook-mode .cell-result
+        {
+            font-size: 85%;
+            max-height: 25vh;
+            overflow: auto;
+            /* A new scroll container, so the table's sticky header sticks to the pane. */
+            position: relative;
+        }
+
+        /* The result element's own top margin doubles the gap under the editor here. */
+        .tab-panel.notebook-mode .cell-result query-result
+        {
+            --result-top-margin: 0.25rem;
+        }
+
+        /* ----- Text cells ---------------------------------------------------------------- */
+
+        .cell-text-view
+        {
+            padding: 0.25rem 0.25rem 0.25rem 0;
+            cursor: text;
+            /* Long words in rendered Markdown must not widen the page. */
+            overflow-wrap: break-word;
+        }
+
+        .cell-text-view.cell-text-empty
+        {
+            color: var(--misc-text-color);
+            font-style: italic;
+        }
+
+        .cell-text-view > :first-child { margin-top: 0; }
+        .cell-text-view > :last-child { margin-bottom: 0; }
+
+        .cell-text-view h1, .cell-text-view h2, .cell-text-view h3,
+        .cell-text-view h4, .cell-text-view h5, .cell-text-view h6
+        {
+            margin: 0.75em 0 0.4em 0;
+            line-height: 1.2;
+        }
+
+        .cell-text-view h1 { font-size: 1.6em; }
+        .cell-text-view h2 { font-size: 1.35em; }
+        .cell-text-view h3 { font-size: 1.15em; }
+        .cell-text-view h4, .cell-text-view h5, .cell-text-view h6 { font-size: 1em; }
+
+        .cell-text-view p, .cell-text-view ul, .cell-text-view ol, .cell-text-view pre
+        {
+            margin: 0.5em 0;
+        }
+
+        .cell-text-view ul, .cell-text-view ol { padding-left: 1.5em; }
+
+        .cell-text-view code
+        {
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 0.9em;
+            background-color: var(--element-background-color);
+            border-radius: 0.2rem;
+            padding: 0 0.2em;
+        }
+
+        .cell-text-view pre
+        {
+            background-color: var(--element-background-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.2rem;
+            padding: 0.5em;
+            overflow: auto;
+        }
+
+        .cell-text-view pre code { background: none; padding: 0; }
+
+        .cell-text-view blockquote
+        {
+            margin: 0.5em 0;
+            padding-left: 0.75em;
+            border-left: 3px solid var(--border-color);
+            color: var(--misc-text-color);
+        }
+
+        .cell-text-view hr
+        {
+            border: none;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .cell-text-view table
+        {
+            border-collapse: collapse;
+        }
+
+        .cell-text-view th, .cell-text-view td
+        {
+            border: 1px solid var(--border-color);
+            padding: 0.15em 0.4em;
+        }
+
+        /* The Markdown editor mirrors the query editor: a transparent textarea over a
+           highlighted backdrop, so the source keeps its markers instead of being rendered. */
+        .md-editor
+        {
+            position: relative;
+        }
+
+        .md-editor textarea
+        {
+            display: block;
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            min-height: 4rem;
+            /* The height follows the content (see `autoGrowTextarea`); the browser's own
+               resizer would fight that. */
+            resize: none;
+            overflow: hidden;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text-color-active);
+            line-height: 1.4;
+            font-family: inherit;
+        }
+
+        .md-backdrop
+        {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+            /* Typography MUST match the textarea exactly. */
+            font-size: 11pt;
+            line-height: 1.4;
+            padding: 0.25rem;
+            border: 1px solid transparent;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
+        }
+
+        .md-syntax .md-marker { color: var(--misc-text-color); }
+        .md-syntax .md-head   { color: var(--syntax-keyword); font-weight: bold; }
+        .md-syntax .md-em     { font-style: italic; }
+        .md-syntax .md-strong { font-weight: bold; }
+        .md-syntax .md-code   { color: var(--syntax-string); }
+        .md-syntax .md-link   { color: var(--link-color); }
+        .md-syntax .md-quote  { color: var(--misc-text-color); font-style: italic; }
+
+        /* ----- The "add a cell" control ---------------------------------------------------
+           Shown under the last cell once the tab has a result to build a notebook around.
+           Collapsed it is a single large, deliberately muted [+]; clicking it reveals the
+           two kinds of cell that can be added. */
+
+        .notebook-add
+        {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.5rem 0 1rem 0;
+        }
+
+        .notebook-add button
+        {
+            background: none;
+            cursor: pointer;
+            color: var(--misc-text-color);
+            border: 1px dashed var(--border-color);
+            border-radius: 0.25rem;
+            opacity: 0.5;
+            transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+        }
+
+        .notebook-add button:hover
+        {
+            opacity: 1;
+            color: var(--text-color-active);
+            border-color: var(--link-color);
+        }
+
+        .notebook-add-toggle
+        {
+            font-size: 180%;
+            line-height: 1;
+            padding: 0.1em 2em;
+        }
+
+        .notebook-add-option
+        {
+            font-size: 90%;
+            padding: 0.35em 0.9em;
+        }
+
+        /* Collapsed: only the [+]. Expanded: only the two choices. */
+        .notebook-add:not(.notebook-add-open) .notebook-add-option,
+        .notebook-add.notebook-add-open .notebook-add-toggle
+        {
+            display: none;
+        }
+
+        .notebook-add[hidden]
+        {
+            display: none; /* the shared display:flex above would otherwise defeat [hidden] */
+        }
+
     </style>
 </head>
 
@@ -1681,8 +2052,11 @@
             <div id="inputs">
                 <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
-            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
-            <div id="query-params"></div>
+            <!-- The editor and its parameter inputs live here while the tab shows a single
+                 query. In notebook mode both nodes are moved into the active notebook cell
+                 (see `dockEditor`), and this placeholder stays empty until they come back. -->
+            <div id="editor-home"><div id="query_div"><div id="query-backdrop" class="q-syntax"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
+            <div id="query-params"></div></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
@@ -1962,7 +2336,9 @@ class QueryResultElement extends HTMLElement
 
                 #data_div
                 {
-                    margin-top: 1rem;
+                    /* Notebook cells tighten this gap by setting --result-top-margin, because
+                       there the result sits right under its own cell editor. */
+                    margin-top: var(--result-top-margin, 1rem);
                     background-color: var(--element-background-color);
                 }
 
@@ -4400,8 +4776,13 @@ let params_restore_pending_token = null;
 /// owns a persistent result panel that stays alive in the DOM while inactive (just hidden), so
 /// switching neither re-renders the result nor aborts a running query — it keeps streaming
 /// into its own tab's element in the background. Panels are materialized lazily. Per-tab
-/// runtime state (`resultEl`, `controller`, `reqNum`, …) is transient; only
-/// `{id,title,query,params,result,lastSavedQuery}` are persisted.
+/// runtime state (`panel`, `controller`, `reqNum`, …) is transient; only
+/// `{id,title,cells,activeCellId,runnableUrl}` are persisted.
+///
+/// A tab is really a NOTEBOOK of cells (see `CELL_STATE_FIELDS`): the query text, parameters
+/// and result snapshot belong to a cell, and `tab.query` / `tab.result` / `tab.resultEl` are
+/// accessors onto the cell the editor is currently docked in. A tab with a single cell shows no
+/// notebook chrome at all, so the plain single-query UI is unchanged.
 let tabs = [];           /// array of tab objects; display order == array order
 let activeTabId = null;
 let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
@@ -4473,31 +4854,33 @@ let password_elem = document.getElementById('password');
 let progressEl = document.getElementById('query-progress');
 let logoEl = document.getElementById('logo-container');
 /// Container for the per-tab result panels. Each tab owns one `.tab-panel` here (created
-/// lazily); only the active tab's panel is shown. `resultEl`/`multiQueryContainer` are dynamic
-/// aliases that always point at the ACTIVE tab's elements, repointed by `activateTab`, so the
-/// many "operate on the current result" call sites keep working. A running query, however,
-/// targets the tab it was launched in via `tab.resultEl`, never these aliases.
+/// lazily), holding its notebook; only the active tab's panel is shown.
+/// `resultEl`/`multiQueryContainer` are dynamic aliases that always point at the ACTIVE tab's
+/// active cell, repointed by `activateTab`/`setActiveCell`, so the many "operate on the current
+/// result" call sites keep working. A running query, however,
+/// targets the cell it was launched in via `cell.resultEl`, never these aliases.
 let resultPanelsEl = document.getElementById('result-panels');
 let resultEl = null;
 let multiQueryContainer = null;
 
 /// Route a result element's live progress to the shared progress bar (under Run) and to the
-/// owning tab's title indicators. For a background tab only the tab-title effects update; the
-/// shared bar reflects the active tab only. Attached per tab in `getOrCreatePanel`.
-function handleResultProgress(tab, detail) {
-    tab.progress = {
+/// owning tab's title indicators. For a background tab — or a notebook cell the user has
+/// scrolled past and left — only the tab-title effects update; the shared bar reflects the
+/// active tab's active cell only. Attached per cell in `getOrCreateCellDom`.
+function handleResultProgress(cell, detail) {
+    cell.progress = {
         read_rows: +detail.read_rows,
         read_bytes: +detail.read_bytes,
         total_rows_to_read: +detail.total_rows_to_read,
         elapsed_ns: +detail.elapsed_ns,
-        rowCount: tab.resultEl ? tab.resultEl.rowCount : 0,
-        incomplete: tab.resultEl ? tab.resultEl.incompleteResult : false,
+        rowCount: cell.resultEl ? cell.resultEl.rowCount : 0,
+        incomplete: cell.resultEl ? cell.resultEl.incompleteResult : false,
     };
-    updateTabIndicator(tab);
-    if (tab.id === activeTabId) {
+    updateTabIndicator(cell.tab);
+    if (cellIsOnScreen(cell)) {
         elapsed_ns = +detail.elapsed_ns;
         progressEl.updateProgress(detail);
-        progressEl.updateText(tab.resultEl.rowCount, elapsed_ns, tab.resultEl.incompleteResult);
+        progressEl.updateText(cell.resultEl.rowCount, elapsed_ns, cell.resultEl.incompleteResult);
     }
 }
 
@@ -6223,13 +6606,15 @@ function parseInbandException(text, format)
 /// failed runs also carry `exception_tag` and `display_error` (the rendered error text,
 /// persisted with the snapshot so the failure still restores when the body is dropped by the
 /// history size cap). The caller handles top-level UI (download buttons, history, favicon).
-/// `tab` owns the run; `posted_request_num` is a snapshot of `tab.reqNum` taken at launch, so
-/// a late response bails once the tab is re-run/cancelled/closed. `queryStart` is the offset
-/// of `query` in the editor, for mapping a server-reported error position back to it.
-/// `query_database` and `connection` are snapshotted by the caller BEFORE its awaits: the
-/// shared inputs must not be re-read here, or an edit during an await would retarget the run.
-async function postImpl(tab, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart)
+/// `cell` is the notebook cell the run belongs to and `tab` its tab; `posted_request_num` is a
+/// snapshot of `tab.reqNum` taken at launch, so a late response bails once the tab is
+/// re-run/cancelled/closed. `queryStart` is the offset of `query` in the editor, for mapping a
+/// server-reported error position back to it. `query_database` and `connection` are snapshotted
+/// by the caller BEFORE its awaits: the shared inputs must not be re-read here, or an edit
+/// during an await would retarget the run.
+async function postImpl(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart)
 {
+    const tab = cell.tab;
     const user = connection.user;
     const password = connection.password;
     const server_address = connection.url;
@@ -6305,10 +6690,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             }
 
             /// Highlight a server-reported error position in the editor — only while the
-            /// launching tab is still active (a background run must never paint the foreground
-            /// editor) and the user has not touched the editor since this run started.
-            if (tab.id === activeTabId && editorInteractionGen === tab.runEditorInteraction) {
-                highlightQueryError(reply, query, queryStart, tab);
+            /// launching cell still owns the editor (a background run, or one whose cell the
+            /// user has left, must never paint the foreground editor) and the user has not
+            /// touched the editor since this run started.
+            if (cellIsOnScreen(cell) && editorInteractionGen === cell.runEditorInteraction) {
+                highlightQueryError(reply, query, queryStart, cell);
             }
 
             return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
@@ -6602,20 +6988,22 @@ function compactFailureSnapshot(reply)
     return reply.slice(0, 100000);
 }
 
-/// Execute a single query in the given `tab`, rendering into that tab's own persistent result
-/// element. Shared-chrome updates (progress bar, download/copy buttons, page hue) are applied
-/// only when `tab` is active; otherwise they are recorded on the tab and replayed by
-/// `syncActiveTabChrome`. `history_query_text`, when provided, overrides `query` for history/URL
-/// storage (running a selected query keeps the full editor text there). `paramValuesSnapshot`,
-/// `connection` and `query_database` are captured by the caller BEFORE the lexer preflight
-/// await, so a tab switch during that await cannot rebind the run.
-async function postSingle(tab, posted_request_num, query, history_query_text, paramValuesSnapshot, queryStart, connection, query_database)
+/// Execute a single query in the given notebook `cell`, rendering into that cell's own
+/// persistent result element. Shared-chrome updates (progress bar, download/copy buttons, page
+/// hue) are applied only while the cell is on screen (its tab is active and it still holds the
+/// editor); otherwise they are recorded on the cell and replayed by `syncActiveTabChrome`.
+/// `history_query_text`, when provided, overrides `query` for history/URL storage (running a
+/// selected query keeps the full editor text there). `paramValuesSnapshot`, `connection` and
+/// `query_database` are captured by the caller BEFORE the lexer preflight await, so a tab
+/// switch during that await cannot rebind the run.
+async function postSingle(cell, posted_request_num, query, history_query_text, paramValuesSnapshot, queryStart, connection, query_database)
 {
     /// Per-run start time: tabs execute concurrently, so a shared global would be overwritten
     /// by whichever tab launched last and misreport the elapsed time of the others.
     const query_start = performance.now();
-    const el = tab.resultEl;
-    const active = () => tab.id === activeTabId;
+    const tab = cell.tab;
+    const el = cell.resultEl;
+    const active = () => cellIsOnScreen(cell);
     /// `history_query_text` is provided exactly when the run covered only part of the editor;
     /// `saveHistory` needs this to decide whether the entry may carry `run=1`.
     const ran_full_editor = history_query_text === undefined;
@@ -6625,35 +7013,35 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     const query_url = connection.url;
     const query_user = connection.user;
 
-    tab.downloadVisible = false;
-    tab.copyVisible = false;
-    clearPanel(tab);
-    tab.progressPhase = 'running';
+    cell.downloadVisible = false;
+    cell.copyVisible = false;
+    clearCell(cell);
+    cell.progressPhase = 'running';
     if (active()) { paintDownloadCopy(tab); progressEl.start(); }
 
     tab.controller = new AbortController();
-    const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart);
+    const result = await postImpl(cell, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart);
 
     if (result.cancelled) return;
 
     if (result.is_error || !result.response_ok) {
-        tab.logoVisible = false;
-        tab.progressPhase = 'error';
-        tab.failed = true;
-        tab.downloadVisible = false;
-        tab.copyVisible = false;
+        cell.logoVisible = false;
+        cell.progressPhase = 'error';
+        cell.failed = true;
+        cell.downloadVisible = false;
+        cell.copyVisible = false;
         if (active()) {
             logoEl.style.display = 'none';
             progressEl.clear();
             paintDownloadCopy(tab);
         }
-        /// Persist the error as this tab's result snapshot; without this, the tab's previous
+        /// Persist the error as this cell's result snapshot; without this, the cell's previous
         /// successful result would resurrect under the failed query. Guarded on the request
         /// number, so a superseded run does not overwrite the snapshot.
         if (posted_request_num == tab.reqNum) {
             /// Mark "finished while away" only when the tab is inactive at the moment the run
             /// ends; a foreground finish must not badge the tab on a later switch.
-            tab.completed = !active();
+            tab.completed = tab.id !== activeTabId;
             saveHistory({
                 query: history_query_text || query,
                 resultQuery: query,
@@ -6674,9 +7062,10 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 database: query_database,
                 url: query_url,
                 user: query_user,
-            }, undefined, tab);
+            }, undefined, tab, cell);
         }
         updateTabIndicator(tab);
+        updateCellStatus(cell);
         return;
     }
 
@@ -6687,22 +7076,22 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         else el._pendingChangeLayout = true;
     }
 
-    tab.progressPhase = 'done';
-    tab.failed = false;
-    tab.downloadVisible = true;
-    tab.copyVisible = result.is_raw;
-    tab.downloadQuery = query;
-    tab.downloadParams = paramValuesSnapshot;
+    cell.progressPhase = 'done';
+    cell.failed = false;
+    cell.downloadVisible = true;
+    cell.copyVisible = result.is_raw;
+    cell.downloadQuery = query;
+    cell.downloadParams = paramValuesSnapshot;
     /// Record the database and connection this run produced its result against, so a later
     /// download reproduces the result there rather than against whatever is live then.
-    tab.downloadDatabase = query_database;
-    tab.downloadUrl = query_url;
-    tab.downloadUser = query_user;
+    cell.downloadDatabase = query_database;
+    cell.downloadUrl = query_url;
+    cell.downloadUser = query_user;
 
     if (result.is_raw || result.is_image) {
         el.elapsedNs = 1e6 * (performance.now() - query_start);
     }
-    tab.finalStats = { rowCount: el.rowCount, elapsedNs: el.elapsedNs, incomplete: el.incompleteResult };
+    cell.finalStats = { rowCount: el.rowCount, elapsedNs: el.elapsedNs, incomplete: el.incompleteResult };
 
     if (active()) {
         elapsed_ns = el.elapsedNs;
@@ -6713,13 +7102,14 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
     }
 
-    if (posted_request_num != tab.reqNum) { updateTabIndicator(tab); return; }
+    if (posted_request_num != tab.reqNum) { updateTabIndicator(tab); updateCellStatus(cell); return; }
 
     /// As in the error path: a foreground finish must not badge the tab on a later switch.
-    tab.completed = !active();
+    tab.completed = tab.id !== activeTabId;
     updateTabIndicator(tab);
+    updateCellStatus(cell);
 
-    /// Persist the result snapshot on this tab and record a history entry. In "Run selected"
+    /// Persist the result snapshot on this cell and record a history entry. In "Run selected"
     /// mode `history_query_text` carries the full editor content, while `resultQuery` is the
     /// statement that produced this result.
     ///
@@ -6739,62 +7129,64 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         database: query_database,
         url: query_url,
         user: query_user,
-    }, undefined, tab);
+    }, undefined, tab, cell);
 }
 
-/// Execute multiple queries with parallelization of consecutive SELECTs, in the given `tab`.
-/// Like `postSingle`, shared-chrome side effects apply only when `tab` is active. `parsed` is
-/// an array of { query, is_select } from splitAllQueries; `editorText` is the full editor
-/// content captured at launch (must NOT be re-read at completion, when the editor may hold
-/// another tab's text). `paramValuesSnapshot`, `connection` and `query_database` are captured
-/// by the caller before the lexer preflight await; every statement group uses the same values.
-/// `ranFullEditor` says whether `parsed` covers EVERY statement of the launched editor — only
-/// then may the history entry carry `run=1` (its URL hash is the full editor text).
-async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, editorText, connection, ranFullEditor, query_database)
+/// Execute multiple queries with parallelization of consecutive SELECTs, in the given notebook
+/// `cell`. Like `postSingle`, shared-chrome side effects apply only while that cell is on
+/// screen. `parsed` is an array of { query, is_select } from splitAllQueries; `editorText` is
+/// the full editor content captured at launch (must NOT be re-read at completion, when the
+/// editor may hold another cell's or tab's text). `paramValuesSnapshot`, `connection` and
+/// `query_database` are captured by the caller before the lexer preflight await; every
+/// statement group uses the same values. `ranFullEditor` says whether `parsed` covers EVERY
+/// statement of the launched editor — only then may the history entry carry `run=1` (its URL
+/// hash is the full editor text).
+async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, editorText, connection, ranFullEditor, query_database)
 {
     /// Per-run start time, as in `postSingle`: concurrent tabs must not share it.
     const query_start = performance.now();
-    const active = () => tab.id === activeTabId;
+    const tab = cell.tab;
+    const active = () => cellIsOnScreen(cell);
     /// See `postSingle`: groups run sequentially, so without a single snapshot a connection
     /// edit between groups would split one run across different servers/users.
     const query_url = connection.url;
     const query_user = connection.user;
 
-    tab.downloadVisible = false;
-    tab.copyVisible = false;
-    clearPanel(tab);
-    tab.progressPhase = 'running';
+    cell.downloadVisible = false;
+    cell.copyVisible = false;
+    clearCell(cell);
+    cell.progressPhase = 'running';
     if (active()) { paintDownloadCopy(tab); progressEl.start(); }
 
-    /// Hide this tab's single result element and the logo; the multi container takes over.
-    tab.resultEl.style.display = 'none';
-    tab.logoVisible = false;
+    /// Hide this cell's single result element and the logo; the multi container takes over.
+    cell.resultEl.style.display = 'none';
+    cell.logoVisible = false;
     if (active()) logoEl.style.display = 'none';
 
-    /// Create this tab's multi-query container if needed (one per tab, kept alive with the panel).
-    if (!tab.multiContainer) {
-        tab.multiContainer = document.createElement('div');
-        tab.multiContainer.className = 'multi-query-results';
-        tab.panel.insertBefore(tab.multiContainer, tab.resultEl);
+    /// Create this cell's multi-query container if needed (one per cell, kept alive with it).
+    if (!cell.multiContainer) {
+        cell.multiContainer = document.createElement('div');
+        cell.multiContainer.className = 'multi-query-results';
+        cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    tab.multiContainer.innerHTML = '';
-    tab.multiContainer.style.display = 'block';
-    if (active()) multiQueryContainer = tab.multiContainer;
+    cell.multiContainer.innerHTML = '';
+    cell.multiContainer.style.display = 'block';
+    if (active()) multiQueryContainer = cell.multiContainer;
     tab.multiControllers = [];
 
     /// Create result elements for each query.
     const resultElements = [];
     for (let i = 0; i < parsed.length; ++i) {
         const el = document.createElement('query-result');
-        el._colorModes = tab.colorModes;
-        el._pinnedColumns = tab.pinnedColumns;
-        tab.multiContainer.appendChild(el);
+        el._colorModes = cell.colorModes;
+        el._pinnedColumns = cell.pinnedColumns;
+        cell.multiContainer.appendChild(el);
         resultElements.push(el);
     }
 
     /// Track aggregated progress across all concurrent queries.
     const progressState = new Map(); /// query index -> { read_rows, read_bytes, total_rows, elapsed_ns }
-    tab.progressState = progressState;
+    cell.progressState = progressState;
     function updateAggregatedProgress() {
         let total_read_rows = 0, total_read_bytes = 0, total_total_rows = 0, max_elapsed_ns = 0;
         for (const [, p] of progressState) {
@@ -6809,7 +7201,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             total_rows_to_read: String(total_total_rows),
             elapsed_ns: String(max_elapsed_ns),
         };
-        tab.progress = {
+        cell.progress = {
             read_rows: total_read_rows, read_bytes: total_read_bytes,
             total_rows_to_read: total_total_rows, elapsed_ns: max_elapsed_ns,
         };
@@ -6858,7 +7250,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         const promises = group.indices.map(i => {
             const ac = new AbortController();
             tab.multiControllers.push(ac);
-            return postImpl(tab, posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot, query_database, connection, parsed[i].queryStart)
+            return postImpl(cell, posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot, query_database, connection, parsed[i].queryStart)
                 .then(result => ({ index: i, result }));
         });
 
@@ -6885,12 +7277,12 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         if (el.incompleteResult) any_incomplete = true;
     }
 
-    tab.logoVisible = !had_error;
+    cell.logoVisible = !had_error;
     /// A "Run all" with any failed statement uses the same `'error'` phase as a single-query
     /// failure; `'done'` would replay the green check-mark when the tab is reopened.
-    tab.failed = had_error;
-    tab.progressPhase = had_error ? 'error' : 'done';
-    tab.finalStats = {
+    cell.failed = had_error;
+    cell.progressPhase = had_error ? 'error' : 'done';
+    cell.finalStats = {
         rowCount: total_rows,
         elapsedNs: max_elapsed_ns || 1e6 * (performance.now() - query_start),
         incomplete: any_incomplete,
@@ -6904,19 +7296,20 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         } else {
             logoEl.style.display = 'block';
             progressEl.finish();
-            elapsed_ns = tab.finalStats.elapsedNs;
-            progressEl.updateText(total_rows, tab.finalStats.elapsedNs, any_incomplete);
+            elapsed_ns = cell.finalStats.elapsedNs;
+            progressEl.updateText(total_rows, cell.finalStats.elapsedNs, any_incomplete);
             progressEl.style.setProperty('--progress', '0');
             document.documentElement.style.setProperty('--background-color-rotate', queryToColor(parsed[0].query));
         }
     }
 
-    if (posted_request_num != tab.reqNum) { updateTabIndicator(tab); return; }
+    if (posted_request_num != tab.reqNum) { updateTabIndicator(tab); updateCellStatus(cell); return; }
 
     /// As in the single-query path, only mark "finished while away" when this tab is inactive at
     /// the moment the run completes; a foreground finish must not badge the tab on the next switch.
-    tab.completed = !active();
+    tab.completed = tab.id !== activeTabId;
     updateTabIndicator(tab);
+    updateCellStatus(cell);
 
     /// Snapshot the per-statement results so a tab switch / reload restores the whole "Run
     /// all" output. The 100 KB cap applies to the TOTAL size: above it, drop each statement's
@@ -6943,13 +7336,13 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         ok: !had_error,
         data: null,
         multi: multi,
-        elapsed_ns: tab.finalStats.elapsedNs,
+        elapsed_ns: cell.finalStats.elapsedNs,
         params: paramValuesSnapshot,
         fullEditor: ranFullEditor,
         database: query_database,
         url: query_url,
         user: query_user,
-    }, parsed[0].query, tab);
+    }, parsed[0].query, tab, cell);
 }
 
 /// Render a saved failed-query snapshot (`ok: false`) into `el`, mirroring the live mid-stream
@@ -7207,27 +7600,28 @@ function persistPinnedColumns() {
     scheduleSave();
 }
 
-/// Re-render a saved multi-query ("Run all") snapshot into `tab`'s own panel, rebuilding its
+/// Re-render a saved multi-query ("Run all") snapshot into `cell`'s own slot, rebuilding its
 /// multi-query container the way `postMulti` lays it out. `matToken` is the tab's
 /// materialization generation.
-async function restoreMultiQuery(snapshot, tab, matToken) {
-    tab.resultEl.style.display = 'none';
+async function restoreMultiQuery(snapshot, cell, matToken) {
+    const tab = cell.tab;
+    cell.resultEl.style.display = 'none';
 
-    if (!tab.multiContainer) {
-        tab.multiContainer = document.createElement('div');
-        tab.multiContainer.className = 'multi-query-results';
-        tab.panel.insertBefore(tab.multiContainer, tab.resultEl);
+    if (!cell.multiContainer) {
+        cell.multiContainer = document.createElement('div');
+        cell.multiContainer.className = 'multi-query-results';
+        cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    tab.multiContainer.innerHTML = '';
-    tab.multiContainer.style.display = 'block';
-    if (tab.id === activeTabId) multiQueryContainer = tab.multiContainer;
+    cell.multiContainer.innerHTML = '';
+    cell.multiContainer.style.display = 'block';
+    if (cellIsOnScreen(cell)) multiQueryContainer = cell.multiContainer;
 
     const elements = [];
     for (let i = 0; i < snapshot.multi.length; ++i) {
         const el = document.createElement('query-result');
-        el._colorModes = tab.colorModes;
-        el._pinnedColumns = tab.pinnedColumns;
-        tab.multiContainer.appendChild(el);
+        el._colorModes = cell.colorModes;
+        el._pinnedColumns = cell.pinnedColumns;
+        cell.multiContainer.appendChild(el);
         elements.push(el);
     }
 
@@ -7249,12 +7643,13 @@ async function restoreMultiQuery(snapshot, tab, matToken) {
 
     /// The logo returns only for a fully successful run, matching live `postMulti`.
     /// A statement that failed to re-render (a loader failure) counts as failed too.
-    tab.logoVisible = !snapshot.multi.some(s => !s.ok) && !any_restore_failed;
-    tab.failed = !tab.logoVisible;
+    cell.logoVisible = !snapshot.multi.some(s => !s.ok) && !any_restore_failed;
+    cell.failed = !cell.logoVisible;
     /// Restore the same phase the live run recorded (`postMulti`): a failed "Run all" is `'error'`,
     /// so reopening it does not paint the shared success check-mark over a failed tab.
-    tab.progressPhase = tab.failed ? 'error' : 'done';
-    tab.finalStats = { rowCount: total_rows, elapsedNs: snapshot.elapsed_ns || max_elapsed_ns, incomplete: any_incomplete };
+    cell.progressPhase = cell.failed ? 'error' : 'done';
+    cell.finalStats = { rowCount: total_rows, elapsedNs: snapshot.elapsed_ns || max_elapsed_ns, incomplete: any_incomplete };
+    updateCellStatus(cell);
 }
 
 /// Restore the SHARED editor (query text + parameter inputs) from a tab/history `state`.
@@ -7316,54 +7711,55 @@ async function restoreEditor(state, token) {
     params_restore_pending_token = null;
 }
 
-/// Render a tab's stored result snapshot (`tab.result`) into its OWN persistent result element,
-/// the first time the tab is opened (lazy materialization) or when Back/Forward swaps its
-/// snapshot. Sets per-tab state (progress phase, final stats, logo/download/copy visibility) but
-/// does NOT paint the shared chrome — the caller does that via `syncActiveTabChrome`. Bumps the
-/// tab's `reqNum` so a superseding run / re-materialization / close bails; guarded on `matToken`.
-async function materializeResult(tab) {
-    tab.materialized = true;
-    tab.failed = false;   /// set true below if the restored snapshot is an error
+/// Render a cell's stored result snapshot (`cell.result`) into its OWN persistent result
+/// element, the first time the cell is shown (lazy materialization) or when Back/Forward swaps
+/// its snapshot. Sets per-cell state (progress phase, final stats, logo/download/copy
+/// visibility) but does NOT paint the shared chrome — the caller does that via
+/// `syncActiveTabChrome`. Bumps the TAB's `reqNum` (runs are one per tab) so a superseding run
+/// / re-materialization / close bails; guarded on `matToken`.
+async function materializeResult(cell) {
+    const tab = cell.tab;
+    cell.materialized = true;
+    cell.failed = false;   /// set true below if the restored snapshot is an error
     /// A rematerialized snapshot is historical: drop any live-progress numbers left on the
-    /// tab, or `syncActiveTabChrome` would replay the wrong run's counters under the restored
+    /// cell, or `syncActiveTabChrome` would replay the wrong run's counters under the restored
     /// result.
-    tab.progress = null;
+    cell.progress = null;
     const matToken = ++tab.reqNum;
-    const el = tab.resultEl;
-    const result = tab.result || {};
+    const el = cell.resultEl;
+    const result = cell.result || {};
 
     /// Restore this result's per-column color coding modes before rendering so the table is
-    /// colored on first paint. The element shares the tab's modes object.
-    tab.colorModes = result.color_modes || {};
-    el._colorModes = tab.colorModes;
+    /// colored on first paint. The element shares the cell's modes object.
+    cell.colorModes = result.color_modes || {};
+    el._colorModes = cell.colorModes;
     /// Restore this result's pinned columns likewise, so the table is laid out with them on first
-    /// paint. The element shares the tab's pinned-columns object, mirroring the color modes above.
-    tab.pinnedColumns = result.pinned_columns || {};
-    el._pinnedColumns = tab.pinnedColumns;
+    /// paint. The element shares the cell's pinned-columns object, mirroring the color modes above.
+    cell.pinnedColumns = result.pinned_columns || {};
+    el._pinnedColumns = cell.pinnedColumns;
 
-    clearPanel(tab);
-    tab.downloadVisible = false;
-    tab.copyVisible = false;
-    tab.downloadQuery = result.query || '';
-    tab.downloadParams = result.params || {};
+    clearCell(cell);
+    cell.downloadVisible = false;
+    cell.copyVisible = false;
+    cell.downloadQuery = result.query || '';
+    cell.downloadParams = result.params || {};
     /// Graph detection keys off the producing query, so a snapshot still renders as a graph
     /// even if the editor query was changed without rerunning.
-    el.queryText = result.query ?? tab.query;
+    el.queryText = result.query ?? cell.query;
 
-    /// A snapshotted multi-query ("Run all") result is restored into this tab's multi-query
-    /// container, rebuilding one result element per statement, rather than into `tab.resultEl`.
+    /// A snapshotted multi-query ("Run all") result is restored into this cell's multi-query
+    /// container, rebuilding one result element per statement, rather than into `cell.resultEl`.
     if (result.multi && result.multi.length) {
-        await restoreMultiQuery(result, tab, matToken);
+        await restoreMultiQuery(result, cell, matToken);
         return;
     }
-
     /// A finished failed run must restore as an error even when its body was not stored: fall
-    /// through to the `!result.ok` branch. A never-run tab has no `ok` field and resolves to
+    /// through to the `!result.ok` branch. A never-run cell has no `ok` field and resolves to
     /// idle. A successful run with no stored snapshot (`data: null` — oversized, or an image
     /// whose bytes are deliberately not persisted) resolves to idle too; it stays reproducible
     /// from the `run=1` URL. Test `data == null`, not falsiness: an empty raw body (`''`) must
     /// still restore as `done`.
-    if (result.data == null && result.ok !== false) { tab.progressPhase = 'idle'; return; }
+    if (result.data == null && result.ok !== false) { cell.progressPhase = 'idle'; updateCellStatus(cell); return; }
 
     let is_table = false;
     let is_raw = false;
@@ -7371,9 +7767,9 @@ async function materializeResult(tab) {
 
     if (!result.ok) {
         /// The idle logo is hidden for the error branch, matching the live single-query error path.
-        tab.logoVisible = false;
-        tab.progressPhase = 'error';
-        tab.failed = true;
+        cell.logoVisible = false;
+        cell.progressPhase = 'error';
+        cell.failed = true;
         if (result.data || typeof result.display_error === 'string') {
             /// Replay any output that streamed before the mid-stream failure, exactly as the live
             /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
@@ -7382,9 +7778,10 @@ async function materializeResult(tab) {
             if (el.rowCount > 0) el._changeTableLayout();
         } else {
             /// The failure body was not stored (too large with no exception line to keep, or a
-            /// legacy snapshot): show a notice so the tab restores as failed rather than blank.
+            /// legacy snapshot): show a notice so the cell restores as failed rather than blank.
             el.renderError('The query failed, but its error output was not stored.');
         }
+        updateCellStatus(cell);
         return;
     } else if (format == default_format) {
         is_table = true;
@@ -7410,9 +7807,10 @@ async function materializeResult(tab) {
             if (matToken !== tab.reqNum) return;
             console.log(e);
             el.renderError(e.toString());
-            tab.logoVisible = false;
-            tab.progressPhase = 'error';
-            tab.failed = true;
+            cell.logoVisible = false;
+            cell.progressPhase = 'error';
+            cell.failed = true;
+            updateCellStatus(cell);
             return;
         }
         if (matToken !== tab.reqNum) { return; }
@@ -7429,9 +7827,10 @@ async function materializeResult(tab) {
             if (matToken !== tab.reqNum) return;
             console.log(e);
             el.renderError(e.toString());
-            tab.logoVisible = false;
-            tab.progressPhase = 'error';
-            tab.failed = true;
+            cell.logoVisible = false;
+            cell.progressPhase = 'error';
+            cell.failed = true;
+            updateCellStatus(cell);
             return;
         }
         if (matToken !== tab.reqNum) return;
@@ -7444,21 +7843,22 @@ async function materializeResult(tab) {
         if (is_table) el._changeTableLayout();
     }
 
-    /// A result is shown, so download/copy apply to this tab — unless the snapshot predates
+    /// A result is shown, so download/copy apply to this cell — unless the snapshot predates
     /// the producing-connection record: then the producing connection is unknown, so keep
     /// Download hidden until a rerun stamps a fresh snapshot. Copy is client-side and stays
     /// available.
     const download_reproducible = result.url !== undefined && result.user !== undefined;
-    tab.downloadDatabase = result.database || '';
-    tab.downloadUrl = result.url ?? '';
-    tab.downloadUser = result.user ?? '';
-    tab.progressPhase = 'done';
-    tab.downloadVisible = download_reproducible;
-    tab.copyVisible = is_raw;
+    cell.downloadDatabase = result.database || '';
+    cell.downloadUrl = result.url ?? '';
+    cell.downloadUser = result.user ?? '';
+    cell.progressPhase = 'done';
+    cell.downloadVisible = download_reproducible;
+    cell.copyVisible = is_raw;
     if (is_raw) {
         el.elapsedNs = result.elapsed_ns;
     }
-    tab.finalStats = { rowCount: el.rowCount, elapsedNs: el.elapsedNs, incomplete: el.incompleteResult };
+    cell.finalStats = { rowCount: el.rowCount, elapsedNs: el.elapsedNs, incomplete: el.incompleteResult };
+    updateCellStatus(cell);
 }
 
 let query_area = document.getElementById('query');
@@ -7643,38 +8043,151 @@ function uniqueTitle(desired, excludeId) {
     }
 }
 
-/// Transient per-tab runtime state (never persisted). Kept in a factory so it can be attached both
-/// to tabs created by `makeTab` and to tabs rehydrated from IndexedDB in `reconcileStartup`.
-function tabRuntimeDefaults() {
+/// ----- Notebook cells -------------------------------------------------------------------
+/// A tab is a notebook: an ordered list of cells, each either a `query` cell (an editor plus
+/// its own result) or a `text` cell (Markdown). A tab created the ordinary way holds exactly
+/// one query cell, and while that is so the notebook chrome stays invisible — the page looks
+/// and behaves exactly as it did before notebook mode existed. Adding a second cell turns
+/// notebook mode on FOR THAT TAB ONLY (`notebookMode`); other tabs are unaffected.
+///
+/// Everything that used to be "the tab's query and its result" belongs to a cell now. Rather
+/// than rewriting every `tab.query` / `tab.result` / `tab.resultEl` call site, the tab exposes
+/// those names as accessors forwarding to its ACTIVE query cell (`installCellAccessors`), so
+/// the editor, history, URL and persistence code keeps operating on "the tab" and always means
+/// the cell the shared editor is currently docked in. A run that must survive the user moving
+/// on to another cell captures its own cell instead (see `tab.runCell`).
+
+let cellSeq = 0;   /// monotonic counter for synthetic, stable cell ids
+
+/// Cell state a query cell owns; `tab.<name>` forwards to the tab's active query cell.
+const CELL_STATE_FIELDS = [
+    'query', 'params', 'paramsSyncedQuery', 'result', 'lastSavedQuery',
+    'resultEl', 'multiContainer', 'materialized', 'failed',
+    'progress', 'progressState', 'progressPhase', 'finalStats', 'logoVisible',
+    'colorModes', 'pinnedColumns',
+    'downloadQuery', 'downloadParams', 'downloadDatabase', 'downloadUrl', 'downloadUser',
+    'downloadVisible', 'copyVisible',
+    'launchQuery', 'launchRunId', 'runEditorInteraction', 'queryErrorOwnerStart',
+];
+
+/// Transient per-cell runtime state (never persisted).
+function cellRuntimeDefaults() {
     return {
-        panel: null,            /// the <div class="tab-panel"> holding this tab's result(s)
-        resultEl: null,         /// this tab's <query-result>
-        multiContainer: null,   /// this tab's multi-query results container (created on demand)
-        controller: null,       /// AbortController of this tab's in-flight single query
-        multiControllers: [],   /// AbortControllers of this tab's in-flight multi-query statements
-        reqNum: 0,              /// per-tab run/render generation (see the token model at `activation_num`)
-        inFlight: false,        /// a query is currently running in this tab
-        materialized: false,    /// this tab's stored result has been rendered into its panel
-        completed: false,       /// a query finished while this tab was inactive (check-mark / cross on its title)
-        failed: false,          /// the finished query errored (show a red cross instead of a green check)
+        el: null,               /// the <div class="cell"> in the tab's notebook
+        headerEl: null,         /// its header row (cell actions), or null while notebook mode is off
+        statusEl: null,         /// the status dot in the header
+        editorSlot: null,       /// where the docked editor / the collapsed preview goes
+        resultSlot: null,       /// wrapper holding `multiContainer` and `resultEl`
+        resultEl: null,         /// this cell's <query-result>
+        multiContainer: null,   /// this cell's multi-query results container (created on demand)
+        materialized: false,    /// this cell's stored result has been rendered into its slot
+        failed: false,          /// the finished query errored (red cross on the tab title, red dot here)
         progress: null,         /// last progress detail (numbers) for the shared bar / tab indicator
         progressState: null,    /// per-statement progress map for a multi-query run
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
-        logoVisible: true,      /// whether the shared logo shows for this tab (hidden by errors / multi)
-        colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
-        pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
-        downloadQuery: '',      /// query the download button should re-run for this tab
+        logoVisible: true,      /// whether the shared logo shows for this cell (hidden by errors / multi)
+        colorModes: {},         /// per-column color modes for this cell's result (shared with its element)
+        pinnedColumns: {},      /// pinned columns for this cell's result (shared with its element)
+        downloadQuery: '',      /// query the download button should re-run for this cell
         downloadParams: {},
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
-        downloadVisible: false, /// whether the download / copy buttons apply to this tab
+        downloadVisible: false, /// whether the download / copy buttons apply to this cell
         copyVisible: false,
-        launchQuery: undefined, /// editor text snapshotted when this tab's run was launched (see `saveHistory`)
-        launchRunId: undefined, /// unique run identity of this tab's current launch (see `run_epoch` / `window.onpopstate`)
-        runEditorInteraction: 0,  /// `editorInteractionGen` snapshot at this tab's run launch (see `beginFlight`)
-        queryErrorOwnerStart: -1, /// editor offset of the statement owning the error marker in this tab's run, or -1
+        launchQuery: undefined, /// editor text snapshotted when this cell's run was launched (see `saveHistory`)
+        launchRunId: undefined, /// unique run identity of this cell's current launch (see `run_epoch`)
+        runEditorInteraction: 0,  /// `editorInteractionGen` snapshot at this cell's run launch (see `beginFlight`)
+        queryErrorOwnerStart: -1, /// editor offset of the statement owning the error marker in this run, or -1
+    };
+}
+
+function makeQueryCell(query, params, result) {
+    return {
+        id: 'c' + (++cellSeq),
+        type: 'query',
+        tab: null,             /// back-pointer, set by `attachCells`
+        query: query || '',
+        params: params || {},
+        /// The query text `params` was last COHERENTLY committed for. `writeHistoryEntry`
+        /// publishes the snapshot into an entry/URL only while this matches the recorded
+        /// text; otherwise the snapshot may still describe an OLDER text (a history write
+        /// raced the asynchronous parameter rebuild) and publishing it would pair the new
+        /// draft with a removed placeholder's binding. Persisted with the cell (see `persist`).
+        paramsSyncedQuery: null,
+        result: result || null,   /// last result snapshot (history-state shape) or null
+        lastSavedQuery: undefined,
+        ...cellRuntimeDefaults(),
+        colorModes: (result && result.color_modes) || {},
+        pinnedColumns: (result && result.pinned_columns) || {},
+    };
+}
+
+/// A fresh text cell opens in editing mode: there is nothing to render yet.
+function makeTextCell(text) {
+    return {
+        id: 'c' + (++cellSeq),
+        type: 'text',
+        tab: null,
+        text: text || '',
+        editing: !text,
+        el: null,
+        headerEl: null,
+        bodyEl: null,
+        textarea: null,
+        backdrop: null,
+    };
+}
+
+/// The query cell the shared editor is docked in, and whose state the `tab.*` accessors
+/// expose. Falls back to the first query cell, which every tab is guaranteed to have.
+function activeCell(tab) {
+    let cell = null;
+    if (tab.activeCellId) cell = tab.cells.find(c => c.id === tab.activeCellId && c.type === 'query');
+    return cell || tab.cells.find(c => c.type === 'query') || null;
+}
+
+/// Notebook mode is per tab and is simply "this tab has more than one cell".
+function notebookMode(tab) {
+    return !!tab && tab.cells.length > 1;
+}
+
+function installCellAccessors(tab) {
+    for (const field of CELL_STATE_FIELDS) {
+        Object.defineProperty(tab, field, {
+            get() { const c = activeCell(this); return c ? c[field] : undefined; },
+            set(v) { const c = activeCell(this); if (c) c[field] = v; },
+            enumerable: false, configurable: true,
+        });
+    }
+}
+
+/// Adopt `cells` as the tab's notebook: back-link them and install the forwarding accessors.
+function attachCells(tab, cells) {
+    tab.cells = cells;
+    for (const c of cells) c.tab = tab;
+    if (!cells.some(c => c.id === tab.activeCellId && c.type === 'query')) {
+        const first = cells.find(c => c.type === 'query');
+        tab.activeCellId = first ? first.id : null;
+    }
+    installCellAccessors(tab);
+}
+
+/// Transient per-tab runtime state (never persisted). Kept in a factory so it can be attached both
+/// to tabs created by `makeTab` and to tabs rehydrated from IndexedDB in `reconcileStartup`.
+function tabRuntimeDefaults() {
+    return {
+        panel: null,            /// the <div class="tab-panel"> holding this tab's notebook
+        notebookEl: null,       /// the <div class="notebook"> inside the panel
+        addEl: null,            /// the "add a cell" control under the last cell
+        inlineAddEl: null,      /// the transient "insert a cell here" chooser, or null
+        controller: null,       /// AbortController of this tab's in-flight single query
+        multiControllers: [],   /// AbortControllers of this tab's in-flight multi-query statements
+        reqNum: 0,              /// per-tab run/render generation (see the token model at `activation_num`)
+        inFlight: false,        /// a query is currently running in this tab
+        runCell: null,          /// the cell the in-flight run renders into (captured at `beginFlight`)
+        completed: false,       /// a query finished while this tab was inactive (check-mark / cross on its title)
         barEl: null,            /// cached tab-bar row + indicator nodes (see renderTabBar/updateTabIndicator)
         spinnerEl: null,
         checkEl: null,
@@ -7695,19 +8208,11 @@ function duplicateTitle(title) {
 }
 
 function makeTab(title, query) {
-    return {
+    const tab = {
         id: 't' + (++tabSeq),
         title: title || nextDefaultTitle(),
-        query: query || '',
-        params: {},
-        /// The query text `params` was last COHERENTLY committed for. `writeHistoryEntry`
-        /// publishes the snapshot into an entry/URL only while this matches the recorded
-        /// text; otherwise the snapshot may still describe an OLDER text (a history write
-        /// raced the asynchronous parameter rebuild) and publishing it would pair the new
-        /// draft with a removed placeholder's binding. Persisted with the tab (see `persist`).
-        paramsSyncedQuery: null,
-        result: null,          /// last result snapshot (history-state shape) or null
-        lastSavedQuery: undefined,
+        cells: [],
+        activeCellId: null,
         /// Whether THIS tab's history entries may carry `run=1` while its editor still reflects the
         /// produced run. Set by a genuine run under a `?run=1` load, and restored from the policy a
         /// Back/Forward entry recorded (see `window.onpopstate`); never from the load directive
@@ -7715,33 +8220,75 @@ function makeTab(title, query) {
         runnableUrl: false,
         ...tabRuntimeDefaults(),
     };
+    attachCells(tab, [makeQueryCell(query)]);
+    return tab;
 }
 
 function getActiveTab() {
     return tabs.find(t => t.id === activeTabId) || null;
 }
 
-/// Create (once) this tab's persistent result panel and <query-result>, append it (hidden), and
-/// wire its live-progress routing. The panel and its rendered result survive tab switches.
+/// Create (once) this tab's persistent result panel and its notebook, and append it (hidden).
+/// The panel and everything rendered into it survive tab switches.
 function getOrCreatePanel(tab) {
     if (tab.panel) return tab.panel;
     const panel = document.createElement('div');
     panel.className = 'tab-panel';
     panel.dataset.id = tab.id;
     panel.hidden = true;
-    const el = document.createElement('query-result');
-    el._colorModes = tab.colorModes;
-    el._pinnedColumns = tab.pinnedColumns;
-    panel.appendChild(el);
+    const notebook = document.createElement('div');
+    notebook.className = 'notebook';
+    panel.appendChild(notebook);
     resultPanelsEl.appendChild(panel);
     tab.panel = panel;
-    tab.resultEl = el;
-    el.addEventListener('query-progress', (e) => handleResultProgress(tab, e.detail));
+    tab.notebookEl = notebook;
+    renderNotebook(tab);
     return panel;
 }
 
-/// Show only the given tab's panel (creating it if needed), hide the rest, and repoint the
-/// active-result aliases (`resultEl`/`multiQueryContainer`) at it. Result content is untouched.
+/// Create (once) the DOM of one query cell: its header, the slot the editor docks into, and the
+/// slot holding its own <query-result>. Wires the element's live-progress routing to the cell.
+function getOrCreateCellDom(tab, cell) {
+    if (cell.el) return cell.el;
+    const el = document.createElement('div');
+    el.className = cell.type === 'query' ? 'cell cell-query' : 'cell cell-text';
+    el.dataset.id = cell.id;
+    cell.el = el;
+
+    const header = document.createElement('div');
+    header.className = 'cell-header';
+    el.appendChild(header);
+    cell.headerEl = header;
+
+    if (cell.type === 'query') {
+        const editorSlot = document.createElement('div');
+        editorSlot.className = 'cell-editor';
+        el.appendChild(editorSlot);
+        cell.editorSlot = editorSlot;
+
+        const resultSlot = document.createElement('div');
+        resultSlot.className = 'cell-result';
+        el.appendChild(resultSlot);
+        cell.resultSlot = resultSlot;
+
+        const result = document.createElement('query-result');
+        result._colorModes = cell.colorModes;
+        result._pinnedColumns = cell.pinnedColumns;
+        resultSlot.appendChild(result);
+        cell.resultEl = result;
+        result.addEventListener('query-progress', (e) => handleResultProgress(cell, e.detail));
+    } else {
+        const body = document.createElement('div');
+        body.className = 'cell-text-body';
+        el.appendChild(body);
+        cell.bodyEl = body;
+    }
+    return el;
+}
+
+/// Show only the given tab's panel (creating it if needed), hide the rest, dock the shared
+/// editor into its active cell, and repoint the active-result aliases (`resultEl` /
+/// `multiQueryContainer`). Result content is untouched.
 function setActivePanel(tab) {
     getOrCreatePanel(tab);
     for (const t of tabs) if (t.panel) t.panel.hidden = (t !== tab);
@@ -7749,17 +8296,691 @@ function setActivePanel(tab) {
     /// link hidden this way), so a preview owned by a result now in a hidden panel would stay
     /// pinned. Dismiss it unless its owner lives in the panel that just became active.
     if (image_preview_owner && !tab.panel.contains(image_preview_owner)) { hideImagePreview(); }
+    renderNotebook(tab);
     resultEl = tab.resultEl;
     multiQueryContainer = tab.multiContainer;
 }
 
-/// Clear a tab's own result element and multi container (its logo state resets to visible). Only
-/// touches the shared progress bar / logo when the tab is active; a background clear stays local.
-function clearPanel(tab) {
-    if (tab.resultEl) { tab.resultEl.clear(); tab.resultEl.style.display = ''; }
-    if (tab.multiContainer) { tab.multiContainer.innerHTML = ''; tab.multiContainer.style.display = 'none'; }
-    tab.logoVisible = true;
-    if (tab.id === activeTabId) { progressEl.clear(); logoEl.style.display = 'block'; elapsed_ns = 0; }
+/// Clear one cell's result element and multi container (its logo state resets to visible). Only
+/// touches the shared progress bar / logo when that cell is on screen; a background clear stays
+/// local to the cell.
+function clearCell(cell) {
+    if (cell.resultEl) { cell.resultEl.clear(); cell.resultEl.style.display = ''; }
+    if (cell.multiContainer) { cell.multiContainer.innerHTML = ''; cell.multiContainer.style.display = 'none'; }
+    cell.logoVisible = true;
+    if (cellIsOnScreen(cell)) { progressEl.clear(); logoEl.style.display = 'block'; elapsed_ns = 0; }
+    updateCellStatus(cell);
+}
+
+/// Drop a tab's panel from the DOM (freeing its results and images). The one shared editor may
+/// be docked inside one of that tab's cells, so send it home first — removing the panel with the
+/// editor still inside would take the editor off the page with it. The panel is rebuilt from the
+/// tab's cells if it is ever activated again.
+function removePanel(tab) {
+    if (!tab.panel) return;
+    if (tab.panel.contains(editorDivEl)) {
+        editorHomeEl.appendChild(editorDivEl);
+        editorHomeEl.appendChild(editorParamsEl);
+    }
+    tab.panel.remove();
+    tab.panel = null;
+    tab.notebookEl = null;
+}
+
+/// Whether a cell owns the shared chrome right now: it is the active cell of the active tab.
+function cellIsOnScreen(cell) {
+    return !!cell && cell.tab && cell.tab.id === activeTabId && activeCell(cell.tab) === cell;
+}
+
+/// ----- Notebook rendering ---------------------------------------------------------------
+
+/// There is exactly ONE query editor on the page — the fully featured `#query_div` with its
+/// highlighting backdrop, autocompletion and parameter inputs. In notebook mode it is moved
+/// into whichever query cell is active; every other query cell shows its query collapsed to a
+/// single line instead (see `renderQueryCellEditor`). While a tab holds a single cell the
+/// editor stays in `#editor-home`, where it has always been.
+const editorHomeEl = document.getElementById('editor-home');
+const editorDivEl = document.getElementById('query_div');
+const editorParamsEl = document.getElementById('query-params');
+
+function dockEditor() {
+    const tab = getActiveTab();
+    const cell = tab ? activeCell(tab) : null;
+    const host = (tab && notebookMode(tab) && cell && cell.editorSlot) ? cell.editorSlot : editorHomeEl;
+    if (editorDivEl.parentNode === host && editorParamsEl.parentNode === host) return;
+    /// Re-parenting a focused textarea drops focus and (in some browsers) the selection.
+    const had_focus = document.activeElement === query_area;
+    const sel_start = query_area.selectionStart;
+    const sel_end = query_area.selectionEnd;
+    host.appendChild(editorDivEl);
+    host.appendChild(editorParamsEl);
+    if (had_focus) {
+        query_area.focus();
+        query_area.setSelectionRange(sel_start, sel_end);
+    }
+    /// The backdrop is positioned over the textarea and its scroll offset does not survive the
+    /// move; repaint it against the editor's new box.
+    renderQueryBackdrop();
+}
+
+/// Bring the tab's notebook DOM in line with `tab.cells`: order the cell nodes, repaint their
+/// headers and bodies, dock the editor and refresh the trailing "add a cell" control. Cell
+/// nodes are reused, never rebuilt: a cell's rendered result — and a query streaming into it —
+/// lives in that subtree and must survive its neighbours being edited, moved or removed.
+function renderNotebook(tab) {
+    if (!tab || !tab.notebookEl) return;
+    const notebook = tab.notebookEl;
+    tab.panel.classList.toggle('notebook-mode', notebookMode(tab));
+
+    let anchor = null;
+    for (const cell of tab.cells) {
+        const el = getOrCreateCellDom(tab, cell);
+        const expected = anchor ? anchor.nextSibling : notebook.firstChild;
+        if (expected !== el) notebook.insertBefore(el, expected);
+        anchor = el;
+    }
+    const add = getOrCreateAddControl(tab);
+    if (add.previousSibling !== anchor || add.parentNode !== notebook) notebook.appendChild(add);
+
+    for (let i = 0; i < tab.cells.length; ++i) renderCell(tab, tab.cells[i], i);
+    dockEditor();
+    updateAddControl(tab);
+}
+
+function renderCell(tab, cell, index) {
+    const el = getOrCreateCellDom(tab, cell);
+    el.classList.toggle('cell-active', cell.type === 'query' && activeCell(tab) === cell);
+    renderCellHeader(tab, cell, index);
+    if (cell.type === 'query') renderQueryCellEditor(tab, cell);
+    else renderTextCell(tab, cell);
+}
+
+/// The per-cell header: an ordinal, the cell kind, its run status, and the editing actions.
+/// Hidden by CSS while the tab holds a single cell, so it costs nothing outside notebook mode.
+function renderCellHeader(tab, cell, index) {
+    const header = cell.headerEl;
+    header.textContent = '';
+
+    const label = document.createElement('span');
+    label.className = 'cell-label';
+    label.textContent = (index + 1) + ' · ' + (cell.type === 'query' ? 'Query' : 'Text');
+    header.appendChild(label);
+
+    if (cell.type === 'query') {
+        const status = document.createElement('span');
+        status.className = 'cell-status';
+        header.appendChild(status);
+        cell.statusEl = status;
+        updateCellStatus(cell);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'cell-actions';
+    header.appendChild(actions);
+
+    const action = (glyph, title, handler, disabled) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = glyph;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        if (disabled) button.disabled = true;
+        else button.addEventListener('click', handler);
+        actions.appendChild(button);
+        return button;
+    };
+
+    if (cell.type === 'query') action('▶', 'Run this cell', () => runCell(tab, cell));
+    action('✎', cell.type === 'query' ? 'Edit this query' : 'Edit this text', () => editCell(tab, cell));
+    action('＋', 'Add a new cell before this one', () => showInlineAdd(tab, index));
+    action('↑', 'Move this cell up', () => moveCell(tab, cell, -1), index === 0);
+    action('↓', 'Move this cell down', () => moveCell(tab, cell, +1), index === tab.cells.length - 1);
+    /// A tab always needs one query cell: it is where the shared editor lives.
+    const last_query_cell = cell.type === 'query' && tab.cells.filter(c => c.type === 'query').length === 1;
+    action('✕', last_query_cell ? 'The last query cell cannot be deleted' : 'Delete this cell',
+           () => deleteCell(tab, cell), last_query_cell);
+}
+
+/// Reflect a query cell's own run state on its status dot.
+function updateCellStatus(cell) {
+    if (!cell.statusEl) return;
+    const running = cell.tab && cell.tab.inFlight && cell.tab.runCell === cell;
+    const state = running ? 'running'
+        : cell.progressPhase === 'error' ? 'error'
+        : (cell.result && cell.result.ran) ? 'done' : '';
+    cell.statusEl.className = 'cell-status' + (state ? ' cell-status-' + state : '');
+    cell.statusEl.title = running ? 'Running' : state === 'error' ? 'Failed' : state === 'done' ? 'Finished' : '';
+}
+
+/// The active query cell hosts the real editor; the rest show their query collapsed to one
+/// line, syntax highlighted, fading out on the right. Clicking a collapsed query activates it.
+function renderQueryCellEditor(tab, cell) {
+    const slot = cell.editorSlot;
+    let preview = slot.querySelector('.query-preview');
+    if (activeCell(tab) === cell) {
+        if (preview) preview.remove();
+        return;
+    }
+    if (!preview) {
+        preview = document.createElement('div');
+        preview.className = 'query-preview q-syntax';
+        preview.tabIndex = 0;
+        preview.setAttribute('role', 'button');
+        preview.title = 'Click to edit this query';
+        preview.addEventListener('click', () => setActiveCell(tab, cell.id));
+        preview.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveCell(tab, cell.id); }
+        });
+        slot.appendChild(preview);
+    }
+    const text = (cell.query || '').trim();
+    preview.classList.toggle('query-preview-empty', text === '');
+    preview.innerHTML = text === '' ? 'empty query' : collapsedQueryHTML(text);
+    /// Fade the tail only when there IS a tail. A hidden panel measures 0, so the check is
+    /// repeated when the panel becomes visible (`renderNotebook` runs on every activation).
+    preview.classList.toggle('query-preview-clipped', preview.scrollWidth > preview.clientWidth + 1);
+}
+
+/// One-line syntax-highlighted rendering of a query: every run of whitespace between tokens
+/// becomes a single space, so indentation and line breaks do not survive. Falls back to a plain
+/// collapse when the WASM lexer is not loaded yet (the preview repaints on the next render).
+function collapsedQueryHTML(text) {
+    let tokens = null;
+    if (lexer_module) {
+        try { tokens = tokenizeSync(text); } catch (e) { tokens = null; }
+    }
+    if (!tokens || tokens.length === 0) return escapeHTML(text.replace(/\s+/g, ' '));
+
+    let html = '';
+    let consumed = 0;
+    for (let i = 0; i < tokens.length; ++i) {
+        const elem = tokens[i];
+        consumed += elem.token.length;
+        if (elem.type === TT.Whitespace) { if (html !== '') html += ' '; continue; }
+        /// A token may still span lines (a multi-line string or comment); flatten it too.
+        const content = escapeHTML(elem.token.replace(/\s+/g, ' '));
+        const cls = tokenClass(tokens, i);
+        html += cls ? '<span class="' + cls + '">' + content + '</span>' : content;
+    }
+    /// The lexer stops at the first error or at its size limit; show the rest unstyled.
+    if (consumed < text.length) html += escapeHTML(text.substring(consumed).replace(/\s+/g, ' '));
+    return html;
+}
+
+/// ----- Text cells -----------------------------------------------------------------------
+
+/// A text cell is either being edited — a textarea over a backdrop that highlights the
+/// Markdown markers without rendering them — or showing its rendered Markdown. Clicking the
+/// rendered text switches back to editing; leaving the textarea commits.
+function renderTextCell(tab, cell) {
+    const body = cell.bodyEl;
+    if (cell.editing) {
+        if (cell.textarea && body.contains(cell.textarea.parentNode)) {
+            /// Already editing: only the highlight can be out of date.
+            cell.backdrop.innerHTML = highlightMarkdown(cell.textarea.value);
+            return;
+        }
+        body.textContent = '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'md-editor';
+        const backdrop = document.createElement('div');
+        backdrop.className = 'md-backdrop md-syntax';
+        const textarea = document.createElement('textarea');
+        textarea.spellcheck = false;
+        textarea.value = cell.text;
+        textarea.placeholder = 'Markdown…';
+        wrapper.appendChild(backdrop);
+        wrapper.appendChild(textarea);
+        body.appendChild(wrapper);
+        cell.textarea = textarea;
+        cell.backdrop = backdrop;
+
+        /// The text area grows with its content: a notebook cell should be exactly as tall as
+        /// the text in it, with no inner scrollbar of its own.
+        const autoGrow = () => {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        };
+        const repaint = () => {
+            backdrop.innerHTML = highlightMarkdown(textarea.value);
+            autoGrow();
+        };
+        repaint();
+        textarea.addEventListener('input', () => { cell.text = textarea.value; repaint(); scheduleSave(); });
+        /// Leaving the text area finishes editing and shows the rendered Markdown.
+        textarea.addEventListener('blur', () => {
+            cell.text = textarea.value;
+            cell.editing = false;
+            renderTextCell(tab, cell);
+            scheduleSave();
+        });
+        textarea.addEventListener('keydown', (e) => {
+            /// Escape and Ctrl/Cmd+Enter finish editing, like the run shortcut does for a query.
+            if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+                e.preventDefault();
+                e.stopPropagation();
+                textarea.blur();
+            }
+        });
+        textarea.focus();
+        return;
+    }
+
+    body.textContent = '';
+    const view = document.createElement('div');
+    view.className = 'cell-text-view';
+    view.title = 'Click to edit';
+    const text = (cell.text || '').trim();
+    if (text === '') {
+        view.classList.add('cell-text-empty');
+        view.textContent = 'Empty text cell — click to write Markdown';
+    } else {
+        view.innerHTML = renderMarkdown(cell.text);
+    }
+    view.addEventListener('click', (e) => {
+        /// A link inside the rendered Markdown should follow, not open the editor.
+        if (e.target.closest('a')) return;
+        cell.editing = true;
+        renderTextCell(tab, cell);
+    });
+    body.appendChild(view);
+    cell.textarea = null;
+    cell.backdrop = null;
+}
+
+/// ----- The "add a cell" control -----------------------------------------------------------
+
+/// A large, deliberately muted [+] under the last cell, shown once the tab has a result to
+/// build a notebook around. Clicking it expands into the two kinds of cell that can be added.
+function getOrCreateAddControl(tab) {
+    if (tab.addEl) return tab.addEl;
+    tab.addEl = buildAddControl(
+        () => addCell(tab, 'query', tab.cells.length),
+        () => addCell(tab, 'text', tab.cells.length));
+    return tab.addEl;
+}
+
+function buildAddControl(onQuery, onText, onCancel) {
+    const container = document.createElement('div');
+    container.className = 'notebook-add';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'notebook-add-toggle';
+    toggle.textContent = '+';
+    toggle.title = 'Add a cell to the notebook';
+    toggle.setAttribute('aria-label', 'Add a cell to the notebook');
+    toggle.addEventListener('click', () => container.classList.add('notebook-add-open'));
+    container.appendChild(toggle);
+
+    const option = (text, handler) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'notebook-add-option';
+        button.textContent = text;
+        button.addEventListener('click', () => { container.classList.remove('notebook-add-open'); handler(); });
+        container.appendChild(button);
+    };
+    option('Query', onQuery);
+    option('Text', onText);
+    if (onCancel) option('Cancel', onCancel);
+    return container;
+}
+
+function updateAddControl(tab) {
+    if (!tab.addEl) return;
+    /// The control is the entry point into notebook mode, so it appears as soon as there is a
+    /// result to attach a cell to — and stays for good once the notebook exists.
+    const show = notebookMode(tab) || tab.cells.some(c => c.type === 'query' && c.result && c.result.ran);
+    tab.addEl.hidden = !show;
+    if (!show) tab.addEl.classList.remove('notebook-add-open');
+}
+
+/// The header's ＋ inserts a cell BEFORE its own cell: offer the same two choices right there.
+/// The chooser is parked INSIDE the cell it will insert before, so a notebook re-render (which
+/// only orders cell nodes) cannot leave it stranded between the wrong neighbours.
+function showInlineAdd(tab, index) {
+    const close = () => { if (tab.inlineAddEl) { tab.inlineAddEl.remove(); tab.inlineAddEl = null; } };
+    close();
+    const control = buildAddControl(
+        () => { close(); addCell(tab, 'query', index); },
+        () => { close(); addCell(tab, 'text', index); },
+        close);
+    control.classList.add('notebook-add-open');
+    tab.inlineAddEl = control;
+    const host = tab.cells[index].el;
+    host.insertBefore(control, host.firstChild);
+}
+
+/// ----- Cell commands ------------------------------------------------------------------------
+
+function addCell(tab, type, index) {
+    markBootstrapDirty();
+    /// Fold the live editor into the active cell first: adding a cell re-renders the notebook,
+    /// and an uncaptured draft would be read back from the cell's stale `query`.
+    captureActiveTab();
+    const cell = type === 'query' ? makeQueryCell('') : makeTextCell('');
+    cell.tab = tab;
+    tab.cells.splice(index, 0, cell);
+    renderNotebook(tab);
+    if (type === 'query') setActiveCell(tab, cell.id);
+    else { renderTabBar(); scheduleSave(); }
+}
+
+function deleteCell(tab, cell) {
+    const index = tab.cells.indexOf(cell);
+    if (index < 0) return;
+    markBootstrapDirty();
+    /// Deleting the cell a query is streaming into would leave the run writing to a detached
+    /// element: stop it first, exactly as the Stop button would.
+    if (tab.inFlight && tab.runCell === cell) { abortTabQuery(tab); endFlight(tab); progressEl.clear(); }
+    captureActiveTab();
+    const was_active = activeCell(tab) === cell;
+    tab.cells.splice(index, 1);
+    if (cell.el) cell.el.remove();
+    if (was_active) {
+        /// Hand the editor to the nearest remaining query cell.
+        const next = tab.cells.slice(index).find(c => c.type === 'query')
+            || tab.cells.slice(0, index).reverse().find(c => c.type === 'query');
+        tab.activeCellId = next ? next.id : null;
+        renderNotebook(tab);
+        activateCellState(tab, activeCell(tab));
+    } else {
+        renderNotebook(tab);
+    }
+    renderTabBar();
+    scheduleSave();
+}
+
+function moveCell(tab, cell, delta) {
+    const index = tab.cells.indexOf(cell);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= tab.cells.length) return;
+    markBootstrapDirty();
+    tab.cells.splice(index, 1);
+    tab.cells.splice(target, 0, cell);
+    renderNotebook(tab);
+    scheduleSave();
+}
+
+/// Give a cell the shared editor: fold the current draft back into the cell being left, load
+/// this one's query and parameters, materialize its stored result, and repaint the chrome.
+/// Mirrors `activateTab`, one level down.
+function setActiveCell(tab, id) {
+    const cell = tab.cells.find(c => c.id === id && c.type === 'query');
+    if (!cell) return Promise.resolve();
+    if (activeCell(tab) === cell) { query_area.focus(); return Promise.resolve(); }
+    markBootstrapDirty();
+    captureActiveTab();
+    /// Fold the captured editor state of the cell we are leaving back into its own history
+    /// entry, so a later Back/Forward to it restores the latest edit (as `switchToTab` does).
+    refreshCurrentHistoryEntry(tab);
+    tab.activeCellId = id;
+    renderNotebook(tab);
+    return activateCellState(tab, cell).then(syncHistory);
+}
+
+async function activateCellState(tab, cell) {
+    if (!cell) return;
+    ++activation_num;
+    const token = activation_num;
+    await restoreEditor({ query: cell.query, params: cell.params, paramsSyncedQuery: cell.paramsSyncedQuery }, token);
+    if (token !== activation_num) return;
+    /// Lazily render this cell's stored result, unless a query is running in the tab (bumping
+    /// the tab's run generation would abort it) or it is already on screen.
+    if (!cell.materialized && !tab.inFlight) {
+        await materializeResult(cell);
+        if (token !== activation_num) return;
+    }
+    for (const el of tab.panel.querySelectorAll('query-result')) el.applyDeferredLayout();
+    resultEl = tab.resultEl;
+    multiQueryContainer = tab.multiContainer;
+    syncActiveTabChrome();
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
+    renderTabBar();
+    query_area.focus();
+    scheduleSave();
+}
+
+/// The header's ▶: run this cell. A cell that is not the active one takes the editor first,
+/// because the run always executes what the shared editor holds.
+function runCell(tab, cell) {
+    /// `setActiveCell` restores the editor asynchronously; run only once it holds this query,
+    /// and only if nothing else took the editor in the meantime.
+    if (activeCell(tab) !== cell) {
+        setActiveCell(tab, cell.id).then(() => { if (activeCell(tab) === cell) postAll(); });
+        return;
+    }
+    postAll();
+}
+
+/// The header's ✎: put the caret where the user can type. For a query cell that means taking
+/// the shared editor; for a text cell it means switching from the rendered Markdown back to
+/// its source.
+function editCell(tab, cell) {
+    if (cell.type === 'query') { setActiveCell(tab, cell.id); query_area.focus(); return; }
+    cell.editing = true;
+    renderTextCell(tab, cell);
+}
+
+/// ----- Markdown ---------------------------------------------------------------------------
+
+/// Only `http`, `https`, `mailto` and same-document links are allowed through: the rendered
+/// Markdown is inserted as HTML, so a `javascript:` URL in a link would execute on click.
+function safeMarkdownUrl(url) {
+    const trimmed = url.trim();
+    if (/^(https?:|mailto:|#|\/|\.{1,2}\/)/i.test(trimmed)) return trimmed;
+    return '';
+}
+
+/// The inline rules operate on already-escaped text, so `&`, `<` and `>` are handled; putting a
+/// fragment of it into an ATTRIBUTE additionally needs the quotes escaped, or a crafted URL
+/// could close `src="…"` and add attributes of its own. Re-running `escapeHTML` here would
+/// double-escape the ampersands of a query string, so only the quotes are touched.
+function escapeAttr(escaped) {
+    return escaped.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/// Already-rendered fragments are parked in a stash and replaced by a `<N>` placeholder, so
+/// nothing one rule produces can be re-matched by a later one: a `*` inside `` `a*b` `` stays a
+/// star, and a link's own URL is not auto-linked a second time. The sentinel is unambiguous
+/// because the input is HTML-escaped, so it cannot contain a raw `<`, and none of the tags the
+/// rules emit look like `<digits>`.
+function stashFragment(saved, html) {
+    saved.push(html);
+    return '<' + (saved.length - 1) + '>';
+}
+
+function unstashFragments(saved, text) {
+    /// A stashed fragment can itself hold a placeholder (a link label containing a code span),
+    /// so keep expanding until none are left; the nesting is bounded by the rule order.
+    for (let depth = 0; depth < 8 && /<\d+>/.test(text); ++depth) {
+        text = text.replace(/<(\d+)>/g, (m, i) => saved[+i] ?? m);
+    }
+    return text;
+}
+
+/// Inline Markdown: code spans first (their contents are literal and must not be reinterpreted),
+/// then images and links, then autolinks and emphasis.
+function renderMarkdownInline(escaped) {
+    const saved = [];
+    let text = escaped.replace(/(`+)([\s\S]*?)\1/g,
+        (m, ticks, body) => stashFragment(saved, '<code>' + body + '</code>'));
+
+    text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
+        const safe = safeMarkdownUrl(url);
+        return safe ? stashFragment(saved, '<img src="' + escapeAttr(safe) + '" alt="' + escapeAttr(alt) + '">') : m;
+    });
+    text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+        const safe = safeMarkdownUrl(url);
+        return safe ? stashFragment(saved, '<a href="' + escapeAttr(safe)
+            + '" target="_blank" rel="noopener noreferrer">' + label + '</a>') : m;
+    });
+    text = text.replace(/(^|[^\w])(https?:\/\/[^\s<]+[^\s<.,:;!?)\]])/g, (m, before, url) =>
+        before + stashFragment(saved, '<a href="' + escapeAttr(url)
+            + '" target="_blank" rel="noopener noreferrer">' + url + '</a>'));
+
+    text = text.replace(/~~([\s\S]+?)~~/g, '<del>$1</del>');
+    text = text.replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__([\s\S]+?)__/g, '<strong>$1</strong>');
+    text = text.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    text = text.replace(/(^|[^_\w])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+
+    return unstashFragments(saved, text);
+}
+
+/// A compact block-level Markdown renderer: fenced code, ATX headings, horizontal rules,
+/// blockquotes, ordered/unordered lists, pipe tables and paragraphs. Everything is escaped
+/// before any markup is produced, so the source cannot inject HTML.
+function renderMarkdown(source) {
+    const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+    let html = '';
+    let i = 0;
+
+    const isBlank = (s) => /^\s*$/.test(s);
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        if (isBlank(line)) { ++i; continue; }
+
+        const fence = line.match(/^\s*(```+|~~~+)(.*)$/);
+        if (fence) {
+            const marker = fence[1][0].repeat(3);
+            const body = [];
+            ++i;
+            while (i < lines.length && !new RegExp('^\\s*' + marker).test(lines[i])) body.push(lines[i++]);
+            if (i < lines.length) ++i;   /// skip the closing fence
+            html += '<pre><code>' + escapeHTML(body.join('\n')) + '</code></pre>';
+            continue;
+        }
+
+        const heading = line.match(/^\s*(#{1,6})\s+(.*)$/);
+        if (heading) {
+            const level = heading[1].length;
+            html += '<h' + level + '>' + renderMarkdownInline(escapeHTML(heading[2].trim())) + '</h' + level + '>';
+            ++i;
+            continue;
+        }
+
+        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { html += '<hr>'; ++i; continue; }
+
+        if (/^\s*>/.test(line)) {
+            const body = [];
+            while (i < lines.length && !isBlank(lines[i]) && /^\s*>?/.test(lines[i])) {
+                if (!/^\s*>/.test(lines[i]) && body.length === 0) break;
+                body.push(lines[i].replace(/^\s*>\s?/, ''));
+                ++i;
+            }
+            html += '<blockquote>' + renderMarkdown(body.join('\n')) + '</blockquote>';
+            continue;
+        }
+
+        /// A pipe table needs its delimiter row (`| --- | --- |`) right under the header.
+        if (/\|/.test(line) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1])
+            && /-/.test(lines[i + 1])) {
+            const splitRow = (s) => s.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+            const header = splitRow(line);
+            i += 2;
+            let table = '<table><thead><tr>';
+            for (const cell of header) table += '<th>' + renderMarkdownInline(escapeHTML(cell)) + '</th>';
+            table += '</tr></thead><tbody>';
+            while (i < lines.length && !isBlank(lines[i]) && /\|/.test(lines[i])) {
+                table += '<tr>';
+                for (const cell of splitRow(lines[i])) table += '<td>' + renderMarkdownInline(escapeHTML(cell)) + '</td>';
+                table += '</tr>';
+                ++i;
+            }
+            html += table + '</tbody></table>';
+            continue;
+        }
+
+        const bullet = line.match(/^\s*([-*+]|\d+[.)])\s+/);
+        if (bullet) {
+            const ordered = /\d/.test(bullet[1]);
+            let list = ordered ? '<ol>' : '<ul>';
+            while (i < lines.length) {
+                const item = lines[i].match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
+                if (!item || (/\d/.test(item[1]) !== ordered)) break;
+                const body = [item[2]];
+                ++i;
+                /// Continuation lines of the same item: indented, or simply not a new bullet.
+                while (i < lines.length && !isBlank(lines[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+                    body.push(lines[i].trim());
+                    ++i;
+                }
+                list += '<li>' + renderMarkdownInline(escapeHTML(body.join(' '))) + '</li>';
+            }
+            html += list + (ordered ? '</ol>' : '</ul>');
+            continue;
+        }
+
+        const paragraph = [];
+        while (i < lines.length && !isBlank(lines[i])
+               && !/^\s*(#{1,6}\s|>|```|~~~|([-*+]|\d+[.)])\s)/.test(lines[i])) {
+            paragraph.push(lines[i]);
+            ++i;
+        }
+        if (paragraph.length === 0) { paragraph.push(lines[i]); ++i; }
+        /// A line ending in two spaces is a hard break, as in every Markdown dialect.
+        html += '<p>' + renderMarkdownInline(escapeHTML(paragraph.join('\n')))
+            .replace(/ {2,}\n/g, '<br>').replace(/\n/g, ' ') + '</p>';
+    }
+    return html;
+}
+
+/// Highlight (rather than render) Markdown for the editing backdrop: the markers stay visible
+/// and every character keeps its position, so the transparent textarea on top stays aligned.
+function highlightMarkdown(source) {
+    const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+    let html = '';
+    let in_fence = false;
+
+    for (const line of lines) {
+        const escaped = escapeHTML(line);
+        if (/^\s*(```|~~~)/.test(line)) {
+            in_fence = !in_fence;
+            html += '<span class="md-marker">' + escaped + '</span>\n';
+            continue;
+        }
+        if (in_fence) { html += '<span class="md-code">' + escaped + '</span>\n'; continue; }
+
+        const heading = escaped.match(/^(\s*#{1,6}\s+)(.*)$/);
+        if (heading) {
+            html += '<span class="md-marker">' + heading[1] + '</span>'
+                  + '<span class="md-head">' + highlightMarkdownInline(heading[2]) + '</span>\n';
+            continue;
+        }
+        const quote = escaped.match(/^(\s*&gt;\s?)(.*)$/);
+        if (quote) {
+            html += '<span class="md-marker">' + quote[1] + '</span>'
+                  + '<span class="md-quote">' + highlightMarkdownInline(quote[2]) + '</span>\n';
+            continue;
+        }
+        const bullet = escaped.match(/^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$/);
+        if (bullet) {
+            html += '<span class="md-marker">' + bullet[1] + '</span>'
+                  + highlightMarkdownInline(bullet[2]) + '\n';
+            continue;
+        }
+        html += highlightMarkdownInline(escaped) + '\n';
+    }
+    /// Browsers collapse a trailing newline in a block element; keep the box in step with the
+    /// textarea by giving it something to hold the last line open.
+    return html + ' ';
+}
+
+/// Inline markers are wrapped WITH their delimiters, so the character count never changes.
+function highlightMarkdownInline(escaped) {
+    const saved = [];
+    let text = escaped.replace(/(`+)([\s\S]*?)\1/g,
+        (m) => stashFragment(saved, '<span class="md-code">' + m + '</span>'));
+    text = text.replace(/(!?\[[^\]]*\]\([^)\s]*\))/g,
+        (m) => stashFragment(saved, '<span class="md-link">' + m + '</span>'));
+    text = text.replace(/(\*\*[\s\S]+?\*\*|__[\s\S]+?__)/g, '<span class="md-strong">$1</span>');
+    text = text.replace(/(^|[^*\w])(\*[^*\n]+\*)(?!\*)/g, '$1<span class="md-em">$2</span>');
+    text = text.replace(/(^|[^_\w])(_[^_\n]+_)(?!_)/g, '$1<span class="md-em">$2</span>');
+    return unstashFragments(saved, text);
 }
 
 /// Point the shared download/copy buttons at a tab's stored state.
@@ -7855,6 +9076,7 @@ function abortTabQuery(tab) {
     for (const ac of tab.multiControllers) ac.abort();
     tab.multiControllers = [];
     tab.inFlight = false;
+    if (tab.runCell) { updateCellStatus(tab.runCell); tab.runCell = null; }
 }
 
 /// Activate a tab: reveal its persistent panel, restore the shared editor from it, materialize its
@@ -7877,11 +9099,15 @@ async function activateTab(id, guard_paste = false) {
     await restoreEditor({ query: tab.query, params: tab.params, paramsSyncedQuery: tab.paramsSyncedQuery }, token);
     if (token !== activation_num) return; /// a newer activation/run superseded this one
 
-    /// Lazily materialize the stored result into this tab's element the first time it is opened,
-    /// unless a query is running in it (the live stream owns the element) or it is already built.
-    if (!tab.materialized && !tab.inFlight) {
-        await materializeResult(tab);
-        if (token !== activation_num) return;
+    /// Lazily materialize each cell's stored result the first time this tab is opened, unless a
+    /// query is running in it (the live stream owns the element and `materializeResult` would
+    /// supersede its run token) or the cell is already built.
+    if (!tab.inFlight) {
+        for (const cell of tab.cells) {
+            if (cell.type !== 'query' || cell.materialized) continue;
+            await materializeResult(cell);
+            if (token !== activation_num) return;
+        }
     }
 
     /// Apply any layout passes deferred while this tab's result rendered in the background (its
@@ -7946,10 +9172,18 @@ function duplicateTab(id, guard_paste = false) {
     captureActiveTab();
     refreshCurrentHistoryEntry(getActiveTab());
 
-    const tab = makeTab(duplicateTitle(src.title), src.query);
-    tab.params = { ...src.params };
-    /// The copy shares the source's query, so its snapshot describes the same text.
-    tab.paramsSyncedQuery = src.paramsSyncedQuery;
+    const tab = makeTab(duplicateTitle(src.title));
+    /// Duplicating a notebook copies the whole notebook, not just the cell holding the editor.
+    /// Results are deliberately NOT copied: the copy starts unrun, as a duplicate of a single
+    /// query tab always has.
+    const copies = src.cells.map(c => c.type === 'text' ? makeTextCell(c.text) : makeQueryCell(c.query, { ...c.params }));
+    for (let i = 0; i < src.cells.length; ++i) {
+        if (src.cells[i].type !== 'query') continue;
+        /// The copy shares the source's query, so its snapshot describes the same text.
+        copies[i].paramsSyncedQuery = src.cells[i].paramsSyncedQuery;
+        if (src.cells[i] === activeCell(src)) tab.activeCellId = copies[i].id;
+    }
+    attachCells(tab, copies);
     const idx = tabs.findIndex(t => t.id === id);
     tabs.splice(idx + 1, 0, tab);
     activeTabId = tab.id;
@@ -7987,7 +9221,7 @@ function closeTab(id) {
     }
     /// Stop the closed tab's query and drop its panel from the DOM (freeing its result/images).
     abortTabQuery(closing);
-    if (closing.panel) closing.panel.remove();
+    removePanel(closing);
     tabs.splice(idx, 1);
     if (tabs.length === 0) {
         /// Never leave zero tabs: start a fresh default one.
@@ -8018,7 +9252,7 @@ function closeOtherTabs() {
     for (const tab of tabs) {
         if (tab.id === activeTabId) continue;
         abortTabQuery(tab);
-        if (tab.panel) tab.panel.remove();
+        removePanel(tab);
     }
 
     tabs = tabs.filter(t => t.id === activeTabId);
@@ -8195,18 +9429,22 @@ function renderTabBar() {
 function updateTabIndicator(tab) {
     if (!tab.barEl) return;
     const isActive = tab.id === activeTabId;
+    /// The bar summarizes the tab, so it follows the cell that is actually running; with
+    /// nothing in flight it reports the cell the editor is in.
+    const cell = tab.runCell || activeCell(tab);
 
     if (tab.spinnerEl) tab.spinnerEl.style.display = tab.inFlight ? 'inline-block' : 'none';
     /// A finished-while-inactive tab shows a green check (success) or a red cross (the query
     /// failed). Both clear once the tab is opened (`tab.completed` is reset in `syncActiveTabChrome`).
     const done = tab.completed && !tab.inFlight && !isActive;
-    if (tab.checkEl) tab.checkEl.style.display = (done && !tab.failed) ? 'inline-block' : 'none';
-    if (tab.crossEl) tab.crossEl.style.display = (done && tab.failed) ? 'inline-block' : 'none';
+    const failed = !!(cell && cell.failed);
+    if (tab.checkEl) tab.checkEl.style.display = (done && !failed) ? 'inline-block' : 'none';
+    if (tab.crossEl) tab.crossEl.style.display = (done && failed) ? 'inline-block' : 'none';
 
     let pct = 0;
-    if (tab.inFlight && tab.progress) {
-        const total = +tab.progress.total_rows_to_read || 0;
-        const rows = +tab.progress.read_rows || 0;
+    if (tab.inFlight && cell && cell.progress) {
+        const total = +cell.progress.total_rows_to_read || 0;
+        const rows = +cell.progress.read_rows || 0;
         if (total > 0) pct = Math.min(100, 100 * rows / total);
     }
     tab.barEl.style.setProperty('--tab-progress', pct ? pct + '%' : '0%');
@@ -8284,6 +9522,57 @@ function scheduleSave() {
     save_timer = setTimeout(() => { save_timer = null; persist(); }, 400);
 }
 
+/// The persisted shape of one cell: its content and last result, never its DOM or run state.
+function serializeCell(cell) {
+    if (cell.type === 'text') return { id: cell.id, type: 'text', text: cell.text };
+    return {
+        id: cell.id,
+        type: 'query',
+        query: cell.query,
+        params: cell.params,
+        /// The text `params` was last coherently committed for; persisting it lets the reload's
+        /// restore recognize an incoherent pair (see `paramsSyncedQuery`).
+        paramsSyncedQuery: cell.paramsSyncedQuery,
+        result: cell.result,
+        /// The query as of the last URL/history sync. Persisting it lets startup reconciliation
+        /// tell a stale reload (the URL hash is this cell's own last synced query, but it was
+        /// edited afterwards) from a fresh external URL.
+        lastSavedQuery: cell.lastSavedQuery,
+    };
+}
+
+/// Rebuild a tab's notebook from a persisted record. Records written before notebook mode
+/// existed carry no `cells`: they describe exactly one query cell.
+function deserializeCells(record) {
+    const saved = Array.isArray(record.cells) && record.cells.length ? record.cells : null;
+    if (!saved) {
+        const cell = makeQueryCell(record.query || '', record.params || {}, record.result || null);
+        cell.paramsSyncedQuery = record.paramsSyncedQuery ?? null;
+        cell.lastSavedQuery = record.lastSavedQuery;
+        return [cell];
+    }
+    const cells = [];
+    /// Reused ids must not collide with ids minted later in this session, so keep the counter
+    /// ahead of everything restored (the persisted `cellSeq` covers this too, but a record can
+    /// outlive its meta entry).
+    const keepId = (cell, id) => {
+        if (!id) return;
+        cell.id = id;
+        cellSeq = Math.max(cellSeq, parseInt(String(id).slice(1), 10) || 0);
+    };
+    for (const c of saved) {
+        if (c.type === 'text') { const t = makeTextCell(c.text || ''); keepId(t, c.id); cells.push(t); continue; }
+        const cell = makeQueryCell(c.query || '', c.params || {}, c.result || null);
+        keepId(cell, c.id);
+        cell.paramsSyncedQuery = c.paramsSyncedQuery ?? null;
+        cell.lastSavedQuery = c.lastSavedQuery;
+        cells.push(cell);
+    }
+    /// A notebook without a query cell has nowhere to put the editor; give it an empty one.
+    if (!cells.some(c => c.type === 'query')) cells.push(makeQueryCell(''));
+    return cells;
+}
+
 async function persist() {
     const db = await dbReady;
     if (!db) return;
@@ -8310,11 +9599,17 @@ async function persist() {
                 /// writing auto-runnable URLs across sessions, exactly as its own entries were
                 /// written. Honored on restore only under a `run=1` load (see `loadFromDb`).
                 runnableUrl: tab.runnableUrl,
+                /// The tab's notebook. The four fields above describe the ACTIVE cell (they are
+                /// accessors, see `installCellAccessors`) and are kept for records written by
+                /// older versions and for the startup URL reconciliation, which matches on them.
+                cells: tab.cells.map(serializeCell),
+                activeCellId: tab.activeCellId,
             });
         }
         tx.objectStore(META_STORE).put({
             key: 'state',
             activeTabId: activeTabId,
+            cellSeq: cellSeq,
             tabOrder: tabs.map(t => t.id),
             tabSeq: tabSeq,
             tabTitleSeq: tabTitleSeq,
@@ -8475,6 +9770,10 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         result: tab.result || null,
         tabId: tab.id,
         tabName: tab.title,
+        /// The notebook cell this entry describes. Restored by `window.onpopstate` BEFORE the
+        /// entry's query and result are written through the tab's cell accessors: without it,
+        /// Back would push an older cell's query into whichever cell happens to be active.
+        cellId: activeCell(tab) ? activeCell(tab).id : null,
         /// The connection identity this entry is reproducible against, so `window.onpopstate`
         /// can restore its `database=` only while the live connection still matches. The
         /// password is deliberately never serialized: the selected database is a namespace on
@@ -8570,23 +9869,27 @@ function refreshCurrentHistoryEntry(tab) {
 /// which may have become inactive: for a background tab we persist the snapshot and refresh the
 /// bar, but must NOT touch the browser history / URL / document title — those follow the ACTIVE
 /// tab, and hijacking them to a background tab's query would break Back/Forward and reload.
-function saveHistory(stateData, titleForDoc, tab) {
+function saveHistory(stateData, titleForDoc, tab, cell) {
     tab = tab || getActiveTab();
     if (!tab) return;
-    /// Adopt the launch-time editor text only while the tab's draft still matches it: a run
+    /// The snapshot belongs to the CELL that ran, which a mid-run cell switch may have moved
+    /// away from the editor; the history entry below still follows the active cell.
+    cell = cell || activeCell(tab);
+    if (!cell) return;
+    /// Adopt the launch-time editor text only while the cell's draft still matches it: a run
     /// can finish after the user edited and switched away, and overwriting the newer draft
     /// with the old launch text would lose it.
-    const query_unchanged = tab.launchQuery === undefined || tab.query === tab.launchQuery;
-    if (query_unchanged) tab.query = stateData.query;
-    /// The same predicate for the PARAMETERS: a param edit mid-run updates `tab.params`, and
+    const query_unchanged = cell.launchQuery === undefined || cell.query === cell.launchQuery;
+    if (query_unchanged) cell.query = stateData.query;
+    /// The same predicate for the PARAMETERS: a param edit mid-run updates `cell.params`, and
     /// stamping `run=1` on it would rerun different bindings than the result shown.
-    const params_unchanged = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
+    const params_unchanged = JSON.stringify(cell.params || {}) === JSON.stringify(stateData.params || {});
     /// Auto-runnable only when this run executed the FULL editor content its URL hash will
     /// carry: a partial run writes the whole editor into the hash, and `run=1` on that would
     /// replay statements the user deliberately did NOT run (running just `SELECT 1` out of
     /// `SELECT 1; DROP TABLE t` must not produce a URL that replays the `DROP`).
     const full_editor_run = stateData.fullEditor === true;
-    tab.result = {
+    cell.result = {
         ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
         /// The single statement that produced this result (in multi-query mode it differs
         /// from the editor text in tab.query); used for rendering/graph-detection/downloads.
@@ -8608,12 +9911,12 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// runs and for multi-query runs too large to snapshot (see `postMulti`).
         multi: stateData.multi ?? null,
         /// Color modes in effect when this result was produced (updated via `persistColorModes`).
-        color_modes: tab.colorModes,
+        color_modes: cell.colorModes,
         /// Pinned columns likewise.
-        pinned_columns: tab.pinnedColumns,
+        pinned_columns: cell.pinnedColumns,
         /// The run identity that produced this result (see `run_epoch`); lets `onpopstate`
         /// match the mid-run history entry this run wrote.
-        run_id: tab.launchRunId,
+        run_id: cell.launchRunId,
         elapsed_ns: stateData.elapsed_ns,
     };
     /// A genuine run (re)stamps the tab's `run=1` policy (see `makeTab`): its entries may carry the
@@ -8621,7 +9924,9 @@ function saveHistory(stateData, titleForDoc, tab) {
     /// merely set, so a run under a plain load clears a policy inherited from an earlier `run=1`
     /// session — a plain session never writes auto-runnable URLs.
     tab.runnableUrl = run_immediately;
-    if (tab.id === activeTabId) {
+    /// The shared chrome and the browser history follow the ACTIVE cell: a run that finished in
+    /// a cell the user has since left updates only that cell and the tab bar.
+    if (tab.id === activeTabId && activeCell(tab) === cell) {
         /// A run-produced entry may carry `run=1` only when the draft and its parameters still
         /// match the launched run and the run covered the full editor (see above). When the
         /// draft moved on mid-run, the entry records the LAUNCH snapshot — a coherent pair by
@@ -8725,6 +10030,12 @@ window.onpopstate = function(event) {
             document.title, restamped_url.href);
     }
     activeTabId = tab.id;
+    /// Restore which notebook cell this entry belongs to before anything is written through the
+    /// tab's cell accessors. A cell deleted since the entry was written simply keeps the tab's
+    /// current cell.
+    if (event.state.cellId && tab.cells.some(c => c.id === event.state.cellId && c.type === 'query')) {
+        tab.activeCellId = event.state.cellId;
+    }
     /// Prefer a newer unrun draft over this entry's older query: run `SELECT 1`, type
     /// `SELECT 2`, press Back then Forward — the forward entry still carries `SELECT 1` and
     /// must not clobber the draft. `tab.query !== tab.lastSavedQuery` is exactly "the editor
@@ -8843,40 +10154,45 @@ function refreshFavicon() { setFavicon(anyInFlight() ? favicon_running : favicon
 
 /// Mark a tab's query as started. Called by `postOne`/`postAll` only AFTER their lexer
 /// preflight produced a runnable statement: entering flight is destructive (it drops the
-/// tab's previous result), so a no-op launch or a preflight failure must never get here.
+/// cell's previous result), so a no-op launch or a preflight failure must never get here.
 /// `launchInteractionGen` is the editor-interaction generation snapshotted at launch, so an
-/// edit made during the preflight already disarms the late server-error highlight.
+/// edit made during the preflight already disarms the late server-error highlight. The cell the
+/// run renders into is captured here, so moving on to another notebook cell mid-run does not
+/// redirect the response.
 function beginFlight(tab, launchInteractionGen) {
+    const cell = activeCell(tab);
+    tab.runCell = cell;
     tab.inFlight = true;
     tab.completed = false;
-    tab.progressPhase = 'running';
+    cell.progressPhase = 'running';
     /// Drop the previous run's progress snapshot, or a rerun would inherit the old fill and
     /// stale "Read ..." numbers until the first new progress event.
-    tab.progress = null;
-    /// The live panel is authoritative now: mark the tab materialized so switching away and
+    cell.progress = null;
+    /// The live panel is authoritative now: mark the cell materialized so switching away and
     /// back does not re-render from the (lossy) stored snapshot. Back/Forward still forces a
     /// re-render by resetting `materialized`.
-    tab.materialized = true;
+    cell.materialized = true;
     /// The new run supersedes the stored snapshot: drop it immediately, or a debounced persist
     /// would serialize the OLD snapshot under the NEW query text and a cancel/reload mid-run
     /// would resurrect it. Clear the on-screen result at the same time, so the panel and the
     /// snapshot can never disagree.
-    tab.result = null;
-    clearPanel(tab);
+    cell.result = null;
+    clearCell(cell);
     scheduleSave();
     updateTabIndicator(tab);
+    updateCellStatus(cell);
     refreshFavicon();
     /// Reveal the tab bar the moment a run starts, so the first query on a fresh page can be
     /// backgrounded; rebuilds only when hidden.
     if (tab_bar_elem.hidden) renderTabBar();
     /// No statement of this run has claimed the editor's error marker yet (see
-    /// `highlightQueryError`). Both error-marker fields live on the TAB: as globals, a
-    /// background tab's late error could claim or suppress the foreground editor's marker.
-    tab.queryErrorOwnerStart = -1;
+    /// `highlightQueryError`). Both error-marker fields live on the CELL: as globals, a
+    /// background run's late error could claim or suppress the foreground editor's marker.
+    cell.queryErrorOwnerStart = -1;
     /// A late error response may paint a highlight only if the user has not returned to the
     /// editor since this run launched; the triggering keystroke itself is included in the
     /// snapshot, and an edit during the preflight bumps past it.
-    tab.runEditorInteraction = launchInteractionGen;
+    cell.runEditorInteraction = launchInteractionGen;
     if (tab.id === activeTabId) {
         document.getElementById('run').innerText = 'Stop';
         document.getElementById('run-all').style.display = 'none';
@@ -8889,7 +10205,13 @@ function beginFlight(tab, launchInteractionGen) {
 
 function endFlight(tab) {
     tab.inFlight = false;
+    const cell = tab.runCell;
+    tab.runCell = null;
+    if (cell) updateCellStatus(cell);
     updateTabIndicator(tab);
+    /// A finished run may be the tab's first result, which is what reveals the "add a cell"
+    /// control; repaint the notebook so it (and the cell's status) is up to date.
+    renderNotebook(tab);
     refreshFavicon();
     /// A run that ended without leaving a result (e.g. cancelled before the first row) on a lone
     /// tab should let the bar collapse back to its pristine hidden state. Re-render only when that
@@ -8981,10 +10303,10 @@ async function postOne()
             if (selected.length > 1) {
                 /// The run covered the whole editor only when the selection spanned EVERY
                 /// statement; only such an entry may keep `run=1` (see `saveHistory`).
-                await postMulti(tab, my_run, selected, paramValuesSnapshot, editor_text, connection,
+                await postMulti(tab.runCell, my_run, selected, paramValuesSnapshot, editor_text, connection,
                                 /*ranFullEditor=*/ selected.length === parsed.length, query_database);
             } else {
-                await postSingle(tab, my_run, selected[0].query, editor_text, paramValuesSnapshot, selected[0].queryStart, connection, query_database);
+                await postSingle(tab.runCell, my_run, selected[0].query, editor_text, paramValuesSnapshot, selected[0].queryStart, connection, query_database);
             }
             launched = true;
         }
@@ -9003,7 +10325,7 @@ async function postOne()
         /// When the launched text held several statements, preserve the full textarea content in
         /// history/URL even though only the query under the cursor ran (so refresh restores all
         /// queries).
-        await postSingle(tab, my_run, under.query, under.isMulti ? editor_text : undefined, paramValuesSnapshot, under.queryStart, connection, query_database);
+        await postSingle(tab.runCell, my_run, under.query, under.isMulti ? editor_text : undefined, paramValuesSnapshot, under.queryStart, connection, query_database);
     }
 
     /// Reset the run/favicon state only if this run still owns its tab's in-flight state; a newer
@@ -9049,7 +10371,7 @@ async function postAll()
 
     if (parsed.length > 1) {
         beginFlight(tab, launch_interaction);
-        await postMulti(tab, my_run, parsed, paramValuesSnapshot, editor_text, connection, /*ranFullEditor=*/ true, query_database);
+        await postMulti(tab.runCell, my_run, parsed, paramValuesSnapshot, editor_text, connection, /*ranFullEditor=*/ true, query_database);
     } else {
         const under = await getQueryUnderCursor(editor_text, sel_start);
         if (my_run !== tab.reqNum) return;
@@ -9058,7 +10380,7 @@ async function postAll()
             if (under.selStart !== null) query_area.setSelectionRange(under.selStart, under.selEnd);
             focusEditorForRun();
         }
-        await postSingle(tab, my_run, under.query, undefined, paramValuesSnapshot, under.queryStart, connection, query_database);
+        await postSingle(tab.runCell, my_run, under.query, undefined, paramValuesSnapshot, under.queryStart, connection, query_database);
     }
 
     if (my_run === tab.reqNum) endFlight(tab);
@@ -9069,14 +10391,19 @@ async function cancel()
 {
     const tab = getActiveTab();
     if (!tab) return;
+    /// The cell being stopped, before `abortTabQuery` forgets it.
+    const cell = tab.runCell || activeCell(tab);
     /// Bump the tab's run generation and abort its requests so postImpl/postSingle/postMulti
     /// see a stale run token and bail out before saving history.
     abortTabQuery(tab);
     endFlight(tab);
-    /// Stopped, not completed: drop the 'running' progress state, so reopening this tab does
+    /// Stopped, not completed: drop the 'running' progress state, so reopening this cell does
     /// not replay a stale spinner, and clear the shared progress widget right away.
-    tab.progressPhase = 'idle';
-    tab.progress = null;
+    if (cell) {
+        cell.progressPhase = 'idle';
+        cell.progress = null;
+        updateCellStatus(cell);
+    }
     progressEl.clear();
 }
 
@@ -9229,16 +10556,17 @@ query_area.onkeydown = (e) => {
     }
 };
 
-/// Clear the ACTIVE tab's result pane (its own element + multi container) and the shared progress
-/// bar / logo. Used by the connection-check path to blank the pane before rendering an error.
-/// Background tabs are untouched (see `clearPanel`).
+/// Clear the ACTIVE cell's result pane (its own element + multi container) and the shared
+/// progress bar / logo. Used by the connection-check path to blank the pane before rendering an
+/// error. Other cells and background tabs are untouched (see `clearCell`).
 function clear()
 {
     /// Also hide the floating image preview: a rerun tears down the hovered cell without
     /// `mouseleave` or `scroll`, so the preview would stay pinned over the next result.
     hideImagePreview();
     const tab = getActiveTab();
-    if (tab) clearPanel(tab);
+    const cell = tab && activeCell(tab);
+    if (cell) clearCell(cell);
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -9978,7 +11306,7 @@ function byteOffsetToCharIndex(str, byteOffset) {
 /// the editor. The position is a 1-based byte offset into `query`, the exact text that was
 /// sent; `queryStart` is where it began in the editor, disambiguating identical statements.
 /// `tab` holds the per-run marker-ownership state.
-function highlightQueryError(errorText, query, queryStart, tab) {
+function highlightQueryError(errorText, query, queryStart, cell) {
     if (typeof errorText !== 'string' || typeof query !== 'string') return;
 
     const match = errorText.match(/failed at position (\d+)/);
@@ -10005,9 +11333,10 @@ function highlightQueryError(errorText, query, queryStart, tab) {
 
     /// Run-level arbitration for the single editor marker: several statements of one run can
     /// fail concurrently, and the leftmost failing statement wins deterministically. The owner
-    /// offset lives on the launching tab, so a concurrent run in another tab cannot interfere.
-    if (tab.queryErrorOwnerStart >= 0 && base >= tab.queryErrorOwnerStart) return;
-    tab.queryErrorOwnerStart = base;
+    /// offset lives on the launching cell, so a concurrent run in another tab — or in another
+    /// notebook cell — cannot interfere.
+    if (cell.queryErrorOwnerStart >= 0 && base >= cell.queryErrorOwnerStart) return;
+    cell.queryErrorOwnerStart = base;
 
     const charIndex = byteOffsetToCharIndex(query, byteOffset);
     const absolute = base + charIndex;
@@ -11326,29 +12655,29 @@ async function reconcileStartup() {
         for (const id of order) if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); }
         for (const r of byId.values()) ordered.push(r);
         /// Do not restore blank scratch tabs: on reload they would reappear as empty tabs the
-        /// user never asked to keep. A tab counts as blank only when its query is empty AND it
+        /// user never asked to keep. A tab counts as blank only when every cell is empty AND it
         /// carries no genuine run result (a run-backed tab with a cleared editor is preserved).
         for (const r of ordered) {
-            if ((r.query || '').trim() !== '' || (r.result && r.result.ran)) {
-                savedTabs.push({
-                    id: r.id, title: r.title, query: r.query || '',
-                    params: r.params || {}, result: r.result || null, lastSavedQuery: r.lastSavedQuery,
+            const cells = deserializeCells(r);
+            const blank = cells.every(c => c.type === 'text'
+                ? (c.text || '').trim() === ''
+                : (c.query || '').trim() === '' && !(c.result && c.result.ran));
+            if (!blank) {
+                const tab = {
+                    id: r.id, title: r.title,
+                    cells: [], activeCellId: r.activeCellId || null,
                     /// The saved `run=1` policy (see `makeTab`) is honored only when THIS load
                     /// itself carries the directive. A plain `/play` load must clear it, or the
                     /// trailing `syncHistory` would rewrite the current URL back to `?run=1` and
                     /// the NEXT reload would auto-execute it. The cleared value is re-persisted
                     /// by the trailing save, so the policy erodes rather than resurfacing later.
                     runnableUrl: run_immediately && !!r.runnableUrl,
-                    /// `null` (also for legacy records) means "never coherently committed":
-                    /// fail closed, the restore keeps the pair unstamped.
-                    paramsSyncedQuery: r.paramsSyncedQuery ?? null,
-                    /// Attach fresh transient runtime state (panels/queries are materialized lazily on
-                    /// first activation), seeding color modes and pinned columns from the persisted
-                    /// result snapshot.
+                    /// Attach fresh transient runtime state; panels and results are materialized
+                    /// lazily on first activation.
                     ...tabRuntimeDefaults(),
-                    colorModes: (r.result && r.result.color_modes) || {},
-                    pinnedColumns: (r.result && r.result.pinned_columns) || {},
-                });
+                };
+                attachCells(tab, cells);
+                savedTabs.push(tab);
             } else {
                 pruned_blank_ids.add(r.id);
                 pruned_blank_titles.add(r.title);
@@ -11357,6 +12686,7 @@ async function reconcileStartup() {
         if (loaded.meta) {
             tabSeq = Math.max(tabSeq, loaded.meta.tabSeq || 0);
             tabTitleSeq = Math.max(tabTitleSeq, loaded.meta.tabTitleSeq || 0);
+            cellSeq = Math.max(cellSeq, loaded.meta.cellSeq || 0);
         }
     }
 
@@ -11429,7 +12759,7 @@ async function reconcileStartup() {
 
         /// Replacing the in-memory workspace with the saved one: drop the bootstrap tab's panel
         /// from the DOM so it does not linger (visible) behind the restored active tab's panel.
-        for (const t of tabs) if (t.panel) t.panel.remove();
+        for (const t of tabs) removePanel(t);
         tabs = savedTabs;
         if (!has_url_query && !url_tab_name) {
             /// Plain load: restore the saved workspace as-is.
@@ -12050,6 +13380,8 @@ document.getElementById('download-button').addEventListener('click', async funct
                 }
                 return;
             }
+            // Any other text area is a notebook text cell, where a backtick is Markdown.
+            if (tag === 'TEXTAREA') return;
             e.preventDefault();
             toggleTerminal();
         }
