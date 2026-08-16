@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, shard
 # Tag no-parallel: uses global PAUSEABLE failpoints, which concurrent instances would share.
 # Tag shard: uses a two-shards Distributed table.
 

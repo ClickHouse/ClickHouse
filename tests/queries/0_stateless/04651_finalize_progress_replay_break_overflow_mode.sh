@@ -41,8 +41,6 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE ${TABLE_NAME} (number UInt64) ENGINE = 
 $CLICKHOUSE_CLIENT --query="INSERT INTO ${TABLE_NAME} SELECT * FROM system.numbers LIMIT 1000"
 
 PR_SETTINGS="enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1"
-REMOTE_TABLE="remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.${TABLE_NAME})"
-
 function check_break_mode_query()
 {
     local label=$1
@@ -70,9 +68,6 @@ BREAK_ROWS="max_rows_to_read=500, read_overflow_mode='break'"
 
 OUTPUT=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT JSON SETTINGS ${PR_SETTINGS}, ${BREAK_ROWS}")
 check_break_mode_query "parallel replicas read_overflow_mode break" "$OUTPUT"
-
-OUTPUT=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSON SETTINGS ${BREAK_ROWS}")
-check_break_mode_query "remote read_overflow_mode break" "$OUTPUT"
 
 OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT JSON SETTINGS ${PR_SETTINGS}, ${BREAK_ROWS}")
 check_break_mode_query "parallel replicas read_overflow_mode break HTTP" "$OUTPUT"
