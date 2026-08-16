@@ -1,0 +1,180 @@
+---
+description: 'Documentation for pipe operators'
+sidebarTitle: 'Pipe operators'
+slug: /sql-reference/statements/select/pipe-operators
+title: 'Pipe Operators'
+doc_type: 'reference'
+---
+
+Pipe operators allow writing queries as a linear chain of transformations that reads from top to bottom, similar to the [pipe syntax of GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
+
+```sql
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+
+Any `SELECT` query can be followed by a chain of pipe operators. Each operator starts with the `|>` token, takes the result of the query before it as input, and applies one more transformation to it. Inside every operator, the regular ClickHouse syntax is used.
+
+Pipe operators are a syntax extension: every operator wraps the query before it into a subquery, so the resulting AST is the same as the AST of the equivalent query written with nested subqueries, and the query above is equivalent to:
+
+```sql
+SELECT * FROM
+(
+    SELECT customer, sum(amount) AS total FROM
+    (
+        SELECT * FROM
+        (
+            SELECT * FROM orders
+        )
+        WHERE cancelled = 0
+    )
+    GROUP BY customer
+)
+ORDER BY total DESC
+LIMIT 3
+```
+
+## FROM queries {#from-queries}
+
+A query can start with the `FROM` clause, and the `SELECT` clause is optional in such queries - when it is omitted, the query works as if `SELECT *` was written:
+
+```sql
+FROM orders;
+FROM orders WHERE amount > 100;
+FROM orders |> WHERE amount > 100;
+```
+
+Table aliases can be written with or without the `AS` keyword, as in the `FROM` clause of an ordinary `SELECT` query: `FROM orders o WHERE o.amount > 100`. The only exception is an alias written as the bare word `select`: after the tables it starts the explicit `SELECT` clause instead of being treated as an alias. A table named `select` is unaffected and keeps its own alias: `FROM select s WHERE s.id = 1`.
+
+The `SELECT` clause cannot be omitted when the sample offset of the last table could also be read as a query-level `OFFSET`, because in `FROM t SAMPLE 1/10 OFFSET 5` the `OFFSET` belongs to `SAMPLE`, while in `FROM t SAMPLE 1/10 SELECT * OFFSET 5` it is a query-level `OFFSET` - the explicit `SELECT` is required to disambiguate the two. When the query continues with a clause that a query-level `OFFSET` cannot precede, there is no ambiguity and the `SELECT` clause is optional as usual: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
+
+## Operators {#operators}
+
+### WHERE {#where}
+
+`|> WHERE condition` filters the input rows. When it is applied after an aggregation, it works like `HAVING`:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> WHERE total > 100
+```
+
+### SELECT {#select}
+
+`|> SELECT [DISTINCT] expr1 [AS alias1], ...` leaves only the listed expressions as the output columns:
+
+```sql
+FROM orders |> SELECT customer, amount * 2 AS doubled
+```
+
+A trailing comma is allowed at the end of the list of expressions in the same positions as in the `SELECT` clause of an ordinary query - here it can be followed by the end of the query or by the next `|>` operator: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. The same applies to the `EXTEND` and `AGGREGATE` operators.
+
+### EXTEND {#extend}
+
+`|> EXTEND expr1 [AS alias1], ...` appends the listed expressions to the input columns; it is equivalent to `SELECT *, expr1 AS alias1, ...`:
+
+```sql
+FROM orders |> EXTEND amount * 10 AS big
+```
+
+### SET {#set}
+
+`|> SET column1 = expr1, ...` replaces the values of the listed columns; it is equivalent to `SELECT * REPLACE (expr1 AS column1, ...)`:
+
+```sql
+FROM orders |> SET amount = amount + 1000
+```
+
+### DROP {#drop}
+
+`|> DROP column1, ...` removes the listed columns; it is equivalent to `SELECT * EXCEPT (column1, ...)`:
+
+```sql
+FROM orders |> DROP cancelled
+```
+
+### AS {#as}
+
+`|> AS alias` gives an alias to the input of the next operator, so it can be referenced in that operator, which is mostly useful for joins:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> AS agg
+|> JOIN orders AS o ON agg.customer = o.customer
+```
+
+### AGGREGATE {#aggregate}
+
+`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` aggregates the input rows. The output columns are the grouping columns followed by the aggregate columns. Without `GROUP BY`, the whole input is aggregated to a single row:
+
+```sql
+FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
+FROM orders |> AGGREGATE count() AS c;
+```
+
+### DISTINCT {#distinct}
+
+`|> DISTINCT` removes duplicate rows; it is equivalent to `SELECT DISTINCT *`.
+
+### ORDER BY {#order-by}
+
+`|> ORDER BY expr1 [ASC/DESC], ...` sorts the input rows. The full `ORDER BY` clause syntax is supported, including `ORDER BY ALL`, `WITH FILL`, and `INTERPOLATE`:
+
+```sql
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
+```
+
+### LIMIT and OFFSET {#limit-and-offset}
+
+`|> LIMIT length [OFFSET offset]` and `|> OFFSET offset` limit the number of rows:
+
+```sql
+FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
+```
+
+### JOIN and ARRAY JOIN {#join-and-array-join}
+
+`|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` joins the input with another table, subquery, or table function. All kinds of [JOIN](/reference/statements/select/join) and [ARRAY JOIN](/reference/statements/select/array-join) are supported, and a single operator can contain several joins, like a `FROM` clause:
+
+```sql
+FROM customers
+|> AS c
+|> LEFT JOIN orders AS o ON c.name = o.customer
+|> ARRAY JOIN tags
+```
+
+Since every operator is a new subquery scope, table aliases are visible only inside the same operator (in the `ON` condition). The following operators see the combined columns of the join result, as after `SELECT *`.
+
+The comma spelling of a cross join is supported as well, with the input of the operator as the left side: `FROM customers |> AS c |> , orders`. As with the other joins, the input needs an alias when the `joined_subquery_requires_alias` setting is enabled (it is by default).
+
+As in the `FROM` clause of an ordinary query, a comma (cross) join is not supported right after an `ARRAY JOIN`: a comma after the `ARRAY JOIN` always belongs to its expression list.
+
+### UNION, INTERSECT, and EXCEPT {#union-intersect-and-except}
+
+`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, and `|> EXCEPT [ALL/DISTINCT] ...` combine the input with the results of other queries:
+
+```sql
+FROM orders
+|> SELECT customer
+|> UNION ALL (FROM customers |> SELECT name)
+|> DISTINCT
+```
+
+The parentheses around an operand are optional for a single query, but they are required when the chain continues with another pipe operator after the set operation - otherwise it would be unclear whether the next operator applies to the last operand or to the whole result.
+
+## Notes {#notes}
+
+- The `WITH` clause of the query stays visible in all following pipe operators, both for scalar aliases and for CTEs: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
+- In `INSERT ... SELECT`, a `WITH` clause written before `INSERT` is attached to the outermost generated `SELECT`, and it reaches the inner pipe stages during interpretation via the `enable_global_with_statement` setting (enabled by default) — the same way it reaches a hand-written nested subquery. If that setting is disabled, aliases and CTEs from an `INSERT`-scoped `WITH` are not visible inside the pipe stages, exactly as they are not visible inside a hand-written subquery.
+- Like any `SELECT` query, the query generated by a pipe operator can end with a `SETTINGS` clause, which is attached to that generated query: `FROM t |> LIMIT 1 SETTINGS max_threads = 1` is the same as `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`. This also works where there is no separate pass for query settings, such as in a subquery, in `CREATE VIEW`, or in the `view` table function. A `SETTINGS` clause in the middle of a chain stays on its stage, which becomes a subquery of the next operator. After a set operation with a parenthesized operand, a trailing `SETTINGS` is not accepted - the equivalent query with subqueries cannot have a `SETTINGS` clause in that position either.
+- A `SETTINGS` clause of the query before the first pipe operator stays on that query, which becomes a subquery of the generated wrapper. Ordinary settings keep working, because settings of a subquery are applied when that subquery is interpreted. The only exception is the pair of settings that select the query analyzer, `enable_analyzer` and its alias `allow_experimental_analyzer`: changing them in a subquery is not allowed, so `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` throws `INCORRECT_QUERY` — exactly as the equivalent hand-written `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1` does. Write these two settings after the last pipe operator, or pass them outside of the query.
+- Pipe operators bind to the whole query before them, including set operations: in `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`, the aggregation is applied to the result of the `UNION ALL`. To continue a query with `UNION` after a pipe operator, use the `|> UNION` operator or parentheses.
+- Pipe operators can be used everywhere a `SELECT` query is expected: in subqueries, in `INSERT ... SELECT` (including the form `INSERT INTO t FROM src |> ...`), in `CREATE VIEW`, in the `view` table function, and so on.
+- The renaming of columns in place is not provided as a separate operator; use `|> SELECT * EXCEPT (old_name), old_name AS new_name` or the `SET` and `DROP` operators.

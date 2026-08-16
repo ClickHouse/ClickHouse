@@ -3,14 +3,20 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
+#include <cmath>
+#include <limits>
+
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -50,13 +56,14 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/ProjectionIndexReadRangesRefiner.h>
+#include <Storages/MergeTree/IndexReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
@@ -73,6 +80,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -221,6 +229,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
@@ -248,6 +257,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read;
+    extern const SettingsUInt64 merge_tree_min_bytes_per_read_stream;
     extern const SettingsUInt64 merge_tree_min_rows_for_concurrent_read;
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
@@ -277,7 +287,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool use_projection_index_in_read_pools;
+    extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
@@ -299,6 +309,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_bytes_to_activate;
 }
@@ -323,6 +334,16 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
             return false;
     }
     return true;
+}
+
+static bool checkAnyPartOnRemoteFS(const RangesInDataParts & parts)
+{
+    for (const auto & part : parts)
+    {
+        if (part.data_part->isStoredOnRemoteDisk())
+            return true;
+    }
+    return false;
 }
 
 /// build sort description for output stream
@@ -551,19 +572,24 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     return parallel_replicas_step;
 }
 
-/// Returns nullptr when no part is filtered by a projection index or the feature is disabled.
-static MergeTreeReadRangesRefinerPtr createProjectionIndexRangesRefiner(
+/// Returns nullptr when no index is applied at data-read time or the feature is disabled.
+static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     const MergeTreeIndexBuildContextPtr & index_build_context,
     const StorageMetadataPtr & metadata_snapshot,
     const Settings & settings)
 {
-    if (!index_build_context || index_build_context->projection_read_ranges.empty())
+    if (!index_build_context)
         return nullptr;
 
-    if (!settings[Setting::use_projection_index_in_read_pools])
+    if (!settings[Setting::use_indexes_refiner_in_read_pools])
         return nullptr;
 
-    return std::make_shared<ProjectionIndexReadRangesRefiner>(index_build_context, metadata_snapshot);
+    /// Refining at task-cut time could snapshot JOIN runtime filters before they are published.
+    /// Keep the build at reader initialization instead.
+    if (index_build_context->index_reader_pool->hasRuntimeFilters())
+        return nullptr;
+
+    return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
@@ -597,7 +623,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
-    pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+    pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
     /// reading where we split the table into multiple streams.
@@ -698,7 +724,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        prefetched_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
     }
     else
@@ -719,7 +745,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        read_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        read_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
@@ -827,7 +853,7 @@ Pipe ReadFromMergeTree::readInOrder(
             context);
 
         in_order_pool->setReadRangesRefiner(
-            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
@@ -868,7 +894,7 @@ Pipe ReadFromMergeTree::readInOrder(
             dataflow_cache_updater);
 
         in_order_pool->setReadRangesRefiner(
-            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
         pool = std::move(in_order_pool);
     }
 
@@ -1237,6 +1263,379 @@ Pipe ReadFromMergeTree::readByLayers(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Whether the whole-part size of a column can be scaled by the fraction of selected rows.
+///
+/// A variable-width type cannot: large values may be concentrated entirely in the selected range.
+/// Neither can `LowCardinality`, whose dictionary is written per part rather than per row, so
+/// reading a handful of rows still pulls in the dictionary that serves them.
+/// `DataTypeLowCardinality::haveMaximumSizeOfValue` delegates to the dictionary type, so a
+/// fixed-size dictionary would otherwise pass the width check.
+static bool canScaleSizeBySelectedRows(const IDataType & type)
+{
+    if (!type.haveMaximumSizeOfValue())
+        return false;
+
+    bool has_low_cardinality = type.lowCardinality();
+    /// `LowCardinality` may sit below `Array`, `Nullable`, `Tuple` and friends.
+    type.forEachChild([&](const IDataType & child)
+    {
+        has_low_cardinality |= child.lowCardinality();
+    });
+
+    return !has_low_cardinality;
+}
+
+/// Mirrors `injectRequiredColumnsRecursively`: a column that is absent from a part is filled from its
+/// default expression, and evaluating that expression may require reading other physical columns of
+/// the part. Returns true when at least one physical column has to be read for `column_name`.
+///
+/// A default that expands to no physical identifiers - an explicit `ALTER TABLE ... ADD COLUMN c UInt8
+/// DEFAULT 0`, or the implicit type default of a newly added column - reads nothing, so such a column
+/// costs no bytes and does not have to disable the estimate.
+template <typename TryGetColumnInPart>
+static bool missingColumnReadsPhysicalColumns(
+    const String & column_name,
+    const StorageSnapshotPtr & storage_snapshot,
+    const GetColumnsOptions & storage_options,
+    const TryGetColumnInPart & try_get_column_in_part,
+    NameSet & visited)
+{
+    /// Defaults can be cyclic, and the expression can be arbitrarily deep.
+    checkStackSize();
+
+    if (!visited.emplace(column_name).second)
+        return false;
+
+    if (try_get_column_in_part(column_name))
+        return true;
+
+    const auto col_in_storage = storage_snapshot->tryGetColumn(storage_options, column_name);
+
+    /// The part may predate a metadata-only `ALTER MODIFY COLUMN`, so it stores the parent column but
+    /// not the requested subcolumn of the new type. The reader then reads the parent and extracts the
+    /// subcolumn from it.
+    if (col_in_storage && col_in_storage->isSubcolumn() && try_get_column_in_part(col_in_storage->getNameInStorage()))
+        return true;
+
+    auto column_default = storage_snapshot->getDefault(column_name);
+    /// A subcolumn has no default expression of its own: it is extracted from the evaluated default of
+    /// the column in storage (see `IMergeTreeReader::evaluateMissingDefaults`).
+    if (!column_default && col_in_storage && col_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(col_in_storage->getNameInStorage());
+
+    if (!column_default || !column_default->expression)
+        return false;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+
+    for (const auto & identifier : identifiers)
+    {
+        if (missingColumnReadsPhysicalColumns(identifier, storage_snapshot, storage_options, try_get_column_in_part, visited))
+            return true;
+    }
+
+    return false;
+}
+
+/// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
+/// `parts_with_ranges`.
+///
+/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not cap.
+///
+/// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
+/// against is proportional to the work done per stream, which scales with the number of values
+/// processed, not with how well they compress. A highly compressible column (e.g. a constant
+/// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
+/// expressions and aggregation.
+static std::optional<size_t> estimateReadBytes(
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const Settings & settings)
+{
+    const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+    const auto & virtuals = storage_snapshot->metadata->virtuals;
+
+    /// A metadata-only `ALTER TABLE ... RENAME COLUMN` does not rewrite the part: until the mutation
+    /// is applied the part still holds the old name, and the reader resolves the new name through
+    /// `AlterConversions`. Resolve it the same way here, otherwise the whole scan would be treated
+    /// as unknown. Other mutation kinds do not rename anything, so skip the work when there are none.
+    const bool resolve_renames = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    const auto storage_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    size_t total_bytes = 0;
+
+    for (const auto & part : parts_with_ranges)
+    {
+        const auto & data_part = *part.data_part;
+
+        const size_t part_marks = data_part.getMarksCount();
+        if (part_marks == 0)
+            continue;
+
+        AlterConversionsPtr alter_conversions;
+        /// A projection part carries a fake data version, which makes every mutation look pending,
+        /// so the conversions computed for it would not describe its data. `injectRequiredColumns`
+        /// skips them for the same reason.
+        if (resolve_renames && !data_part.isProjectionPart())
+            alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+        const bool share_nested = (*data_part.storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        /// The name of a requested column as it is stored in this particular part.
+        auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
+        {
+            auto col = data_part.tryGetColumn(col_name);
+
+            if (!alter_conversions)
+                return col;
+
+            const auto col_in_storage = storage_snapshot->tryGetColumn(storage_options, col_name);
+            if (!col_in_storage)
+                return col;
+
+            auto name_in_part = col_in_storage->getNameInStorage();
+            if (!col && alter_conversions->isColumnRenamed(name_in_part))
+            {
+                name_in_part = alter_conversions->getColumnOldName(name_in_part);
+                col = data_part.tryGetColumn(col_in_storage->isSubcolumn()
+                    ? Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName())
+                    : name_in_part);
+            }
+
+            /// A pending `DROP COLUMN` leaves the data in the part, but it is stale: the reader treats
+            /// such a column as missing and fills it from the default expression, which may read wide
+            /// physical columns this estimate knows nothing about. That happens when a column is
+            /// dropped and re-added under the same name, so the name alone does not tell them apart.
+            if (col && alter_conversions->isColumnDropped(name_in_part, share_nested))
+                return {};
+
+            return col;
+        };
+
+        /// Only a fraction of the part may survive primary key / partition pruning. Scaling by it
+        /// keeps the cap meaningful for selective queries, which would otherwise be sized as if the
+        /// whole part were read.
+        const size_t selected_rows = std::min(part.getRowsCount(), data_part.rows_count);
+        if (selected_rows == 0)
+            continue;
+
+        /// Several requested subcolumns can share streams. Group them by their physical column so
+        /// multiple subcolumns are never charged more than the complete physical column.
+        std::unordered_map<String, NameSet> requested_names_by_column;
+        for (const auto & col_name : column_names)
+        {
+            const auto col = try_get_column_in_part(col_name);
+            if (!col)
+            {
+                if (isTextIndexVirtualColumn(col_name))
+                    return std::nullopt;
+                if (virtuals.tryGet(col_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader))
+                    continue;
+
+                /// A column missing from the part is filled from its default. Defaults and mutation
+                /// steps can make the reader fetch other physical columns, whose bytes are unknown
+                /// here because the dependency set is built later for each read task, so do not cap
+                /// in that case. A default that reads nothing costs nothing, and the estimate over
+                /// the remaining columns stays valid.
+                NameSet visited;
+                if (missingColumnReadsPhysicalColumns(col_name, storage_snapshot, storage_options, try_get_column_in_part, visited))
+                    return std::nullopt;
+                continue;
+            }
+
+            /// Per-column sizes are stored for the whole part, so they can only be scaled down for a
+            /// partial read when the size really is proportional to the number of rows.
+            if (selected_rows < data_part.rows_count && !canScaleSizeBySelectedRows(*col->type))
+                return std::nullopt;
+
+            /// `col->name` rather than `col_name`: the per-column sizes below are keyed by the name
+            /// the part was written with, which differs for a not-yet-applied rename.
+            requested_names_by_column[col->getNameInStorage()].emplace(col->name);
+        }
+
+        /// Virtual-only reads inject the smallest physical column to determine the number of rows.
+        if (requested_names_by_column.empty())
+        {
+            auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+            NamesAndTypesList available_columns;
+            for (const auto & column : data_part.getColumns())
+                if (storage_snapshot->tryGetColumn(options, column.name))
+                    available_columns.push_back(column);
+
+            if (available_columns.empty())
+                available_columns = data_part.getColumns();
+
+            const auto physical_name = data_part.getColumnNameWithMinimumCompressedSize(available_columns);
+
+            /// The injected column is charged like a requested one, so it has to pass the same
+            /// scaling check. The smallest column of a part can well be a `String` or a
+            /// `LowCardinality`, whose whole-part size is not proportional to the selected rows.
+            const auto injected_col = data_part.tryGetColumn(physical_name);
+            if (selected_rows < data_part.rows_count
+                && (!injected_col || !canScaleSizeBySelectedRows(*injected_col->type)))
+                return std::nullopt;
+
+            requested_names_by_column[physical_name].emplace(physical_name);
+        }
+
+        size_t part_bytes = 0;
+        bool part_bytes_known = true;
+
+        for (const auto & [physical_name, requested_names] : requested_names_by_column)
+        {
+            size_t col_bytes = 0;
+            if (requested_names.size() == 1)
+            {
+                const auto & requested_name = *requested_names.begin();
+                const auto col = data_part.tryGetColumn(requested_name);
+                if (col && col->isSubcolumn() && use_subcolumn_sizes)
+                    col_bytes = data_part.getSubcolumnSize(requested_name).data_uncompressed;
+            }
+
+            /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
+            /// upper bound that counts every shared stream exactly once.
+            if (col_bytes == 0)
+            {
+                /// If subcolumn pricing is unavailable, the fallback below charges the complete
+                /// physical column. Its type, rather than the requested subcolumn type, determines
+                /// whether the whole-part size can be scaled by the selected rows.
+                const auto physical_col = data_part.tryGetColumn(physical_name);
+                if (selected_rows < data_part.rows_count
+                    && (!physical_col || !canScaleSizeBySelectedRows(*physical_col->type)))
+                    return std::nullopt;
+
+                col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+            }
+
+            if (col_bytes == 0)
+            {
+                /// Compact parts do not track per-column sizes, so `getColumnSize` yields 0 there.
+                /// Fall back to the whole part rather than silently under-counting this column.
+                part_bytes_known = false;
+                break;
+            }
+
+            if (__builtin_add_overflow(part_bytes, col_bytes, &part_bytes))
+            {
+                part_bytes = std::numeric_limits<size_t>::max();
+                break;
+            }
+        }
+
+        if (!part_bytes_known)
+        {
+            /// Compact parts only expose the size of the shared data file. Scaling that size by rows
+            /// is not conservative when variable-size data is distributed unevenly between granules.
+            if (selected_rows < data_part.rows_count)
+                return std::nullopt;
+
+            part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+        }
+
+        const auto selected_bytes_wide
+            = (static_cast<UInt128>(part_bytes) * selected_rows + data_part.rows_count - 1) / data_part.rows_count;
+        const size_t selected_bytes = selected_bytes_wide > std::numeric_limits<size_t>::max()
+            ? std::numeric_limits<size_t>::max()
+            : static_cast<size_t>(selected_bytes_wide);
+
+        if (__builtin_add_overflow(total_bytes, selected_bytes, &total_bytes))
+            return std::numeric_limits<size_t>::max();
+    }
+
+    return total_bytes;
+}
+
+/// Cap the number of read streams based on the estimated size of the data being read.
+///
+/// The mark-based stream reduction uses index_granularity_bytes (e.g. 10 MB) as a proxy for bytes
+/// per mark. For narrow columns (e.g. UInt16 where each mark is ~16 KB uncompressed), this
+/// overestimates by hundreds of times and creates far too many streams. Each stream spawns a full
+/// pipeline processor chain
+/// whose overhead (thread scheduling, graph traversal, aggregate state init/merge) grows superlinearly
+/// with stream count.
+///
+/// Cost model: T(N) = W/N + F + V·N, where W = useful work, F = fixed overhead, V = per-stream
+/// variable cost. Optimal N = sqrt(W/V). Expressing in bytes: W = total_bytes / throughput, and
+/// C = throughput · V is the byte-equivalent per-stream overhead cost, giving:
+///     optimal_N = sqrt(total_bytes / C)
+/// The setting merge_tree_min_bytes_per_read_stream provides C (default 64 KB, 0 disables).
+///
+/// Never reduce below this many streams: the per-stream overhead only dominates once the pipeline is
+/// wide, so capping a narrow pipeline changes its shape without winning anything.
+static constexpr size_t MIN_STREAMS_TO_CAP_BY_READ_BYTES = 16;
+
+static void capStreamsByEstimatedReadBytes(
+    size_t & num_streams,
+    size_t total_bytes,
+    const Settings & settings,
+    LoggerPtr log)
+{
+    const size_t overhead_cost_bytes = settings[Setting::merge_tree_min_bytes_per_read_stream];
+    if (overhead_cost_bytes == 0)
+        return;
+
+    if (total_bytes == 0)
+        return;
+
+    /// Round up: truncating sqrt(3.99) to 1 would halve the streams for a rounding artefact.
+    const size_t max_streams_by_volume = std::max<size_t>(
+        1, static_cast<size_t>(std::ceil(std::sqrt(static_cast<double>(total_bytes) / static_cast<double>(overhead_cost_bytes)))));
+
+    /// The stream count also sets the width of everything downstream of the read - PREWHERE,
+    /// expression evaluation and aggregation - but the estimate above only measures how many bytes
+    /// are read, not how much CPU work each of those bytes costs. A CPU-bound query over a small
+    /// column (several hash functions per row, or a high-cardinality `GROUP BY`) would lose most of
+    /// its parallelism to a cap derived purely from data volume. Two lower bounds keep that bounded:
+    ///
+    /// - a fixed fraction of the requested streams, so the worst case for such a query stays
+    ///   bounded no matter how wide the pipeline is;
+    /// - an absolute floor, because the per-stream overhead this cap removes only dominates once the
+    ///   pipeline is wide. Below the floor there is nothing to win, while narrowing the read to a
+    ///   single stream would change the shape of the whole pipeline (a one-stream read is planned as
+    ///   a concatenation read in order rather than a thread pool), which is a large behaviour change
+    ///   to make for no gain.
+    const size_t min_streams = std::max<size_t>(MIN_STREAMS_TO_CAP_BY_READ_BYTES, num_streams / 4);
+    const size_t capped_num_streams = std::max(max_streams_by_volume, min_streams);
+
+    if (capped_num_streams < num_streams)
+    {
+        LOG_DEBUG(log, "Reducing num_streams from {} to {} (estimated_read_bytes={}, overhead_cost={}, by_volume={})",
+            num_streams, capped_num_streams, total_bytes, overhead_cost_bytes, max_streams_by_volume);
+        num_streams = capped_num_streams;
+    }
+}
+
+static void capStreamsByReadBytes(
+    size_t & num_streams,
+    const RangesInDataParts & parts_with_ranges,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    const Settings & settings,
+    LoggerPtr log)
+{
+    const auto estimated_read_bytes
+        = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings);
+    if (!estimated_read_bytes)
+        return;
+
+    capStreamsByEstimatedReadBytes(
+        num_streams,
+        *estimated_read_bytes,
+        settings,
+        log);
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1280,6 +1679,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             else
                 num_streams = parts_with_ranges.size();
         }
+
+        /// The per-stream cost the cap trades against was measured for local reads. Remote reads
+        /// have their own latency and prefetch tradeoffs, and they already get separate
+        /// `..._for_remote_filesystem` concurrency thresholds above, so leave them alone.
+        if (!is_parallel_reading_from_replicas
+            && !isQueryWithFinal()
+            && !checkAnyPartOnRemoteFS(parts_with_ranges)
+            && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
+            capStreamsByReadBytes(
+                num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
@@ -2079,8 +2488,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
 
+                /// A layer may produce an empty pipe (the in-order getter creates one source per part,
+                /// and a layer may end up with no parts). An empty pipe has no header, so it must not
+                /// reach `createProjection` or `addMergingFinal` below. Dropping it is safe here:
+                /// unlike the join-by-shards path, the per-layer pipes are simply united, so their
+                /// positions carry no meaning.
                 for (auto && merging_pipe : split_ranges_result.merging_pipes)
-                    pipes.push_back(std::move(merging_pipe));
+                {
+                    if (!merging_pipe.empty())
+                        pipes.push_back(std::move(merging_pipe));
+                }
             }
             else
             {
@@ -2181,7 +2598,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true);
 
     return analyzed_result_ptr;
 }
@@ -2208,7 +2626,32 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         /*allow_query_condition_cache_=*/false,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true);
+}
+
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
+{
+    return selectRangesToRead(
+        getParts(),
+        mutations_snapshot,
+        vector_search_parameters,
+        top_k_filter_info,
+        storage_snapshot->metadata,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        data_settings,
+        all_column_names,
+        log,
+        indexes,
+        /*find_exact_ranges=*/false,
+        is_parallel_reading_from_replicas,
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/false);
 }
 
 namespace
@@ -2750,7 +3193,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
-    bool supports_skip_indexes_on_data_read)
+    bool supports_skip_indexes_on_data_read,
+    bool check_row_limits)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -2809,7 +3253,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     if (indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
     {
@@ -2833,7 +3280,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->generateUnsubstituted().toString());
 
     if (indexes->key_condition->generateUnsubstituted().alwaysFalse())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
@@ -2865,7 +3315,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log);
 
     if (result.sampling.read_nothing)
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     for (const auto & part : res_parts)
         total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
@@ -2912,6 +3365,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .find_exact_ranges = find_exact_ranges,
         .is_parallel_reading_from_replicas = is_parallel_reading_from_replicas_,
         .has_projections = has_projections,
+        .check_row_limits = check_row_limits,
         .result = result,
     };
 
@@ -3065,7 +3519,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-            /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, do
+            /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
             /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
             /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
@@ -3634,7 +4088,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             result_projection);
     }
 
-    if (!result.split_parts.layers.empty())
+    /// `split_parts` is a static pre-split of the parts into primary-key layers made by
+    /// `optimizeJoinByShards` for the single-node plan, where the join steps above consume one
+    /// output port per layer. It must be ignored for a read coordinated across parallel replicas:
+    /// automatic parallel replicas (`considerEnablingParallelReplicas`) reuses the single-node
+    /// analysis for the replicas plan, whose fresh join does not expect layered output, and each
+    /// layer would create its own reading pool announcing to the coordinator, which rejects the
+    /// second announcement from the same replica with a "Duplicate announcement received" exception.
+    if (!result.split_parts.layers.empty() && !is_parallel_reading_from_replicas)
         return readByLayers(
             result.parts_with_ranges,
             std::move(result.split_parts),
@@ -5263,7 +5724,7 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     top_k_filter_info = top_k_filter_info_;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
     /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
@@ -5310,12 +5771,18 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
+    return getConditionSelectivityEstimator(required_columns, analyzed_result_ptr);
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const
+{
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
     if (!getStorageMetadata()->hasStatistics())
         return nullptr;
 
-    return data.getConditionSelectivityEstimator(getParts(), required_columns, getContext());
+    const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
@@ -5359,9 +5826,10 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
                 required_final_output_positions.insert(pos);
         }
 
+        /// Merging columns absent from the output header are added by initializePipeline and projected back off there.
         for (size_t pos = 0; pos < all_column_names.size(); ++pos)
         {
-            if (required_for_final.contains(all_column_names[pos]))
+            if (required_for_final.contains(all_column_names[pos]) && output_header->has(all_column_names[pos]))
                 required_storage_column_positions.insert(pos);
         }
     }
@@ -5597,7 +6065,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
             auto split = splitIntersectingPartsRangesIntoLayers(
                 std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
             for (size_t i = 0; i < split.layers.size(); ++i)
-                buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+                if (!split.layers[i].empty())
+                    buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
         }
     }
 
