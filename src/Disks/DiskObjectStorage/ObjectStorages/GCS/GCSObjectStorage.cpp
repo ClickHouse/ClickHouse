@@ -392,8 +392,20 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     auto source_snapshot = getClientWithSettings();
     if (dest_gcs != nullptr && source_snapshot->settings.describesSameClientAs(dest_gcs->getClientWithSettings()->settings))
     {
-        auto result = source_snapshot->client->RewriteObjectBlocking(
-            bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path);
+        google::cloud::StatusOr<gcs::ObjectMetadata> result;
+        if (object_to_attributes && !object_to_attributes->empty())
+        {
+            gcs::ObjectMetadata new_metadata;
+            for (const auto & [name, value] : *object_to_attributes)
+                new_metadata.upsert_metadata(name, value);
+            result = source_snapshot->client->RewriteObjectBlocking(
+                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path, gcs::WithObjectMetadata(std::move(new_metadata)));
+        }
+        else
+        {
+            result = source_snapshot->client->RewriteObjectBlocking(
+                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path);
+        }
         if (result)
             return;
         LOG_WARNING(log, "GCS server-side copy from bucket {} to bucket {} failed ({}), falling back to buffer copy",

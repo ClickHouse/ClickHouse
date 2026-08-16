@@ -6,6 +6,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -56,6 +58,9 @@ struct DynamicS3DiskCredentialInfo
     bool ast_has_google_adc_client_id = false;
     bool ast_has_google_adc_client_secret = false;
     bool ast_has_google_adc_refresh_token = false;
+    /// Literal native GCS authentication headers supplied by the SQL AST. The post-`include` validation
+    /// compares these with the resolved configuration so an unrelated `include` does not reject them.
+    std::unordered_map<String, String> ast_gcs_headers;
 };
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.

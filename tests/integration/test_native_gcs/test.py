@@ -145,6 +145,27 @@ def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_i
     assert "ACCESS_DENIED" in error and "header" in error, error
 
 
+def test_dynamic_gcs_disk_allows_literal_header_with_unrelated_include(started_cluster):
+    """A literal SQL header remains valid when `include` contributes unrelated disk settings."""
+    node = started_cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS gcs_literal_header SYNC")
+    node.query(
+        "CREATE TABLE gcs_literal_header (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_literal_header_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('literal-header/')}',"
+        "  no_sign_request = true,"
+        "  header = 'X-ClickHouse-Native-GCS-Literal: 1',"
+        "  include = 'gcs_included_without_headers'"
+        ")",
+        settings={"dynamic_disk_allow_include": 1, "use_native_gcs": 1},
+    )
+    node.query("DROP TABLE gcs_literal_header SYNC")
+
+
 def test_schema_inference_cache(started_cluster):
     """The native `gcs` schema cache must be visible in `system.schema_inference_cache` and
     clearable with `SYSTEM DROP SCHEMA CACHE FOR GCS` (otherwise a stale inferred schema

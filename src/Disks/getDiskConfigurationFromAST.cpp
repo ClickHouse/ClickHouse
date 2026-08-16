@@ -110,6 +110,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// itself); reported through `info` for the post-`include` re-check.
     bool has_gcs_service_account_key = false;
     bool has_gcs_access_token = false;
+    std::unordered_map<String, String> ast_gcs_headers;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -167,6 +168,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_indirect_gcs_credential_field = true;
         if (indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
             has_indirect_gcs_header = true;
+        if (!indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
+            ast_gcs_headers.emplace(key, value_str);
 
         if (key == "include")
             has_include = true;
@@ -356,6 +359,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_google_adc_client_id = has_google_adc_client_id;
         info->ast_has_google_adc_client_secret = has_google_adc_client_secret;
         info->ast_has_google_adc_refresh_token = has_google_adc_refresh_token;
+        info->ast_gcs_headers = std::move(ast_gcs_headers);
         /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
         /// (the session opted in), so the disk is not re-restricted on reload.
         info->persist_server_credentials_allowance = !is_loading_from_existing_metadata
@@ -643,9 +647,13 @@ void validateResolvedGCSDiskCredentials(
 
         Poco::Util::AbstractConfiguration::Keys backend_keys;
         config.keys(prefix.empty() ? "" : prefix.substr(0, prefix.size() - 1), backend_keys);
-        const bool has_included_header = std::any_of(backend_keys.begin(), backend_keys.end(), [](const String & name)
+        const bool has_included_header = std::any_of(backend_keys.begin(), backend_keys.end(), [&](const String & name)
         {
-            return name.starts_with("header") || name.starts_with("access_header");
+            if (!name.starts_with("header") && !name.starts_with("access_header"))
+                return false;
+
+            const auto it = info.ast_gcs_headers.find(name);
+            return it == info.ast_gcs_headers.end() || config.getString(key(name), "") != it->second;
         });
         if (has_included_header)
             throw Exception(
