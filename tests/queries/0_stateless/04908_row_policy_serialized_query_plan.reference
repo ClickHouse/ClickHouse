@@ -28,5 +28,7 @@ memory sqp=1	5
 memory sqp=0	5
 memory nd sqp=1	ONCE
 memory nd sqp=0	ONCE
+maxcols sqp=1	5
+maxcols sqp=0	5
 no policy sqp=1	10
 no policy sqp=0	10

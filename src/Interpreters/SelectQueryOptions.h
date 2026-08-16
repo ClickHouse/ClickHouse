@@ -65,6 +65,11 @@ struct SelectQueryOptions
     /// would filter twice. Tables reached from within the query keep resolving their own entries.
     bool skip_additional_table_filters = false;
 
+    /// Do not apply `max_columns_to_read` to the table this query reads directly. Set only where the
+    /// column list is a read list rather than a list of columns the user asked for, so the limit was
+    /// already applied to the user's own selection where the read was planned.
+    bool ignore_max_columns_to_read = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -108,6 +113,8 @@ struct SelectQueryOptions
         out.ignore_table_access_check = false;
         /// Nothing was applied above a subquery's own reads, so their entries still resolve.
         out.skip_additional_table_filters = false;
+        /// A subquery's column list is the user's own, so the limit applies to it.
+        out.ignore_max_columns_to_read = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

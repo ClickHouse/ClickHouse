@@ -108,6 +108,16 @@ SELECT 'memory nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count()
 FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 0;
 DROP ROW POLICY rp_mem_nd_policy ON rp_mem_nd;
 
+-- max_columns_to_read counts the columns the query selects. The policy's own columns are read
+-- besides those, so the limit must not see them, whichever way the read reached the node.
+SELECT 'maxcols sqp=1', count() FROM rp_dist SETTINGS serialize_query_plan = 1, max_columns_to_read = 1;
+SELECT 'maxcols sqp=0', count() FROM rp_dist SETTINGS serialize_query_plan = 0, max_columns_to_read = 1;
+-- The limit still rejects a selection that genuinely exceeds it, which master also rejects here.
+SELECT x, y FROM rp_dist ORDER BY x
+SETTINGS serialize_query_plan = 1, max_columns_to_read = 1; -- { serverError TOO_MANY_COLUMNS }
+SELECT x, y FROM rp_dist ORDER BY x
+SETTINGS serialize_query_plan = 0, max_columns_to_read = 1; -- { serverError TOO_MANY_COLUMNS }
+
 DROP ROW POLICY rp_leaf_policy ON rp_leaf;
 DROP ROW POLICY rp_final_policy ON rp_final;
 DROP ROW POLICY rp_mem_policy ON rp_mem;

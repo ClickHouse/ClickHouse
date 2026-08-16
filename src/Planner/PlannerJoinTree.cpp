@@ -808,7 +808,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
 
     /// Limitation on the number of columns to read
-    if (settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
+    if (!select_query_options.ignore_max_columns_to_read
+        && settings[Setting::max_columns_to_read] && columns_names.size() > settings[Setting::max_columns_to_read])
         throw Exception(
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",

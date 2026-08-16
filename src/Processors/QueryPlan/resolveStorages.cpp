@@ -272,6 +272,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             /// resolving it again here would filter twice. A read the policy's own filter reaches had
             /// nothing shipped for it, and the option does not descend into subqueries, so it resolves.
             options.skip_additional_table_filters = true;
+            /// The limit was already applied to the columns the query selects where this read was
+            /// planned, and `column_names` is wider than that selection.
+            options.ignore_max_columns_to_read = true;
 
             auto row_policy_context = Context::createCopy(context);
             /// Parallelism of the read is decided by the step, not by this node's setting.
