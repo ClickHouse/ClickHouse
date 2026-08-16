@@ -824,24 +824,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             method_chosen_for_in_order = AggregatedDataVariants::Type::nullable_serialized_void;
     }
 
-    /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
-    /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
-    /// refactored to respect the `use_cache` setting.
-    ///
-    /// For now, disable the simple COUNT optimization to avoid incorrect behavior.
-    switch (method_chosen)
-    {
-    #define M(NAME) \
-        case AggregatedDataVariants::Type::NAME: \
-            is_simple_count = false; \
-            break;
-
-        APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
-    #undef M
-        default:
-            ;
-    }
-
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
@@ -1098,19 +1080,29 @@ void NO_INLINE Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    if (is_simple_count)
+    {
+        auto state = createAggregationMethodState<AggregationMethodInlineCountStateT<Method>>(
+            method, key_columns, key_sizes, aggregation_state_cache);
+        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        return;
+    }
+
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+    bool use_cache = cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        auto state = createAggregationMethodState<typename Method::State>(
+            method, key_columns, key_sizes, aggregation_state_cache);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        auto state = createAggregationMethodState<typename Method::StateNoCache>(
+            method, key_columns, key_sizes, aggregation_state_cache);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -1308,19 +1300,28 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
             return row_end;
         };
 
-        UInt64 total_records = cache_stats.hits + cache_stats.misses;
-        double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-        bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
-
         /// The hashing state is constructed once and shared by all slices: for the serialized
         /// and fixed-key methods its constructor does whole-block work (batch key serialization
         /// or packing), which must not be repeated per slice.
+        if (is_simple_count)
+        {
+            auto state = createAggregationMethodState<AggregationMethodInlineCountStateT<Method>>(
+                method, key_columns, key_sizes, aggregation_state_cache);
+            return run_slices(state, [](size_t) {});
+        }
+
+        UInt64 total_records = cache_stats.hits + cache_stats.misses;
+        double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
+        bool use_cache = cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+
         if (use_cache)
         {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+            auto state = createAggregationMethodState<typename Method::State>(
+                method, key_columns, key_sizes, aggregation_state_cache);
             return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
         }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        auto state = createAggregationMethodState<typename Method::StateNoCache>(
+            method, key_columns, key_sizes, aggregation_state_cache);
         return run_slices(state, [](size_t) {});
     };
 
@@ -1339,6 +1340,8 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
 {
     std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(result, *adaptive.session); });
     adaptive.freeze();
+    /// The frozen path probes the local table directly and does not use dictionary-position mappings.
+    result.clearLowCardinalityCache();
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
 }
@@ -1463,7 +1466,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             {
                 trimHeapAndPruneHashTable(method, nullptr, i);
                 skip_bitmap = nullptr;
-                state.resetCache();
+                state.resetCacheAfterHashTableChange();
             }
         }
     }
@@ -1688,7 +1691,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     {
                         trimHeapAndPruneHashTable(method, nullptr, i);
                         skip_bitmap = nullptr;
-                        state.resetCache();
+                        state.resetCacheAfterHashTableChange();
                     }
                 }
             }
@@ -1829,7 +1832,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     trimHeapAndPruneHashTable(method, &destroyed_states, i);
                     skip_bitmap = nullptr;
-                    state.resetCache();
+                    state.resetCacheAfterHashTableChange();
                 }
             }
 
@@ -2521,6 +2524,9 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
     }();
 
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());
+
+    /// The table is consumed below and reinitialized or destroyed afterwards.
+    data_variants.clearLowCardinalityCache();
 
     /// Flush only two-level data and possibly overflow data.
 
@@ -3936,6 +3942,9 @@ template <bool return_single_block>
 std::conditional_t<return_single_block, Aggregator::AggregatedChunk, Aggregator::AggregatedChunks>
 Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
+    /// This consumes the table directly; dictionary-position mappings are dead before output allocation starts.
+    data_variants.clearLowCardinalityCache();
+
     Chunks res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
 #define M(NAME) \
@@ -4048,6 +4057,9 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
     /// In what data structure is the data aggregated?
     if (data_variants.empty())
         return {};
+
+    /// Output conversion does not use dictionary-position mappings and can allocate sizable columns.
+    data_variants.clearLowCardinalityCache();
 
     if (data_variants.without_key)
         chunks.emplace_back(prepareChunkAndFillWithoutKey(
@@ -4579,6 +4591,10 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     updateStatistics(data_variants, adaptive_session, params.stats_collecting_params);
 
+    /// Input is complete. Merging consumes the tables directly rather than probing them by input dictionary positions.
+    for (auto & data : data_variants)
+        data->clearLowCardinalityCache();
+
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
     for (auto & data : data_variants)
@@ -4793,7 +4809,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache_override) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
     ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
@@ -4810,7 +4827,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         aggregate_columns_data,
         key_columns,
         is_cancelled,
-        arena_for_keys);
+        arena_for_keys,
+        low_cardinality_cache_override);
 }
 
 template <typename Method, typename Table>
@@ -4826,12 +4844,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const AggregateColumnsConstData & aggregate_columns_data,
     const ColumnRawPtrs & key_columns,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache_override) const
 {
-    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
-
     auto merge_count_variant = [&]<typename State>(State & state)
     {
         chassert(aggregate_columns_data.size() == 1);
@@ -4867,59 +4882,54 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
     };
 
-    if (use_cache)
+    if constexpr (MapAggregationMethod<Method>)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
-            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
-            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
-            /// its body reads the count out of a mapped slot that a set cell does not have.
-            if constexpr (MapAggregationMethod<Method>)
-                merge_count_variant(state);
+            auto state = createAggregationMethodState<AggregationMethodInlineCountStateT<Method>>(
+                method, key_columns, key_sizes, aggregation_state_cache, low_cardinality_cache_override);
+            merge_count_variant(state);
+            return;
         }
-        else
-        {
-            mergeStreamsImplCase(
-                aggregates_pool,
-                state,
-                data,
-                no_more_keys,
-                overflow_row,
-                row_begin,
-                row_end,
-                aggregate_columns_data,
-                is_cancelled,
-                arena_for_keys);
-        }
+    }
+
+    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
+    bool use_cache = cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+
+    if (use_cache)
+    {
+        auto state = createAggregationMethodState<typename Method::State>(
+            method, key_columns, key_sizes, aggregation_state_cache, low_cardinality_cache_override);
+        mergeStreamsImplCase(
+            aggregates_pool,
+            state,
+            data,
+            no_more_keys,
+            overflow_row,
+            row_begin,
+            row_end,
+            aggregate_columns_data,
+            is_cancelled,
+            arena_for_keys);
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        if (is_simple_count)
-        {
-            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
-            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
-            /// its body reads the count out of a mapped slot that a set cell does not have.
-            if constexpr (MapAggregationMethod<Method>)
-                merge_count_variant(state);
-        }
-        else
-        {
-            mergeStreamsImplCase(
-                aggregates_pool,
-                state,
-                data,
-                no_more_keys,
-                overflow_row,
-                row_begin,
-                row_end,
-                aggregate_columns_data,
-                is_cancelled,
-                arena_for_keys);
-        }
+        auto state = createAggregationMethodState<typename Method::StateNoCache>(
+            method, key_columns, key_sizes, aggregation_state_cache, low_cardinality_cache_override);
+        mergeStreamsImplCase(
+            aggregates_pool,
+            state,
+            data,
+            no_more_keys,
+            overflow_row,
+            row_begin,
+            row_end,
+            aggregate_columns_data,
+            is_cancelled,
+            arena_for_keys);
     }
 }
 
@@ -5122,15 +5132,38 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 if (is_cancelled.load())
                     return;
 
+                /// `LowCardinality` dictionary-position mappings point into one bucket's hash table.
+                ColumnsHashing::LowCardinalityHashMethodCache<AggregateDataPtr> bucket_low_cardinality_cache;
                 for (auto & agg_chunk : bucket_to_chunks[bucket])
                 {
                     /// Copy to avoid race.
                     auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
                     size_t chunk_rows = agg_chunk.chunk.getNumRows();
                     auto chunk_columns = agg_chunk.chunk.detachColumns();
+
+                    auto merge_chunk = [&]<typename Method, typename Table>(Method & method, Table & table)
+                    {
+                        AggregationMethodLowCardinalityCache<Method> * low_cardinality_cache = nullptr;
+                        if constexpr (MapAggregationMethod<Method>)
+                            low_cardinality_cache = &bucket_low_cardinality_cache;
+
+                        mergeStreamsImpl(
+                            chunk_columns,
+                            chunk_rows,
+                            aggregates_pool,
+                            method,
+                            table,
+                            nullptr,
+                            consecutive_keys_cache_stats_copy,
+                            false,
+                            is_cancelled,
+                            nullptr,
+                            low_cardinality_cache);
+                    };
+
                 #define M(NAME) \
                     else if (result.type == AggregatedDataVariants::Type::NAME) \
-                        mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
+                        merge_chunk(*result.NAME, result.NAME->data.impls[bucket]);
 
                     if (false) {} // NOLINT
                         APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -5309,6 +5342,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
 
     if (dataflow_cache_updater)
         dataflow_cache_updater->recordAggregationStateSizes(result, bucket_num);
+
+    /// Output conversion does not use dictionary-position mappings and can allocate sizable columns.
+    result.clearLowCardinalityCache();
 
     AggregatedChunk agg_chunk;
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)

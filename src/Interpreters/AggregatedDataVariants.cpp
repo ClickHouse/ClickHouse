@@ -154,6 +154,7 @@ size_t AggregatedDataVariants::allocatedBytes() const
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
             res += (NAME)->data.getBufferSizeInBytes(); \
+            res += getAggregationMethodAdditionalAllocatedBytes(*(NAME)); \
             break;
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
@@ -240,6 +241,10 @@ void AggregatedDataVariants::convertToTwoLevel()
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 
+    /// Conversion copies the hash table directly and does not use dictionary-position mappings.
+    /// Release them before allocating the two-level table so their buffers do not increase the peak.
+    clearLowCardinalityCache();
+
     switch (type)
     {
 #define M(NAME) \
@@ -256,6 +261,23 @@ void AggregatedDataVariants::convertToTwoLevel()
 
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
+    }
+}
+
+void AggregatedDataVariants::clearLowCardinalityCache() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            clearAggregationMethodCache(*(NAME)); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
     }
 }
 
