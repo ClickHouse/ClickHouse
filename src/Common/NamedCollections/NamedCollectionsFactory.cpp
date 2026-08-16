@@ -679,7 +679,14 @@ std::vector<StorageID> NamedCollectionFactory::getDependents(const String & coll
 void NamedCollectionFactory::markDependenciesDetached(const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
-    LOG_TRACE(log, "Marking dependencies of table {} as detached", table_id.getNameForLogs());
+    if (table_id.table_name.empty())
+    {
+        LOG_TRACE(log, "Marking dependencies of database {} as detached", table_id.database_name);
+    }
+    else
+    {
+        LOG_TRACE(log, "Marking dependencies of table {} as detached", table_id.getNameForLogs());
+    }
 
     std::vector<String> collection_names;
 
