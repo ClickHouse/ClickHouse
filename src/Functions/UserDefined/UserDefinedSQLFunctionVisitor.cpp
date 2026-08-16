@@ -38,7 +38,7 @@ extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_, bool qualify_table_names)
 {
     chassert(ast);
 
@@ -48,7 +48,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
             return;
 
         auto * old_ptr = child.get();
-        visit(child, context_);
+        visit(child, context_, qualify_table_names);
         auto * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
@@ -60,7 +60,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
     if (const auto * function = ast->template as<ASTFunction>())
     {
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_, qualify_table_names);
         if (replace_result)
             ast = replace_result;
     }
@@ -75,7 +75,7 @@ bool isVariadic(const ASTPtr & arg)
 }
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_, bool qualify_table_names)
 {
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -146,6 +146,15 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
+    /// SQL UDFs expanded in `CREATE` queries are persisted and can be interpreted later with a
+    /// different current database. Qualify their table names before normalization creates scalar
+    /// subquery aliases. UDFs expanded by other query types retain their existing resolution.
+    if (qualify_table_names)
+    {
+        AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
+        visitor.visit(function_body_to_update);
+    }
+
     if (context_->getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
     {
         Aliases aliases;
@@ -178,7 +187,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         {
             if (auto * inner_function = child->as<ASTFunction>())
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_, qualify_table_names);
                 if (replace_result)
                     child = replace_result;
             }
@@ -207,11 +216,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
-
-    /// SQL UDFs are expanded into queries which may be stored and run later with a different
-    /// current database. Qualify table names introduced by the expansion in the current context.
-    AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
-    visitor.visit(function_body_to_update);
 
     auto function_alias = function.tryGetAlias();
 
