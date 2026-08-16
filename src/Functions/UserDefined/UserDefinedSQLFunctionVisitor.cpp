@@ -146,15 +146,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
-    /// SQL UDFs expanded in `CREATE` queries are persisted and can be interpreted later with a
-    /// different current database. Qualify their table names before normalization creates scalar
-    /// subquery aliases. UDFs expanded by other query types retain their existing resolution.
-    if (qualify_table_names)
-    {
-        AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
-        visitor.visit(function_body_to_update);
-    }
-
     if (context_->getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
     {
         Aliases aliases;
@@ -216,6 +207,16 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
+
+    /// SQL UDFs expanded in `CREATE` queries are persisted and can be interpreted later with a
+    /// different current database. Qualify their table names after normalization, which may
+    /// introduce scalar subquery aliases. UDFs expanded by other query types retain their
+    /// existing resolution.
+    if (qualify_table_names)
+    {
+        AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
+        visitor.visit(function_body_to_update);
+    }
 
     auto function_alias = function.tryGetAlias();
 
