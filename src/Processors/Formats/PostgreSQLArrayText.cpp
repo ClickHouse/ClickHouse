@@ -221,13 +221,20 @@ private:
         }
         else
         {
-            const size_t begin = pos;
             while (pos < text.size() && text[pos] != ',' && text[pos] != '}')
+            {
+                if (text[pos] == '\\')
+                {
+                    ++pos;
+                    if (pos >= text.size())
+                        throwError("unterminated escape sequence");
+                }
+                value += text[pos];
                 ++pos;
-            size_t end = pos;
-            while (end > begin && isWhitespaceASCII(text[end - 1]))
-                --end;
-            value = String(text.substr(begin, end - begin));
+            }
+
+            while (!value.empty() && isWhitespaceASCII(value.back()))
+                value.pop_back();
         }
 
         /// Only an unquoted `NULL` is a null element - `"NULL"` is the four-character string.

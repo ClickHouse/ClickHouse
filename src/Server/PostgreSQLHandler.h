@@ -110,6 +110,7 @@ private:
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
     bool processCopyQuery(const String & query);
+    bool copy_protocol_error = false;
 
     /// After an error has been reported in the middle of `COPY ... FROM STDIN`, consumes and discards
     /// the copy-subprotocol frames the client keeps sending until it terminates the copy with

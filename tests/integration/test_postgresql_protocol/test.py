@@ -975,6 +975,26 @@ def test_parse_rejects_duplicate_named_prepared_statement(started_cluster):
         sock.close()
 
 
+def test_bound_portal_keeps_statement_after_close(started_cluster):
+    """`Bind` materializes a portal, so closing its source statement cannot rewrite it."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    try:
+        send(b"P", b"portal_snapshot\x00SELECT 20260816\x00\x00\x00")
+        send(b"B", b"\x00portal_snapshot\x00\x00\x00\x00\x00\x00")
+        send(b"C", b"Sportal_snapshot\x00")
+        send(b"E", b"\x00\x00\x00\x00\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
 def test_extended_query_cycle_does_not_send_ready_before_sync(started_cluster):
     """Every extended-protocol cycle stays active until `Sync`, including `Close` and `Describe`.
     There must be exactly one `ReadyForQuery`, after the matching `Sync`."""

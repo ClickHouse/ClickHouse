@@ -1856,6 +1856,9 @@ public:
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
         /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
+        /// A portal captures its statement at `Bind` time. Replacing or closing
+        /// the prepared statement later must not alter an already-bound portal.
+        bound_statement = getStatement(query->function_name, query->parameters);
         bind_query = std::move(query);
     }
 
@@ -1864,14 +1867,13 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto result = getStatement(bind_query->function_name, bind_query->parameters);
-
-        return result;
+        return *bound_statement;
     }
 
     void resetBindQuery()
     {
         bind_query.reset();
+        bound_statement.reset();
     }
 
     bool bindReferencesStatement(const String & function_name) const
@@ -1883,6 +1885,7 @@ private:
     UnorderedMapWithMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
+    std::optional<String> bound_statement;
 
     String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {

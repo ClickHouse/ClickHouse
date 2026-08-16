@@ -128,9 +128,12 @@ private:
             /// `poll` said the socket is readable, so this refill does not block. A closed connection
             /// mid-copy is a client that will never finish it.
             if (socket_in.eof())
+            {
+                protocol_error = true;
                 throw Exception(
                     ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                     "Unexpected end of stream while reading the payload of COPY FROM STDIN");
+            }
         }
         return socket_in.available();
     }
@@ -169,6 +172,10 @@ private:
                 /// reserve and read the whole advertised payload in one go.
                 Int32 frame_size = 0;
                 char frame_size_bytes[sizeof(Int32)];
+                /// Once the `CopyData` tag has been consumed, a cancellation cannot
+                /// safely drain the next frame until its complete length header is
+                /// known. In particular, this must be false before the first byte.
+                frame_header_complete = false;
                 for (size_t byte = 0; byte < sizeof(frame_size_bytes); ++byte)
                 {
                     waitForSomeData();
@@ -181,9 +188,12 @@ private:
                 ReadBufferFromMemory frame_size_in(frame_size_bytes, sizeof(frame_size_bytes));
                 readBinaryBigEndian(frame_size, frame_size_in);
                 if (frame_size < static_cast<Int32>(sizeof(Int32)))
+                {
+                    protocol_error = true;
                     throw Exception(
                         ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                         "Wrong message length {} in CopyData, it must be at least 4", frame_size);
+                }
 
                 /// An empty frame is legal and does not mean end-of-stream; wait for the next message.
                 remaining_frame_bytes = static_cast<size_t>(frame_size) - sizeof(Int32);
@@ -212,6 +222,7 @@ private:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "COPY FROM STDIN aborted by the client: {}", abort_reason);
             }
+            protocol_error = true;
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Received incorrect message type - expected {} or {}, got {}",
@@ -232,6 +243,7 @@ public:
     /// middle of a frame: those bytes are payload and have to be skipped before the next message header.
     size_t pendingFrameBytes() const { return remaining_frame_bytes; }
     bool canResynchronize() const { return frame_header_complete; }
+    bool protocolError() const { return protocol_error; }
 
 private:
     PostgreSQLProtocol::Messaging::MessageTransport & transport;
@@ -242,6 +254,7 @@ private:
     bool frame_header_complete = true;
     bool received_copy_done = false;
     bool client_aborted = false;
+    bool protocol_error = false;
     String abort_reason;
 };
 
@@ -1017,6 +1030,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 
 bool PostgreSQLHandler::processCopyQuery(const String & query)
 {
+    copy_protocol_error = false;
     ParserCopyQuery parser_copy;
     ASTPtr copy_query_parsed;
 
@@ -1175,6 +1189,12 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         catch (...)
         {
             staged_out.cancel();
+
+            if (copy_in_stream.protocolError())
+            {
+                copy_protocol_error = true;
+                throw;
+            }
 
             /// An external cancel (`CancelRequest` / `KILL QUERY`) aborts the copy the way PostgreSQL
             /// does: release the insert query promptly (nothing has been pushed to its pipeline, so the
@@ -1674,6 +1694,8 @@ void PostgreSQLHandler::processQuery()
     }
     catch (const Exception & e)
     {
+        if (copy_protocol_error)
+            throw;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
@@ -1906,13 +1928,8 @@ void PostgreSQLHandler::processCloseQuery()
         /// otherwise a later Bind/Execute on the same statement would fail.
         if (query->close_target == 'S')
         {
-            /// If the bind currently references the statement being deallocated,
-            /// the bind becomes stale and must be dropped. Closing a *different*
-            /// statement must not touch unrelated bind state — otherwise
-            /// `Parse s1; Parse s2; Bind(s1); Close('S', 's2'); Execute` would
-            /// fail with `Execute without prior Bind`.
-            if (prepared_statements_manager.bindReferencesStatement(query->function_name))
-                prepared_statements_manager.resetBindQuery();
+            /// A portal has already captured the statement text at `Bind` time,
+            /// so closing its source statement does not invalidate the portal.
             /// Per the PostgreSQL wire protocol, `Close` on a non-existent
             /// prepared statement is not an error — it is a silent no-op that
             /// still responds with `CloseComplete`. Using the throwing
