@@ -197,19 +197,14 @@ TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
         /*serialize_string_with_zero_byte=*/false,
         /*temporary_files_codec=*/"ZXC",
         /*allow_experimental_codecs=*/true);
-    for (UInt64 version : {DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1,
-                           UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
-    {
-        QueryPlanSerializationSettings settings;
-        step->serializeSettings(settings, version);
+    QueryPlanSerializationSettings settings;
+    EXPECT_THROW(
+        step->serializeSettings(settings, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
 
-        WriteBufferFromOwnString out;
-        settings.writeChangedBinary(out);
-        EXPECT_EQ(
-            out.str().contains("allow_experimental_codecs"),
-            version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
-            << "version " << version;
-    }
+    step->serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    WriteBufferFromOwnString out;
+    settings.writeChangedBinary(out);
+    EXPECT_TRUE(out.str().contains("allow_experimental_codecs"));
 }
 
 TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)

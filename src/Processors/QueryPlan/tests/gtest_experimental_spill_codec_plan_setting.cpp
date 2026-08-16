@@ -143,12 +143,11 @@ TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
     EXPECT_FALSE(sortingStepCarriesSetting(plain_codec, true, 1_MiB));
     EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, false, 1_MiB));
 
-    /// A pre-v8 worker has the established temporary-file codec behavior but does not know this setting
-    /// name. Omitting it allows that worker to execute an in-memory sort even when it has no temporary
-    /// storage.
-    EXPECT_FALSE(sortingStepCarriesSetting(
+    /// A pre-v8 worker would silently lose the opt-in and fail only after spilling, so reject the plan
+    /// before sending it to that worker.
+    EXPECT_THROW(sortingStepCarriesSetting(
         experimental_codec, true, 1_MiB, /*sorting_is_reachable=*/true,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
@@ -180,9 +179,9 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     spilling_hash_without_temporary_storage.temporary_storage_available = false;
     EXPECT_FALSE(spilling_hash_without_temporary_storage.canSpillToTemporaryFiles(keyed_inner.join_operator));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
-    EXPECT_FALSE(joinCarriesSetting(
+    EXPECT_THROW(joinCarriesSetting(
         spilling_hash_without_temporary_storage, keyed_inner.join_operator,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
 
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;

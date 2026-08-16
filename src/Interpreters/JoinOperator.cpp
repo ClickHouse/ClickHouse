@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -295,15 +296,20 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    /// The setting was added in serialization version 8. Older workers keep their established codec
-    /// behavior, so sending the unknown name would only prevent an in-memory execution on a worker that
-    /// has no temporary storage.
+    /// The setting was added in serialization version 8. Older workers cannot safely execute a plan that
+    /// can spill with an experimental codec because they would silently lose the opt-in.
     auto worker_settings = *this;
     worker_settings.temporary_storage_available = true;
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
-        && spillCodecNeedsExperimentalCodecsOptIn(
+    if (spillCodecNeedsExperimentalCodecsOptIn(
             worker_settings.canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
+    {
+        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An experimental temporary-files codec requires query plan serialization version >= {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
+
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
+    }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;

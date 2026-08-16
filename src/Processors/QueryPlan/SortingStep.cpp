@@ -209,17 +209,23 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
-    /// `allow_experimental_codecs` is registered in serialization version 8. A pre-v8 peer preserves its
-    /// established temporary-file codec behavior, so the unknown name stays off its wire. For v8 and later
-    /// it goes on the wire only when the spill behavior of this step actually depends on it:
+    /// `allow_experimental_codecs` is registered in serialization version 8. A pre-v8 peer cannot safely
+    /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
+    /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it:
     /// `MergeSortingTransform::consume`
     /// touches the temporary data only when `max_bytes_before_external_sort` is set, so a sort that stays
     /// in memory never resolves the codec and must not carry the opt-in. See the matching comment in
     /// `AggregatingStep::serializeSettings` and `spillCodecNeedsExperimentalCodecsOptIn`.
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
-        && spillCodecNeedsExperimentalCodecsOptIn(
+    if (spillCodecNeedsExperimentalCodecsOptIn(
             sorting_is_reachable && max_bytes_in_block_before_external_sort != 0, allow_experimental_codecs, temporary_files_codec))
+    {
+        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An experimental temporary-files codec requires query plan serialization version >= {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
+
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
+    }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
