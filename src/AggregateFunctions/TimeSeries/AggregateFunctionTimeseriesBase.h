@@ -980,51 +980,9 @@ private:
     })
     )
 
-    /// The flagged counterpart, reached with the NULL map of a `Nullable` value column
-    /// (`addBatchSinglePlaceNotNull`) and with the condition column of the `-If` combinator
-    /// (`if_argument_pos`, e.g. `timeSeriesRateToGridIf`): flags break runs unpredictably, so samples are
-    /// added one by one, but the bucket resolved for the previous sample is reused while timestamps stay in
-    /// its range - including a skip range (`bucket == nullptr`). Requires `fast_bucket_math`.
-    template <bool flag_value_to_include>
-    void addSamplesToBucketsFlagged(State * __restrict state,
-        const TimestampType * __restrict timestamps,
-        const ValueType * __restrict values,
-        const UInt8 * __restrict flags,
-        size_t row_begin,
-        size_t row_end) const
-    {
-        Bucket * bucket = nullptr;
-        Int64 lo = 0;
-        Int64 hi = 0;   /// Empty range: the first included sample always takes `classifySampleFast`
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            if ((flags[i] != 0) != flag_value_to_include)
-                continue;
-
-            const Int64 timestamp = toInt64(timestamps[i]);
-            if (timestamp > lo && timestamp <= hi)
-            {
-                if (bucket)
-                    bucket->add(timestamps[i], values[i]);
-                continue;
-            }
-
-            const SampleClass sample_class = classifySampleFast(timestamp);
-            lo = sample_class.lo;
-            hi = sample_class.hi;
-            if (sample_class.bucket_index == NO_BUCKET)
-            {
-                bucket = nullptr;
-                continue;
-            }
-            /// The reference stays valid until the next lookup: only another insertion can rehash the map.
-            bucket = &state->buckets[sample_class.bucket_index];
-            bucket->add(timestamps[i], values[i]);
-        }
-    }
-
     /// Entry point of the batch add path; `flags == nullptr` means every sample is included.
-    /// Falls back to the per-sample `add` when the Int64 bucket math is disabled.
+    /// Flagged samples (a NULL map of a `Nullable` value column or a `-If` condition) and grids without the
+    /// Int64 bucket math stay on the plain per-sample path.
     template <bool flag_value_to_include>
     void addSamples(AggregateDataPtr __restrict place,
         const TimestampType * __restrict timestamps,
@@ -1033,7 +991,7 @@ private:
         size_t row_begin,
         size_t row_end) const
     {
-        if (!fast_bucket_math)
+        if (!fast_bucket_math || flags)
         {
             for (size_t i = row_begin; i < row_end; ++i)
                 if (!flags || (flags[i] != 0) == flag_value_to_include)
@@ -1042,12 +1000,6 @@ private:
         }
 
         State * state = data(place);
-
-        if (flags)
-        {
-            addSamplesToBucketsFlagged<flag_value_to_include>(state, timestamps, values, flags, row_begin, row_end);
-            return;
-        }
 
 #if USE_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
