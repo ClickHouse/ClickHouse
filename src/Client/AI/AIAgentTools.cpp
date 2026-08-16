@@ -188,7 +188,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
         "INTO OUTFILE, overriding the readonly/time/memory limit settings, table functions reaching "
         "outside of the current server's tables (file, url, s3, remote, executable, ...), and the AI functions "
-        "calling external providers (aiGenerate, ...) are rejected; "
+        "calling external providers (aiGenerate, ...), dictionary access, and named user tables/views are rejected; "
+        "only `system` tables and local data-generating table functions can be used without confirmation; "
         "use run_query for anything that does not fit these constraints. Add LIMIT to exploratory queries.",
         ai::JsonValue{{"query", stringParameter("The SQL statement to run")}},
         {"query"},

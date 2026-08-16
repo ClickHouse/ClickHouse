@@ -55,6 +55,8 @@ bool changesSettings(const String & query)
 TEST(AIQueryValidation, AllowsReadOnlyStatements)
 {
     EXPECT_TRUE(isAllowed("SELECT count() FROM system.tables"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM default.events"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM v"));
     EXPECT_TRUE(isAllowed("WITH 1 AS x SELECT x"));
     EXPECT_TRUE(isAllowed("SELECT 1 UNION ALL SELECT 2"));
     EXPECT_TRUE(isAllowed("SHOW TABLES FROM system"));
@@ -141,6 +143,10 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     /// The scalar functions reading external resources.
     EXPECT_FALSE(isAllowed("SELECT file('/etc/passwd')"));
     EXPECT_FALSE(isAllowed("SELECT catboostEvaluate('/path/model.bin', 1, 2)"));
+    /// Dictionaries may fetch from HTTP, MySQL, ClickHouse, or another external source.
+    EXPECT_FALSE(isAllowed("SELECT dictGet('dictionary', 'value', toUInt64(1))"));
+    EXPECT_FALSE(isAllowed("SELECT dictHas('dictionary', toUInt64(1))"));
+    EXPECT_FALSE(isAllowed("SELECT dictIsIn('dictionary', toUInt64(1))"));
 
     /// Table functions generating data locally are allowed.
     EXPECT_TRUE(isAllowed("SELECT * FROM numbers(10)"));

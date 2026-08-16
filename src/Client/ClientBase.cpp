@@ -3969,6 +3969,17 @@ bool ClientBase::processAIChat(const String & text_)
         return true;
     }
 
+    /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
+    /// pin that both visible and internal assistant queries need, so fail before probing a
+    /// provider or running an internal query that the server would reject anyway.
+    if (aiSessionReadonly() == 1 && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    {
+        error_stream << "The AI chat requires the ClickHouse SQL dialect: `readonly = 1` does not allow changing "
+                        "the `dialect` setting. Run `SET dialect = 'clickhouse'` first."
+                     << std::endl;
+        return true;
+    }
+
     /// A known `/`-command runs as the command itself, without involving the agent (and works
     /// even when no AI provider is configured). Anything else - including an unknown `/...` - is
     /// a question for the agent.
@@ -4455,8 +4466,15 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// so when the session was switched to another dialect, this query is explicitly pinned
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
     /// runs under the defaults of the connection, like before.
+    const bool needs_clickhouse_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
+    if (needs_clickhouse_dialect && aiSessionReadonly() == 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
+            "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
+
     std::optional<Settings> settings_to_send;
-    if (client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    if (needs_clickhouse_dialect)
     {
         settings_to_send.emplace();
         settings_to_send->set("dialect", "clickhouse");
