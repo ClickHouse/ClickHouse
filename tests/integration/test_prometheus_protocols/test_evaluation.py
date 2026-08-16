@@ -575,6 +575,171 @@ def test_up():
     )
 
 
+def test_at_start_and_end_modifiers():
+    # For an instant query, both modifiers resolve to the evaluation timestamp.
+    do_query_test(
+        "test @ start()",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "13"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:04:10.000", "13"]],
+    )
+
+    do_query_test(
+        "test @ end()",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "13"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:04:10.000", "13"]],
+    )
+
+    # In a range query the modifier stays fixed at the range boundary.
+    do_range_query_test(
+        "test @ start()",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]"]],
+    )
+
+    do_range_query_test(
+        "test @ end()",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    # A fixed raw range vector keeps its original sample timestamps.
+    do_query_test(
+        "test[45s] @ 250",
+        250,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[210, "8"], [220, "12"], [230, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:03:30.000',8),('1970-01-01 00:03:40.000',12),('1970-01-01 00:03:50.000',13)]"]],
+    )
+
+    # A subquery has its own inner time grid. A fixed @ modifier must preserve that
+    # grid so the outer range function can consume the complete range vector.
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ start())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "1"], [190, "1"], [250, "1"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',1),('1970-01-01 00:03:10.000',1),('1970-01-01 00:04:10.000',1)]"]],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    # Numeric @ on a subquery uses the same fixed-grid path.
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ 250)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    # The fixed evaluation timestamp is not aligned to the subquery step. This matters for rate's boundary
+    # extrapolation: it must use 250, not the last inner grid point at 240.
+    do_query_test(
+        "rate(test[5m:1m] @ 250)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "0.04666666666666667"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 0.04666666666666667]],
+        eps=1e-9,
+    )
+
+    do_range_query_test(
+        "rate(test[5m:1m] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[130, "0.04666666666666667"], [190, "0.04666666666666667"], [250, "0.04666666666666667"]]}]}',
+        [["[]", "[('1970-01-01 00:02:10.000',0.04666666666666667),('1970-01-01 00:03:10.000',0.04666666666666667),('1970-01-01 00:04:10.000',0.04666666666666667)]"]],
+        eps=1e-9,
+    )
+
+    # increase() uses the same fixed evaluation timestamp for extrapolation.
+    do_query_test(
+        "increase(test[5m:1m] @ 250)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "14"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 14]],
+    )
+
+    do_range_query_test(
+        "increase(test[5m:1m] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[130, "14"], [190, "14"], [250, "14"]]}]}',
+        [["[]", "[('1970-01-01 00:02:10.000',14),('1970-01-01 00:03:10.000',14),('1970-01-01 00:04:10.000',14)]"]],
+    )
+
+    # This is a common dashboard shape. The fixed result must keep its grouping labels and repeat over the outer grid.
+    do_range_query_test(
+        "sum by (job) (rate(resets[5m:1m] @ end()))",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[130, "0.017777777777777778"], [190, "0.017777777777777778"], [250, "0.017777777777777778"]]}]}',
+        [["[('job','test')]", "[('1970-01-01 00:02:10.000',0.017777777777777778),('1970-01-01 00:03:10.000',0.017777777777777778),('1970-01-01 00:04:10.000',0.017777777777777778)]"]],
+        eps=1e-9,
+    )
+
+    # PromQL allows both modifier orders and they must resolve to the same fixed evaluation time.
+    do_query_test(
+        "rate(test[5m:1m] @ 250 offset 10s)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "0.043333333333333335"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 0.043333333333333335]],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "rate(test[5m:1m] offset 10s @ 250)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "0.043333333333333335"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 0.043333333333333335]],
+        eps=1e-9,
+    )
+
+    # Symbolic timestamps must keep the same offset semantics as numeric timestamps.
+    do_query_test(
+        "rate(test[5m:1m] @ end() offset 10s)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "0.043333333333333335"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 0.043333333333333335]],
+        eps=1e-9,
+    )
+
+    # A fixed range with too few samples should produce an empty result, not an invalid aggregate element.
+    do_query_test(
+        "rate(test[5m:1m] @ 120)",
+        120,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+
 def test_range_selectors():
     do_query_test(
         "test[30s]",

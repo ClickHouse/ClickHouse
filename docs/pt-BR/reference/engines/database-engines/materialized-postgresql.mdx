@@ -258,6 +258,24 @@ Se definido como `0`, os tipos mais limitados `Date` e `DateTime` são usados em
 
 Essa configuração controla apenas os tipos de coluna escolhidos pela inferência de tipos quando as tabelas aninhadas são criadas, portanto deve ser especificada no momento de `CREATE DATABASE`. Ela não pode ser alterada depois com `ALTER DATABASE ... MODIFY SETTING` (as tabelas aninhadas já criadas mantêm seus tipos de coluna fixos, e essa alteração é rejeitada); para mudá-la, recrie o banco de dados. Ela não se aplica ao motor de tabela `MaterializedPostgreSQL`, em que os tipos de coluna são declarados explicitamente.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+Os parâmetros de TLS/SSL são encaminhados ao `libpq` e podem ser fornecidos por meio de uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections) ou como argumentos finais de chave-valor do mecanismo: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`; quando não definido, usa-se o padrão `prefer` do `libpq`), além dos certificados e da chave, em um de dois formatos. `sslrootcert` (certificado da CA), `sslcert` (certificado do cliente) e `sslkey` (chave privada do cliente) são caminhos para arquivos locais do servidor e são aceitos apenas em uma coleção nomeada definida no arquivo de configuração do servidor. Já `sslrootcert_pem`, `sslcert_pem` e `sslkey_pem` aceitam o conteúdo literal do arquivo correspondente, podem ser especificados em SQL e são mascarados em logs e consultas `SHOW`, como uma senha.
+
+Exemplo de conexão com um servidor PostgreSQL que exige TLS, verificando o certificado do servidor:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+Os parâmetros de TLS/SSL fazem parte dos parâmetros de conexão do PostgreSQL e são definidos na criação do banco de dados; para alterá-los, recrie o banco de dados.
+
 <div id="notes">
   ## Notas
 </div>

@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Processamento paralelo vs. sequencial
 </div>
 
-Como mostrado no exemplo anterior, uma tabela pode atuar como origem para várias visões materializadas. A ordem em que elas são executadas depende da configuração [`parallel_view_processing`](/pt-BR/reference/settings/session-settings#parallel_view_processing).
+Como mostrado no exemplo anterior, uma tabela pode atuar como origem para várias visões materializadas. A ordem em que elas são executadas depende da configuração [`parallel_view_processing`](/pt-BR/reference/settings/session-settings/parallel#parallel_view_processing).
 
 Por padrão, essa configuração é igual a `0` (`false`), o que significa que as visões materializadas são executadas sequencialmente, na ordem de `uuid`.
 
@@ -1100,9 +1100,9 @@ AS SELECT
 FROM source;
 ```
 
-Observe que cada uma das views faz uma pausa de 1 segundo antes de inserir suas linhas na tabela `target`, incluindo também seu nome e o horário da inserção.
+Observe que cada uma das VIEWs faz uma pausa de 1 segundo antes de inserir suas linhas na tabela `target`, incluindo também seu nome e o horário da inserção.
 
-Inserir uma linha na tabela `source` leva ~3 segundos, com cada view sendo executada em sequência:
+Inserir uma linha na tabela `source` leva ~3 segundos, com cada VIEW sendo executada em sequência:
 
 ```sql
 INSERT INTO source VALUES ('test')
@@ -1112,7 +1112,7 @@ INSERT INTO source VALUES ('test')
 1 row in set. Elapsed: 3.786 sec.
 ```
 
-Podemos confirmar com um `SELECT` a chegada das linhas de cada linha:
+Podemos confirmar a chegada das linhas de cada VIEW com um `SELECT`:
 
 ```sql
 SELECT
@@ -1133,7 +1133,7 @@ ORDER BY now ASC
 3 rows in set. Elapsed: 0.015 sec.
 ```
 
-Isso corresponde ao `uuid` das views:
+Isso corresponde ao `uuid` das VIEWs:
 
 ```sql
 SELECT
@@ -1154,7 +1154,7 @@ ORDER BY uuid ASC
 3 rows in set. Elapsed: 0.004 sec.
 ```
 
-Por outro lado, considere o que acontece se inserirmos uma linha com `parallel_view_processing=1` ativado. Com essa opção ativada, as views são executadas em paralelo, sem garantia da ordem em que as linhas chegam à tabela de destino:
+Por outro lado, considere o que acontece se inserirmos uma linha com `parallel_view_processing=1` ativado. Com essa opção ativada, as VIEWs são executadas em paralelo, sem garantia da ordem em que as linhas chegam à tabela de destino:
 
 ```sql
 TRUNCATE target;
