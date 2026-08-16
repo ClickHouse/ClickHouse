@@ -49,42 +49,46 @@ Go to ①
 
 En ①, el tamaño depende del tamaño del bloque de inserción, que puede controlarse con dos ajustes:
 
-* [`min_insert_block_size_rows`](/es/reference/settings/session-settings#min_insert_block_size_rows) (valor predeterminado: `1048545` filas)
-* [`min_insert_block_size_bytes`](/es/reference/settings/session-settings#min_insert_block_size_bytes) (valor predeterminado: `256 MiB`)
+* [`min_insert_block_size_rows`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_rows) (valor predeterminado: `1048545` filas)
+* [`min_insert_block_size_bytes`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (valor predeterminado: `256 MiB`)
 
 Cuando en el bloque de inserción se recopila el número de filas especificado o se alcanza la cantidad de datos configurada (lo que ocurra primero), esto hace que el bloque se escriba en una nueva parte. El bucle de inserción continúa en el paso ①.
 
-Ten en cuenta que el valor de `min_insert_block_size_bytes` indica el tamaño del bloque sin comprimir en memoria (y no el tamaño de la parte comprimida en disco). Además, ten en cuenta que los bloques y partes creados rara vez contienen exactamente la cantidad configurada de filas o bytes, porque ClickHouse transmite y [procesa](https://clickhouse.com/company/events/query-performance-introspection) los datos por [block](/es/reference/settings/session-settings#max_block_size) de filas. Por lo tanto, estos ajustes especifican umbrales mínimos.
+Ten en cuenta que el valor de `min_insert_block_size_bytes` indica el tamaño del bloque sin comprimir en memoria (y no el tamaño de la parte comprimida en disco). Además, ten en cuenta que los bloques y partes creados rara vez contienen exactamente la cantidad configurada de filas o bytes, porque ClickHouse transmite y [procesa](https://clickhouse.com/company/events/query-performance-introspection) los datos por [block](/es/reference/settings/session-settings/max#max_block_size) de filas. Por lo tanto, estos ajustes especifican umbrales mínimos.
 
 <div id="be-aware-of-merges">
   #### Tenga en cuenta las fusiones
 </div>
 
-Cuanto menor sea el tamaño configurado del bloque de inserción, más partes iniciales se crearán para una carga de datos grande y más fusiones de partes en segundo plano se ejecutarán de forma concurrente con la ingestión de datos. Esto puede provocar contención de recursos (CPU y memoria) y requerir tiempo adicional (para alcanzar un número [adecuado](/es/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) de partes) una vez finalizada la ingestión.
+Cuanto menor sea el tamaño configurado del bloque de inserción, más partes iniciales se crearán para una carga de datos grande y más fusiones de partes en segundo plano se ejecutarán de forma concurrente con la ingestión de datos. Esto puede provocar contención de recursos (CPU y memoria) y requerir tiempo adicional (para alcanzar un número [adecuado](/es/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) de partes) una vez finalizada la ingestión.
 
 <Warning>
-  El rendimiento de las consultas de ClickHouse se verá afectado negativamente si el número de partes supera los [límites recomendados](/es/reference/settings/merge-tree-settings#parts_to_throw_insert).
+  El rendimiento de las consultas de ClickHouse se verá afectado negativamente si el número de partes supera los [límites recomendados](/es/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
 </Warning>
 
-ClickHouse [fusionará partes](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) de forma continua en partes más grandes hasta que [alcancen](/es/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) un tamaño comprimido de ~150 GiB. Este diagrama muestra cómo un servidor de ClickHouse fusiona partes:
+ClickHouse [fusionará partes](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) de forma continua en partes más grandes hasta que [alcancen](/es/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) un tamaño comprimido de ~150 GiB. Este diagrama muestra cómo un servidor de ClickHouse fusiona partes:
 
 <Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="Fusiones en segundo plano en ClickHouse" />
 
-Un único servidor de ClickHouse utiliza varios [hilos de fusión en segundo plano](/es/reference/settings/server-settings/settings#background_pool_size) para ejecutar [fusiones de partes](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) de forma concurrente. Cada hilo ejecuta un bucle:
+Un único servidor de ClickHouse utiliza varios [hilos de fusión en segundo plano](/es/reference/settings/server-settings/settings/background#background_pool_size) para ejecutar [fusiones de partes](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) de forma concurrente. Cada hilo ejecuta un bucle:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="Cargar partes en memoria">
+    Decide qué partes fusionar a continuación y carga estas partes como bloques en memoria.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="Fusionar bloques">
+    Fusiona los bloques cargados en memoria en un bloque más grande.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="Escribir en disco">
+    Escribe el bloque fusionado en una nueva parte en disco y, después, vuelve al paso 1.
+  </Step>
+</Steps>
 
 Ten en cuenta que [aumentar](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) el número de núcleos de CPU y el tamaño de la RAM aumenta el rendimiento de las fusiones en segundo plano.
 
-Las partes que se han fusionado en partes más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, con el tiempo, se eliminan tras un número de minutos [configurable](/es/reference/settings/merge-tree-settings#old_parts_lifetime). Con el tiempo, esto crea un árbol de partes fusionadas (de ahí el nombre de la tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/index)).
+Las partes que se han fusionado en partes más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, con el tiempo, se eliminan tras un número de minutos [configurable](/es/reference/settings/merge-tree-settings/other#old_parts_lifetime). Con el tiempo, esto crea un árbol de partes fusionadas (de ahí el nombre de la tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/index)).
 
 <div id="insert-parallelism">
   ### Paralelismo de inserción
@@ -108,11 +112,11 @@ Hasta que se procesen todos los datos de todos los archivos, cada hilo de inserc
 Go to ①. 
 ```
 
-La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings#max_insert_threads). El valor predeterminado es `1` para ClickHouse de código abierto y 4 para [ClickHouse Cloud](https://clickhouse.com/cloud).
+La cantidad de estos hilos de inserción en paralelo se puede configurar con la opción [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). El valor predeterminado es `1` para ClickHouse de código abierto y 4 para [ClickHouse Cloud](https://clickhouse.com/cloud).
 
 Con una gran cantidad de archivos, el procesamiento en paralelo mediante varios hilos de inserción funciona bien. Puede saturar por completo tanto los núcleos de CPU disponibles como el ancho de banda de la red (para descargas paralelas de archivos). En escenarios en los que solo se van a cargar en una tabla unos pocos archivos grandes, ClickHouse establece automáticamente un alto grado de paralelismo en el procesamiento de datos y optimiza el uso del ancho de banda de red creando hilos de lectura adicionales por cada hilo de inserción para leer (descargar) en paralelo más rangos distintos dentro de archivos grandes.
 
-Para la función s3 y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores [max&#95;download&#95;threads](/operations/settings/settings#max_download_threads) y [max&#95;download&#95;buffer&#95;size](/operations/settings/settings#max_download_buffer_size). Los archivos solo se descargarán en paralelo si su tamaño es mayor que `2 * max_download_buffer_size`. De forma predeterminada, el valor de `max_download_buffer_size` se establece en 10 MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para garantizar que cada archivo se descargue con un único hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Además, en el caso de los archivos demasiado pequeños para la lectura en paralelo, ClickHouse realiza automáticamente una precarga de datos leyendo previamente esos archivos de forma asíncrona para aumentar el rendimiento.
+Para la función s3 y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores [max&#95;download&#95;threads](/es/reference/settings/session-settings/max-download#max_download_threads) y [max&#95;download&#95;buffer&#95;size](/es/reference/settings/session-settings/max-download#max_download_buffer_size). Los archivos solo se descargarán en paralelo si su tamaño es mayor que `2 * max_download_buffer_size`. De forma predeterminada, el valor de `max_download_buffer_size` se establece en 10 MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para garantizar que cada archivo se descargue con un único hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Además, en el caso de los archivos demasiado pequeños para la lectura en paralelo, ClickHouse realiza automáticamente una precarga de datos leyendo previamente esos archivos de forma asíncrona para aumentar el rendimiento.
 
 <div id="measuring-performance">
   ## Medición del rendimiento
@@ -214,7 +218,7 @@ El rendimiento de lectura en S3 escalará linealmente con el número de núcleos
 * Normalmente, el valor predeterminado de `max_threads` es suficiente, es decir, el número de núcleos. Si la cantidad de memoria utilizada por una consulta es alta y necesita reducirse, o si el `LIMIT` de los resultados es bajo, este valor puede configurarse en uno menor. Los usuarios con memoria abundante quizá quieran probar a aumentar este valor para obtener un mayor rendimiento de lectura desde S3. Por lo general, esto solo resulta beneficioso en máquinas con pocos núcleos, es decir, &lt; 10. El beneficio de seguir paralelizando suele disminuir cuando otros recursos se convierten en cuellos de botella, por ejemplo, la red y la contención de CPU.
 * Las versiones de ClickHouse anteriores a la 22.3.1 solo paralelizaban las lecturas entre varios archivos al usar la función `s3` o el motor de tabla `S3`. Esto obligaba al usuario a asegurarse de que los archivos estuvieran divididos en fragmentos en S3 y de leerlos mediante un patrón glob para lograr un rendimiento de lectura óptimo. Las versiones posteriores ya paralelizan las descargas dentro de un mismo archivo.
 * En escenarios con pocos hilos, puede resultar útil establecer `remote_filesystem_read_method` en &quot;read&quot; para forzar la lectura síncrona de archivos desde S3.
-* Para la función `s3` y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores de [`max_download_threads`](/es/reference/settings/session-settings#max_download_threads) y [`max_download_buffer_size`](/es/reference/settings/session-settings#max_download_buffer_size). Aunque [`max_download_threads`](/es/reference/settings/session-settings#max_download_threads) controla el número de hilos utilizados, los archivos solo se descargarán en paralelo si su tamaño es mayor que 2 * `max_download_buffer_size`. De forma predeterminada, `max_download_buffer_size` está configurado en 10MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para asegurarse de que los archivos más pequeños se descarguen con un solo hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Consulte [esta entrada del blog](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) para ver un ejemplo.
+* Para la función `s3` y la tabla, la descarga en paralelo de un archivo individual viene determinada por los valores de [`max_download_threads`](/es/reference/settings/session-settings/max-download#max_download_threads) y [`max_download_buffer_size`](/es/reference/settings/session-settings/max-download#max_download_buffer_size). Aunque [`max_download_threads`](/es/reference/settings/session-settings/max-download#max_download_threads) controla el número de hilos utilizados, los archivos solo se descargarán en paralelo si su tamaño es mayor que 2 * `max_download_buffer_size`. De forma predeterminada, `max_download_buffer_size` está configurado en 10MiB. En algunos casos, puede aumentar con seguridad este tamaño de búfer a 50 MB (`max_download_buffer_size=52428800`) para asegurarse de que los archivos más pequeños se descarguen con un solo hilo. Esto puede reducir el tiempo que cada hilo dedica a realizar llamadas a S3 y, por tanto, también disminuir el tiempo de espera en S3. Consulte [esta entrada del blog](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) para ver un ejemplo.
 
 Antes de realizar cualquier cambio para mejorar el rendimiento, asegúrese de medirlo adecuadamente. Dado que las llamadas a la API de S3 son sensibles a la latencia y pueden afectar a los tiempos del cliente, use el log de consultas para obtener métricas de rendimiento, es decir, `system.query_log`.
 
