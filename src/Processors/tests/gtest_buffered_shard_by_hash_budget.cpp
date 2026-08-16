@@ -122,10 +122,17 @@ Int64 bufferedBytesAfterSplit(const SharedHeader & header, Columns columns, size
     return budget->total_buffered_bytes.load();
 }
 
+struct PortResidencyOutcome
+{
+    Int64 while_parked;
+    Int64 while_retained;
+    Int64 after_released;
+};
+
 /// Drive one pull-and-split cycle, read the shared counter while the shard chunks are still parked in the
-/// output ports (pushed but not yet pulled downstream), then pull every parked chunk and drive one more
-/// prepare() so the transform reclaims them. Returns {bytes while parked, bytes after they were consumed}.
-std::pair<Int64, Int64> portResidentThenConsumedBytes(
+/// output ports, then pull them into retained chunks. A sorted merge does the same before it can advance an
+/// input, so the budget must stay charged until those retained chunks are released.
+PortResidencyOutcome portResidentThenRetainedThenReleasedBytes(
     const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
 {
     const size_t num_rows = columns.at(0)->size();
@@ -157,14 +164,17 @@ std::pair<Int64, Int64> portResidentThenConsumedBytes(
     }
     const Int64 while_parked = budget->total_buffered_bytes.load();
 
-    /// The downstream merge pulls every chunk out of the ports; the next prepare() must reclaim their charges.
+    /// A `MergingSortedTransform` keeps pulled chunks in `current_inputs` until it advances that input.
+    std::vector<Chunk> retained;
     for (auto & sink : sinks)
         if (sink->hasData())
-            sink->pull();
-    transform.prepare();
-    const Int64 after_consumed = budget->total_buffered_bytes.load();
+            retained.push_back(sink->pull());
+    const Int64 while_retained = budget->total_buffered_bytes.load();
 
-    return {while_parked, after_consumed};
+    retained.clear();
+    const Int64 after_released = budget->total_buffered_bytes.load();
+
+    return {while_parked, while_retained, after_released};
 }
 
 struct BudgetedSplitOutcome
@@ -944,7 +954,7 @@ TEST(BufferedShardByHashTransform, AliasedColumnsChargedOncePerChunkOnAdmission)
 /// downstream merge pulls it, so its budget charge must be held until then. Releasing it the moment the chunk
 /// leaves the scatter's internal queue (when it is pushed to the port) let a scatter park a full block in each
 /// of its ports while the shared counter read far less than the memory held, defeating the budget. This drives
-/// a block into the ports and checks the charge is held while parked, then released once the downstream pulls.
+/// a block into the ports and checks the charge is held while parked and while the downstream retains it.
 TEST(BufferedShardByHashTransform, PortResidentChunksChargedUntilConsumed)
 {
     const size_t num_rows = 4000;
@@ -960,13 +970,14 @@ TEST(BufferedShardByHashTransform, PortResidentChunksChargedUntilConsumed)
     auto header = std::make_shared<const Block>(std::move(header_block));
 
     Columns columns{key, value};
-    const auto [while_parked, after_consumed]
-        = portResidentThenConsumedBytes(header, std::move(columns), num_shards, ColumnNumbers{0});
+    const auto outcome = portResidentThenRetainedThenReleasedBytes(header, std::move(columns), num_shards, ColumnNumbers{0});
 
     /// Held while the chunks sit in the ports (releasing on dequeue would leave the counter at ~0)...
-    EXPECT_GT(while_parked, 0);
-    /// ...and fully released once the downstream pulls them out of the ports (no leftover charge).
-    EXPECT_EQ(after_consumed, 0);
+    EXPECT_GT(outcome.while_parked, 0);
+    /// A sorted merge retains pulled chunks until it advances its input, so they remain charged then.
+    EXPECT_EQ(outcome.while_retained, outcome.while_parked);
+    /// The charge is released only when that downstream owner drops the chunks.
+    EXPECT_EQ(outcome.after_released, 0);
 }
 
 /// The buffer budget must de-duplicate a physical buffer shared, by pointer, across more than one *buffered

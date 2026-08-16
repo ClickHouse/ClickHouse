@@ -17,6 +17,61 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
+namespace
+{
+
+Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, const std::vector<const void *> & touched)
+{
+    Int64 released_bytes = 0;
+    for (const void * ptr : touched)
+    {
+        auto it = budget.shared_object_refcounts.find(ptr);
+        chassert(it != budget.shared_object_refcounts.end());
+        if (--it->second.refcount == 0)
+        {
+            released_bytes += it->second.bytes;
+            budget.shared_object_refcounts.erase(it);
+        }
+    }
+    return released_bytes;
+}
+
+/// Keeps a shuffle budget charge alive while a downstream processor retains the chunk. In particular,
+/// `MergingSortedTransform` retains a pulled input until it advances that input.
+class BufferedShardByHashChunkInfo final : public ChunkInfo
+{
+public:
+    BufferedShardByHashChunkInfo(std::shared_ptr<BufferedShardByHashBudget> budget_, std::vector<const void *> touched_)
+        : state(std::make_shared<State>(std::move(budget_), std::move(touched_)))
+    {
+    }
+
+    Ptr clone() const override { return std::make_shared<BufferedShardByHashChunkInfo>(*this); }
+
+private:
+    struct State
+    {
+        State(std::shared_ptr<BufferedShardByHashBudget> budget_, std::vector<const void *> touched_)
+            : budget(std::move(budget_))
+            , touched(std::move(touched_))
+        {
+        }
+
+        ~State()
+        {
+            std::lock_guard lock(budget->mutex);
+            budget->total_buffered_bytes.fetch_sub(releaseChunkChargeUnlocked(*budget, touched), std::memory_order_relaxed);
+        }
+
+        std::shared_ptr<BufferedShardByHashBudget> budget;
+        std::vector<const void *> touched;
+    };
+
+    std::shared_ptr<State> state;
+};
+
+}
+
 
 BufferedShardByHashTransform::BufferedShardByHashTransform(
     SharedHeader header,
@@ -645,13 +700,11 @@ void BufferedShardByHashTransform::work()
         if (!output_it->canPush())
             continue;
 
-        /// canPush() implies the port holds no data, so any previously pushed chunk was already reclaimed in
-        /// prepare(); record this chunk as resident until the merge pulls it (see `reclaimPortResidentChunks`).
-        /// Without a budget nothing is charged and nothing needs reclaiming, so the port-residency bookkeeping
-        /// stays empty - it also gates the EOF drain below, which would otherwise never finish an output.
+        /// Move the charge into the chunk before publishing it. The ChunkInfo follows the chunk through a
+        /// downstream merge and releases its charge only after that merge releases the retained input.
         QueuedChunk queued = dequeue(shard);
         if (budget_enabled)
-            port_resident_touched[shard] = std::move(queued.touched_objects);
+            queued.chunk.getChunkInfos().add(std::make_shared<BufferedShardByHashChunkInfo>(budget, std::move(queued.touched_objects)));
         output_it->push(std::move(queued.chunk));
     }
 }
