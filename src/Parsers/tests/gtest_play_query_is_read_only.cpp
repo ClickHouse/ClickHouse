@@ -106,6 +106,12 @@ bool isClosingBracket(DB::TokenType type)
 /// `splitAllQueries` per-statement `is_select` classification.
 bool statementIsReadOnly(const std::vector<Tok> & tokens)
 {
+    for (size_t i = 0; i + 1 < tokens.size(); ++i)
+    {
+        if (tokens[i].type == DB::TokenType::BareWord && toUpper(tokens[i].text) == "PARALLEL"
+            && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "WITH")
+            return false;
+    }
     int depth = 0;
     /// Bracket depth at which the leading `WITH` sits; -1 until the leading keyword is seen.
     int with_depth = -1;
@@ -281,6 +287,19 @@ TEST(PlayQueryIsReadOnly, LeadingWithWriteIsNotReadOnly)
     EXPECT_FALSE(queryIsReadOnly("WITH 42 AS v INSERT INTO x SELECT v"));
     /// Whitespace and comments before the `WITH` do not matter.
     EXPECT_FALSE(queryIsReadOnly("  /* c */ WITH y AS (SELECT 1) INSERT INTO x SELECT * FROM y"));
+}
+
+TEST(PlayQueryIsReadOnly, ParallelWithIsNotReadOnly)
+{
+    /// `PARALLEL WITH` combines complete statements. Even when its first child is a `SELECT`, a
+    /// later `INSERT` makes the composite statement unsafe to retry and a barrier for `Run all`.
+    EXPECT_FALSE(queryIsReadOnly("SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1"));
+    /// Conservatively treating the composite form as a barrier also keeps all-read-only children
+    /// from being launched together with following statements outside the compound query.
+    EXPECT_FALSE(queryIsReadOnly("SELECT 1 PARALLEL WITH SELECT 2"));
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1; SELECT count() FROM t"),
+        (std::vector<bool>{false, true}));
 }
 
 TEST(PlayQueryIsReadOnly, KeywordAliasesInWithList)
