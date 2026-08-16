@@ -1,6 +1,7 @@
 #include <unordered_set>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/ProfileEvents.h>
@@ -312,6 +313,13 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 sources.reserve(num_minis);
                 for (const auto & mini : minis)
                     sources.push_back(columns_of(*mini)[position]->convertToFullColumnIfConst());
+
+                /// The clone below takes the destination's class from the first source and the two
+                /// calls after it downcast every source to that class. Lazy replication is decided
+                /// per block, so one position can legitimately mix wrapped and dense columns.
+                if (!std::ranges::all_of(sources, [&](const auto & source) { return source->structureEquals(*sources.front()); }))
+                    for (auto & source : sources)
+                        source = removeSpecialRepresentations(source);
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);
