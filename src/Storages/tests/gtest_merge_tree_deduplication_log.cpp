@@ -2864,6 +2864,7 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryFailsOperationsClosed)
 
     const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
 
     auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
         "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
@@ -2886,8 +2887,11 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryFailsOperationsClosed)
     EXPECT_ANY_THROW(log.addPart({"block5"}, part("all_5_5_0")));
     EXPECT_ANY_THROW(log.dropPart(part("all_1_1_0")));
 
-    /// Once the fence can be armed, operations resume.
+    /// Once the fence can be armed, even a no-op drop must run the recovery barrier.
+    /// It must not leave the fence process-local until a later write or shutdown.
     disk->marker_writable = true;
+    log.dropPart(part("all_9_9_0"));
+    EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
     EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
 
     log.shutdown();
@@ -2909,6 +2913,7 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
         const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_" + std::to_string(disable_deduplication) + "/";
         std::filesystem::remove_all(work_dir);
         std::filesystem::create_directories(work_dir);
+        const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
 
         {
             auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
@@ -2927,7 +2932,16 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
             disk->fail_from_flush = std::numeric_limits<size_t>::max();
             disk->marker_writable = true;
             if (disable_deduplication)
+            {
                 log.setDeduplicationWindowSize(0);
+            }
+            else
+            {
+                /// A duplicate fast path is a successful operation too. It must
+                /// persist the fence before returning without writing a new record.
+                EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+            }
+            EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
             log.shutdown();
         }
 

@@ -1060,6 +1060,12 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 {
     std::lock_guard lock(state_mutex);
 
+    /// `prepareToWrite` is a recovery barrier, not just preparation for a write. A
+    /// successful duplicate fast path must make any process-local history fence
+    /// durable too: otherwise a restart before the next write could replay a
+    /// rolled-back operation as committed.
+    prepareToWrite();
+
     /// We support zero case because user may want to disable deduplication with
     /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
@@ -1088,12 +1094,6 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     }
 
     chassert(current_writer != nullptr);
-
-    /// Repair any damage a previously failed operation or compaction left behind -
-    /// a canceled writer, or a stale file that still needs neutralizing - before
-    /// writing anything, so this operation either starts from a consistent state or
-    /// fails cleanly here, with nothing written, and can be retried.
-    prepareToWrite();
 
     /// Adding a part must be all-or-nothing: both the durable ADD records and the
     /// in-memory publication either all take effect or none do. If anything below
@@ -1275,6 +1275,11 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 {
     std::lock_guard lock(state_mutex);
 
+    /// As in addPart, run the recovery barrier before every successful fast path.
+    /// A no-op drop must not let an unfenced, diverged history escape until a later
+    /// write or shutdown.
+    prepareToWrite();
+
     /// We support zero case because user may want to disable deduplication with
     /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
@@ -1313,11 +1318,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     if (block_ids.empty())
         return;
-
-    /// See addPart: heal a canceled writer and retry any pending neutralization before
-    /// writing anything, so the drop either starts from a consistent state or fails
-    /// cleanly with nothing written.
-    prepareToWrite();
 
     /// Write all the DROP records first. If a write or the rotation throws partway,
     /// no block id has been erased yet, so every covered block id stays published in
@@ -1475,6 +1475,13 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 
     if (stopped)
         return;
+
+    /// Disabling deduplication is also a successful path that can otherwise lose the
+    /// process-local recovery fence. Persist or repair it while the current writer
+    /// and history are still available; a later restart with a zero window skips
+    /// replay and would forget the fence entirely.
+    if (deduplication_window_ == 0)
+        prepareToWrite();
 
     const bool was_disabled = deduplication_window == 0;
 
