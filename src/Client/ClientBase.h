@@ -227,7 +227,7 @@ protected:
     /// and executed with `readonly = 1`, 30 seconds and 10 GiB limits - unless the session
     /// forbids changing settings, which already restricts the query to reading.
     /// Returns a text summary of the outcome for the model.
-    String runQueryForAI(const String & query, bool readonly);
+    String runQueryForAI(const String & query, bool readonly, bool allow_schema_access = true);
 
     /// Decide whether a query the AI agent wants to run through the confirmed tool can run in this
     /// session at all, and whether the user has to confirm it. Also syntax-checks the query.

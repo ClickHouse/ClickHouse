@@ -272,6 +272,45 @@ void checkNoExternalAccess(const IAST & ast)
         checkNoExternalAccess(*child);
 }
 
+void checkNoSchemaAccess(const IAST & ast)
+{
+    if (const auto * table_expression = ast.as<ASTTableExpression>())
+    {
+        if (table_expression->database_and_table_name)
+        {
+            const auto & table = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+            if (table.getDatabaseName() == "system")
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+        }
+    }
+
+    for (const auto & child : ast.children)
+        checkNoSchemaAccess(*child);
+}
+
+bool isSchemaExplorationStatement(const IAST & ast)
+{
+    return isAnyOf<
+        ASTDescribeQuery,
+        ASTDescribeCacheQuery,
+        ASTShowTablesQuery,
+        ASTShowColumnsQuery,
+        ASTShowIndexesQuery,
+        ASTShowEnginesQuery,
+        ASTShowFunctionsQuery,
+        ASTShowSettingQuery,
+        ASTExistsDatabaseQuery,
+        ASTExistsTableQuery,
+        ASTExistsViewQuery,
+        ASTExistsDictionaryQuery,
+        ASTShowCreateTableQuery,
+        ASTShowCreateViewQuery,
+        ASTShowCreateDatabaseQuery,
+        ASTShowCreateDictionaryQuery>(ast);
+}
+
 }
 
 bool changesSettingsForAIAgent(const IAST & ast)
@@ -320,7 +359,7 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTShowPrivilegesQuery>(ast);
 }
 
-void validateReadOnlyQueryForAIAgent(const IAST & ast)
+void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
 {
     if (!isReadOnlyStatementForAIAgent(ast))
         throw Exception(
@@ -336,6 +375,14 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast)
 
     checkNoProtectedSettingChanges(ast);
     checkNoExternalAccess(ast);
+    if (!allow_schema_access)
+    {
+        if (isSchemaExplorationStatement(ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+        checkNoSchemaAccess(ast);
+    }
 }
 
 }

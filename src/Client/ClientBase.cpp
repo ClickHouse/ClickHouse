@@ -3883,7 +3883,10 @@ void ClientBase::initAIAgent()
     AIAgentHooks hooks;
     hooks.execute_internal = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAI(query, params); };
     hooks.execute_scalar = [this](const String & query, const NameToNameMap & params) { return executeScalarQueryForAI(query, params); };
-    hooks.run_visible = [this](const String & query, bool readonly) { return runQueryForAI(query, readonly); };
+    hooks.run_visible = [this](const String & query, bool readonly, bool allow_schema_access)
+    {
+        return runQueryForAI(query, readonly, allow_schema_access);
+    };
     hooks.confirm_query = [this](const String & query) -> bool
     {
         if (!is_interactive)
@@ -4103,7 +4106,7 @@ void ClientBase::echoQueryForAI(const String & query)
     std_out->next();
 }
 
-String ClientBase::runQueryForAI(const String & query, bool readonly)
+String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow_schema_access)
 {
     if (!is_interactive)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The AI agent can run queries only in interactive mode");
@@ -4125,7 +4128,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         ASTPtr ast = parseQueryAndMovePosition(
             parser, begin, end, "", /*allow_multi_statements=*/ false,
             settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        validateReadOnlyQueryForAIAgent(*ast);
+        validateReadOnlyQueryForAIAgent(*ast, allow_schema_access);
 
         /// The format-schema settings are interpreted after this validation: with
         /// `format_schema_source = 'query'` the schema is another query, executed through a FORMAT
@@ -4468,9 +4471,10 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// runs under the defaults of the connection, like before.
     const bool needs_clickhouse_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
 #if USE_CLIENT_AI
-    /// This check is specific to the agent. `fetchInternalQueryResult` is also used by
-    /// non-AI commands when the AI client support is disabled.
-    if (from_ai_agent && needs_clickhouse_dialect && aiSessionReadonly() == 1)
+    /// `readonly = 1` rejects every setting change, including the dialect pin used by both the
+    /// agent and `help` / `man`. Fail before sending the internal query so users get guidance
+    /// instead of a server setting exception.
+    if (needs_clickhouse_dialect && aiSessionReadonly() == 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "

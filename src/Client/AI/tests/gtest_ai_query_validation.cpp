@@ -40,6 +40,19 @@ bool isAllowed(const String & query)
     }
 }
 
+bool isAllowedWithoutSchemaAccess(const String & query)
+{
+    try
+    {
+        validateReadOnlyQueryForAIAgent(*parse(query), /*allow_schema_access=*/ false);
+        return true;
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
+
 bool isReadOnlyStatement(const String & query)
 {
     return isReadOnlyStatementForAIAgent(*parse(query));
@@ -69,6 +82,15 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("EXISTS TABLE system.tables"));
     EXPECT_TRUE(isAllowed("CHECK TABLE t"));
     EXPECT_TRUE(isAllowed("SHOW GRANTS"));
+}
+
+TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
+{
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("DESCRIBE TABLE system.tables"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW TABLES"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.tables"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.columns"));
 }
 
 TEST(AIQueryValidation, RejectsWritesAndDDL)

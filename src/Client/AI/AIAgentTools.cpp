@@ -193,9 +193,9 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         "use run_query for anything that does not fit these constraints. Add LIMIT to exploratory queries.",
         ai::JsonValue{{"query", stringParameter("The SQL statement to run")}},
         {"query"},
-        [hooks](const ai::JsonValue & args, const ai::ToolExecutionContext &)
+        [hooks, enable_schema_access](const ai::JsonValue & args, const ai::ToolExecutionContext &)
         {
-            return guarded([&] { return successResult(hooks->run_visible(args.at("query").get<std::string>(), /*readonly=*/ true)); });
+            return guarded([&] { return successResult(hooks->run_visible(args.at("query").get<std::string>(), /*readonly=*/ true, enable_schema_access)); });
         });
 
     tools["run_query"] = makeTool(
@@ -206,7 +206,7 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         "terminal exactly as if the user ran it; you receive a summary truncated to the first and last rows.",
         ai::JsonValue{{"query", stringParameter("The SQL to run (may contain several statements)")}},
         {"query"},
-        [hooks](const ai::JsonValue & args, const ai::ToolExecutionContext &)
+        [hooks, enable_schema_access](const ai::JsonValue & args, const ai::ToolExecutionContext &)
         {
             return guarded(
                 [&]
@@ -227,11 +227,11 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                     /// of the read-only tool, which also echoes it in the terminal (for a confirmed
                     /// query the confirmation prompt does that).
                     if (!decision.needs_confirmation)
-                        return successResult(hooks->run_visible(query, /*readonly=*/ true));
+                        return successResult(hooks->run_visible(query, /*readonly=*/ true, enable_schema_access));
 
                     if (!hooks->confirm_query(query))
                         return errorResult("The user declined to run this query. Ask them how to proceed if unsure.");
-                    return successResult(hooks->run_visible(query, /*readonly=*/ false));
+                    return successResult(hooks->run_visible(query, /*readonly=*/ false, enable_schema_access));
                 });
         });
 
