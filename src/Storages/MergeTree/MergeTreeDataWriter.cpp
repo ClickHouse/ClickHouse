@@ -1128,36 +1128,54 @@ DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
 /// depending on the projection. Collect every identifier referenced anywhere in each SELECT item
 /// (covers both outcomes, plus multi-column expressions like `if(cond, j, k)`) so the fallback
 /// below can still find the right physical column either way.
-/// Like IAST::collectIdentifierNames, but skips if()/multiIf() condition arguments: a condition
-/// only selects a branch, so an identifier used only there must not donate its own provenance.
-static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names)
+/// Like IAST::collectIdentifierNames, but skips if()/multiIf() conditions and masks lambda formal
+/// parameters (matching RequiredSourceColumnsVisitor), so a bound name can't shadow a real column.
+static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
 {
     if (const auto * identifier = node.as<ASTIdentifier>())
     {
-        names.insert(identifier->name());
+        if (!masked_names.contains(identifier->name()))
+            names.insert(identifier->name());
         return;
     }
 
     if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
     {
         const auto & args = function->arguments->children;
+        if (function->name == "lambda" && args.size() == 2)
+        {
+            const auto * lambda_args_tuple = args[0]->as<ASTFunction>();
+            if (lambda_args_tuple && lambda_args_tuple->name == "tuple" && lambda_args_tuple->arguments)
+            {
+                std::vector<String> newly_masked;
+                for (const auto & param : lambda_args_tuple->arguments->children)
+                    if (const auto * param_identifier = param->as<ASTIdentifier>(); param_identifier && masked_names.insert(param_identifier->name()).second)
+                        newly_masked.push_back(param_identifier->name());
+
+                collectValueCarryingIdentifierNames(*args[1], names, masked_names);
+
+                for (const auto & name : newly_masked)
+                    masked_names.erase(name);
+                return;
+            }
+        }
         if (Poco::toLower(function->name) == "if" && args.size() == 3)
         {
-            collectValueCarryingIdentifierNames(*args[1], names);
-            collectValueCarryingIdentifierNames(*args[2], names);
+            collectValueCarryingIdentifierNames(*args[1], names, masked_names);
+            collectValueCarryingIdentifierNames(*args[2], names, masked_names);
             return;
         }
         if (function->name == "multiIf" && args.size() >= 3)
         {
             for (size_t i = 0; i < args.size(); ++i)
                 if (!(i % 2 == 0 && i != args.size() - 1))
-                    collectValueCarryingIdentifierNames(*args[i], names);
+                    collectValueCarryingIdentifierNames(*args[i], names, masked_names);
             return;
         }
     }
 
     for (const auto & child : node.children)
-        collectValueCarryingIdentifierNames(*child, names);
+        collectValueCarryingIdentifierNames(*child, names, masked_names);
 }
 
 static std::unordered_map<String, std::vector<String>> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
@@ -1170,7 +1188,8 @@ static std::unordered_map<String, std::vector<String>> getProjectionOutputToSour
     for (const auto & child : select_query->select()->children)
     {
         IdentifierNameSet names;
-        collectValueCarryingIdentifierNames(*child, names);
+        std::unordered_set<String> masked_names;
+        collectValueCarryingIdentifierNames(*child, names, masked_names);
         if (!names.empty())
             output_to_sources.emplace(child->getAliasOrColumnName(), std::vector<String>(names.begin(), names.end()));
     }
