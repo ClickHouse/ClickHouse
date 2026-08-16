@@ -13,7 +13,24 @@ ALL INNER JOIN
     SELECT intDiv(number, 2) AS k, number + 10 AS v
     FROM numbers(6)
 ) AS r ON l.k = r.k
-SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, max_threads = 1;
+SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0, max_threads = 1;
+
+SELECT
+    'parallel',
+    count(),
+    sum(l.v),
+    sum(r.v)
+FROM
+(
+    SELECT intDiv(number, 2) AS k, number AS v
+    FROM numbers(6)
+) AS l
+ALL INNER JOIN
+(
+    SELECT intDiv(number, 2) AS k, number + 10 AS v
+    FROM numbers(6)
+) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'parallel_hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0, max_threads = 2;
 
 SELECT
     'right',
@@ -30,7 +47,7 @@ ALL RIGHT JOIN
     SELECT intDiv(number, 2) AS k, number + 10 AS v
     FROM numbers(8)
 ) AS r ON l.k = r.k
-SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, max_threads = 1;
+SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0, max_threads = 1;
 
 SELECT
     'full',
@@ -47,7 +64,7 @@ ALL FULL JOIN
     SELECT intDiv(number, 2) AS k, number + 10 AS v
     FROM numbers(8)
 ) AS r ON l.k = r.k
-SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, max_threads = 1;
+SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0, max_threads = 1;
 
 SELECT
     'packed-full',

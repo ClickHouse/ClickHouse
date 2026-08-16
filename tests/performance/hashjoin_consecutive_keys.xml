@@ -38,7 +38,7 @@
     <fill_query>INSERT INTO hash_join_consecutive_packed_build SELECT number, number * 17, number FROM numbers(2000)</fill_query>
     <fill_query>INSERT INTO hash_join_consecutive_wide_build SELECT number, number * 3 + 1, number * 5 + 2, number * 7 + 3, number FROM numbers(2000)</fill_query>
 
-    <!-- Run-length sweep for a small UInt64 build map. -->
+    <!-- Run-length sweep for a small UInt64 build map. Keep conversion disabled so this stays key64. -->
     <query>
         SELECT count()
         FROM
@@ -47,7 +47,7 @@
             FROM numbers_mt(20000000)
         ) AS l
         INNER JOIN hash_join_consecutive_build AS r ON l.k = r.k
-        SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0
+        SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0, query_plan_join_swap_table = 0
         FORMAT Null
     </query>
 
