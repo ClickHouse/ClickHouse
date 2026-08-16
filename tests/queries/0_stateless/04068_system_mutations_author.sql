@@ -1,4 +1,4 @@
--- Tags: no-parallel, zookeeper
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS test_mutations_author_regular;
 DROP TABLE IF EXISTS test_mutations_author_replicated;
