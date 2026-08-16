@@ -8,7 +8,11 @@ doc_type: 'reference'
 
 取消表的删除操作。
 
-从 ClickHouse 23.3 版本开始，在 Atomic 数据库中，执行 DROP TABLE 语句后的 `database_atomic_delay_before_drop_table_sec` 时间内 (默认 8 分钟) ，可以对表执行 UNDROP。已删除的表会列在名为 `system.dropped_tables` 的系统表中。
+从 ClickHouse 23.3 版本开始，执行 `DROP TABLE` 后，在 [`database_atomic_delay_before_drop_table_sec`](/zh/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) 设置的时间内 (默认 8 分钟) ，可以使用 `UNDROP TABLE` 恢复 `Atomic` 数据库中的表。
+从 `Atomic` 数据库删除的表会列在 `system.dropped_tables` 中。
+
+对于 ClickHouse Cloud 中的 `Shared` 数据库，此时间段改由 [`database_shared_drop_table_delay_seconds`](/zh/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds) 控制，默认值为 8 小时。
+从 `Shared` 数据库删除的表不会列在 `system.dropped_tables` 中。
 
 如果你有一个与已删除表关联且不带 `TO` 子句的 materialized view，那么还需要对该视图的内部表执行 UNDROP。
 
