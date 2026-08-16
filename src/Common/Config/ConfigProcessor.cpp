@@ -673,15 +673,15 @@ void ConfigProcessor::doIncludesRecursive(
                     /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
                     zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 }
-#if USE_YAML_CPP
                 else if (node->nodeName() == "include" && yaml_attr && yaml_attr->getNodeValue() == "true")
                 {
                     /// An explicitly opted-in YAML subtree is expanded the same way as a
                     /// configuration file. Parsing errors intentionally propagate: `yaml="true"`
                     /// identifies this as a structural substitution rather than a leaf value.
+                    /// `DummyYAMLParser::parseString` reports that YAML parsing is unavailable in
+                    /// builds without `yaml-cpp`, instead of silently treating the subtree as text.
                     zk_document = YAMLParser::parseString(znode.contents);
                 }
-#endif
                 else
                 {
                     /// A leaf value, ordinary element, or an `<include>` without the explicit
