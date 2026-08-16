@@ -703,7 +703,7 @@ def check_clickhouse_spelling():
         # This check also runs on the private repository, on the synced tree, where this
         # directory holds nothing but release records, some of them named by release codename
         # without a version prefix, so CHANGELOG_RECORD_RE does not cover them.
-        "private-changelogs/",
+        "docs/private-changelogs/",
     ]
 
     def is_excluded(path):
