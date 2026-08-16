@@ -50,6 +50,26 @@ SELECT count() FROM tab WHERE hasToken(msg, 'missing');
 
 DROP TABLE tab;
 
+SELECT '-- Preprocessor and postprocessor with direct matchers';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    msg String,
+    INDEX idx(msg) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = lower(COLUMNS('^msg$')),
+        postprocessor = upper(COLUMNS('^msg$')))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab(id, msg) VALUES (1, 'Hello World');
+
+SELECT count() FROM tab WHERE hasToken(msg, 'HELLO');
+SELECT count() FROM tab WHERE hasToken(msg, 'missing');
+
+DROP TABLE tab;
+
 SELECT '-- Preprocessor referencing a chained ALIAS with matchers';
 
 CREATE TABLE tab

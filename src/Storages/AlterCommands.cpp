@@ -2022,6 +2022,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    std::vector<std::pair<String, String>> renames;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2479,6 +2480,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (renamed_column)
             {
                 renameColumnInStoredExpressions(all_columns, command.column_name, command.rename_to);
+                renames.emplace_back(command.column_name, command.rename_to);
                 revalidate_stored_defaults = true;
             }
         }
@@ -2798,12 +2800,31 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             renames.emplace_back(command.column_name, command.rename_to);
     }
 
+    NameSet dropped_old_names;
+    for (const auto & command : *this)
+    {
+        if (!command.ignore && command.type == AlterCommand::DROP_COLUMN)
+            dropped_old_names.insert(command.column_name);
+    }
+
     /// Metadata loading deliberately keeps old alias-lambda captures attachable. Do not expand
     /// such an unchanged legacy expression while looking for matcher-driven rematerialization:
-    /// that probe must not turn an otherwise unrelated ALTER into a validation failure.
+    /// that probe must not turn an otherwise unrelated ALTER into a validation failure. Project
+    /// out dropped columns before renaming: a live column may be renamed into a dropped name and
+    /// must not inherit the dropped column's tolerated violation.
     ColumnsDescription old_columns_after_renames = old_metadata.columns;
+    for (const auto & name : dropped_old_names)
+    {
+        if (old_columns_after_renames.has(name))
+            old_columns_after_renames.remove(name);
+    }
     for (const auto & [from, to] : renames)
     {
+        /// A rename may target a column added earlier in the same ALTER. It is absent
+        /// from the pre-ALTER metadata, so there is no old expression to rename.
+        if (!old_columns_after_renames.has(from))
+            continue;
+
         old_columns_after_renames.rename(from, to);
         renameColumnInStoredExpressions(old_columns_after_renames, from, to);
     }
@@ -2823,17 +2844,12 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     /// expression (`AlterCommands::prepare` copies it into the command), so it must not suppress
     /// the rematerialization that a change of the effective expression requires.
     NameSet modified_new_names;
-    NameSet dropped_old_names;
     for (const auto & command : *this)
     {
         if (command.ignore)
             continue;
 
-        if (command.type == AlterCommand::DROP_COLUMN)
-        {
-            dropped_old_names.insert(command.column_name);
-        }
-        else if (command.type == AlterCommand::MODIFY_COLUMN)
+        if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!command.default_expression)
                 continue;
