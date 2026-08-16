@@ -1291,15 +1291,27 @@ public:
             {
                 IColumn::Filter not_used = bitmaps.getNotUsed(block_number);
 
-                for (const auto & row : not_used)
-                    if (row)
-                        ++rows_added;
-
-                for (size_t col = 0; col < columns_right.size(); ++col)
+                size_t range_start = 0;
+                while (range_start < not_used.size())
                 {
-                    /// TODO: IColumn::filteredInsertRangeFrom() ?
-                    ColumnPtr portion = right_block->getByPosition(col).column->filter(not_used, 1);
-                    columns_right[col]->insertRangeFrom(*portion, 0, portion->size());
+                    while (range_start < not_used.size() && !not_used[range_start])
+                        ++range_start;
+
+                    size_t range_end = range_start;
+                    while (range_end < not_used.size() && not_used[range_end])
+                        ++range_end;
+
+                    if (range_start == range_end)
+                        break;
+
+                    rows_added += range_end - range_start;
+                    for (size_t col = 0; col < columns_right.size(); ++col)
+                    {
+                        const IColumn & column = *right_block->getByPosition(col).column;
+                        columns_right[col]->insertRangeFrom(column, range_start, range_end - range_start);
+                    }
+
+                    range_start = range_end;
                 }
             }
             else

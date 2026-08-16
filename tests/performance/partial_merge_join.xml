@@ -35,6 +35,10 @@
     <query>SELECT count() FROM test_u64_left_1000000 AS a JOIN pmj_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
     <query>SELECT count() FROM pmj_u64_mult2 AS a JOIN pmj_u64_mult3 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 
+    <!-- Sparse left side leaves long contiguous unmatched ranges in the right blocks. -->
+    <query>SELECT count(), sum(b.k) FROM pmj_u64_sparse_right AS a ALL RIGHT JOIN test_u64_right_1000000 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+    <query>SELECT count(), sum(b.k) FROM pmj_u64_sparse_right AS a ALL FULL JOIN test_u64_right_1000000 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS pmj_u64_sparse_right</drop_query>
