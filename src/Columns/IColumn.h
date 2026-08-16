@@ -800,7 +800,10 @@ public:
         return finalized;
     }
 
-    [[nodiscard]] static MutablePtr mutate(Ptr ptr)
+    /// The rvalue overload leaves the source intact if cloning throws. This is important for
+    /// owning slots: callers can move a slot into `mutate` without publishing a null slot when
+    /// allocation fails.
+    [[nodiscard]] static MutablePtr mutate(Ptr && ptr)
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
@@ -821,6 +824,12 @@ public:
 #endif
         });
         return res;
+    }
+
+    [[nodiscard]] static MutablePtr mutate(const Ptr & ptr)
+    {
+        Ptr copy = ptr;
+        return mutate(std::move(copy));
     }
 
     /// Checks if column has dynamic internal structure (like JSON or Dynamic).

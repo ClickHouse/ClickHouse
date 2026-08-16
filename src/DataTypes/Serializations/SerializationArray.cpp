@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <base/scope_guard.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -517,7 +518,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// shared column instead, so subsequent mutations are safe and don't affect other holders.
     /// Keep the caller's slot intact until deserialization succeeds. In particular, moving it
     /// into `mutate` would leave the slot null if a later read throws.
-    auto mutable_column = IColumn::mutate(column);
+    auto mutable_column = IColumn::mutate(std::move(column));
+    SCOPE_EXIT({ if (!column) column = std::move(mutable_column); });
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
 
     settings.path.push_back(Substream::ArraySizes);

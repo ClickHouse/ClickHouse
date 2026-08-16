@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 #include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <shared_mutex>
@@ -401,6 +402,7 @@ void applyPatchesToBlockRaw(
                 /// COW-safe in-place update: clone when the column is shared instead of mutating
                 /// a column still referenced by another owner via `assumeMutableRef`.
                 auto mutable_column = IColumn::mutate(std::move(result_column.column));
+                SCOPE_EXIT({ if (!result_column.column) result_column.column = std::move(mutable_column); });
                 mutable_column->updateInplaceFrom(patch);
                 result_column.column = std::move(mutable_column);
             }
@@ -439,6 +441,7 @@ void applyPatchesToBlockCombined(
             /// COW-safe in-place update: clone when the column is shared instead of mutating
             /// a column still referenced by another owner via `assumeMutableRef`.
             auto mutable_column = IColumn::mutate(std::move(result_column.column));
+            SCOPE_EXIT({ if (!result_column.column) result_column.column = std::move(mutable_column); });
             mutable_column->updateInplaceFrom(multi_patch);
             result_column.column = std::move(mutable_column);
         }

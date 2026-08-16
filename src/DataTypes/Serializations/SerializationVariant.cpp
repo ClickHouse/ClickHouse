@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <base/scope_guard.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -582,6 +583,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             /// uniquely owned.
             ColumnPtr & discriminators = col.getLocalDiscriminatorsPtr();
             MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(discriminators));
+            SCOPE_EXIT({ if (!discriminators) discriminators = std::move(mutable_discriminators); });
             mutable_discriminators->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
             discriminators = std::move(mutable_discriminators);
         }
@@ -598,8 +600,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// The substream cache and sibling readers can retain this column. Deep-unshare before
         /// appending or compacting discriminators, then keep the cache entry on the old column.
         auto & discriminators_ptr = col.getLocalDiscriminatorsPtr();
-        discriminators_ptr = IColumn::mutate(std::move(discriminators_ptr));
-        size_t prev_size = col.getLocalDiscriminatorsPtr()->size();
+        auto mutable_discriminators = IColumn::mutate(std::move(discriminators_ptr));
+        SCOPE_EXIT({ if (!discriminators_ptr) discriminators_ptr = std::move(mutable_discriminators); });
+        size_t prev_size = mutable_discriminators->size();
+        discriminators_ptr = std::move(mutable_discriminators);
 
         /// Deserialize discriminators according to serialization mode.
         /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.

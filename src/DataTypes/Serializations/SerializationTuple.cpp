@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <base/scope_guard.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
@@ -886,7 +887,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             /// that is shared (e.g. `SerializationQBit` first copies `column_qbit.getTuple()` into a local
             /// `ColumnPtr` and then calls this function on it, so `use_count() >= 2`). `assumeMutable`
             /// would `chassert(use_count() == 1)` and abort; `IColumn::mutate` clones if shared.
-            auto mutable_column = IColumn::mutate(column);
+            auto mutable_column = IColumn::mutate(std::move(column));
+            SCOPE_EXIT({ if (!column) column = std::move(mutable_column); });
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
             typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
@@ -901,7 +903,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     /// Same `IColumn::mutate` reasoning as above — caller may pass a shared column (e.g. via
     /// `SerializationQBit`).
-    auto mutable_column = IColumn::mutate(column);
+    auto mutable_column = IColumn::mutate(std::move(column));
+    SCOPE_EXIT({ if (!column) column = std::move(mutable_column); });
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
     for (size_t i = 0; i < elems.size(); ++i)

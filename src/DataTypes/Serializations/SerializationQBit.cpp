@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/SipHash.h>
+#include <base/scope_guard.h>
 #include <Common/TargetSpecific.h>
 
 #include <base/BFloat16.h>
@@ -465,7 +466,8 @@ void SerializationQBit::deserializeBinaryBulkWithMultipleStreams(
     /// (e.g. when called recursively via `SerializationDynamic` / `SerializationObjectDynamicPath`).
     /// `IColumn::mutate` clones if shared so subsequent mutations don't affect other holders.
     /// Keep the caller's slot intact until nested deserialization succeeds.
-    auto mutable_column = IColumn::mutate(column);
+    auto mutable_column = IColumn::mutate(std::move(column));
+    SCOPE_EXIT({ if (!column) column = std::move(mutable_column); });
     auto & column_qbit = assert_cast<ColumnQBit &>(*mutable_column);
     /// Pass the stored tuple `ColumnPtr` by reference directly so the nested deserialization
     /// can write back into `column_qbit.tuple` if it clones (avoids an extra copy that would

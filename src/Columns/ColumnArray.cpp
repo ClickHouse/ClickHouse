@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <base/scope_guard.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -42,7 +43,8 @@ namespace
         /// A unique wrapper can still have shared subcolumns, so always use the deep COW path.
         /// Keep the original pointer intact until the replacement is fully ready, so an exception
         /// inside `filter` leaves `nested` valid rather than moved-from.
-        auto cloned = IColumn::mutate(nested);
+        auto cloned = IColumn::mutate(std::move(nested));
+        SCOPE_EXIT({ if (!nested) nested = std::move(cloned); });
         cloned->filter(filt);
         nested = std::move(cloned);
     }
