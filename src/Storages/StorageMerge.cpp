@@ -2108,17 +2108,28 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
     if (selected_tables.empty() || child_plans->empty())
         return {};
 
-    /// Every child must be a plain `MergeTree` read, reachable by descending the converting expressions on
-    /// top of it, and none of them may be `FINAL`. A child read by an interpreter (a `View`, a nested
-    /// `Merge`, a non-`MergeTree` table) has no marks to coordinate, and a `FINAL` read is incompatible with
-    /// parallel reading; either way the child would be read in full by every replica and its rows
-    /// duplicated. One such child disables the expansion for the whole `Merge`: keeping the plan-level union
-    /// for the remaining children would split the `Merge` between two different reading mechanisms.
+    /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
+    /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
+    /// marks to coordinate, and a `FINAL` read is incompatible with parallel reading; either way the child
+    /// would be read in full by every replica and its rows duplicated. One such child disables the expansion
+    /// for the whole `Merge`: keeping the plan-level union for the remaining children would split the
+    /// `Merge` between two different reading mechanisms.
+    ///
+    /// The engine is checked on the table and not only on the shape of its plan, because the plan of a
+    /// `View` over a single `MergeTree` table has the same shape. Such a child was planned with parallel
+    /// replicas cleared from its context (see `createChildrenPlans`), so distributing its read would be
+    /// rejected later anyway, leaving an expanded `Merge` that is read by a single replica after all.
+    auto table_it = selected_tables.begin();
     for (const auto & child : *child_plans)
     {
-        if (!child.plan.isInitialized())
+        const auto & storage = std::get<1>(*table_it);
+        ++table_it;
+
+        if (!storage->isMergeTree() || !child.plan.isInitialized())
             return {};
 
+        /// Descend the converting expressions and the row policy filters the child plan puts on top of the
+        /// read (`convertAndFilterSourceStream`), all of which have a single input.
         const auto * node = child.plan.getRootNode();
         while (node && node->children.size() == 1 && !typeid_cast<const ReadFromMergeTree *>(node->step.get()))
             node = node->children.front();

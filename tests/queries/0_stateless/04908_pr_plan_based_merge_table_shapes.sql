@@ -12,6 +12,9 @@ DROP TABLE IF EXISTS t_pbm_log;
 DROP TABLE IF EXISTS m_pbm;
 DROP TABLE IF EXISTS m_pbm_over_log;
 DROP TABLE IF EXISTS m_pbm_over_nothing;
+DROP TABLE IF EXISTS t_pbm_base;
+DROP VIEW IF EXISTS t_pbm_view;
+DROP TABLE IF EXISTS m_pbm_over_view;
 
 CREATE TABLE t_pbm_1 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
 CREATE TABLE t_pbm_2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 10;
@@ -100,6 +103,22 @@ SELECT
 FROM (EXPLAIN pretty = 0, description = 0 SELECT count(), sum(k), sum(v) FROM m_pbm_over_log);
 SELECT count(), sum(k), sum(v) FROM m_pbm_over_log;
 
+-- A child read through an interpreter is not expanded either, even though the plan of a `View` over a
+-- single `MergeTree` table has the very same shape as the plan of a plain `MergeTree` child: such a child
+-- is planned with parallel replicas cleared from its context, so its read could not be distributed anyway.
+-- The `Merge` read must be left as it is instead of being expanded for nothing.
+SELECT '-- Merge over a View';
+CREATE TABLE t_pbm_base (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_pbm_base SELECT number + 3000, number FROM numbers(100);
+CREATE VIEW t_pbm_view AS SELECT k, v FROM t_pbm_base;
+CREATE TABLE m_pbm_over_view ENGINE = Merge(currentDatabase(), '^t_pbm_(1|2|view)$');
+SELECT
+    countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
+    countIf(explain = 'ReadFromMerge') > 0 AS merge_read_not_expanded
+FROM (SELECT trimLeft(explain) AS explain FROM (EXPLAIN pretty = 0, description = 0 SELECT count(), sum(k), sum(v) FROM m_pbm_over_view));
+SELECT count(), sum(k), sum(v) FROM m_pbm_over_view;
+SELECT count(), sum(k), sum(v) FROM m_pbm_over_view SETTINGS enable_parallel_replicas = 0;
+
 -- A `Merge` matching no table at all has nothing to distribute either.
 SELECT '-- Merge over no tables';
 CREATE TABLE m_pbm_over_nothing (k UInt64, v UInt64) ENGINE = Merge(currentDatabase(), '^t_pbm_no_such_tables');
@@ -110,6 +129,9 @@ FROM (EXPLAIN pretty = 0, description = 0 SELECT count(), sum(k), sum(v) FROM m_
 SELECT count(), sum(k), sum(v) FROM m_pbm_over_nothing;
 
 DROP TABLE m_pbm_over_nothing;
+DROP TABLE m_pbm_over_view;
+DROP VIEW t_pbm_view;
+DROP TABLE t_pbm_base;
 DROP TABLE m_pbm_over_log;
 DROP TABLE t_pbm_log;
 DROP TABLE m_pbm;

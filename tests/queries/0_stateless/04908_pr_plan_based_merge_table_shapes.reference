@@ -32,6 +32,10 @@
 -- Merge over a non-MergeTree table
 0	0
 2100	2203950	1503450
+-- Merge over a View
+0	1
+2100	2303950	1503450
+2100	2303950	1503450
 -- Merge over no tables
 0	0
 0	0	0
