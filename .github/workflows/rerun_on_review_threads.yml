@@ -4,11 +4,10 @@
 # While a PR has unresolved review threads, the PR workflow runs only builds
 # and the preliminary checks, and its finish step records the verdict in the
 # `Review Threads` commit status (see
-# ci/jobs/scripts/workflow_hooks/review_threads.py). This workflow watches for
-# a `PR` workflow completion or a change to the `ignore-unresolved-threads`
-# label can change that state. When the recorded verdict disagrees with the
-# live state, it re-runs the last completed `PR` workflow run for the current
-# head commit.
+# ci/jobs/scripts/workflow_hooks/review_threads.py). This workflow watches
+# `PR` workflow completions and changes to the `ignore-unresolved-threads`
+# label. When an event exposes a stale recorded verdict, it re-runs the last
+# completed `PR` workflow run for the current head commit.
 # Previously succeeded jobs are restored from the CI cache, so such a re-run
 # only executes the jobs that were skipped (or newly need to be skipped).
 #

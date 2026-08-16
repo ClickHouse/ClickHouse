@@ -9,8 +9,7 @@ decision functions in `review_threads.py` and their integration into
 `should_skip_job`, in particular:
 
 - builds, the style check, the fast test and the `Code Review` job must keep
-  running in the limited pipeline (the AI review resolving its own threads is
-  what re-triggers the full suite), everything else must be skipped;
+  running in the limited pipeline; everything else must be skipped;
 - the merge verdict must stay "blocked" when the pipeline was limited at
   config time, even if the threads were all resolved while it ran - the full
   suite did not run, so the PR must not become mergeable without a re-run;
