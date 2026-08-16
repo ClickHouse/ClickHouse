@@ -70,9 +70,26 @@ $CLICKHOUSE_CLIENT --query_id "$DROP_QUERY_ID" --query "DROP TABLE $ORDINARY_DB.
 drop_pid=$!
 
 wait_for_query "$DROP_QUERY_ID"
-# The query registers in the processlist before it requests the lock; give it a moment to actually
-# block on the lock request.
-sleep 1
+
+function wait_for_drop_lock()
+{
+    # The DROP query registers in the processlist before it requests the exclusive lock. A share-lock
+    # probe is compatible with the reader, but once the DROP request is queued it waits behind that
+    # request and reaches its lock timeout. This proves the contention needed by the queries below.
+    for _ in {1..10}
+    do
+        $CLICKHOUSE_CLIENT --query "
+            SELECT name FROM system.parts WHERE database = '$ORDINARY_DB' AND table = 't_parts_lock_wait'
+            FORMAT Null
+            SETTINGS lock_acquire_timeout = 1;
+        " >/dev/null 2>&1 && sleep 0.1 || return
+    done
+
+    echo "DROP TABLE did not acquire the table-lock queue in time"
+    exit 1
+}
+
+wait_for_drop_lock
 
 # The deadline expires while the query waits for the share lock of the table, and in the 'break'
 # mode it must return the rows collected so far instead of waiting out the reader or the
