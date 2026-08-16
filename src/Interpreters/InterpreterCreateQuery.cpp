@@ -856,7 +856,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// scalar subqueries. Only fresh definitions are checked, so an already existing table keeps loading even
         /// if its metadata has one.
         if (is_fresh_definition && create.columns_list->constraints)
-            ConstraintsDescription::validateNoSubqueries(create.columns_list->constraints->children, getContext());
+            ConstraintsDescription::validateNoSubqueries(create.columns_list->constraints->children, properties.columns.getAll(), getContext());
 
         properties.constraints = getConstraintsDescription(
             create.columns_list->constraints, properties.columns, getContext(), /* validate_expressions = */ is_fresh_definition);
@@ -921,7 +921,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// like on a plain `CREATE`: a grandfathered `CHECK` constraint with a subquery in the
         /// source table (created before the validation existed) must not be copied into it.
         if (is_fresh_definition)
-            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
+            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), properties.columns.getAll(), getContext());
 
         if (create.is_clone_as)
         {
