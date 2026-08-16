@@ -396,6 +396,7 @@ def main():
                 if not Shell.check(
                     f"git -C {sqlstorm_repo} fetch origin",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             return Shell.check(
@@ -428,6 +429,7 @@ def main():
                 if not Shell.check(
                     f"git -C {olapbench_repo} fetch origin",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             return Shell.check(
