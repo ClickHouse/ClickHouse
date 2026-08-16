@@ -1,12 +1,14 @@
 #pragma once
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Core/MaterializedCTEEngine.h>
 #include <base/defines.h>
 
 #include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace DB
 {
@@ -29,6 +31,9 @@ class QueryPlan;
 /// gating.
 struct MaterializedCTE
 {
+    /// Prefix of `temporary_table_name`; used to recognize these tables by name.
+    static constexpr std::string_view table_name_prefix = "_materialized_cte_";
+
     explicit MaterializedCTE(const std::string & cte_name_);
 
     MaterializedCTE(const MaterializedCTE &) = delete;
@@ -74,6 +79,8 @@ struct MaterializedCTE
     StoragePtr storage = {};
     /// Temporary table storage.
     std::optional<TemporaryTableHolder> table_holder = {};
+    /// Engine requested for the CTE (std::nullopt = default Memory).
+    std::optional<MaterializedCTEEngine> engine = {};
     /// Name of the CTE.
     const std::string cte_name;
     /// Temporary table name

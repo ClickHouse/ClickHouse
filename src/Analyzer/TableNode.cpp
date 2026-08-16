@@ -109,7 +109,9 @@ void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_hol
     auto real_storage = temporary_table_holder_.getTable();
     materialized_cte->storage = real_storage;
     materialized_cte->table_holder = std::move(temporary_table_holder_);
-    typeid_cast<StorageMemory *>(real_storage.get())->setMaterializedCTE(materialized_cte);
+    /// The back-pointer only exists on StorageMemory; Join/Set CTEs don't use it.
+    if (auto * storage_memory = typeid_cast<StorageMemory *>(real_storage.get()))
+        storage_memory->setMaterializedCTE(materialized_cte);
     updateStorage(std::move(real_storage), context_);
 }
 

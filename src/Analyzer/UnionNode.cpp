@@ -230,6 +230,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     return is_subquery == rhs_typed.is_subquery
         && is_cte == rhs_typed.is_cte
         && is_materialized == rhs_typed.is_materialized
+        && materialized_cte_engine == rhs_typed.materialized_cte_engine
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
         && union_mode == rhs_typed.union_mode;
@@ -240,6 +241,7 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(is_subquery);
     state.update(is_cte);
     state.update(is_materialized);
+    updateHash(state, materialized_cte_engine);
     state.update(is_recursive_cte);
 
     if (recursive_cte_table)
@@ -262,6 +264,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
     result_union_node->is_materialized = is_materialized;
+    result_union_node->materialized_cte_engine = materialized_cte_engine;
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;

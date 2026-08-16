@@ -18,6 +18,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
@@ -48,6 +49,7 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 
+#include <Core/MaterializedCTEEngine.h>
 #include <Core/Settings.h>
 
 #include <Databases/IDatabase.h>
@@ -67,6 +69,7 @@ namespace Setting
     extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_materialized_cte;
 }
 
 
@@ -84,6 +87,33 @@ namespace ErrorCodes
 namespace
 {
 
+/// Convert a materialized CTE `ENGINE = ...` clause into a typed descriptor (Memory or Set only).
+MaterializedCTEEngine parseMaterializedCTEEngine(const ASTStorage & storage)
+{
+    if (!storage.engine)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized CTE storage clause has no engine");
+
+    const auto & engine = *storage.engine;
+    const auto & engine_name = engine.name;
+
+    MaterializedCTEEngine result;
+    if (engine_name == "Memory")
+        result.kind = MaterializedCTEEngineKind::Memory;
+    else if (engine_name == "Set")
+        result.kind = MaterializedCTEEngineKind::Set;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Materialized CTE supports only Memory and Set engines, got '{}'",
+            engine_name);
+
+    if (engine.arguments && !engine.arguments->children.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Engine {} of a materialized CTE does not accept arguments", engine_name);
+
+    return result;
+}
+
 class QueryTreeBuilder
 {
 public:
@@ -98,6 +128,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        std::optional<MaterializedCTEEngine> materialized_cte_engine;
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -204,6 +235,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     union_node->setOriginalAST(select_with_union_query);
 
     size_t select_lists_children_size = select_lists.children.size();
@@ -248,6 +280,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     union_node->setOriginalAST(select_intersect_except_query);
 
     size_t select_lists_size = select_lists.size();
@@ -328,6 +361,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
     current_query_tree->setCTEName(std::string(cte_data.cte_name));
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
+    current_query_tree->setMaterializedCTEEngine(cte_data.materialized_cte_engine);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
@@ -808,7 +842,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .materialized_cte_engine = {},
         };
+        /// When the feature is off the CTE is an ordinary one and the ENGINE clause is ignored.
+        if (with_element->storage && context->getSettingsRef()[Setting::enable_materialized_cte])
+            cte_data.materialized_cte_engine = parseMaterializedCTEEngine(with_element->storage->as<ASTStorage &>());
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
 
         result = std::move(query_node);

@@ -1,3 +1,4 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
@@ -22,6 +23,11 @@ ASTPtr ASTWithElement::clone() const
     res->subquery = subquery->clone();
     if (aliases)
         res->aliases = aliases->clone();
+    if (storage)
+    {
+        res->storage = storage->clone();
+        res->children.emplace_back(res->storage);
+    }
     res->children.emplace_back(res->subquery);
     return res;
 }
@@ -32,6 +38,7 @@ void ASTWithElement::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     if (is_materialized)
         w.writeBool("is_materialized", true);
+    w.writeChild("storage", storage);
     w.writeChild("subquery", subquery);
     w.writeChild("aliases", aliases);
 }
@@ -44,6 +51,12 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");
+
+    /// The ENGINE clause of a materialized CTE. Registered as a child before `subquery`, matching the
+    /// order used by `ParserWithElement` and `clone`, so a deserialized element hashes like a parsed one.
+    storage = r.readChildOfType<ASTStorage>("storage");
+    if (storage)
+        children.push_back(storage);
 
     /// The parser produces an `ASTSubquery` here (`ParserWithElement` uses `ParserSubquery`), and the
     /// analyzer relies on exactly that: `QueryTreeBuilder::buildExpression` does
@@ -84,6 +97,8 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
     ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
+    if (storage)
+        storage->format(ostr, settings, state, frame);
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
 }

@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -1099,7 +1100,15 @@ void RemoteQueryExecutor::sendExternalTables()
                 /// Send only temporary tables with StorageMemory
                 auto storage_memory = std::dynamic_pointer_cast<StorageMemory>(cur);
                 if (!storage_memory)
+                {
+                    /// A non-Memory materialized CTE (Set) is a per-node hash structure that can't be
+                    /// shipped to shards. Fail loudly instead of silently dropping it (wrong results).
+                    if (table.first.starts_with(MaterializedCTE::table_name_prefix))
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Materialized CTE with the Set engine is not supported in distributed queries");
                     continue;
+                }
 
                 /// Skip sending Materialized CTEs when they are not built.
                 /// It is required to be able CTE materialization plan with parallel replicas (avoiding

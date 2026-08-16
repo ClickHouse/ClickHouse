@@ -1,4 +1,6 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
@@ -62,6 +64,41 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool has_materialized_keyword = s_materialized.ignore(pos, expected);
 
+        /// Optional `ENGINE = <Engine>[(args)]` before the subquery (absent => default Memory); no SETTINGS.
+        /// Parse the engine non-parametrically so `Join(ANY, LEFT, k) (subquery)` is not read as a
+        /// parametric call swallowing the subquery; fall back to a bare identifier for arg-less engines.
+        ASTPtr storage_ast;
+        if (has_materialized_keyword)
+        {
+            ParserKeyword s_engine(Keyword::ENGINE);
+            ParserToken s_eq(TokenType::Equals);
+            ParserFunction engine_p(/*allow_function_parameters_=*/false, /*is_table_function_=*/false);
+            ParserIdentifier engine_ident_p;
+
+            if (s_engine.ignore(pos, expected))
+            {
+                s_eq.ignore(pos, expected);
+
+                ASTPtr engine;
+                if (!engine_p.parse(pos, engine, expected))
+                {
+                    /// Argument-less engine (e.g. Memory, Set): a bare identifier followed by the subquery.
+                    ASTPtr engine_name;
+                    if (!engine_ident_p.parse(pos, engine_name, expected))
+                        return false;
+                    auto engine_function = make_intrusive<ASTFunction>();
+                    tryGetIdentifierNameInto(engine_name, engine_function->name);
+                    engine_function->setNoEmptyArgs(true);
+                    engine = engine_function;
+                }
+                engine->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
+
+                auto storage = make_intrusive<ASTStorage>();
+                storage->set(storage->engine, engine);
+                storage_ast = storage;
+            }
+        }
+
         if (ASTPtr subquery; s_subquery.parse(pos, subquery, expected))
         {
             auto with_element = make_intrusive<ASTWithElement>();
@@ -69,6 +106,11 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);
             with_element->is_materialized = has_materialized_keyword;
+            if (storage_ast)
+            {
+                with_element->storage = storage_ast;
+                with_element->children.push_back(with_element->storage);
+            }
             with_element->subquery = std::move(subquery);
             with_element->children.push_back(with_element->subquery);
 

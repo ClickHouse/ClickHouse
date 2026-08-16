@@ -350,7 +350,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized && materialized_cte_engine == rhs_typed.materialized_cte_engine)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -398,6 +398,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     }
 
     state.update(is_materialized);
+    updateHash(state, materialized_cte_engine);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -430,6 +431,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
     result_query_node->is_materialized = is_materialized;
+    result_query_node->materialized_cte_engine = materialized_cte_engine;
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
