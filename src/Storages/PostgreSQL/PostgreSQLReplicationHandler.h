@@ -101,8 +101,9 @@ private:
 
     /// An existing publication may only be adopted or resumed through when its definition matches what
     /// ClickHouse creates: all four operation types published (pubinsert, pubupdate, pubdelete,
-    /// pubtruncate - CREATE PUBLICATION's defaults) and, on PostgreSQL 15 and newer, no row filter or
-    /// column list on any published table. A publication with the right table list but an altered
+    /// pubtruncate - CREATE PUBLICATION's defaults), no all-tables membership, and, on PostgreSQL 15 and
+    /// newer, no row filter, column list, or schema-level membership. A publication with the right table list
+    /// but an altered
     /// definition (for example ALTER PUBLICATION ... SET (publish = 'insert')) silently filters the
     /// replication stream, and the filtered-out changes cannot be recovered once the slot advances.
     /// Returns a human-readable reason when the definition does not match, or an empty string when it does.

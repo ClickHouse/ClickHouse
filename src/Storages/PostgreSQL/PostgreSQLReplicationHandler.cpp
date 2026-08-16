@@ -2206,7 +2206,8 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
 String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontransaction & tx, const String & name) const
 {
     pqxx::result flags{tx.exec(fmt::format(
-        "SELECT pubinsert AND pubupdate AND pubdelete AND pubtruncate FROM pg_publication WHERE pubname = '{}'", name))};
+        "SELECT pubinsert AND pubupdate AND pubdelete AND pubtruncate, puballtables "
+        "FROM pg_publication WHERE pubname = '{}'", name))};
     if (flags.empty())
         return fmt::format("the publication {} does not exist", doubleQuoteString(name));
     if (!flags[0][0].as<bool>())
@@ -2215,8 +2216,16 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
             "(ClickHouse creates it with the default publish = 'insert, update, delete, truncate')",
             doubleQuoteString(name));
 
-    /// Row filters (pg_publication_rel.prqual) and column lists (pg_publication_rel.prattrs) exist since
-    /// PostgreSQL 15; ClickHouse creates the publication with neither.
+    if (flags[0][1].as<bool>())
+        return fmt::format(
+            "the publication {} publishes all tables (ClickHouse creates an explicit table list)",
+            doubleQuoteString(name));
+
+    /// Row filters (pg_publication_rel.prqual), column lists (pg_publication_rel.prattrs), and schema-level
+    /// publication membership (pg_publication_namespace) exist since PostgreSQL 15; ClickHouse creates the
+    /// publication with neither and with an explicit table list. Schema-level membership can expand after
+    /// attach, so matching the current pg_publication_tables rows is insufficient: a later foreign-schema
+    /// table with a colliding bare name would be replayed into this engine in the single-schema modes.
     if (tx.conn().server_version() >= 150000)
     {
         pqxx::result filtered{tx.exec(fmt::format(
@@ -2226,6 +2235,14 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
             return fmt::format(
                 "the publication {} applies a row filter or a column list to at least one published table "
                 "(ClickHouse creates it with neither)",
+                doubleQuoteString(name));
+
+        pqxx::result schema_membership{tx.exec(fmt::format(
+            "SELECT count(*) FROM pg_publication_namespace n JOIN pg_publication p ON n.pnpubid = p.oid "
+            "WHERE p.pubname = '{}'", name))};
+        if (schema_membership[0][0].as<Int64>() > 0)
+            return fmt::format(
+                "the publication {} includes tables by schema (ClickHouse creates an explicit table list)",
                 doubleQuoteString(name));
     }
 
