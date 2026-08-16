@@ -156,10 +156,11 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 
 /// Hash of the parts of the view definition that decide what a refresh reads and produces: the
 /// `SELECT` query, the refresh strategy (which carries `IF CHANGED`, the schedule and the
-/// dependencies), and SQL security. Used to tell whether a persisted `REFRESH ... IF CHANGED` source
-/// hash was produced by the definition the view has now, or by an older one that an `ALTER` has since
-/// replaced.
-UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata)
+/// dependencies), SQL security, and the effective settings of the refresh context. Used to tell
+/// whether a persisted `REFRESH ... IF CHANGED` source hash was produced by the definition and
+/// settings the view has now, or by an older one that an `ALTER` or a settings-profile update has
+/// since replaced.
+UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, const ContextPtr & refresh_context)
 {
     SipHash hash;
     if (metadata.select.select_query)
@@ -168,6 +169,7 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata)
         metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
     hash.update(metadata.sql_security_type ? static_cast<Int8>(*metadata.sql_security_type) : Int8(-1));
     hash.update(metadata.definer.value_or(""));
+    hash.update(refresh_context->getSettingsRef().toString());
     return hash.get128();
 }
 
@@ -1374,7 +1376,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         if (if_changed)
         {
             auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
-            watermark.definition_hash = computeViewDefinitionHash(*view_metadata);
+            watermark.definition_hash = computeViewDefinitionHash(*view_metadata, refresh_context);
             if (auto select_ast = view_metadata->select.select_query)
                 watermark.source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
 
