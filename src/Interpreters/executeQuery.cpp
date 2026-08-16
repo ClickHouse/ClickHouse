@@ -17,6 +17,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
+#include <Common/atomicRename.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -1550,6 +1551,20 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
         {
             return true;
         }
+    }
+
+    /// A non-APPEND refreshable materialized view is rejected before its SELECT is analyzed when its
+    /// destination database is neither `Atomic` nor `Replicated`, or when the OS does not support atomic
+    /// rename. `validateMaterializedViewColumnsAndEngine` performs these checks before looking at the
+    /// SELECT, so mirror them to avoid reattaching a source of a rejected definition.
+    if (create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        if (const auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database);
+            database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+            return true;
+
+        if (!supportsAtomicRename())
+            return true;
     }
 
     /// SQL UDF substitution is performed before `getTablePropertiesAndNormalizeCreateQuery`, which reads
