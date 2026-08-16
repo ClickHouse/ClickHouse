@@ -79,6 +79,28 @@ jobs:
             return 1
           }
 
+          post_status() {
+            local state="$1"
+            local context="$2"
+            local description="$3"
+            api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha" \
+              -f state="$state" -f context="$context" \
+              -f description="$description" \
+              -f target_url="https://github.com/$GH_REPO/pull/$pr" >/dev/null
+
+            local posted_state posted_description
+            posted_state=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              --jq --arg context "$context" \
+              '[.[] | select(.context == $context)] | first | .state // empty')
+            posted_description=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              --jq --arg context "$context" \
+              '[.[] | select(.context == $context)] | first | .description // empty')
+            if [ "$posted_state" != "$state" ] || [ "$posted_description" != "$description" ]; then
+              echo "Failed to verify $context status update" >&2
+              return 1
+            fi
+          }
+
           # --- Resolve the PR number ---
           pr="$PR_NUMBER"
           if [ -z "$pr" ]; then
@@ -171,19 +193,30 @@ jobs:
               state=success
               description="all review threads resolved"
             fi
-            gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
-              -f state="$state" -f context="$STATUS_NAME" \
-              -f description="$description" \
-              -f target_url="https://github.com/$GH_REPO/pull/$pr"
             # `Mergeable Check` is the aggregate verdict of the PR workflow.
             # A new unresolved thread must block merging immediately, but do
             # not turn an unrelated CI failure into success when it resolves.
             if [ "$desired_blocked" = "true" ]; then
-              gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
-                -f state=failure -f context="$MERGEABLE_CHECK_STATUS_NAME" \
-                -f description="$description" \
-                -f target_url="https://github.com/$GH_REPO/pull/$pr"
+              # This distinct description lets the resolving event identify a
+              # failure injected here rather than one from the PR workflow.
+              mergeable_description="review threads: $unresolved unresolved review thread(s)"
+              post_status failure "$MERGEABLE_CHECK_STATUS_NAME" "$mergeable_description"
+            else
+              mergeable=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+                --jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" \
+                '[.[] | select(.context == $context)] | first // {}')
+              mergeable_state=$(echo "$mergeable" | jq -r '.state // "none"')
+              mergeable_description=$(echo "$mergeable" | jq -r '.description // ""')
+              last_pr_run=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+                --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
+              last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
+              if [ "$mergeable_state" = "failure" ] \
+                 && [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+                 && [ "$last_pr_conclusion" = "success" ]; then
+                post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
+              fi
             fi
+            post_status "$state" "$STATUS_NAME" "$description"
             echo "Refreshed the review-thread status without rerunning full CI."
             exit 0
           fi
@@ -209,5 +242,12 @@ jobs:
           fi
 
           echo "Re-running PR workflow run $run_id (attempt $run_attempt) to re-evaluate the gate..."
-          gh run rerun "$run_id" --repo "$GH_REPO" \
-            || echo "Failed to re-run $run_id (it may already be re-running)."
+          api_with_retries --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null
+          refreshed_runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "PR")]')
+          rerun_started=$(echo "$refreshed_runs" | jq --argjson run_id "$run_id" --argjson run_attempt "$run_attempt" \
+            '[.[] | select(.id == $run_id and (.status != "completed" or .run_attempt > $run_attempt))] | length')
+          if [ "$rerun_started" -eq 0 ]; then
+            echo "Failed to verify re-run of $run_id" >&2
+            exit 1
+          fi

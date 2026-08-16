@@ -125,7 +125,12 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert '"running the limited CI suite"' in rerun_workflow
     assert 'Refreshed the review-thread status without rerunning full CI.' in rerun_workflow
     assert 'if [ "$desired_blocked" = "true" ]; then' in rerun_workflow
-    assert '-f state=failure -f context="$MERGEABLE_CHECK_STATUS_NAME"' in rerun_workflow
+    assert 'post_status()' in rerun_workflow
+    assert 'api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha"' in rerun_workflow
+    assert 'review threads: $unresolved unresolved review thread(s)' in rerun_workflow
+    assert 'last_pr_conclusion' in rerun_workflow
+    assert 'actions/runs/$run_id/rerun' in rerun_workflow
+    assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
 
