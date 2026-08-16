@@ -63,6 +63,7 @@ class Targeting:
     # change here means test selection or the runner configuration changed,
     # rather than a query test that can be discovered from its path.
     _STATELESS_HARNESS_PATHS = (
+        ".github/workflows/pull_request.yml",
         "ci/defs/job_configs.py",
         "ci/jobs/functional_tests.py",
         "ci/jobs/scripts/clickhouse_proc.py",
