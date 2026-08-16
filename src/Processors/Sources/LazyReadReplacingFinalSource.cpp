@@ -28,6 +28,7 @@ namespace Setting
 {
 extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsBool allow_experimental_codecs;
 extern const SettingsBool collect_hash_table_stats_during_aggregation;
 extern const SettingsBool enable_adaptive_aggregator;
 extern const SettingsBool enable_packed_string_keys_in_aggregation;
@@ -39,6 +40,8 @@ extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+extern const SettingsString temporary_files_codec;
+extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting

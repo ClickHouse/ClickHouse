@@ -16,6 +16,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool compile_aggregate_expressions;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -31,6 +32,8 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace

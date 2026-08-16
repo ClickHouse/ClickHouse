@@ -96,7 +96,9 @@ Aggregator::Params makeParams(
         /*enable_producing_buckets_out_of_order_in_aggregation=*/false,
         serialize_string_with_zero_byte,
         /*enable_parallel_single_level_merge=*/false,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_adaptive_aggregator=*/false,
+        /*adaptive_aggregator_freeze_threshold=*/0);
 }
 
 std::unique_ptr<AggregatingStep> makeAggregatingStep(
