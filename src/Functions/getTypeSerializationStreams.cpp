@@ -44,6 +44,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto type = getType(arguments[0]);
+
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res_strings_column = ColumnString::create();
         auto col_res_offsets_column = ColumnArray::ColumnOffsets::create();

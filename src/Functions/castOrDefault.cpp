@@ -16,6 +16,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -78,6 +79,7 @@ public:
                 arguments[1].type->getName());
 
         DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
 
