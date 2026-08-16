@@ -1110,18 +1110,17 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
     /// `synchronization_started` is still set: the flag would make the restarted task a no-op with the handler
     /// staying dead. Discard the stopped handler and clear the flag, so the startup task rebuilds replication
     /// from scratch.
+    /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
+    /// later removal throws. This is also possible in the attach/restart window, before a
+    /// replication handler has been rebuilt. Rebuild as a CREATE-style startup in either case:
+    /// it recreates missing nested tables and reloads a snapshot from an empty slot.
+    if (force_resnapshot)
+        is_attach = false;
+
     if (replication_handler && replication_handler->isStopped())
     {
         replication_handler.reset();
         synchronization_started = false;
-
-        /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
-        /// later removal throws. On an attached database the normal recovery path would reuse the
-        /// surviving slot and expect every nested table to still exist, leaving the database in a
-        /// permanent startup retry loop. Rebuild it as a CREATE-style startup instead: it recreates
-        /// missing nested tables and reloads a snapshot from an empty slot.
-        if (force_resnapshot)
-            is_attach = false;
     }
     if (!shutdown_called)
     {

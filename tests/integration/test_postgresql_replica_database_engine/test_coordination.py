@@ -2364,6 +2364,85 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
     assert not publication_exists()
 
 
+def test_plain_refused_drop_in_restart_window_recreates_removed_tables(started_cluster):
+    # A refused drop can remove one nested table before a later table removal fails. When this
+    # happens in the attach/restart window, no replication handler exists yet to signal that the
+    # database must recover as a new snapshot instead of trying to attach the missing table.
+    pg_manager.create_postgres_table("first_table")
+    pg_manager.create_postgres_table("second_table")
+    instance.query(
+        "INSERT INTO postgres_database.first_table SELECT number, number FROM numbers(50)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.second_table SELECT number, number FROM numbers(50)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'first_table,second_table'"
+        ],
+    )
+    check_tables_are_synchronized(instance, "first_table")
+    check_tables_are_synchronized(instance, "second_table")
+
+    failpoint_config_path = (
+        "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
+    )
+    pause_failpoint = "database_materialized_postgresql_pause_before_table_drop"
+    try:
+        # Keep the handler null after restart, exactly as in the attach/restart recovery window.
+        instance.replace_config(
+            failpoint_config_path,
+            "<clickhouse><fail_points_active>"
+            "<materialized_postgresql_fail_database_startup>1"
+            "</materialized_postgresql_fail_database_startup>"
+            "</fail_points_active></clickhouse>",
+        )
+        instance.stop_clickhouse()
+        instance.start_clickhouse()
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        drop_error = []
+
+        def run_drop():
+            drop_error.append(
+                instance.query_and_get_error("DROP DATABASE test_database SYNC")
+            )
+
+        drop_thread = threading.Thread(target=run_drop)
+        drop_thread.start()
+
+        # Let the first nested table be removed, then stop at the second removal and make it fail.
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        instance.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+        drop_thread.join()
+        assert drop_error
+        assert "Injected failure while dropping a nested table" in drop_error[0]
+    finally:
+        instance.exec_in_container(["rm", "-f", failpoint_config_path])
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        instance.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+
+    # A create-style restart rebuilds the missing table and resumes replication without restarting
+    # the server again.
+    check_tables_are_synchronized(instance, "first_table")
+    check_tables_are_synchronized(instance, "second_table")
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
 def test_refused_drop_recovery_window_keeps_wrapped_reads(started_cluster):
     # `stopReplication` in the generic drop path sets `replication_stopped` when it empties the wrapper
     # map, redirecting user-facing reads to the raw nested tables. When the drop is then refused,
