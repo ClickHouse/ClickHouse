@@ -999,7 +999,9 @@ async function main() {
             const clause = await detectExplicitFormatClause('SELECT 1 FORMAT JSONCompactColumns');
             const inputSetting = await detectFramingSetting("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
             const inputPayload = await detectExplicitFormatClause("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
-            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload });
+            const ambiguousPostFormatSettings = await detectFramingSetting("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
+            const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, parallelWithWrite });
         })()`));
         check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
             !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
@@ -1009,10 +1011,14 @@ async function main() {
             res.identifier === null, res);
         check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',
             res.clause && res.clause.name === 'JSONCompactColumns', res);
-        check('fallback-tokenizer', '`input` post-FORMAT SETTINGS is detected before inline data',
-            !res.inputSetting.user_framing && res.inputSetting.user_disables_framing, res);
+        check('fallback-tokenizer', '`input` post-FORMAT SETTINGS remains inline data by default',
+            !res.inputSetting.user_framing && !res.inputSetting.user_disables_framing, res);
         check('fallback-tokenizer', '`input` inline data is not treated as an output FORMAT clause',
             res.inputPayload === null, res);
+        check('fallback-tokenizer', 'ambiguous post-FORMAT SETTINGS fails closed without WASM',
+            res.ambiguousPostFormatSettings.has_ambiguous_post_format_settings, res);
+        check('fallback-tokenizer', '`PARALLEL WITH` is a retry and Run all barrier without WASM',
+            !res.parallelWithWrite, res);
     }
 
     /// Contract 7: `Run all` must not dispatch a later write after a prior statement reports an

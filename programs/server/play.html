@@ -8836,7 +8836,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// `framing_output_format` mention inside a string literal or a comment - e.g.
     /// `SELECT 'framing_output_format = None'` - is not mistaken for a real setting and does not
     /// change how the request is framed.
-    const { user_framing, user_disables_framing, user_sets_session_framing } = await detectFramingSetting(query);
+    const { user_framing, user_disables_framing, user_sets_session_framing, has_ambiguous_post_format_settings } = await detectFramingSetting(query);
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -8899,6 +8899,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         if (user_sets_session_framing)
         {
             throw new Error("This page sets framing_output_format on every request, so it cannot change it for the whole session with a standalone SET. To use a specific framing for one query, put it in that query's SETTINGS clause, e.g. SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'.");
+        }
+        if (has_ambiguous_post_format_settings)
+        {
+            throw new Error("This page cannot safely determine whether SETTINGS after an INSERT FORMAT clause is SQL or inline data. Put the settings before FORMAT, or remove the ambiguous SETTINGS row.");
         }
         if (user_disables_framing)
         {
@@ -13629,7 +13633,16 @@ function tokensBeforeInlineInsertPayload(tokens)
             && tokens[i + 1]
             && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)) {
             if (saw_select_source && !select_reads_inline_data) return tokens;
-            return tokens.slice(0, i);
+            const before_payload = tokens.slice(0, i);
+            /// `SETTINGS` immediately after an input format is ambiguous: it is a real settings
+            /// clause only when `allow_settings_after_format_in_insert` is enabled, but is the
+            /// first inline row with the default grammar. Preserve that fact so the request path
+            /// can reject a framing-affecting ambiguous statement instead of silently assuming
+            /// either grammar.
+            before_payload.has_ambiguous_post_format_settings = tokens[i + 2]
+                && tokens[i + 2].type === TT.BareWord
+                && tokens[i + 2].token.toLowerCase() === 'settings';
+            return before_payload;
         }
     }
     return tokens;
@@ -13675,6 +13688,7 @@ async function detectFramingSetting(query)
 {
     const raw_tokens = await tokenizeWithFallback(query);
     const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
+    const has_ambiguous_post_format_settings = tokens.has_ambiguous_post_format_settings === true;
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
     /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
@@ -13841,13 +13855,16 @@ async function detectFramingSetting(query)
         /// The next token starts a new statement only right after a top-level `;`.
         at_statement_start = is_top_level_semicolon;
     }
+    if (has_ambiguous_post_format_settings) {
+        return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: true };
+    }
     if (saw_query_setting) {
         if (query_setting_disables) {
-            return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false };
+            return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
         }
-        return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false };
+        return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
     }
-    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false };
+    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
 }
 
 /// Detect a real `FORMAT` clause in the query and return `{ name, start, end }` - the format name
@@ -14160,7 +14177,11 @@ function leadingKeywordIsReadOnly(query)
         }
     }
     const keyword = s.split(/[\s(;]/)[0].toUpperCase();
-    return PARALLELIZABLE_KEYWORDS.has(keyword) && keyword !== 'WITH';
+    /// Without the lexer we cannot identify the boundaries of `PARALLEL WITH` children reliably.
+    /// A composite can contain writes after a leading `SELECT`, so fail closed before allowing the
+    /// compatibility retry or Run all parallelization. A false positive merely leaves a read query
+    /// serialized, while a false negative can resubmit a write.
+    return PARALLELIZABLE_KEYWORDS.has(keyword) && keyword !== 'WITH' && !/\bparallel\s+with\b/i.test(s);
 }
 
 /// Whether a query is read-only and therefore safe to re-run. Used to gate the no-framing retry: a
