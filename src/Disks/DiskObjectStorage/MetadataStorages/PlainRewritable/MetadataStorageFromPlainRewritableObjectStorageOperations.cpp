@@ -75,7 +75,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.empty() || pathToGenericString(path).ends_with('/'));
     chassert(metrics);
 }
 
@@ -116,7 +116,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
         /*buf_size*/ 128,
         /*settings*/ getWriteSettings());
 
-    writeString(path.string(), *buf);
+    writeString(pathToGenericString(path), *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
     });
@@ -152,8 +152,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path_from.empty() || path_from.string().ends_with('/'));
-    chassert(path_to.empty() || path_to.string().ends_with('/'));
+    chassert(path_from.empty() || pathToGenericString(path_from).ends_with('/'));
+    chassert(path_to.empty() || pathToGenericString(path_to).ends_with('/'));
     chassert(metrics);
 }
 
@@ -197,7 +197,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleD
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
-    writeString(to.string(), buffer);
+    writeString(pathToGenericString(to), buffer);
 
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
     {
@@ -275,7 +275,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
 {
-    chassert(path.empty() || path.string().ends_with('/'));
+    chassert(path.empty() || pathToGenericString(path).ends_with('/'));
     chassert(metrics);
 }
 
@@ -294,7 +294,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
 
     remove_attempted = true;
     auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, pathToGenericString(/*local_path*/ path), path.string().length());
+    const auto path_string = pathToGenericString(path);
+    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, path_string, path_string.length());
     object_storage->removeObjectIfExists(metadata_object);
 
     fs_tree->removeDirectory(pathToGenericString(path));
@@ -317,7 +318,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
         /*object_attributes*/ std::nullopt,
         /*buf_size*/ 128,
         /*settings*/ DB::getWriteSettings());
-    writeString(path.string(), *buf);
+    writeString(pathToGenericString(path), *buf);
     buf->finalize();
 }
 

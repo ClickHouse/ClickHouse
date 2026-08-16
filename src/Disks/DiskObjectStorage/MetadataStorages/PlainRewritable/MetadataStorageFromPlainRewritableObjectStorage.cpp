@@ -449,7 +449,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
-        normalizeDirectoryPath(path),
+        normalizeDirectoryPath(pathFromString(path)),
         uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
         metadata_storage.object_storage,
@@ -469,7 +469,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,
-        normalizeDirectoryPath(path),
+        normalizeDirectoryPath(pathFromString(path)),
         uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
         metadata_storage.object_storage,
@@ -482,8 +482,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
     uncommitted_state.moveDirectory(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
-        normalizeDirectoryPath(path_from),
-        normalizeDirectoryPath(path_to),
+        normalizeDirectoryPath(pathFromString(path_from)),
+        normalizeDirectoryPath(pathFromString(path_to)),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
@@ -510,7 +510,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         uncommitted_state.removeDirectory(path);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
-        normalizeDirectoryPath(path),
+        normalizeDirectoryPath(pathFromString(path)),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,

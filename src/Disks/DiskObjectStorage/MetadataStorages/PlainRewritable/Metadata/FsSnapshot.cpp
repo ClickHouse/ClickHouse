@@ -205,7 +205,9 @@ void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
     if (normalized_from.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' is root", normalized_from.string());
 
-    if (normalized_to.string().starts_with(normalized_from.string() + '/'))
+    const auto normalized_from_string = pathToGenericString(normalized_from);
+    const auto normalized_to_string = pathToGenericString(normalized_to);
+    if (normalized_to_string.starts_with(normalized_from_string + '/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Directory '{}' can't be moved to '{}' inside itself", normalized_from.string(), normalized_to.string());
 
     if (walk(root, normalized_to))
