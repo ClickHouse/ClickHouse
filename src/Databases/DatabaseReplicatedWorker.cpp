@@ -132,8 +132,17 @@ std::optional<String> getCreateOrReplaceName(const Tokens & tokens)
     if (tokens.size() < 5
         || !isKeyword(tokens[0], "CREATE")
         || !isKeyword(tokens[1], "OR")
-        || !isKeyword(tokens[2], "REPLACE")
-        || (!isKeyword(tokens[3], "TABLE") && !isKeyword(tokens[3], "VIEW")))
+        || !isKeyword(tokens[2], "REPLACE"))
+        return {};
+
+    if (isKeyword(tokens[3], "MATERIALIZED"))
+    {
+        if (tokens.size() < 6 || !isKeyword(tokens[4], "VIEW"))
+            return {};
+        return getTableName(tokens, 5);
+    }
+
+    if (!isKeyword(tokens[3], "TABLE") && !isKeyword(tokens[3], "VIEW"))
         return {};
 
     return getTableName(tokens, 4);
@@ -275,9 +284,9 @@ void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<
     }
 }
 
-String formatRenameWithoutRemovedWindowViews(const std::vector<WindowViewFollowup> & followups, const NameSet & removed_window_views)
+String formatRenameOrExchangeWithoutRemovedWindowViews(const std::vector<WindowViewFollowup> & followups, const NameSet & removed_window_views, bool is_exchange)
 {
-    String query = "RENAME TABLE ";
+    String query = is_exchange ? "EXCHANGE TABLES " : "RENAME TABLE ";
     bool first = true;
     for (const auto & followup : followups)
     {
@@ -291,7 +300,7 @@ String formatRenameWithoutRemovedWindowViews(const std::vector<WindowViewFollowu
         if (followup.if_exists)
             query += "IF EXISTS ";
         query += followup.table_name;
-        query += " TO ";
+        query += is_exchange ? " AND " : " TO ";
         query += *followup.rename_to;
     }
     return query;
@@ -1024,27 +1033,27 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (has_removed_window_view)
     {
         const bool is_rename = isKeyword(tokens[0], "RENAME");
+        const bool is_exchange = isKeyword(tokens[0], "EXCHANGE");
         const bool has_non_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
         {
             return !removed_window_views.contains(followup.table_name);
         });
-        const String rewritten_rename = is_rename && has_non_removed_window_view
-            ? formatRenameWithoutRemovedWindowViews(followups, removed_window_views)
+        const String rewritten_query = (is_rename || is_exchange) && has_non_removed_window_view
+            ? formatRenameOrExchangeWithoutRemovedWindowViews(followups, removed_window_views, is_exchange)
             : String{};
         if (!dry_run)
         {
             updateRemovedWindowViews(removed_window_views, followups);
-            if (!is_rename || !has_non_removed_window_view)
-                persistRemovedWindowViews(zookeeper, entry_num);
+            persistRemovedWindowViews(zookeeper, entry_num);
         }
-        if (!is_rename || !has_non_removed_window_view)
+        if ((!is_rename && !is_exchange) || !has_non_removed_window_view)
         {
             LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW", entry_name);
             out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW", entry_name);
             return {};
         }
 
-        task->entry.query = rewritten_rename;
+        task->entry.query = rewritten_query;
         LOG_WARNING(log, "Remove obsolete WINDOW VIEWs from DDL {}", entry_name);
     }
 
