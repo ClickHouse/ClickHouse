@@ -638,7 +638,16 @@ ASTPtr LogsQLParser::sortKeyExpr(const Layer & layer, const String & field_name)
 {
     String name = columnName(field_name);
     if (layer.numeric_bucket_fields.contains(name))
-        return numericValueExpr(field_name);
+    {
+        /// Integral buckets are materialized as strings to preserve their exact Int128
+        /// representation during grouping. Reparse them as a sufficiently wide decimal
+        /// for ordering, otherwise adjacent values above 2^53 would collapse through
+        /// `Float64` and compare equal.
+        return makeASTFunction(
+            "accurateCastOrNull",
+            make_intrusive<ASTIdentifier>(name),
+            makeStringLiteral("Decimal256(0)"));
+    }
     for (const auto & entry : layer.select)
     {
         if (entry->tryGetAlias() == name)
@@ -750,11 +759,12 @@ void LogsQLParser::applySortWithExtras(
 {
     /// Aggregation layers are wrapped into a subquery: sorting by an output field which shadows
     /// a source column (e.g. the bucketed `_time` of `stats by (_time:1d)`) is unambiguous only
-    /// across a subquery boundary. A plain projection does not need wrapping: ClickHouse permits
-    /// sorting by a source field that is not part of the final projection.
+    /// across a subquery boundary. Ranking and per-partition limiting must wrap a previous
+    /// projection too, since their inner layer adds `*` to the current pipe schema.
     wrapLayerIf(layer,
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
-        || layer.has_aggregation);
+        || layer.has_aggregation
+        || (!rank_name.empty() || !partition_fields.empty()) && (layer.has_projection || !layer.select.empty()));
 
     auto make_order_elements = [&]
     {

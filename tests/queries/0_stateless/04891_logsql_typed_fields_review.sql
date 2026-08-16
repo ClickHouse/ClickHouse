@@ -35,6 +35,10 @@ _time:[2024-01-01T00:00:00Z, 2024-01-01T00:00:00Z] | count();
 * | stats by (bucket:1) count() | sort by (bucket);
 * | stats by (fractional_bucket:10) count() | sort by (fractional_bucket);
 
+-- Ranking and partitioning operate on the schema produced by a projection pipe.
+* | fields level | sort by (level) partition by (level) limit 1;
+* | fields level | sort by (level) rank as position | fields position, level;
+
 -- Text pipes replace typed target fields with their LogsQL string values.
 * | format if (level:error) "X" as size | fields size | sort by (_time);
 * | format "X" as size keep_original_fields | fields size | sort by (_time);

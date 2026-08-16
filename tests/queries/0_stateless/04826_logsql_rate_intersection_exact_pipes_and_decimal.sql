@@ -38,6 +38,7 @@ _time:2024-01-02Z _time:<2024-01-02T12Z | stats rate() as r | math round(r*86400
 
 -- Numeric `stats by` buckets stay exact above 2^53: adjacent values keep separate buckets.
 * | stats by (num:1) count() as c | sort by (num);
+* | stats by (num:1) count() as c | sort by (num) desc limit 1;
 
 -- An integral bucket step keeps the floor semantics for negative values (bucket of -5 with step 10 is -10),
 -- and an integral offset stays exact as well.
