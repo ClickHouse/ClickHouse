@@ -1208,7 +1208,7 @@ void DatabaseReplicatedDDLWorker::persistRemovedWindowViews(const ZooKeeperPtr &
 {
     const String removed_window_views_path = database->replica_path + "/removed_window_views";
     if (!zookeeper->exists(removed_window_views_path))
-        zookeeper->create(removed_window_views_path, "", zkutil::CreateMode::Persistent);
+        zookeeper->create(removed_window_views_path, serializeRemovedWindowViews({}), zkutil::CreateMode::Persistent);
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeSetRequest(removed_window_views_path, serializeRemovedWindowViews(removed_window_views), -1));
