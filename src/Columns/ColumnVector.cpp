@@ -860,9 +860,27 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             {
                 while (mask)
                 {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
+                    const size_t index = std::countr_zero(mask);
+                    const UInt64 shifted_mask = mask >> index;
+
+                    if ((shifted_mask & 2) == 0)
+                    {
+                        inserter.insertSingle(data_pos[index]);
+                        mask = blsr(mask);
+                        continue;
+                    }
+
+                    const size_t run_length = std::countr_one(shifted_mask);
+
+                    if (run_length == 1)
+                        inserter.insertSingle(data_pos[index]);
+                    else
+                        inserter.insertRange(data_pos + index, data_pos + index + run_length);
+
+                    if (run_length == 64)
+                        mask = 0;
+                    else
+                        mask &= ~(((UInt64{1} << run_length) - 1) << index);
                 }
             }
         }
