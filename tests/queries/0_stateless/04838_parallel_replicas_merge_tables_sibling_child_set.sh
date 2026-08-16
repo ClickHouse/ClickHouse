@@ -38,12 +38,14 @@ PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_rep
 # The left table expression matches both children, the right one only the second child, so dropping
 # the first child makes the left one resolve to exactly the child set of the right one. Both leaves
 # must be read by the replicas within one fragment, which is what a join of two `merge` table
-# functions is offloaded as - and the two leaves are told apart only by their aliases, because a
-# table function is identified by the name of the function.
+# functions is offloaded as - and the two leaves are told apart by their arguments even when they
+# have no aliases.
 QUERY="SELECT count(), sum(l.v), sum(r.v) FROM merge(currentDatabase(), '^t_pr_merge_sibling_(a1|b1)\$') AS l INNER JOIN merge(currentDatabase(), '^t_pr_merge_sibling_b1\$') AS r ON l.k = r.k"
+ALIASLESS_QUERY="SELECT count(), sum(l.v), sum(r.v) FROM merge(currentDatabase(), '^t_pr_merge_sibling_(a1|b1)\$') INNER JOIN merge(currentDatabase(), '^t_pr_merge_sibling_b1\$') USING (k)"
 
 # Sanity check: the query is eligible for parallel replicas and returns correct results.
 $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS"
+$CLICKHOUSE_CLIENT --query "$ALIASLESS_QUERY SETTINGS $PR_SETTINGS"
 
 # Pause the initiator after it has planned the query, and drop the child table that only the left
 # `Merge` table matches, so that the left table resolves on the replicas to the child set the
@@ -51,7 +53,7 @@ $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS"
 # the query silently returns half of the rows.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT parallel_replicas_pause_before_sending_queries"
 
-$CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS" 2>&1 | grep -o -m1 "SUPPORT_IS_DISABLED" &
+$CLICKHOUSE_CLIENT --query "$ALIASLESS_QUERY SETTINGS $PR_SETTINGS" 2>&1 | grep -o -m1 "SUPPORT_IS_DISABLED" &
 query_pid=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT parallel_replicas_pause_before_sending_queries PAUSE"

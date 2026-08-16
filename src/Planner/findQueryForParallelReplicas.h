@@ -55,9 +55,10 @@ std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized
 /// A key identifying the `Merge` table expression a child table set belongs to, so that a replica
 /// compares the set its own `Merge` table expression resolves to against the set the initiator read
 /// for the same table expression, and not against the set of a sibling `Merge` table expression of
-/// the same query. It consists of the escaped name of the table (or of the table function) and the
-/// escaped alias, separated by `:`; `mergeChildTableSetKeyBaseName` returns the first component,
-/// which identifies the table expression when the alias is not comparable (see `resolveStorages`).
+/// the same query. It consists of the escaped name of the table (or of the table function and its
+/// alias-independent query-tree hash) and the escaped alias, separated by `:`;
+/// `mergeChildTableSetKeyBaseName` returns the first component, which identifies the table
+/// expression when the alias is not comparable (see `resolveStorages`).
 String mergeChildTableSetKey(const IQueryTreeNode * table_expression);
 String mergeChildTableSetKeyBaseName(const String & key);
 

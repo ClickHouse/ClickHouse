@@ -590,15 +590,16 @@ const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNod
     return findTableForParallelReplicas(query_tree_node.get(), context);
 }
 
-/// The name of a table expression without its alias: the table it reads, or, for a table function,
-/// only the function name (the text of its arguments is not guaranteed to survive the rewriting of
-/// the query that is sent to the replicas).
+/// The name of a table expression without its alias. A table function includes an
+/// alias-independent hash of its query tree, so two aliasless `merge` expressions with different
+/// arguments remain distinct after the query is shipped to the replicas.
 static String tableExpressionBaseName(const IQueryTreeNode * table_expression)
 {
     if (const auto * table_node = typeid_cast<const TableNode *>(table_expression))
         return table_node->getStorageID().getFullTableName();
     if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
-        return "table function " + table_function_node->getTableFunctionName();
+        return "table function " + table_function_node->getTableFunctionName() + " "
+            + toString(CityHash_v1_0_2::Hash128to64(table_function_node->getTreeHash({.compare_aliases = false})));
     return {};
 }
 
@@ -611,10 +612,9 @@ String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expressi
     if (name.empty())
         return {};
 
-    /// The same table, and even more so the same table function, can appear more than once in a
-    /// query, and the alias is what tells such sibling table expressions apart. It is a part of the
-    /// query sent to the replicas, so the initiator and every replica derive the same name for the
-    /// same table expression of the same query.
+    /// The same table can appear more than once in a query, and the alias is what tells such
+    /// sibling table expressions apart. The base name already distinguishes table functions with
+    /// different arguments, including when neither expression has an explicit alias.
     const String & alias = table_expression->getAlias();
     if (!alias.empty())
         name += " AS " + alias;
