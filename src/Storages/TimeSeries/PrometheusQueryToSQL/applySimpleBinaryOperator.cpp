@@ -7,6 +7,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <algorithm>
@@ -49,7 +50,8 @@ namespace
         ConverterContext & context,
         std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
         bool drop_metric_name,
-        bool allow_grouping_modifier_copy_metric_name)
+        bool allow_grouping_modifier_copy_metric_name,
+        bool order_follows_left_side)
     {
         /// If one of the arguments is empty then the result is also empty.
         if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
@@ -72,7 +74,15 @@ namespace
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
-        bool result_has_sort_order = group_right ? right_argument.has_sort_order : left_argument.has_sort_order;
+
+        /// The output label set comes from the "many" side, but the surviving values don't have to:
+        /// a non-`bool` comparison keeps the left samples, so its order comes from the left side.
+        bool order_side_is_left = order_follows_left_side || !group_right;
+        bool result_has_sort_order = order_side_is_left ? left_argument.has_sort_order : right_argument.has_sort_order;
+
+        /// With `group_right` the left side is the "one" side, so several output rows can share its
+        /// sort key; a content hash of each output row's own tags keeps the ordering total.
+        bool need_order_tiebreak = order_side_is_left && group_right;
 
         /// Step 1:
         /// new_left:
@@ -137,7 +147,7 @@ namespace
             }
             builder.select_list.push_back(std::move(values));
 
-            bool result_order_side = (side == left) ? !group_right : group_right;
+            bool result_order_side = (side == left) ? order_side_is_left : !order_side_is_left;
             if (result_order_side && result_has_sort_order)
             {
                 ASTPtr sort_key = make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
@@ -342,8 +352,18 @@ namespace
 
             if (result_has_sort_order)
             {
-                String & result_order_side = group_right ? right : left;
+                String & result_order_side = order_side_is_left ? left : right;
                 ASTPtr sort_key = make_intrusive<ASTIdentifier>(Strings{result_order_side, ColumnNames::SortKey});
+                if (need_order_tiebreak)
+                {
+                    sort_key = makeASTFunction(
+                        "arrayConcat",
+                        std::move(sort_key),
+                        makeASTFunction(
+                            "array",
+                            makeExactSortKeyComponent(makeASTFunction(
+                                "timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)))));
+                }
                 if (check_no_duplicate_groups)
                     sort_key = makeASTFunction("any", std::move(sort_key));
                 sort_key->setAlias(ColumnNames::SortKey);
@@ -398,7 +418,8 @@ SQLQueryPiece applySimpleBinaryOperator(
     ConverterContext & context,
     std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
     bool drop_metric_name,
-    bool allow_grouping_modifier_copy_metric_name)
+    bool allow_grouping_modifier_copy_metric_name,
+    bool order_follows_left_side)
 {
     if ((left_argument.type == ResultType::SCALAR) || (right_argument.type == ResultType::SCALAR))
     {
@@ -417,7 +438,8 @@ SQLQueryPiece applySimpleBinaryOperator(
         context,
         apply_function_to_ast,
         drop_metric_name,
-        allow_grouping_modifier_copy_metric_name);
+        allow_grouping_modifier_copy_metric_name,
+        order_follows_left_side);
 }
 
 }

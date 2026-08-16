@@ -126,7 +126,8 @@ SQLQueryPiece applyMathBinaryOperator(
         context,
         apply_function_to_ast,
         /* drop_metric_name = */ true,
-        /* allow_grouping_modifier_copy_metric_name = */ true);
+        /* allow_grouping_modifier_copy_metric_name = */ true,
+        /* order_follows_left_side = */ false);
 }
 
 }

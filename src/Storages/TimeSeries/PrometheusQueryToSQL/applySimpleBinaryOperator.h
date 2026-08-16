@@ -18,6 +18,8 @@ namespace DB::PrometheusQueryToSQL
 /// This corresponds to the default Prometheus behavior for arithmetic operators.
 /// For comparison operators with the `bool` modifier, `allow_grouping_modifier_copy_metric_name` should be
 /// false, because `bool` always drops `__name__` unconditionally.
+/// If `order_follows_left_side` is true, the result keeps the left argument's sort order even under
+/// `group_right`, which only moves the output label set to the right side, not the surviving samples.
 SQLQueryPiece applySimpleBinaryOperator(
     const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
@@ -25,6 +27,7 @@ SQLQueryPiece applySimpleBinaryOperator(
     ConverterContext & context,
     std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
     bool drop_metric_name,
-    bool allow_grouping_modifier_copy_metric_name);
+    bool allow_grouping_modifier_copy_metric_name,
+    bool order_follows_left_side);
 
 }

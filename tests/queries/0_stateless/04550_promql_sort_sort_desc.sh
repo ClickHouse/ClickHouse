@@ -34,6 +34,18 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000002', toDateTime64(1700000000, 3, 'UTC'), 10),
     ('00000000-0000-0000-0000-000000000003', toDateTime64(1700000000, 3, 'UTC'), 20);
 
+-- A second metric with its own name and an extra tag, one series per instance, in ascending
+-- instance order - deliberately a different natural order than `sort_desc(up)` produces.
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000011', 'mem', {'instance':'host1','job':'j1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000012', 'mem', {'instance':'host2','job':'j1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC')),
+    ('00000000-0000-0000-0000-000000000013', 'mem', {'instance':'host3','job':'j1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
+
+INSERT INTO ts_data VALUES
+    ('00000000-0000-0000-0000-000000000011', toDateTime64(1700000000, 3, 'UTC'), 1),
+    ('00000000-0000-0000-0000-000000000012', toDateTime64(1700000000, 3, 'UTC'), 2),
+    ('00000000-0000-0000-0000-000000000013', toDateTime64(1700000000, 3, 'UTC'), 3);
+
 SELECT '-- sort(up): ascending by value (10, 20, 30)';
 SELECT * FROM prometheusQuery(ts, 'sort(up)', $EVAL_TIME);
 
@@ -82,6 +94,11 @@ SELECT * FROM prometheusQuery(ts, 'topk(2, up) or vector(99)', $EVAL_TIME);
 SELECT '-- topk with by(...) grouping carries a bucket-aware sort order (buckets consecutive in an unspecified hash-based order, values ordered within each bucket), so it composes with or as an ordered left prefix (all 3 singleton buckets pass through)';
 -- ORDER BY normalizes away the hash-based bucket order; 04627_promql_topk_bottomk_grouped_order covers it.
 SELECT * FROM prometheusQuery(ts, 'topk(2, up) by (instance) or vector(99)', $EVAL_TIME) ORDER BY tags;
+
+SELECT '-- a comparison without bool keeps the left samples, so group_right takes the labels from the right but the order from the sorted left';
+-- All 3 comparisons are true, so this isolates ordering from filtering: the values are up's
+-- (30, 20, 10) in sort_desc order, while the tags are mem's (its name, instance and job).
+SELECT * FROM prometheusQuery(ts, 'sort_desc(up) > on(instance) group_right mem', $EVAL_TIME);
 "
 
 promql_client()
