@@ -142,7 +142,7 @@ void HealthMonitor::pollResources(Backend & backend)
 
         RecordingReader reader(socket);
         String status_line;
-        if (!reader.readLine(status_line, 8192) || status_line.find(" 200 ") == String::npos)
+        if (!reader.readLine(status_line, 8192) || !status_line.contains(" 200 "))
         {
             socket.close();
             LOG_DEBUG(log, "Resource poll of {} returned '{}'", backend.name(), status_line);
