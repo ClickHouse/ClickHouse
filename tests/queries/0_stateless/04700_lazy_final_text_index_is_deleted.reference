@@ -6,6 +6,12 @@ text-index read in plan	1
 is_deleted filter in plan	1
 prewhere text-index read in plan	1
 prewhere is_deleted filter in plan	1
+3	0
+3	0
+visible is_deleted text-index read in plan	1
+visible is_deleted filter in plan	1
+prewhere visible is_deleted text-index read in plan	1
+prewhere visible is_deleted filter in plan	1
 1
 0
 1
@@ -16,3 +22,9 @@ union in plan	1
 is_deleted filter in union plan	1
 prewhere text-index read in mixed plan	1
 prewhere is_deleted filter in mixed plan	1
+10	0
+10	0
+1	0
+10	0
+mixed visible is_deleted text-index read in plan	1
+mixed visible is_deleted filter in plan	1

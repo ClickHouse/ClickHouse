@@ -72,6 +72,38 @@ SELECT 'prewhere is_deleted filter in plan', count() > 0 FROM
 )
 WHERE explain LIKE '%is_deleted = 0%';
 
+-- The same reads with `is_deleted` explicitly selected take the other carrier in
+-- createNonIntersectingPlan: `columns` already holds the special column, so
+-- addIsDeletedFilter must keep it in the output header rather than strip it, while the
+-- copied index read tasks still have to serve the rewritten `__text_index_*` filter.
+SELECT id, is_deleted FROM tab FINAL WHERE str = 'baz' ORDER BY id;
+SELECT id, is_deleted FROM tab FINAL WHERE str = 'bar' ORDER BY id;     -- empty: row was deleted
+SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'baz' ORDER BY id;
+
+SELECT 'visible is_deleted text-index read in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL WHERE str = 'baz'
+)
+WHERE explain LIKE '%__text_index_idx_%';
+
+SELECT 'visible is_deleted filter in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL WHERE str = 'baz'
+)
+WHERE explain LIKE '%is_deleted = 0%';
+
+SELECT 'prewhere visible is_deleted text-index read in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'baz'
+)
+WHERE explain LIKE '%__text_index_idx_%';
+
+SELECT 'prewhere visible is_deleted filter in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'baz'
+)
+WHERE explain LIKE '%is_deleted = 0%';
+
 DROP TABLE tab;
 
 -- Mixed intersecting and non-intersecting parts with is_deleted. The single-token
@@ -129,6 +161,26 @@ WHERE explain LIKE '%__text_index_idx_%';
 SELECT 'prewhere is_deleted filter in mixed plan', count() > 0 FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab FINAL PREWHERE str = 'zzz'
+)
+WHERE explain LIKE '%is_deleted = 0%';
+
+-- `is_deleted` visible on the mixed table: the non-intersecting side must return it
+-- through the direct read, and the union query must stay header-compatible with the
+-- regular-FINAL branch now that neither side strips the column.
+SELECT id, is_deleted FROM tab FINAL WHERE str = 'zzz' ORDER BY id;
+SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'zzz' ORDER BY id;
+SELECT id, is_deleted FROM tab FINAL WHERE str = 'bbb' ORDER BY id;         -- empty: id 2 deleted
+SELECT id, is_deleted FROM tab FINAL WHERE str IN ('aaa', 'zzz') ORDER BY id;
+
+SELECT 'mixed visible is_deleted text-index read in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'zzz'
+)
+WHERE explain LIKE '%__text_index_idx_%';
+
+SELECT 'mixed visible is_deleted filter in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id, is_deleted FROM tab FINAL PREWHERE str = 'zzz'
 )
 WHERE explain LIKE '%is_deleted = 0%';
 
