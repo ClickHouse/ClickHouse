@@ -2463,8 +2463,10 @@ void Planner::buildPlanForQueryNode()
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
-            Settings query_settings = settings;
-            query_settings.applyChanges(query_node.getSettingsChanges());
+            /// Query-local `SETTINGS` can be cleared while preparing a distributed shard query,
+            /// but they remain applied to the query node context. Use that context rather than
+            /// reconstructing the settings from the shared query context and the change list.
+            const Settings & query_settings = query_node.getContext()->getSettingsRef();
 
             std::optional<UInt64> trivial_group_by_limit;
             if (!query_settings[Setting::make_distributed_plan]
