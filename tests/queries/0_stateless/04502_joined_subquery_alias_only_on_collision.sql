@@ -137,7 +137,7 @@ INNER JOIN (SELECT 2 AS `a.x`) ON true;
 -- not require the subquery alias in that mode.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS prefer_column_name_to_alias = 1;
 
-WITH CAST(tuple(1), 'Tuple(x UInt8)') AS n
+WITH cast(tuple(1), 'Tuple(x UInt8)') AS n
 SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
@@ -309,7 +309,7 @@ SELECT n.x FROM (SELECT n.x FROM nested_t), numbers(1);
 
 -- A sub-column of a subquery projection is bindable through a compound identifier too: a projected
 -- `Tuple` exposes its elements, so its `n.x` collides with the sibling's `Nested` column `n.x`.
-SELECT id FROM nested_t2, (SELECT CAST(tuple(1), 'Tuple(x UInt8)') AS n); -- { serverError ALIAS_REQUIRED }
+SELECT id FROM nested_t2, (SELECT cast(tuple(1), 'Tuple(x UInt8)') AS n); -- { serverError ALIAS_REQUIRED }
 
 -- The `_table` virtual of an unaliased table function collides with a sibling's real (non-virtual) column
 -- of the same name, even when that sibling is aliased: the aliased sibling exits the validation early, so
