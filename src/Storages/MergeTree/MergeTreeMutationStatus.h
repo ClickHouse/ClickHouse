@@ -57,7 +57,8 @@ struct MergeTreeMutationStatus
     UInt64 bytes_to_do = 0;
     /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the parts
     /// the mutation must rewrite, including the live fraction of those being rewritten right now.
-    /// Unset when the remaining work is not known yet, i.e. `!is_done` with empty `parts_to_do_names`.
+    /// Unset when the remaining work is not known yet: no `parts_to_do_names` while `!is_done`, or a
+    /// name in there with no part on disk to size, such as one this replica has still to fetch.
     std::optional<Float64> progress = {};
 /// NOLINTEND(readability-redundant-string-init)
 };

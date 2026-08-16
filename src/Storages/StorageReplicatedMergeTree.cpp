@@ -8613,7 +8613,6 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
-    /// A part that is gone by now was retired, i.e. contributes no remaining bytes.
     std::unordered_map<String, UInt64> part_bytes_on_disk;
     /// Mutation block numbers are allocated per partition here, so the scope is sized per partition.
     std::unordered_map<String, PartBlockBytes> part_block_bytes_by_partition;
@@ -8647,17 +8646,29 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
         UInt64 bytes_to_do = 0;
         Float64 bytes_in_flight_done = 0;
+        bool remaining_size_known = true;
         for (const auto & part_name : status.parts_to_do_names)
         {
             auto it = part_bytes_on_disk.find(part_name);
             if (it == part_bytes_on_disk.end())
+            {
+                /// The queue tracks parts of log entries this replica has not executed yet, so a
+                /// part still to be fetched or merged has no size here and the remainder is unknown.
+                remaining_size_known = false;
                 continue;
+            }
             bytes_to_do += it->second;
             if (std::find(in_progress.begin(), in_progress.end(), part_name) == in_progress.end())
                 continue;
             if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(it->second) * progress_it->second;
         }
+        /// Only the parts that are on disk have a known size, so this is a lower bound when some
+        /// of the remaining work has not reached this replica yet.
+        status.bytes_to_do = bytes_to_do;
+        if (!remaining_size_known)
+            continue;
+
         UInt64 scope_bytes = 0;
         for (const auto & [partition_id, block_number] : status.block_numbers)
         {
@@ -8666,7 +8677,6 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 scope_bytes += getBytesBeforeBlock(it->second, block_number);
         }
 
-        status.bytes_to_do = bytes_to_do;
         status.progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
                 / std::max<Float64>(static_cast<Float64>(scope_bytes), 1.0),

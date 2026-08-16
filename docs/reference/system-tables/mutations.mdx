@@ -93,13 +93,15 @@ SELECT
     m.parts_to_do AS parts_to_do,
     -- `parts_to_do` = 0 on an unfinished mutation means the remaining work is not
     -- known yet, so report it as unknown instead of as finished.
-    if(m.parts_to_do = 0, NULL, formatReadableSize(sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))))) AS bytes_left,
-    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - coalesce(mg.progress, 0))) / max2(any(s.scope_bytes), 1), 4)) AS progress
+    -- A part can be rewritten by an earlier mutation than this one, so only subtract the live
+    -- fraction when `parts_in_progress_names` says the rewrite is advancing *this* mutation.
+    if(m.parts_to_do = 0, NULL, formatReadableSize(sum(p.bytes_on_disk * (1 - if(has(m.parts_in_progress_names, part_name), coalesce(mg.progress, 0), 0))))) AS bytes_left,
+    if(m.parts_to_do = 0, NULL, round(1 - sum(p.bytes_on_disk * (1 - if(has(m.parts_in_progress_names, part_name), coalesce(mg.progress, 0), 0))) / max2(any(s.scope_bytes), 1), 4)) AS progress
 FROM
 (
     -- `system.mutations` has one row per mutation command, and every row of a
     -- multi-command mutation repeats the same `parts_to_do_names`.
-    SELECT DISTINCT mutation_id, parts_to_do, parts_to_do_names
+    SELECT DISTINCT mutation_id, parts_to_do, parts_to_do_names, parts_in_progress_names
     FROM system.mutations
     WHERE database = {database:String} AND table = {table:String} AND NOT is_done
 ) AS m
