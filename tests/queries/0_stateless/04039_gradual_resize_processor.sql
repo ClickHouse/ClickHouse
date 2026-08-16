@@ -22,15 +22,14 @@ ORDER BY k;
 -- Verify EXPLAIN PIPELINE shows GradualResize processor
 DROP TABLE IF EXISTS test_gradual_resize;
 CREATE TABLE test_gradual_resize (k UInt64, v UInt64) ENGINE = MergeTree
-PARTITION BY k
 ORDER BY k
 SETTINGS index_granularity = 256;
 SYSTEM STOP MERGES test_gradual_resize;
 INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(1000000);
 
--- Group by a derived key so aggregation crosses partition boundaries and reaches the
--- pre-aggregation resize stage that this test is intended to cover.
-SET allow_aggregate_partitions_independently = 0;
+-- Keep this source non-partitioned: the recent partition-aggregation optimization can
+-- skip the pre-aggregation resize completely for partition-local keys. A one-million-row
+-- MergeTree part splits into several read streams, so this query reaches the resize stage.
 
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
@@ -41,9 +40,9 @@ SELECT count() > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT k % 5, count()
+    SELECT k, count()
     FROM test_gradual_resize
-    GROUP BY k % 5
+    GROUP BY k
 )
 WHERE explain LIKE '%GradualResize%';
 
@@ -68,9 +67,9 @@ SELECT count() > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT k % 5, count()
+    SELECT k, count()
     FROM test_gradual_resize
-    GROUP BY k % 5
+    GROUP BY k
 )
 WHERE explain LIKE '%GradualResize%';
 
@@ -93,9 +92,9 @@ SELECT count() > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT k % 5, count()
+    SELECT k, count()
     FROM test_gradual_resize
-    GROUP BY k % 5
+    GROUP BY k
 )
 WHERE explain LIKE '%GradualResize × %';
 
@@ -134,9 +133,9 @@ SELECT count() > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT k % 5, sum(v) AS s
+    SELECT k, sum(v) AS s
     FROM test_gradual_resize
-    GROUP BY k % 5
+    GROUP BY k
 )
 WHERE explain LIKE '%GradualResize%';
 
@@ -170,9 +169,9 @@ SELECT count() > 0
 FROM
 (
     EXPLAIN PIPELINE
-    SELECT k % 5, count()
+    SELECT k, count()
     FROM test_gradual_resize
-    GROUP BY k % 5
+    GROUP BY k
 )
 WHERE explain LIKE '%GradualResize × %';
 
