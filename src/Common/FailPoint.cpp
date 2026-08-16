@@ -152,6 +152,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
     ONCE(framing_throw_after_writing_packet) \
@@ -326,7 +327,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause)
 
 namespace FailPoints
 {
