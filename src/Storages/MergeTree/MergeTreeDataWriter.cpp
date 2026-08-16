@@ -5,9 +5,12 @@
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -1172,9 +1175,10 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                     collectValueCarryingIdentifierNames(*args[i], names, masked_names);
             return;
         }
-        /// These lambdas only select/order/count/split the array's own elements; unlike arrayMap,
+        /// These lambdas only select/order/count/split the input's own elements; unlike arrayMap,
         /// their return value never becomes part of the output, so skip them (like if()'s condition).
-        static const std::unordered_set<String> array_predicate_only_functions = {
+        /// mapFilter/mapSort/... are thin Map adapters over the same array Impls (FunctionsMapMiscellaneous.cpp).
+        static const std::unordered_set<String> predicate_only_higher_order_functions = {
             "arrayFilter", "arrayExists", "arrayAll", "arrayCount",
             "arrayFirst", "arrayFirstOrNull", "arrayLast", "arrayLastOrNull",
             "arrayFirstIndex", "arrayLastIndex",
@@ -1183,8 +1187,10 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
             "arraySplit", "arrayReverseSplit",
             "arrayCompact",
             "arrayTopK", "arrayBottomK",
+            "mapFilter", "mapExists", "mapAll",
+            "mapSort", "mapReverseSort", "mapPartialSort", "mapPartialReverseSort",
         };
-        if (!args.empty() && array_predicate_only_functions.contains(function->name))
+        if (!args.empty() && predicate_only_higher_order_functions.contains(function->name))
         {
             const auto * lambda_arg = args[0]->as<ASTFunction>();
             if (lambda_arg && lambda_arg->name == "lambda")
@@ -1200,20 +1206,64 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
         collectValueCarryingIdentifierNames(*child, names, masked_names);
 }
 
-static std::unordered_map<String, std::vector<String>> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
+/// tuple(j1, j2)/arrayZip(j1, j2)/map(j1, j2) feed *different* structural slots from different
+/// identifiers; these let the caller merge each slot's own candidates against only that slot's type.
+struct ProjectionOutputProvenance
 {
-    std::unordered_map<String, std::vector<String>> output_to_sources;
+    std::vector<String> flat_candidates;
+    std::vector<std::vector<String>> tuple_element_candidates;
+    bool is_array_zip = false;
+    std::vector<String> map_key_candidates;
+    std::vector<String> map_value_candidates;
+    bool is_map = false;
+};
+
+static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
+{
+    std::unordered_map<String, ProjectionOutputProvenance> output_to_sources;
     const auto * select_query = projection.query_ast->as<ASTSelectQuery>();
     if (!select_query || !select_query->select())
         return output_to_sources;
 
     for (const auto & child : select_query->select()->children)
     {
+        ProjectionOutputProvenance provenance;
+
         IdentifierNameSet names;
         std::unordered_set<String> masked_names;
         collectValueCarryingIdentifierNames(*child, names, masked_names);
-        if (!names.empty())
-            output_to_sources.emplace(child->getAliasOrColumnName(), std::vector<String>(names.begin(), names.end()));
+        provenance.flat_candidates.assign(names.begin(), names.end());
+
+        if (const auto * function = child->as<ASTFunction>(); function && function->arguments)
+        {
+            const auto & args = function->arguments->children;
+            if ((function->name == "tuple" || function->name == "arrayZip") && args.size() >= 2)
+            {
+                provenance.is_array_zip = (function->name == "arrayZip");
+                for (const auto & arg : args)
+                {
+                    IdentifierNameSet element_names;
+                    std::unordered_set<String> element_masked;
+                    collectValueCarryingIdentifierNames(*arg, element_names, element_masked);
+                    provenance.tuple_element_candidates.emplace_back(element_names.begin(), element_names.end());
+                }
+            }
+            else if (function->name == "map" && args.size() >= 2 && args.size() % 2 == 0)
+            {
+                provenance.is_map = true;
+                for (size_t i = 0; i < args.size(); ++i)
+                {
+                    IdentifierNameSet pair_names;
+                    std::unordered_set<String> pair_masked;
+                    collectValueCarryingIdentifierNames(*args[i], pair_names, pair_masked);
+                    auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                    target.insert(target.end(), pair_names.begin(), pair_names.end());
+                }
+            }
+        }
+
+        if (!provenance.flat_candidates.empty() || !provenance.tuple_element_candidates.empty() || provenance.is_map)
+            output_to_sources.emplace(child->getAliasOrColumnName(), std::move(provenance));
     }
     return output_to_sources;
 }
@@ -1225,6 +1275,51 @@ static std::unordered_map<String, std::vector<String>> getProjectionOutputToSour
 /// sub-part, which is renamed in lockstep with the main part) needs the candidate name mapped back
 /// through that part's own pending renames first, the same way computeJSONProvenanceType
 /// (MutateTask.cpp) and MergeTask's own base-part provenance merge already do.
+static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
+    DataTypePtr type,
+    const Names & candidate_names,
+    const ProjectionDescription & projection,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
+{
+    for (size_t source_index = 0; source_index != source_parts.size(); ++source_index)
+    {
+        const auto & source_part = source_parts[source_index];
+        const AlterConversionsPtr * alter_conversions = source_index < source_part_alter_conversions.size()
+            ? &source_part_alter_conversions[source_index]
+            : nullptr;
+
+        /// A rebuild can add a column to the projection that an existing projection sub-part
+        /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
+        /// to the source's own main column must apply per-column, not only when no sub-part
+        /// exists at all, or such a column silently skips provenance merging entirely.
+        const auto & source_projection_parts = source_part->getProjectionParts();
+        auto projection_part_it = source_projection_parts.find(projection.name);
+
+        for (const auto & candidate_name : candidate_names)
+        {
+            String source_name = candidate_name;
+            if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(source_name))
+                source_name = (*alter_conversions)->getColumnOldName(source_name);
+
+            std::optional<NameAndTypePair> source_column;
+            if (projection_part_it != source_projection_parts.end())
+                source_column = projection_part_it->second->tryGetColumn(source_name);
+            if (!source_column)
+                source_column = source_part->tryGetColumn(source_name);
+            if (source_column)
+                type = mergeJSONSharedDataPathRules(type, source_column->type);
+        }
+    }
+
+    bool inputs_saturated = false;
+    for (const auto & candidate_name : candidate_names)
+        type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(type, candidate_name, patch_parts, inputs_saturated);
+
+    return type;
+}
+
 static void applyJSONSharedDataPathPoliciesForProjection(
     NamesAndTypesList & result_columns,
     const ProjectionDescription & projection,
@@ -1236,46 +1331,66 @@ static void applyJSONSharedDataPathPoliciesForProjection(
 
     for (auto & result_column : result_columns)
     {
-        Names candidate_names = {result_column.name};
-        if (auto it = output_to_sources.find(result_column.name); it != output_to_sources.end())
-            for (const auto & name : it->second)
-                if (name != result_column.name)
-                    candidate_names.push_back(name);
+        auto it = output_to_sources.find(result_column.name);
+        const ProjectionOutputProvenance * provenance = it != output_to_sources.end() ? &it->second : nullptr;
+        bool handled_structurally = false;
 
-        for (size_t source_index = 0; source_index != source_parts.size(); ++source_index)
+        if (provenance && !provenance->tuple_element_candidates.empty())
         {
-            const auto & source_part = source_parts[source_index];
-            const AlterConversionsPtr * alter_conversions = source_index < source_part_alter_conversions.size()
-                ? &source_part_alter_conversions[source_index]
-                : nullptr;
-
-            /// A rebuild can add a column to the projection that an existing projection sub-part
-            /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
-            /// to the source's own main column must apply per-column, not only when no sub-part
-            /// exists at all, or such a column silently skips provenance merging entirely.
-            const auto & source_projection_parts = source_part->getProjectionParts();
-            auto projection_part_it = source_projection_parts.find(projection.name);
-
-            for (const auto & candidate_name : candidate_names)
+            DataTypePtr element_container_type = result_column.type;
+            const DataTypeArray * target_array = nullptr;
+            if (provenance->is_array_zip)
             {
-                String source_name = candidate_name;
-                if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(source_name))
-                    source_name = (*alter_conversions)->getColumnOldName(source_name);
+                target_array = typeid_cast<const DataTypeArray *>(element_container_type.get());
+                if (target_array)
+                    element_container_type = target_array->getNestedType();
+            }
 
-                std::optional<NameAndTypePair> source_column;
-                if (projection_part_it != source_projection_parts.end())
-                    source_column = projection_part_it->second->tryGetColumn(source_name);
-                if (!source_column)
-                    source_column = source_part->tryGetColumn(source_name);
-                if (source_column)
-                    result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
+            if (const auto * target_tuple = typeid_cast<const DataTypeTuple *>(element_container_type.get());
+                target_tuple && target_tuple->getElements().size() == provenance->tuple_element_candidates.size()
+                && (!provenance->is_array_zip || target_array))
+            {
+                DataTypes elements = target_tuple->getElements();
+                for (size_t i = 0; i != elements.size(); ++i)
+                    elements[i] = resolveJSONSharedDataPathPolicyForCandidates(
+                        elements[i], provenance->tuple_element_candidates[i], projection,
+                        source_parts, patch_parts, source_part_alter_conversions);
+
+                DataTypePtr new_tuple = target_tuple->hasExplicitNames()
+                    ? std::make_shared<DataTypeTuple>(elements, target_tuple->getElementNames())
+                    : std::make_shared<DataTypeTuple>(elements);
+                result_column.type = provenance->is_array_zip
+                    ? DataTypePtr(std::make_shared<DataTypeArray>(std::move(new_tuple)))
+                    : new_tuple;
+                handled_structurally = true;
+            }
+        }
+        else if (provenance && provenance->is_map)
+        {
+            if (const auto * target_map = typeid_cast<const DataTypeMap *>(result_column.type.get()))
+            {
+                auto key_type = resolveJSONSharedDataPathPolicyForCandidates(
+                    target_map->getKeyType(), provenance->map_key_candidates, projection,
+                    source_parts, patch_parts, source_part_alter_conversions);
+                auto value_type = resolveJSONSharedDataPathPolicyForCandidates(
+                    target_map->getValueType(), provenance->map_value_candidates, projection,
+                    source_parts, patch_parts, source_part_alter_conversions);
+                result_column.type = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+                handled_structurally = true;
             }
         }
 
-        bool inputs_saturated = false;
-        for (const auto & candidate_name : candidate_names)
-            result_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
-                result_column.type, candidate_name, patch_parts, inputs_saturated);
+        if (!handled_structurally)
+        {
+            Names candidate_names = {result_column.name};
+            if (provenance)
+                for (const auto & name : provenance->flat_candidates)
+                    if (name != result_column.name)
+                        candidate_names.push_back(name);
+
+            result_column.type = resolveJSONSharedDataPathPolicyForCandidates(
+                result_column.type, candidate_names, projection, source_parts, patch_parts, source_part_alter_conversions);
+        }
     }
 }
 
