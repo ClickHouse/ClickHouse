@@ -128,8 +128,11 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         {
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
 
-            /// Keep parallel pre-distinct streams from being collapsed by `PrefetchingConcatProcessor`.
-            preferMultipleStreamsForReadingBelow(parent);
+            /// Only preliminary distinct performs per-stream deduplication. A final distinct merges
+            /// its input into one stream, so keeping the read parallel would only disable the
+            /// `PrefetchingConcatProcessor` fast path without preserving parallel work.
+            if (distinct_step->isPreliminary())
+                preferMultipleStreamsForReadingBelow(parent);
         }
 
         /// Distinct never breaks global order
