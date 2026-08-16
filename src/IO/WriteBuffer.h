@@ -44,8 +44,6 @@ public:
         if (canceled)
             return;
 
-        preNext();
-
         if (!offset())
             return;
 
@@ -53,6 +51,7 @@ public:
 
         try
         {
+            preNext();
             nextImpl();
             ++flush_count;
         }

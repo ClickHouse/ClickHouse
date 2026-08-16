@@ -199,7 +199,7 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
     out.next();
 
     EXPECT_THROW(compressed_out.next(), DB::Exception);
-    compressed_out.cancel();
+    EXPECT_TRUE(compressed_out.isCanceled());
 #endif
 }
 
