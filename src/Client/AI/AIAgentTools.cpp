@@ -199,9 +199,10 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
 
     tools["run_query"] = makeTool(
         "Run any SQL on the user's connection: writes (INSERT, ALTER, DROP), DDL, SET, or read queries that need to "
-        "exceed the limits of run_readonly_query. The user is asked to confirm every call, so prefer run_readonly_query "
-        "when possible. The query and its output are displayed in the user's terminal exactly as if the user ran it; "
-        "you receive a summary truncated to the first and last rows.",
+        "exceed the limits of run_readonly_query. The user is asked to confirm the call (unless the session itself "
+        "already restricts the query to reading), so prefer run_readonly_query when possible. A query the session "
+        "does not allow at all is refused without asking them. The query and its output are displayed in the user's "
+        "terminal exactly as if the user ran it; you receive a summary truncated to the first and last rows.",
         ai::JsonValue{{"query", stringParameter("The SQL to run (may contain several statements)")}},
         {"query"},
         [hooks](const ai::JsonValue & args, const ai::ToolExecutionContext &)
@@ -210,12 +211,23 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                 [&]
                 {
                     auto query = args.at("query").get<std::string>();
-                    /// Syntax-check the generated query before confirming or running it: a
-                    /// malformed query is reported back for correction instead of bothering the
-                    /// user with a confirmation for a query that cannot run.
-                    if (hooks->check_syntax)
-                        if (auto error = hooks->check_syntax(query))
-                            return errorResult("The query has a syntax error and was not run: " + *error);
+
+                    /// The client decides what happens to the query before the user is bothered
+                    /// with it: a malformed query, or one the session rejects outright, is
+                    /// reported back for correction instead of being confirmed and then failing,
+                    /// and the confirmation is skipped when the session makes it pointless.
+                    AIQueryRunDecision decision;
+                    if (hooks->check_query)
+                        decision = hooks->check_query(query);
+                    if (decision.refusal)
+                        return errorResult(*decision.refusal);
+
+                    /// A query the session restricts to reading anyway is run through the very path
+                    /// of the read-only tool, which also echoes it in the terminal (for a confirmed
+                    /// query the confirmation prompt does that).
+                    if (!decision.needs_confirmation)
+                        return successResult(hooks->run_visible(query, /*readonly=*/ true));
+
                     if (!hooks->confirm_query(query))
                         return errorResult("The user declined to run this query. Ask them how to proceed if unsure.");
                     return successResult(hooks->run_visible(query, /*readonly=*/ false));

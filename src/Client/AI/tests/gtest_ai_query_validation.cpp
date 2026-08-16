@@ -40,6 +40,16 @@ bool isAllowed(const String & query)
     }
 }
 
+bool isReadOnlyStatement(const String & query)
+{
+    return isReadOnlyStatementForAIAgent(*parse(query));
+}
+
+bool changesSettings(const String & query)
+{
+    return changesSettingsForAIAgent(*parse(query));
+}
+
 }
 
 TEST(AIQueryValidation, AllowsReadOnlyStatements)
@@ -195,6 +205,50 @@ TEST(AIQueryValidation, RejectsFormatSchemaSettings)
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_message_name = 'Message'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS output_format_schema = 'x.proto'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema = DEFAULT"));
+}
+
+TEST(AIQueryValidation, ReadOnlyStatementTypes)
+{
+    /// The statement types a session with `readonly = 1` accepts. Unlike the validation of the
+    /// read-only tool, this says nothing about what a read-only statement reads or writes outside
+    /// of the server's tables: such a query is refused by the tool but runs in a read-only session
+    /// after the user confirms it.
+    EXPECT_TRUE(isReadOnlyStatement("SELECT 1"));
+    EXPECT_TRUE(isReadOnlyStatement("SELECT * FROM s3('http://bucket.example.com/x', 'CSV')"));
+    EXPECT_TRUE(isReadOnlyStatement("SELECT 1 INTO OUTFILE '/tmp/x'"));
+    EXPECT_TRUE(isReadOnlyStatement("SELECT 1 SETTINGS max_threads = 1"));
+    EXPECT_TRUE(isReadOnlyStatement("SHOW TABLES FROM system"));
+    EXPECT_TRUE(isReadOnlyStatement("DESCRIBE TABLE system.tables"));
+    EXPECT_TRUE(isReadOnlyStatement("EXPLAIN SELECT 1"));
+    EXPECT_TRUE(isReadOnlyStatement("EXISTS TABLE system.tables"));
+    EXPECT_TRUE(isReadOnlyStatement("CHECK TABLE t"));
+
+    EXPECT_FALSE(isReadOnlyStatement("INSERT INTO t VALUES (1)"));
+    EXPECT_FALSE(isReadOnlyStatement("ALTER TABLE t DELETE WHERE 1"));
+    EXPECT_FALSE(isReadOnlyStatement("DROP TABLE t"));
+    EXPECT_FALSE(isReadOnlyStatement("SET max_threads = 1"));
+    EXPECT_FALSE(isReadOnlyStatement("SYSTEM FLUSH LOGS"));
+    EXPECT_FALSE(isReadOnlyStatement("KILL QUERY WHERE 1"));
+    /// `USE` changes no data, but it is not in the allowlist: the agent qualifies the table names
+    /// of its queries anyway, so there is nothing to gain from admitting more statement types.
+    EXPECT_FALSE(isReadOnlyStatement("USE system"));
+}
+
+TEST(AIQueryValidation, DetectsSettingChanges)
+{
+    /// A session with `readonly = 1` rejects a query for any setting change in it, wherever it is.
+    EXPECT_TRUE(changesSettings("SET max_threads = 1"));
+    EXPECT_TRUE(changesSettings("SELECT 1 SETTINGS max_threads = 1"));
+    EXPECT_TRUE(changesSettings("SELECT 1 SETTINGS max_threads = DEFAULT"));
+    EXPECT_TRUE(changesSettings("SELECT 1 FROM (SELECT 1 SETTINGS max_threads = 1)"));
+    EXPECT_TRUE(changesSettings("WITH t AS (SELECT 1 SETTINGS max_threads = 1) SELECT * FROM t"));
+    EXPECT_TRUE(changesSettings("SELECT 1 UNION ALL (SELECT 2 SETTINGS max_threads = 1)"));
+    EXPECT_TRUE(changesSettings("INSERT INTO t SETTINGS async_insert = 1 VALUES (1)"));
+
+    EXPECT_FALSE(changesSettings("SELECT 1"));
+    EXPECT_FALSE(changesSettings("SELECT getSetting('max_threads')"));
+    EXPECT_FALSE(changesSettings("SHOW SETTING max_threads"));
+    EXPECT_FALSE(changesSettings("SELECT * FROM system.settings WHERE name = 'readonly'"));
 }
 
 #endif

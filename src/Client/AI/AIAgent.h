@@ -35,9 +35,6 @@ public:
     /// A short status line for the bare `?` command.
     String status() const;
 
-    /// Add or remove `read_query_log` after a successful session `SET readonly`.
-    void setQueryLogAccess(bool enabled);
-
 private:
     AIConfiguration config;
     std::unique_ptr<IAIAgentTransport> transport;
@@ -51,10 +48,15 @@ private:
     size_t used_prompt_tokens = 0;
     size_t used_completion_tokens = 0;
 
+    /// Whether `read_query_log` is currently offered to the model. The tool set is rebuilt when
+    /// the session state stops or starts allowing it.
+    bool query_log_access_enabled = true;
+
     /// The history must not grow without a bound: old turns are dropped from the front.
     static constexpr size_t max_history_messages = 80;
 
     String systemPrompt() const;
+    void refreshToolSet();
     void pushUserMessage(const String & text);
     void trimHistory();
     ai::ToolResult executeToolCall(const ai::ToolCall & call);

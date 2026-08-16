@@ -81,26 +81,41 @@ AIAgent::AIAgent(
     : config(config_)
     , transport(std::move(transport_))
     , hooks(hooks_)
-    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access, config_.enable_query_log_access))
+    /// The tool set is rebuilt by `refreshToolSet` before the first turn, when the session state
+    /// (which requires a query to the server) is known.
+    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access, /*enable_query_log_access=*/ true))
     , query_context(std::move(query_context_))
     , display(output_stream, use_colors)
 {
 }
 
-void AIAgent::setQueryLogAccess(bool enabled)
+void AIAgent::refreshToolSet()
 {
-    if (config.enable_query_log_access == enabled)
+    /// The query log of the user can only be read while the queries of the agent itself can be
+    /// told apart from theirs, which a session with `readonly = 1` does not allow (the marker is a
+    /// setting). This is session state, so it can change between the turns.
+    const bool query_log_access = !hooks.can_read_query_log || hooks.can_read_query_log();
+    if (query_log_access == query_log_access_enabled)
         return;
 
-    config.enable_query_log_access = enabled;
-    tools = buildAIAgentToolSet(hooks, config.enable_schema_access, config.enable_query_log_access);
+    query_log_access_enabled = query_log_access;
+    tools = buildAIAgentToolSet(hooks, config.enable_schema_access, query_log_access_enabled);
 }
 
 String AIAgent::systemPrompt() const
 {
-    if (!config.system_prompt.empty())
-        return config.system_prompt;
-    return AIPrompts::AGENT_SYSTEM_PROMPT;
+    String prompt = config.system_prompt.empty() ? AIPrompts::AGENT_SYSTEM_PROMPT : config.system_prompt;
+
+    /// What the session does not allow is part of the description of the environment, and the
+    /// user can change it (a `SET readonly = 1` the model itself asked to run), so it is queried
+    /// again for every model call rather than baked into the prompt once.
+    if (hooks.session_restrictions)
+    {
+        if (const String restrictions = hooks.session_restrictions(); !restrictions.empty())
+            prompt += "\n\n" + restrictions;
+    }
+
+    return prompt;
 }
 
 void AIAgent::pushUserMessage(const String & text)
@@ -124,6 +139,8 @@ void AIAgent::pushUserMessage(const String & text)
 
 void AIAgent::chat(const String & user_text)
 {
+    refreshToolSet();
+
     String full_text;
     if (query_context)
     {
@@ -137,10 +154,12 @@ void AIAgent::chat(const String & user_text)
     pushUserMessage(full_text);
     trimHistory();
 
-    const String system_prompt = systemPrompt();
-
     for (size_t step_index = 0; step_index < config.max_steps; ++step_index)
     {
+        /// Built for every step: a query confirmed in the previous step can have changed the
+        /// session (`SET readonly = 1`), and the model must see the new restrictions right away.
+        const String system_prompt = systemPrompt();
+
         AIAgentStep step;
         {
             /// The transports report failures as `step.error`, but if one ever throws, the

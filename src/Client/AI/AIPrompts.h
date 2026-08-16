@@ -28,6 +28,19 @@ Style:
 - Answer in the language of the user's question.
 - Do not describe the tools or your own mechanics unless asked; just help.)";
 
+/// Appended to the system prompt when the session forbids everything but read-only queries and
+/// rejects every setting change (the `readonly` setting is 1).
+constexpr const char * SESSION_READONLY_NOTE
+    = R"(The session is read-only: the `readonly` setting is 1, so the server accepts only read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, CHECK) and rejects every change of a setting. Consequences for you:
+- Do not run SET, and do not put a SETTINGS clause into a query, not even to raise a limit: the server rejects the whole query.
+- Do not run writes or DDL (INSERT, ALTER, DROP, CREATE, TRUNCATE, OPTIMIZE, SYSTEM, ...): run_query refuses them without asking the user, so tell the user that their session does not allow it instead of trying.
+- run_readonly_query cannot apply its own time and memory limits here, so a query runs under the limits of the session itself: keep the queries cheap and use LIMIT.)";
+
+/// Appended to the system prompt when the session forbids writes but allows changing settings
+/// (the `readonly` setting is 2).
+constexpr const char * SESSION_READ_ONLY_QUERIES_NOTE
+    = R"(The session is read-only: the `readonly` setting is 2, so the server accepts read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, CHECK) and setting changes, but rejects writes and DDL (INSERT, ALTER, DROP, CREATE, TRUNCATE, OPTIMIZE, SYSTEM, ...). run_query refuses those without asking the user, so tell the user that their session does not allow it instead of trying.)";
+
 /// Prefix of the block with the user's recent queries included into the user message.
 constexpr const char * RECENT_QUERIES_HEADER
     = "The user's recent queries in this session (oldest first; results truncated to the first and last rows):";

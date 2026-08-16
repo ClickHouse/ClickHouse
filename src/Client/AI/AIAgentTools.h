@@ -15,6 +15,20 @@ namespace DB
 /// ...) and must keep reporting the real one.
 inline constexpr std::string_view AI_AGENT_LOG_COMMENT = "clickhouse-ai-agent";
 
+/// What the client decided about a query the agent wants to run through the confirmed tool,
+/// before the user is involved.
+struct AIQueryRunDecision
+{
+    /// When set, the query is not run and this message goes back to the model instead: the query
+    /// is malformed, or the session rejects it outright (a write in a read-only session).
+    std::optional<String> refusal;
+
+    /// Whether the user has to confirm the query. False when the session itself already restricts
+    /// the query to what the unconfirmed read-only tool would run anyway, so asking adds nothing;
+    /// such a query is then run through that same path.
+    bool needs_confirmation = true;
+};
+
 /// Callbacks the client provides to the tools of the AI agent.
 struct AIAgentHooks
 {
@@ -35,9 +49,15 @@ struct AIAgentHooks
     /// Ask the user to confirm running a query. Returns false when declined.
     std::function<bool(const String & query)> confirm_query;
 
-    /// Syntax-check a query before running it. Returns the parse error message when the query is
-    /// malformed, or an empty optional when it parses.
-    std::function<std::optional<String>(const String & query)> check_syntax;
+    /// Decide whether the agent may run a query through the confirmed tool in the current session
+    /// state, and whether the user has to confirm it. This also syntax-checks the query, so a
+    /// malformed one is reported back for correction instead of being confirmed and failing.
+    std::function<AIQueryRunDecision(const String & query)> check_query;
+
+    /// The restrictions of the current session, appended to the system prompt so the model knows
+    /// what the session does not allow (an empty string when it allows everything). Evaluated
+    /// before every model call: a confirmed `SET readonly = 1` changes it mid-conversation.
+    std::function<String()> session_restrictions;
 
     /// Whether internal agent queries can be reliably marked in `system.user_query_log` at this
     /// instant. A confirmed `SET readonly = 1` can change it after agent construction.

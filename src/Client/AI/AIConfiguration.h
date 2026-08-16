@@ -38,9 +38,6 @@ struct AIConfiguration
 
     /// Enable schema access - allows AI to query database/table information
     bool enable_schema_access = true;
-
-    /// Enable query-log access when assistant queries can be identified reliably
-    bool enable_query_log_access = true;
 };
 
 }

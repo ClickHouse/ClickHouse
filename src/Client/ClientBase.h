@@ -224,14 +224,28 @@ protected:
     /// Run a query for the AI agent through the normal query processing path: the query is
     /// echoed and executed, and its output is displayed exactly as if the user typed it.
     /// When `readonly` is set, the query is validated to be a single read-only statement
-    /// and executed with `readonly = 1`, 30 seconds and 10 GiB limits.
+    /// and executed with `readonly = 1`, 30 seconds and 10 GiB limits - unless the session
+    /// forbids changing settings, which already restricts the query to reading.
     /// Returns a text summary of the outcome for the model.
     String runQueryForAI(const String & query, bool readonly);
 
-    /// Syntax-check a query the AI agent wants to run, parsing it as ClickHouse SQL (the dialect
-    /// the agent always emits). Returns the parse error message when the query is malformed, or
-    /// nullopt when it parses. Used to reject a malformed query before running or confirming it.
-    std::optional<String> checkAIQuerySyntax(const String & query);
+    /// Decide whether a query the AI agent wants to run through the confirmed tool can run in this
+    /// session at all, and whether the user has to confirm it. Also syntax-checks the query.
+    AIQueryRunDecision checkAIQuery(const String & query);
+
+    /// Parse the statements of a query of the AI agent as ClickHouse SQL (the dialect its queries
+    /// are executed under, whatever the session dialect is), passing each of them to
+    /// `on_statement`. Returns the parse error message when the query is malformed.
+    std::optional<String> parseAIQueryStatements(const String & query, const std::function<void(const IAST &)> & on_statement);
+
+    /// The effective value of the `readonly` setting for the queries of this session, resolved
+    /// once and then remembered: 1 forbids everything but read-only queries, including every
+    /// setting change; 2 forbids the writes but allows changing settings.
+    UInt64 aiSessionReadonly();
+
+    /// The description of the restrictions of the session for the model (empty when there are
+    /// none), so it does not attempt what the session rejects.
+    String aiSessionRestrictions();
 
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input);
@@ -571,9 +585,9 @@ protected:
 #if USE_CLIENT_AI
     /// The AI agent behind the interactive `?` command
     std::unique_ptr<AIAgent> ai_agent;
-    /// Whether agent queries can be reliably marked in the query log. A `SET profile` is not
-    /// modeled in the client context, so it disables this capability until `readonly` is set.
-    bool ai_query_log_access_enabled = true;
+    /// The `readonly` value of the session (see `aiSessionReadonly`), resolved on demand because
+    /// it takes a query to the server. Forgotten when a `SET` can have changed it.
+    std::optional<UInt64> ai_session_readonly;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage

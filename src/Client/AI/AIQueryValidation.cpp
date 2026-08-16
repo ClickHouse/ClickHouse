@@ -247,9 +247,23 @@ void checkNoExternalAccess(const IAST & ast)
 
 }
 
-void validateReadOnlyQueryForAIAgent(const IAST & ast)
+bool changesSettingsForAIAgent(const IAST & ast)
 {
-    bool allowed = isAnyOf<
+    if (ast.as<ASTSetQuery>())
+        return true;
+
+    for (const auto & child : ast.children)
+    {
+        if (changesSettingsForAIAgent(*child))
+            return true;
+    }
+
+    return false;
+}
+
+bool isReadOnlyStatementForAIAgent(const IAST & ast)
+{
+    return isAnyOf<
         ASTSelectWithUnionQuery,
         ASTExplainQuery,
         ASTDescribeQuery,
@@ -277,8 +291,11 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast)
         ASTShowCreateAccessEntityQuery,
         ASTShowGrantsQuery,
         ASTShowPrivilegesQuery>(ast);
+}
 
-    if (!allowed)
+void validateReadOnlyQueryForAIAgent(const IAST & ast)
+{
+    if (!isReadOnlyStatementForAIAgent(ast))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Only read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS, CHECK) can be run "

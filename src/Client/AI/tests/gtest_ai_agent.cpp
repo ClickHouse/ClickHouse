@@ -5,6 +5,8 @@
 
 #include <Client/AI/AIAgent.h>
 
+#include <optional>
+#include <set>
 #include <sstream>
 
 using namespace DB;
@@ -18,9 +20,16 @@ class MockTransport : public IAIAgentTransport
 public:
     explicit MockTransport(std::vector<AIAgentStep> steps_) : steps(std::move(steps_)) {}
 
-    AIAgentStep step(const String &, const ai::Messages & messages, const ai::ToolSet &) override
+    AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) override
     {
+        system_prompts.push_back(system_prompt);
         conversations.push_back(messages);
+
+        std::set<String> names;
+        for (const auto & [name, tool] : tools)
+            names.insert(name);
+        tool_names.push_back(std::move(names));
+
         AIAgentStep result = steps.at(std::min(next, steps.size() - 1));
         ++next;
         return result;
@@ -31,6 +40,9 @@ public:
     /// The messages passed to each model call. The transport outlives the agent in the tests
     /// (the agent owns a raw observer pointer stored by the test), so this is safe to inspect.
     std::vector<ai::Messages> conversations;
+    /// The system prompt and the tools offered at each model call.
+    std::vector<String> system_prompts;
+    std::vector<std::set<String>> tool_names;
 
 private:
     std::vector<AIAgentStep> steps;
@@ -51,10 +63,10 @@ AIAgentStep errorStep(const String & error)
     return step;
 }
 
-AIAgentStep toolCallStep(const String & tool_name)
+AIAgentStep toolCallStep(const String & tool_name, ai::JsonValue arguments = ai::JsonValue::object())
 {
     AIAgentStep step;
-    step.tool_calls.emplace_back("call_1", tool_name, ai::JsonValue::object());
+    step.tool_calls.emplace_back("call_1", tool_name, std::move(arguments));
     return step;
 }
 
@@ -65,15 +77,16 @@ struct AgentWithMock
     std::ostringstream output;
     std::unique_ptr<AIAgent> agent;
 
-    explicit AgentWithMock(std::vector<AIAgentStep> steps)
+    /// By default the hooks are empty: the tools fail with an error result when called, which is
+    /// fine for the tests that do not care - the agent loop treats it as an application-level
+    /// tool failure.
+    explicit AgentWithMock(std::vector<AIAgentStep> steps, const AIAgentHooks & hooks = {})
     {
         auto owned = std::make_unique<MockTransport>(std::move(steps));
         transport = owned.get();
         AIConfiguration config;
         config.max_steps = 4;
-        /// The hooks are empty: the tools fail with an error result when called, which is fine
-        /// for these tests - the agent loop treats it as an application-level tool failure.
-        agent = std::make_unique<AIAgent>(config, std::move(owned), AIAgentHooks{}, buffer, output, /*use_colors=*/ false);
+        agent = std::make_unique<AIAgent>(config, std::move(owned), hooks, buffer, output, /*use_colors=*/ false);
     }
 };
 
@@ -170,6 +183,102 @@ TEST(AIAgent, FailedTurnDoesNotMergeIntoNextQuestion)
     /// The failed turn is closed with a synthetic assistant message to keep the roles alternating.
     ASSERT_GE(messages.size(), 3u);
     EXPECT_EQ(messages[messages.size() - 2].role, ai::kMessageRoleAssistant);
+}
+
+TEST(AIAgent, SessionRestrictionsAreAppendedToEverySystemPrompt)
+{
+    /// The restrictions of the session are queried again for every model call: a query confirmed
+    /// in one step can change them (`SET readonly = 1`), and the model must see that right away.
+    size_t calls = 0;
+    AIAgentHooks hooks;
+    hooks.session_restrictions = [&calls] { return calls++ == 0 ? "NOTHING IS FORBIDDEN" : "THE SESSION IS READ-ONLY"; };
+
+    AgentWithMock harness({toolCallStep("list_databases"), textStep("done")}, hooks);
+    harness.agent->chat("question");
+
+    ASSERT_EQ(harness.transport->system_prompts.size(), 2u);
+    EXPECT_NE(harness.transport->system_prompts[0].find("NOTHING IS FORBIDDEN"), String::npos);
+    EXPECT_NE(harness.transport->system_prompts[1].find("THE SESSION IS READ-ONLY"), String::npos);
+    /// The restrictions are added to the prompt, not substituted for it.
+    EXPECT_NE(harness.transport->system_prompts[0].find("ClickHouse command-line client"), String::npos);
+}
+
+TEST(AIAgent, QueryLogToolFollowsTheSessionState)
+{
+    /// The queries of the agent cannot be marked in the query log while the session forbids
+    /// changing settings, and without the marker the tool would report them as the user's own.
+    bool query_log_available = true;
+    AIAgentHooks hooks;
+    hooks.can_read_query_log = [&query_log_available] { return query_log_available; };
+
+    AgentWithMock harness({textStep("done")}, hooks);
+    harness.agent->chat("first question");
+    ASSERT_EQ(harness.transport->tool_names.size(), 1u);
+    EXPECT_TRUE(harness.transport->tool_names[0].contains("read_query_log"));
+
+    query_log_available = false;
+    harness.agent->chat("second question");
+    ASSERT_EQ(harness.transport->tool_names.size(), 2u);
+    EXPECT_FALSE(harness.transport->tool_names[1].contains("read_query_log"));
+    /// The other tools stay in place.
+    EXPECT_TRUE(harness.transport->tool_names[1].contains("run_readonly_query"));
+
+    query_log_available = true;
+    harness.agent->chat("third question");
+    ASSERT_EQ(harness.transport->tool_names.size(), 3u);
+    EXPECT_TRUE(harness.transport->tool_names[2].contains("read_query_log"));
+}
+
+TEST(AIAgent, RefusedQueryIsNeitherConfirmedNorRun)
+{
+    /// A query the session rejects outright (a write in a read-only session) is not run, and the
+    /// user is not asked to confirm something that cannot work: the reason goes to the model.
+    bool asked = false;
+    bool ran = false;
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.refusal = "THE SESSION IS READ-ONLY";
+        return decision;
+    };
+    hooks.confirm_query = [&asked](const String &) { asked = true; return true; };
+    hooks.run_visible = [&ran](const String &, bool) { ran = true; return "the query ran"; };
+
+    AgentWithMock harness(
+        {toolCallStep("run_query", ai::JsonValue{{"query", "INSERT INTO t VALUES (1)"}}), textStep("told the user")}, hooks);
+    harness.agent->chat("add a row");
+
+    EXPECT_FALSE(asked);
+    EXPECT_FALSE(ran);
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    const String rendered = AIServerFunctionTransport::renderConversation(harness.transport->conversations[1]);
+    EXPECT_NE(rendered.find("THE SESSION IS READ-ONLY"), String::npos);
+}
+
+TEST(AIAgent, QueryThatNeedsNoConfirmationRunsThroughTheReadOnlyPath)
+{
+    /// When the session already restricts the query to reading, there is nothing for the user to
+    /// decide, and the query runs like a read-only tool call (which also echoes it in the terminal).
+    bool asked = false;
+    std::optional<bool> ran_as_read_only;
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.confirm_query = [&asked](const String &) { asked = true; return true; };
+    hooks.run_visible = [&ran_as_read_only](const String &, bool readonly) { ran_as_read_only = readonly; return "1 row"; };
+
+    AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}}), textStep("done")}, hooks);
+    harness.agent->chat("count the rows");
+
+    EXPECT_FALSE(asked);
+    ASSERT_TRUE(ran_as_read_only.has_value());
+    EXPECT_TRUE(*ran_as_read_only);
 }
 
 TEST(AIAgent, DisplaySanitizesControlCharacters)
