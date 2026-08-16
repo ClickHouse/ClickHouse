@@ -118,7 +118,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithSettingsMode(
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant,
-    bool allow_experimental_time_decay_for_data_type) const
+    bool is_data_type_reconstruction) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -155,7 +155,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithSettingsMode(
             out_properties,
             has_null_arguments,
             state_variant,
-            allow_experimental_time_decay_for_data_type);
+            is_data_type_reconstruction);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -174,7 +174,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithSettingsMode(
         out_properties,
         false,
         state_variant,
-        allow_experimental_time_decay_for_data_type);
+        is_data_type_reconstruction);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -278,7 +278,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     AggregateFunctionProperties & out_properties,
     bool has_null_arguments,
     AggregateFunctionStateVariant state_variant,
-    bool allow_experimental_time_decay_for_data_type) const
+    bool is_data_type_reconstruction) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -323,19 +323,16 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-        std::optional<Settings> settings_for_data_type;
-        if (settings && allow_experimental_time_decay_for_data_type)
-        {
-            settings_for_data_type.emplace(*settings);
-            settings_for_data_type->set("allow_experimental_time_decay_aggregate_functions", true);
-            settings = &*settings_for_data_type;
-        }
 
         AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
             function = found.window_creator(name, argument_types, parameters, settings);
         else
+        {
+            if (!is_data_type_reconstruction && found.availability_check)
+                found.availability_check(name, settings);
             function = found.creator(name, argument_types, parameters, settings);
+        }
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
         /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
@@ -405,7 +402,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                     nested_parameters,
                     out_properties,
                     state_variant,
-                    allow_experimental_time_decay_for_data_type));
+                    is_data_type_reconstruction));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -425,7 +422,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 nested_parameters,
                 out_properties,
                 state_variant,
-                allow_experimental_time_decay_for_data_type);
+                is_data_type_reconstruction);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 

@@ -4019,7 +4019,8 @@ FROM
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
         },
-        properties});
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled});
 
     factory.registerFunction("exponentialTimeDecayingFloat64", {
         createAggregateFunctionExponentialTimeDecayingFloat64,
@@ -4043,7 +4044,10 @@ Rows are evaluated at their greatest timestamp. The result can be combined again
                 "(8,0,10)"}},
             .introduced_in = {26, 8},
             .category = FunctionDocumentation::Category::AggregateFunction},
-        {}});
+        {},
+        {},
+        {},
+        assertExperimentalTimeDecayAggregateFunctionEnabled});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -4246,7 +4250,8 @@ FROM
             return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
                 name, argument_types, parameters);
         },
-        properties});
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 The aggregate-function form returns the average of values weighted by exponential decay relative to the greatest time argument.
@@ -4357,7 +4362,8 @@ FROM
             return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
         },
-        properties});
+        properties,
+        assertExperimentalTimeDecayAggregateFunctionEnabled});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)

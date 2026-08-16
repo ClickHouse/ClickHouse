@@ -33,6 +33,7 @@ class ASTFunction;
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
+using AggregateFunctionAvailabilityCheck = std::function<void(const String &, const Settings *)>;
 
 struct AggregateFunctionWithProperties
 {
@@ -44,6 +45,8 @@ struct AggregateFunctionWithProperties
     AggregateFunctionProperties properties;
     /// Optional properties for window_creator when the aggregate and OVER forms have different semantics.
     std::optional<AggregateFunctionProperties> window_properties;
+    /// Optional availability check for the normal aggregate creator. Data-type reconstruction skips it.
+    AggregateFunctionAvailabilityCheck availability_check;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -56,12 +59,14 @@ struct AggregateFunctionWithProperties
         FunctionDocumentation documentation_,
         AggregateFunctionProperties properties_ = {},
         AggregateFunctionCreator window_creator_ = {},
-        std::optional<AggregateFunctionProperties> window_properties_ = {}) /// NOLINT
+        std::optional<AggregateFunctionProperties> window_properties_ = {},
+        AggregateFunctionAvailabilityCheck availability_check_ = {}) /// NOLINT
         : creator(std::forward<Creator>(creator_))
         , window_creator(std::move(window_creator_))
         , documentation(std::move(documentation_))
         , properties(std::move(properties_))
         , window_properties(std::move(window_properties_))
+        , availability_check(std::move(availability_check_))
     {
     }
 };
@@ -103,9 +108,8 @@ public:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
-    /// Reconstruct an aggregate function embedded in a data type while allowing
-    /// the experimental time-decay functions. All other query settings are preserved.
-    /// Fresh DDL is validated separately after the complete schema has been built.
+    /// Reconstruct an aggregate function embedded in a data type without applying
+    /// execution-availability checks. Fresh DDL is validated after the complete schema is built.
     AggregateFunctionPtr getForDataType(
         const String & name,
         NullsAction action,
@@ -131,7 +135,7 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
-        bool allow_experimental_time_decay_for_data_type) const;
+        bool is_data_type_reconstruction) const;
 
     AggregateFunctionPtr getImpl(
         const String & name,
@@ -141,7 +145,7 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
         AggregateFunctionStateVariant state_variant,
-        bool allow_experimental_time_decay_for_data_type) const;
+        bool is_data_type_reconstruction) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;

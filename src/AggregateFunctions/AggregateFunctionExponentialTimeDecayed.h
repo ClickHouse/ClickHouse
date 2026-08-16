@@ -8,6 +8,8 @@ namespace DB
 
 struct Settings;
 
+void assertExperimentalTimeDecayAggregateFunctionEnabled(const String & name, const Settings * settings);
+
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const String & name,
     const DataTypes & argument_types,

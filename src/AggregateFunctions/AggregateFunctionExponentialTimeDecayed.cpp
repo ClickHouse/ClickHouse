@@ -267,16 +267,6 @@ Float64 getDecayLength(const String & name, const Array & parameters)
     return decay_length;
 }
 
-void assertExperimentalFeatureEnabled(const String & name, const Settings * settings)
-{
-    if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is experimental and disabled by default. Enable it with setting "
-            "allow_experimental_time_decay_aggregate_functions",
-            name);
-}
-
 void assertValueAndTimeArguments(const String & name, const DataTypes & argument_types)
 {
     if (argument_types.size() != 2)
@@ -312,14 +302,22 @@ void assertTimeArgument(const String & name, const DataTypes & argument_types)
 
 }
 
+void assertExperimentalTimeDecayAggregateFunctionEnabled(const String & name, const Settings * settings)
+{
+    if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is experimental and disabled by default. Enable it with setting "
+            "allow_experimental_time_decay_aggregate_functions",
+            name);
+}
+
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings * settings)
+    const Settings *)
 {
-    assertExperimentalFeatureEnabled(name, settings);
-
     if (argument_types.size() == 1)
     {
         const auto type_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(argument_types[0]);
@@ -350,18 +348,17 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings * settings)
+    const Settings *)
 {
-    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, settings);
+    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, nullptr);
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings * settings)
+    const Settings *)
 {
-    assertExperimentalFeatureEnabled(name, settings);
     assertValueAndTimeArguments(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Avg>>(
         name, argument_types, parameters, getDecayLength(name, parameters));
@@ -371,9 +368,8 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings * settings)
+    const Settings *)
 {
-    assertExperimentalFeatureEnabled(name, settings);
     assertTimeArgument(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Count>>(
         name, argument_types, parameters, getDecayLength(name, parameters));

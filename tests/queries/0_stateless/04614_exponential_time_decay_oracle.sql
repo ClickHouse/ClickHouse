@@ -94,6 +94,12 @@ DETACH TABLE time_decay_mv_reattach;
 
 SET allow_experimental_time_decay_aggregate_functions = 0;
 
+-- Reconstruction is allowed, but normal aggregate execution remains gated.
+SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SELECT exponentialTimeDecayingFloat64(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
 ATTACH TABLE time_decay_feature_gate;
