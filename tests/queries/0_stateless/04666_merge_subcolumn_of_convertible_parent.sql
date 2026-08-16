@@ -397,13 +397,15 @@ SETTINGS query_plan_merge_expressions = 0, prefer_localhost_replica = 0; -- { se
 
 CREATE ROW POLICY t_merge_sub_rpr_p ON t_merge_sub_rpr_str USING ok = 1 AS PERMISSIVE TO ALL;
 
+-- A shard applies its own policy only when it plans the read itself, so these two arms pin
+-- `serialize_query_plan = 0`: a shipped plan misses a policy defined only on the shard (#112891).
 SELECT 'row policy on a distributed child hides an unconvertible parent value';
 SELECT sum(arr.size0) FROM t_merge_sub_rpr
-SETTINGS query_plan_merge_expressions = 0, prefer_localhost_replica = 0;
+SETTINGS query_plan_merge_expressions = 0, prefer_localhost_replica = 0, serialize_query_plan = 0;
 
 SELECT 'row policy on a distributed child plus a WHERE on the derived subcolumn';
 SELECT count() FROM t_merge_sub_rpr WHERE arr.size0 = 3
-SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, allow_reorder_prewhere_conditions = 0, prefer_localhost_replica = 0;
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, allow_reorder_prewhere_conditions = 0, prefer_localhost_replica = 0, serialize_query_plan = 0;
 
 DROP ROW POLICY t_merge_sub_rpr_p ON t_merge_sub_rpr_str;
 
