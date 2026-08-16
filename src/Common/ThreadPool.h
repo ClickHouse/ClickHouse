@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -60,7 +61,7 @@ public:
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename ThreadList::iterator& it);
+        void start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_ = {});
 
         void join();
 
@@ -86,6 +87,11 @@ public:
 
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        /// A job reserved through `scheduleThreadOrThrow` is handed to its newly created worker
+        /// directly. It must not compete with already queued work, otherwise the caller can still
+        /// observe a seemingly running thread whose function has not started.
+        std::unique_ptr<JobWithPriority> initial_job;
 
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
