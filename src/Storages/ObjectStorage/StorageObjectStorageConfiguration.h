@@ -409,6 +409,8 @@ private:
     /// Taken by writers only, around the whole allocate-derive-publish sequence. Acquired before
     /// `paths_mutex`, which is the only ordering between the two.
     std::mutex path_allocation_mutex;
+    /// The lowest sequence number no write has taken yet. Guarded by `path_allocation_mutex`.
+    size_t next_write_sequence = 0;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

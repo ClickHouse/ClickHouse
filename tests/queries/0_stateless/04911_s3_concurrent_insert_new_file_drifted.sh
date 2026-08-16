@@ -40,4 +40,13 @@ wait "${writer_pids[@]}"
 # while the winner's is counted twice and the total row count still matches.
 $CLICKHOUSE_CLIENT -q "SELECT countDistinct(a) = $writers, countDistinct(_file) = $writers FROM t_04911 WHERE a >= 100"
 
+# The path list is also the set of objects `TRUNCATE` removes, so it must never name an object this
+# table did not write. The numbered object created before the drop is exactly such an object: it is
+# present remotely and unknown to this table, so it has to survive a truncate.
+# `s3_ignore_file_doesnt_exist` keeps a deleted object as an empty read rather than an error, so the
+# assertion below reports the outcome instead of aborting the script.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04911"
+$CLICKHOUSE_CLIENT --s3_ignore_file_doesnt_exist 1 \
+    -q "SELECT count() = 1 FROM s3(s3_conn, filename='$filename.1', format=Parquet, structure='a UInt64')"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_04911"
