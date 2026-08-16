@@ -44,6 +44,19 @@ public:
         if (canceled)
             return;
 
+        /// This hook can reject a flush before accessing the current buffer. In particular,
+        /// CompressedWriteBuffer may temporarily alias a nested buffer that another writer
+        /// could have invalidated.
+        try
+        {
+            preNext();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
+
         if (!offset())
             return;
 
@@ -51,7 +64,6 @@ public:
 
         try
         {
-            preNext();
             nextImpl();
             ++flush_count;
         }
