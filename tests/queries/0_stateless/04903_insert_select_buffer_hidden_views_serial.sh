@@ -25,7 +25,7 @@ echo "-- Hidden dependent view behind a Buffer, parallel_view_processing = 0: si
 $CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=0 -q \
     "EXPLAIN PIPELINE INSERT INTO buffer_hidden_views_front SELECT number FROM numbers(4)" | grep -c "BufferSink"
 
-echo "-- Hidden dependent view behind a Buffer, parallel_view_processing = 1: the fan-out stays available"
+echo "-- Hidden dependent view behind a Buffer, parallel_view_processing = 1: the separate-context write stays single-stream"
 $CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=1 -q \
     "EXPLAIN PIPELINE INSERT INTO buffer_hidden_views_front SELECT number FROM numbers(4)" | grep -c "BufferSink"
 
