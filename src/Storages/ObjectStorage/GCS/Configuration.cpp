@@ -105,10 +105,19 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
             "a service account key, or `NOSIGN`. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
 
+    /// The refresh-token credentials are exchanged eagerly by `resolveGCSCredentialsToken`, but a
+    /// native SQL storage keeps the resulting client for the lifetime of the query. The resulting
+    /// access token cannot refresh, so allowing this mode can make a long-running query fail after
+    /// its token expires. Match the persistent disk behavior and reject it until the native client
+    /// has refreshable credentials.
+    if (!auth[S3AuthSetting::google_adc_client_id].value.empty()
+        || !auth[S3AuthSetting::google_adc_client_secret].value.empty()
+        || !auth[S3AuthSetting::google_adc_refresh_token].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS backend does not support `google_adc_*` refresh-token credentials because the access token cannot be refreshed. "
+            "Use Application Default Credentials or `NOSIGN`, or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
+
     gcs_settings.no_sign_request = auth[S3AuthSetting::no_sign_request];
-    gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
-    gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
-    gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
 
     /// The transport knobs of the shared argument grammar are honoured by the native client too:
     /// `headers(...)` plus the `<header>` / `<access_header>` entries of the endpoint configuration
