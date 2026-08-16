@@ -22,15 +22,15 @@ ClickHouse [速度很快](/zh/get-started/about/why-clickhouse-is-so-fast)，不
 
 这使得数据写入开销很低，而且[效率极高](/zh/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other)。
 
-为了控制每个表的分片数量并实现上面的 ②，ClickHouse 会在后台持续将较小的分片 ([按分区](/zh/concepts/core-concepts/partitions#per-partition-merges)) 合并为较大的分片，直到其 compressed size 达到约 [~150 GB](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)。
+为了控制每个表的分片数量并实现上面的 ②，ClickHouse 会在后台持续将较小的分片 ([按分区](/zh/concepts/core-concepts/partitions#per-partition-merges)) 合并为较大的分片，直到其 compressed size 达到约 [~150 GB](/zh/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)。
 
 下图概述了这一后台合并过程：
 
-<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="part 合并" />
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="分片合并" />
 
 <br />
 
-分片的 `合并级别` 每经历一次额外的合并就会加一。level 为 `0` 表示该分片是新的，尚未被合并。已合并到更大分片中的分片会被标记为 [inactive](/zh/reference/system-tables/parts)，并在一段[可配置](/zh/reference/settings/merge-tree-settings#old_parts_lifetime)的时间后最终删除 (默认 8 分钟) 。随着时间推移，这会形成一棵由合并后分片构成的**树**。这也正是 [merge tree](/zh/reference/engines/table-engines/mergetree-family/index) 表名称的由来。
+分片的 `合并级别` 每经历一次额外的合并就会加一。level 为 `0` 表示该分片是新的，尚未被合并。已合并到更大分片中的分片会被标记为 [inactive](/zh/reference/system-tables/parts)，并在一段[可配置](/zh/reference/settings/merge-tree-settings/other#old_parts_lifetime)的时间后最终删除 (默认 8 分钟) 。随着时间推移，这会形成一棵由合并后分片构成的**树**。这也正是 [merge tree](/zh/reference/engines/table-engines/mergetree-family/index) 表名称的由来。
 
 <div id="monitoring-merges">
   ## 监控合并
@@ -85,9 +85,9 @@ ORDER BY name ASC;
   ## 并发合并
 </div>
 
-单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings#background_pool_size)并发执行分片合并：
+单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings/background#background_pool_size)并发执行分片合并：
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="part 合并" />
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="PART MERGES" />
 
 <br />
 
@@ -127,7 +127,7 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 **③ 索引**：系统会为合并后的列文件生成新的[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
-**④ 压缩与存储**：新的列文件和索引会被[压缩](/zh/reference/statements/create/table#column_compression_codec)，并保存在一个新的[目录](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)中，该目录表示合并后的数据分区片段。
+**④ 压缩与存储**：新的列文件和索引会被[压缩](/zh/reference/statements/create/table/codec)，并保存在一个新的[目录](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)中，该目录表示合并后的数据分区片段。
 
 数据分区片段中的其他[元数据](/zh/concepts/core-concepts/parts) (如二级数据跳过索引、列统计信息、校验和以及 min-max 索引) 也会基于合并后的列文件重新创建。为简化说明，我们省略了这些细节。
 
