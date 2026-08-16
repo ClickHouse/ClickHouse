@@ -186,6 +186,11 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"UInt64", Field(UInt64(1700000000)), "DateTime('UTC')"},        // fits UInt32
         {"UInt64", Field(UInt64(5000000000)), "DateTime('UTC')"},        // > UInt32 max -> truncates (raw, no range check)
 
+        /// cross-calendar Date/Date32 <-> DateTime (timezone-aware): day 19000 == 2022-01-08 == 1641600000 UTC
+        {"DateTime('UTC')", Field(UInt64(1641600000)), "Date"},          // -> day 19000
+        {"Date32", Field(Int64(19000)), "DateTime('UTC')"},              // -> 1641600000
+        {"DateTime('UTC')", Field(UInt64(1641600000)), "Date32"},        // -> day 19000
+
         /// nullable / lowcardinality wrappers
         {"Nullable(Int32)", Field(Int64(7)), "Int64"},
         {"Nullable(Int32)", Field(Null()), "Int64"},                     // null in, non-null to -> not representable

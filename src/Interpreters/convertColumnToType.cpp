@@ -17,6 +17,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/DateLUTImpl.h>
@@ -240,6 +242,45 @@ std::optional<ColumnPtr> tryConvertToDateColumnNative(
     return std::nullopt;
 }
 
+/// Faithful column-native cross-calendar conversions between `Date`/`Date32` and `DateTime` (the
+/// timezone-aware branches of `convertFieldToType`). Reads the underlying day number / timestamp
+/// directly from the size-1 column and applies the very same `DateLUTImpl::toDayNum`/`fromDayNum` as
+/// there (the timezone comes from the `DateTime` type, `from` or `to`). Reading the value from the
+/// typed column avoids the `Field`'s `NearestFieldType` widening (`Date32` -> `Int64`) entirely.
+/// `DateTime64`/`Time`/`Time64` cross-calendar conversions are a later increment. Returns std::nullopt
+/// when the pair is not one of these. Pinned by `gtest_convert_column_to_type`.
+std::optional<ColumnPtr> tryConvertBetweenDateAndDateTimeColumnNative(
+    const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    const WhichDataType which_from(from);
+    const WhichDataType which_to(to);
+
+    if (which_to.isDateTime() && (which_from.isDate() || which_from.isDate32()))
+    {
+        const auto & time_zone = assert_cast<const DataTypeDateTime &>(*to).getTimeZone();
+        const UInt32 result = which_from.isDate()
+            ? static_cast<UInt32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(value.getUInt(0)))))
+            : static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(value.getInt(0)))));
+        auto column = to->createColumn();
+        assert_cast<ColumnUInt32 &>(*column).getData().push_back(result);
+        return column;
+    }
+
+    if ((which_to.isDate() || which_to.isDate32()) && which_from.isDateTime())
+    {
+        const auto & time_zone = assert_cast<const DataTypeDateTime &>(*from).getTimeZone();
+        const auto day_num = time_zone.toDayNum(value.getUInt(0)).toUnderType();
+        auto column = to->createColumn();
+        if (which_to.isDate())
+            assert_cast<ColumnUInt16 &>(*column).getData().push_back(static_cast<UInt16>(day_num));
+        else
+            assert_cast<ColumnInt32 &>(*column).getData().push_back(static_cast<Int32>(day_num));
+        return column;
+    }
+
+    return std::nullopt;
+}
+
 /// `IColumn::get` reconstructs a `Field` using the storage column's `NearestFieldType`, which does not
 /// round-trip the `Field` tag for `Bool`: a `DataTypeBool` column is a plain `ColumnUInt8`, so `get`
 /// yields a `UInt64` `Field`. `convertFieldToType` keys on that tag (e.g. `Bool -> String` gives
@@ -327,6 +368,10 @@ ColumnPtr convertColumnToTypeOrNull(
 
     /// numeric -> `Date`/`Date32`/`DateTime` column-native (same optional convention as above).
     if (auto date = tryConvertToDateColumnNative(unwrapped, from, to, convert_inexact_floats))
+        return std::move(*date);
+
+    /// cross-calendar `Date`/`Date32` <-> `DateTime` (timezone-aware).
+    if (auto date = tryConvertBetweenDateAndDateTimeColumnNative(unwrapped, from, to))
         return std::move(*date);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
