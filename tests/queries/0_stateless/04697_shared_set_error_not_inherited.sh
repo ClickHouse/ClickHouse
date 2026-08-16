@@ -76,11 +76,11 @@ $CLICKHOUSE_CLIENT --query "
 SELECT sum(v) - sum(id % 10000000) = ${expected_increments} FROM t_shared_set_error"
 
 # The abandoned build was really rebuilt rather than the failpoint silently not firing: each mutation
-# builds its set once per key, so a key built twice is one whose first build was abandoned. This holds
-# however the rebuild was reached, unlike the identity of the task that reached it.
+# builds its set once per key, so a key built at least twice is one whose first build was abandoned.
+# The cache has weak lifetime semantics, so later task waves may legitimately add further builds.
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
-SELECT max(builds) = 2 FROM
+SELECT max(builds) >= 2 FROM
 (
     SELECT count() AS builds FROM system.text_log
     WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
