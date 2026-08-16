@@ -3597,24 +3597,41 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
+    const auto is_dialect_command = [](std::string_view line)
+    {
+        const auto trimmed_line = trim(String(line), [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+        for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
+        {
+            if (boost::iequals(trimmed_line, prefix)
+                || (trimmed_line.size() > prefix.size() && boost::istarts_with(trimmed_line, prefix)
+                    && isWhitespaceASCII(trimmed_line[prefix.size()])))
+                return true;
+        }
+        return false;
+    };
+
+    const auto has_dialect_command_line = [&]
+    {
+        size_t line_begin = 0;
+        while (line_begin < text.size())
+        {
+            const size_t line_end = text.find('\n', line_begin);
+            const size_t line_size = (line_end == String::npos ? text.size() : line_end) - line_begin;
+            if (is_dialect_command(std::string_view{text.data() + line_begin, line_size}))
+                return true;
+
+            if (line_end == String::npos)
+                break;
+            line_begin = line_end + 1;
+        }
+        return false;
+    };
+
     /// `clickhouse-local` accepts client meta-commands in noninteractive input. Split standalone
     /// dialect-command lines from a script before feeding the surrounding SQL to the multiquery
     /// parser, because the latter necessarily parses a whole input chunk with one dialect.
-    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n'))
+    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n') && has_dialect_command_line())
     {
-        const auto is_dialect_command = [](std::string_view line)
-        {
-            const auto trimmed_line = trim(String(line), [](char c) { return isWhitespaceASCII(c) || c == ';'; });
-            for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
-            {
-                if (boost::iequals(trimmed_line, prefix)
-                    || (trimmed_line.size() > prefix.size() && boost::istarts_with(trimmed_line, prefix)
-                        && isWhitespaceASCII(trimmed_line[prefix.size()])))
-                    return true;
-            }
-            return false;
-        };
-
         String sql_chunk;
         size_t line_begin = 0;
         while (line_begin < text.size())
