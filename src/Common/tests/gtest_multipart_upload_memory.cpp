@@ -225,6 +225,21 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeUsesTheFixedSizePolicy)
     EXPECT_GT(firstPolicyBufferSize(settings), std::max(settings.max_single_size, settings.min_size));
 }
 
+TEST(MultipartUploadMemory, StrictUploadPartSizeCapsTheCeilingAtReachableBuffers)
+{
+    BufferAllocationPolicy::Settings settings;
+    settings.strict_size = 512 * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 20);
+
+    /// A strict-size writer starts with the caller's at-most-1-MiB buffer and grows it only after data
+    /// fills it. With 1 GiB of output it can reach at most two completed 512-MiB buffers and the next
+    /// buffer being filled, not all 21 configured in-flight buffers.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
+        3 * 512ULL * 1024 * 1024);
+}
+
 TEST(MultipartUploadMemory, ADetachedBufferCoexistsWithTheBufferBeingFilled)
 {
     /// Uniform buffers, so the buffer count is what the numbers below show. With a single in-flight part the

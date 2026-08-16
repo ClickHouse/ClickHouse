@@ -1283,23 +1283,6 @@ UInt64 estimateNeededMemoryForMerge(
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
 
-    if (!remote_write_buffer_memories.empty())
-    {
-        remote_write_buffer_size = 0;
-        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
-        {
-            remote_write_buffer_size = std::max(
-                remote_write_buffer_size,
-                getMultipartUploadMemoryCeilingForWrittenBytes(
-                    remote_write_buffer_memory.memory, sum_input_bytes_uncompressed));
-        }
-    }
-    else if (guessed_s3_write_buffer_memory.has_value())
-        remote_write_buffer_size = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, sum_input_bytes_uncompressed),
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, sum_input_bytes_uncompressed)});
-
     /// Output side: one writer stream per column substream of the result part. The result part is not
     /// written yet, so its dynamic substreams (JSON, Dynamic) are not known up front and the default
     /// serialization count would collapse such columns to a single stream. Estimate the result substreams
@@ -1395,6 +1378,40 @@ UInt64 estimateNeededMemoryForMerge(
         ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
         : WriterStreamCounts{.total = 1, .non_adaptive = 1};
     const size_t output_streams = output_stream_counts.total;
+
+    /// Fixed-size values synthesized for a missing column are output bytes just as much as values read
+    /// from source parts. Include them while tightening the multipart ceiling, or a remote merge after
+    /// ALTER ... ADD COLUMN can reach upload-buffer tiers that its admission reservation did not price.
+    UInt64 default_filled_value_bytes = 0;
+    UInt64 sum_rows = 0;
+    for (const auto & part : future_part.parts)
+        sum_rows += part->rows_count;
+    for (const auto & column : output_columns)
+    {
+        if (default_filled_columns.contains(column.name) && column.type->haveMaximumSizeOfValue())
+            default_filled_value_bytes
+                += countRowsMissingColumn(future_part.parts, part_source_name(column.name)) * column.type->getMaximumSizeOfValueInMemory();
+    }
+
+    UInt64 multipart_written_bytes = sum_input_bytes_uncompressed;
+    if (__builtin_add_overflow(multipart_written_bytes, default_filled_value_bytes, &multipart_written_bytes))
+        multipart_written_bytes = std::numeric_limits<UInt64>::max();
+
+    if (!remote_write_buffer_memories.empty())
+    {
+        remote_write_buffer_size = 0;
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+        {
+            remote_write_buffer_size = std::max(
+                remote_write_buffer_size,
+                getMultipartUploadMemoryCeilingForWrittenBytes(remote_write_buffer_memory.memory, multipart_written_bytes));
+        }
+    }
+    else if (guessed_s3_write_buffer_memory.has_value())
+        remote_write_buffer_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, multipart_written_bytes),
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, multipart_written_bytes)});
 
     /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
     /// file buffer, both sized by the stream's max_compress_block_size. That size is not one table-wide
@@ -1564,19 +1581,6 @@ UInt64 estimateNeededMemoryForMerge(
     /// for the ADD COLUMN ... DEFAULT path - on a wide JSON / Dynamic default enough to saturate
     /// merges_mutations_memory_usage_soft_limit and reject background merges that fit, the same
     /// over-reservation/starvation pattern the rest of this estimate unwinds.
-    UInt64 default_filled_value_bytes = 0;
-    UInt64 sum_rows = 0;
-    for (const auto & part : future_part.parts)
-        sum_rows += part->rows_count;
-    for (const auto & column : output_columns)
-    {
-        if (!default_filled_columns.contains(column.name))
-            continue;
-        if (column.type->haveMaximumSizeOfValue())
-            default_filled_value_bytes
-                += countRowsMissingColumn(future_part.parts, part_source_name(column.name)) * column.type->getMaximumSizeOfValueInMemory();
-    }
-
     const UInt64 default_filled_term = 3 * default_filled_value_bytes;
 
     const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size(), base_max_compress_block_size)

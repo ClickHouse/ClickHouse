@@ -169,7 +169,30 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
 
     const auto & settings = memory.allocation_settings;
     UInt64 largest_reachable_buffer = settings.strict_size;
-    if (settings.strict_size == 0)
+    if (settings.strict_size != 0)
+    {
+        /// The writer does not allocate a strict-size first buffer up front. It starts with at most
+        /// DBMS_DEFAULT_BUFFER_SIZE and doubles that allocation in nextImpl until it reaches strict_size.
+        /// After that, each complete strict-size part can leave one detached or in-flight buffer behind
+        /// while the next buffer is being filled. Do not charge more such buffers than the written data
+        /// can reach, otherwise a small merge with a large strict upload part size is rejected for memory
+        /// the writer cannot allocate.
+        const UInt64 initial_buffer_size = std::min<UInt64>(settings.strict_size, DBMS_DEFAULT_BUFFER_SIZE);
+        if (bytes_written <= initial_buffer_size)
+            return initial_buffer_size;
+
+        UInt64 reachable_buffers = bytes_written / settings.strict_size;
+        if (bytes_written % settings.strict_size)
+            ++reachable_buffers;
+        if (__builtin_add_overflow(reachable_buffers, static_cast<UInt64>(1), &reachable_buffers))
+            return MultipartUploadMemory::UNLIMITED;
+
+        const UInt64 live_buffers = std::min(memory.max_inflight_parts + 1, reachable_buffers);
+        if (__builtin_mul_overflow(live_buffers, settings.strict_size, &largest_reachable_buffer))
+            return MultipartUploadMemory::UNLIMITED;
+        return std::min(memory.ceiling, largest_reachable_buffer);
+    }
+    else
     {
         auto policy = BufferAllocationPolicy::create(settings);
         UInt64 written = 0;
