@@ -2084,22 +2084,45 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
     # not dereference the missing handler (ALTER of a mutable setting is applied to the persisted
     # metadata; ATTACH / DETACH TABLE are refused cleanly), and a DROP DATABASE in that window must
     # still remove the PostgreSQL publication and logical replication slot instead of leaking them.
-    pg_manager.create_postgres_table("test_table")
+    schema_name = "startup_legacy_schema"
+    pg_query(f'CREATE SCHEMA "{schema_name}"')
+    pg_query(
+        f'CREATE TABLE "{schema_name}".test_table (key Integer PRIMARY KEY, value Integer)'
+    )
     instance.query(
-        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+        f'INSERT INTO "{schema_name}".test_table SELECT g, g FROM generate_series(0, 49) AS g'
     )
 
     pg_manager.create_materialized_db(
         ip=cluster.postgres_ip,
         port=cluster.postgres_port,
-        settings=["materialized_postgresql_tables_list = 'test_table'"],
+        settings=[
+            f"materialized_postgresql_schema = '{schema_name}'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ],
     )
     check_tables_are_synchronized(instance, "test_table")
-    assert replication_slot_exists()
+    assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 1
     assert publication_exists()
 
     # A table that is not replicated yet, for the ATTACH TABLE check below.
-    pg_manager.create_postgres_table("late_table")
+    pg_query(
+        f'CREATE TABLE "{schema_name}".late_table (key Integer PRIMARY KEY, value Integer)'
+    )
+
+    # Simulate an attached database created before generated replication identities became schema-aware.
+    # The startup-window DROP below must discover and remove these legacy PostgreSQL objects even though
+    # the startup task is held before it can call `fetchRequiredTables`.
+    schema_aware_slot = pg_query(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )[0][0]
+    schema_aware_publication = pg_query(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )[0][0]
+    legacy_slot = "postgres_database"
+    legacy_publication = "postgres_database_ch_publication"
+    assert schema_aware_slot != legacy_slot
+    assert schema_aware_publication != legacy_publication
 
     failpoint_config_path = (
         "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
@@ -2116,7 +2139,14 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
             "</materialized_postgresql_fail_database_startup>"
             "</fail_points_active></clickhouse>",
         )
-        instance.restart_clickhouse()
+        instance.stop_clickhouse()
+        pg_query(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+        pg_query(f"DROP PUBLICATION {schema_aware_publication}")
+        pg_query(
+            f'CREATE PUBLICATION {legacy_publication} FOR TABLE ONLY "{schema_name}".test_table'
+        )
+        pg_query(f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')")
+        instance.start_clickhouse()
 
         # Applied to the in-memory settings and the on-disk metadata; the handler built later picks
         # the new value up.

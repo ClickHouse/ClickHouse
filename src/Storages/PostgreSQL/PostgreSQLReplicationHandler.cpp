@@ -3262,7 +3262,15 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         /// can exhaust PostgreSQL's max_replication_slots and break subsequent
         /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            /// `shutdownFinal` can be called before the database startup task has built a handler.
+            /// Adopt the persisted deployment's legacy identity here as well, so this cleanup path
+            /// drops the slot and publication that actually belong to an attached pre-schema-aware
+            /// MaterializedPostgreSQL database.
+            adoptLegacyReplicationIdentityIfNeeded(tx);
+            dropPublication(tx);
+        });
         String last_committed_lsn;
 
         connection.execWithRetry([&](pqxx::nontransaction & tx)
