@@ -67,10 +67,10 @@ Parámetros opcionales:
 * `rabbitmq_queue_base` - Especifique un prefijo para los nombres de las colas. Los casos de uso de esta configuración se describen a continuación.
 * `rabbitmq_persistent` - Si se establece en 1 (true), el modo de entrega de la consulta de inserción se establecerá en 2 (marca los mensajes como &#39;persistent&#39;). Predeterminado: `0`.
 * `rabbitmq_skip_broken_messages` – Tolerancia del analizador de mensajes de RabbitMQ a mensajes incompatibles con el esquema por bloque. Si `rabbitmq_skip_broken_messages = N`, el motor omite *N* mensajes de RabbitMQ que no se pueden analizar (un mensaje equivale a una fila de datos). Predeterminado: `0`.
-* `rabbitmq_max_block_size` - Número de filas recopiladas antes de vaciar los datos desde RabbitMQ. Predeterminado: [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings#max_insert_block_size).
-* `rabbitmq_flush_interval_ms` - Timeout para vaciar los datos desde RabbitMQ. Predeterminado: [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/session-settings#stream_flush_interval_ms).
+* `rabbitmq_max_block_size` - Número de filas recopiladas antes de vaciar los datos desde RabbitMQ. Predeterminado: [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `rabbitmq_flush_interval_ms` - Timeout para vaciar los datos desde RabbitMQ. Predeterminado: [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - Permite establecer configuraciones de RabbitMQ al crear una cola. Configuraciones disponibles: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. La configuración `durable` se habilita automáticamente para la cola.
-* `rabbitmq_address` - Dirección de la conexión. Use esta configuración o `rabbitmq_host_port`.
+* `rabbitmq_address` - Dirección de conexión: `amqp(s)://user:password@host:port/vhost`. Use esta configuración o `rabbitmq_host_port`; si ambas están configuradas, se usa `rabbitmq_address`. Su host y puerto se verifican con [remote&#95;url&#95;allow&#95;hosts](/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 * `rabbitmq_vhost` - vhost de RabbitMQ. Predeterminado: `'/'`.
 * `rabbitmq_queue_consume` - Use colas definidas por el usuario y no realice ninguna configuración de RabbitMQ: declaración de exchanges, colas y bindings. Predeterminado: `false`.
 * `rabbitmq_username` - Nombre de usuario de RabbitMQ.
@@ -87,7 +87,8 @@ Parámetros opcionales:
   ### Conexión SSL
 </div>
 
-Use `rabbitmq_secure = 1` o `amqps` en la dirección de conexión: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+Con la forma `rabbitmq_host_port`, establezca `rabbitmq_secure = 1` para usar TLS.
+Con la forma `rabbitmq_address`, el transporte se determina mediante el esquema de la URI, por lo que debe usar `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` se ignora para la forma de dirección, y `rabbitmq_secure = 1` junto con una dirección `amqp://` de texto sin cifrar se rechaza en lugar de conectarse silenciosamente sin cifrado.
 El comportamiento predeterminado de la biblioteca utilizada no comprueba si la conexión TLS creada es lo suficientemente segura. Tanto si el certificado está caducado, autofirmado, ausente o no es válido, la conexión simplemente se permite. Es posible que en el futuro se implemente una comprobación más estricta de los certificados.
 
 También se pueden añadir ajustes de formato junto con la configuración relacionada con RabbitMQ.
@@ -155,7 +156,7 @@ La setting `rabbitmq_queue_base` puede usarse en los siguientes casos:
 * para poder restaurar la lectura desde determinadas colas duraderas cuando no todos los mensajes se hayan consumido correctamente. Para reanudar el consumption desde una cola específica, establezca su nombre en la setting `rabbitmq_queue_base` y no especifique `rabbitmq_num_consumers` ni `rabbitmq_num_queues` (el valor predeterminado es 1). Para reanudar el consumption desde todas las colas declaradas para una tabla específica, simplemente especifique las mismas settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. De forma predeterminada, los nombres de las colas serán únicos para cada tabla.
 * para reutilizar colas, ya que se declaran como duraderas y no se eliminan automáticamente. (Pueden eliminarse con cualquiera de las herramientas de CLI de RabbitMQ).
 
-Para mejorar el rendimiento, los mensajes recibidos se agrupan en bloques del tamaño de [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings#max_insert_block_size). Si el bloque no se forma dentro de [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/server-settings/settings) milisegundos, los datos se volcarán en la tabla independientemente de que el bloque esté completo.
+Para mejorar el rendimiento, los mensajes recibidos se agrupan en bloques del tamaño de [max&#95;insert&#95;block&#95;size](/es/reference/settings/session-settings/max-insert#max_insert_block_size). Si el bloque no se forma dentro de [stream&#95;flush&#95;interval&#95;ms](/es/reference/settings/session-settings/stream#stream_flush_interval_ms) milisegundos, los datos se volcarán en la tabla independientemente de que el bloque esté completo.
 
 Si las settings `rabbitmq_num_consumers` y/o `rabbitmq_num_queues` se especifican junto con `rabbitmq_exchange_type`, entonces:
 
@@ -220,6 +221,14 @@ El motor RabbitMQ admite todos los [formatos](/es/reference/formats/index) compa
 El número de filas en un mensaje de RabbitMQ depende de si el formato se basa en filas o en bloques:
 
 * En los formatos basados en filas, el número de filas en un mensaje de RabbitMQ se puede controlar con la configuración `rabbitmq_max_rows_per_message`.
-* En los formatos basados en bloques, no es posible dividir un bloque en partes más pequeñas, pero el número de filas de un bloque se puede controlar con la configuración general [max&#95;block&#95;size](/es/reference/settings/session-settings#max_block_size).
+* En los formatos basados en bloques, no es posible dividir un bloque en partes más pequeñas, pero el número de filas de un bloque se puede controlar con la configuración general [max&#95;block&#95;size](/es/reference/settings/session-settings/max#max_block_size).
+
+<div id="data-durability">
+  ## Durabilidad de los datos ante un corte de energía
+</div>
+
+El motor `RabbitMQ` puede perder silenciosamente filas ya consumidas si la caché de páginas del sistema operativo se descarta antes de que los datos insertados se escriban en disco. Después de enviar un lote a las vistas materializadas dependientes, el consumidor envía `basic.ack` al broker, lo que permite a este eliminar esos mensajes. Sin embargo, las filas insertadas solo son duraderas una vez que la parte de destino se ha sincronizado mediante fsync, lo cual no ocurre de forma síncrona de manera predeterminada (`fsync_after_insert = 0`). Si se pierde la caché de páginas después de la confirmación, pero antes de que la parte de destino se haya sincronizado mediante fsync, el broker ya habrá eliminado los mensajes y el consumidor los omitirá al reconectarse, por lo que las filas se perderán sin que se produzca ningún error y `count()` será simplemente menor. La terminación forzosa de un proceso no pone esto de manifiesto, ya que el kernel conserva la caché de páginas y finalmente la escribe en disco. En cambio, la pérdida de la caché de páginas sí lo revela; por ejemplo, ante un corte de energía a nivel de dispositivo o un reinicio no limpio del host o del kernel.
+
+Para la ruta de consumo recomendada mediante vistas materializadas (la confirmación se envía solo después de que finalice toda la canalización de inserción), establecer `fsync_after_insert = 1` (y `fsync_part_directory = 1`) en las tablas `MergeTree` de destino garantiza que las partes insertadas sean duraderas antes de enviar la confirmación, lo que reduce considerablemente esta ventana. La configuración debe habilitarse en cada tabla `MergeTree` en la que se inserte el lote, incluidos los destinos de las vistas materializadas en cascada; cualquier tabla de este tipo que se deje con la configuración predeterminada aún puede perder su parte. Los intermediarios asíncronos no obtienen durabilidad únicamente con esta configuración: por ejemplo, un destino `Distributed` inserta en segundo plano cuando `distributed_foreground_insert = 0`, que es el valor predeterminado fuera de ClickHouse Cloud, por lo que necesita su propia configuración de durabilidad o una inserción síncrona. Esta mitigación tampoco se aplica a un `INSERT ... SELECT ... FROM <rabbitmq_table>` directo con `rabbitmq_commit_on_select = 1`, donde los mensajes se confirman cuando la lectura llega al final, en lugar de después de que el destino haya escrito una parte duradera.
 
 {/*AUTOGENERATED_END*/}
