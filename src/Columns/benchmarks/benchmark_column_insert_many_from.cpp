@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <random>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -65,6 +67,11 @@ static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
     dst.insertManyFrom(src, size / 2, size);
 }
 
+static NO_INLINE void insertManyFromNotNullable(ColumnNullable & dst, const IColumn & src, size_t position, size_t length)
+{
+    dst.insertManyFromNotNullable(src, position, length);
+}
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
@@ -80,6 +87,26 @@ static void BM_insertManyFrom(benchmark::State & state)
         state.ResumeTiming();
 
         insertManyFrom(*dst, *src);
+        benchmark::DoNotOptimize(dst);
+    }
+}
+
+template <const std::string & str_type>
+static void BM_insertManyFromNotNullable(benchmark::State & state)
+{
+    auto nullable_type = DataTypeFactory::instance().get(str_type);
+    auto src = mockColumn(removeNullable(nullable_type), ROWS);
+    const size_t length = state.range(0);
+
+    for ([[maybe_unused]] auto _ : state)
+    {
+        state.PauseTiming();
+        auto dst = nullable_type->createColumn();
+        dst->reserve(length);
+        state.ResumeTiming();
+
+        auto & dst_nullable = assert_cast<ColumnNullable &>(*dst);
+        insertManyFromNotNullable(dst_nullable, *src, src->size() / 2, length);
         benchmark::DoNotOptimize(dst);
     }
 }
@@ -107,3 +134,10 @@ BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_int64);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_int64);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_string);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_string);
+
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_int64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_decimal)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
