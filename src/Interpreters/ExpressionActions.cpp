@@ -1355,12 +1355,26 @@ void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, s
     if (!extra_elapsed)
         return;
 
-    for (auto parent_action_index : actions[action_index].parents_actions_pos)
+    /// An action can have several lazy parents that share an ancestor. The action is materialized
+    /// only once, so charge every ancestor only once as well.
+    std::vector<bool> visited(actions.size());
+    visited[action_index] = true;
+
+    auto update_parent_profile = [&] (auto && self, size_t current_action_index) -> void
     {
-        action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
-        if (shouldExecuteLazily(parent_action_index))
-            updateActionParentProfile(parent_action_index, extra_elapsed);
-    }
+        for (auto parent_action_index : actions[current_action_index].parents_actions_pos)
+        {
+            if (visited[parent_action_index])
+                continue;
+
+            visited[parent_action_index] = true;
+            action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
+            if (shouldExecuteLazily(parent_action_index))
+                self(self, parent_action_index);
+        }
+    };
+
+    update_parent_profile(update_parent_profile, action_index);
 }
 
 void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
