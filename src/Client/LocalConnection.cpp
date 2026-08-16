@@ -212,7 +212,7 @@ void LocalConnection::sendQuery(
     /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
     /// during execution. The `input()` initializer below reparses `state->query`, and must use the
     /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
-    state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+    state->parsed_dialect = query_context->getSettingsRef()[Setting::dialect];
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
     state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
@@ -253,14 +253,14 @@ void LocalConnection::sendQuery(
         const char * begin = state->query.data();
 
         const char * end = begin + state->query.size();
-        const Dialect & dialect = settings[Setting::dialect];
+        const Dialect dialect = state->parsed_dialect;
 
         ASTPtr parsed_query;
         /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
+        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
         {
             if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

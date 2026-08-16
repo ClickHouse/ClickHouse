@@ -53,6 +53,34 @@ bool isLiteralWrapper(const String & name)
     return literal_wrappers.contains(name);
 }
 
+String formatKustoTimespan(Int64 nanoseconds)
+{
+    static constexpr Int64 ticks_per_second = 10'000'000;
+    static constexpr Int64 ticks_per_minute = ticks_per_second * 60;
+    static constexpr Int64 ticks_per_hour = ticks_per_minute * 60;
+    static constexpr Int64 ticks_per_day = ticks_per_hour * 24;
+
+    const Int64 ticks = nanoseconds / 100;
+    const UInt64 absolute = ticks == std::numeric_limits<Int64>::min()
+        ? static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1
+        : static_cast<UInt64>(std::abs(ticks));
+
+    String result = ticks < 0 ? "-" : "";
+    if (absolute >= static_cast<UInt64>(ticks_per_day))
+        result.append(fmt::format("{}.", absolute / ticks_per_day));
+
+    result.append(fmt::format(
+        "{:02}:{:02}:{:02}",
+        (absolute / ticks_per_hour) % 24,
+        (absolute / ticks_per_minute) % 60,
+        (absolute / ticks_per_second) % 60));
+
+    if (const auto fraction = absolute % ticks_per_second)
+        result.append(fmt::format(".{:07}", fraction));
+
+    return result;
+}
+
 /// The constant value of a parsed expression, when it has one that is known at parse time.
 /// Typed literal wrappers keep their literal argument as a `Field`, because a dynamic array
 /// has no independent type annotation for its elements.
@@ -74,6 +102,12 @@ std::optional<Field> tryFoldConstant(const ASTPtr & node)
         for (size_t i = 1; i < function->arguments->children.size(); ++i)
             if (!tryFoldConstant(function->arguments->children[i]))
                 return {};
+
+        /// A dynamic array has no interval element type. Preserve Kusto timespans as their
+        /// textual carrier rather than exposing the physical nanosecond count as an integer.
+        if (function->name == "toIntervalNanosecond" && operand->getType() == Field::Types::Int64)
+            return Field(formatKustoTimespan(operand->safeGet<Int64>()));
+
         return operand;
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/Connection.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
@@ -32,7 +33,7 @@ struct LocalQueryState
     /// must use the dialect/gate the query was originally accepted with — a JSON
     /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... enable_json_ast_dialect = 0`)
     /// would otherwise be reparsed with the changed settings and fail.
-    bool parsed_as_json_dialect = false;
+    Dialect parsed_dialect = Dialect::clickhouse;
     bool enable_json_ast_dialect = false;
     /// AST-size limits captured at the same point. The JSON branch of the `input()` initializer reparses
     /// `query` through `IAST::createFromJSON`; it must use the limits the original parse was accepted with,
