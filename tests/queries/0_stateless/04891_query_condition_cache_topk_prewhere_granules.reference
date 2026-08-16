@@ -31,6 +31,8 @@
 8194
 8195
 8196
+--- Non-deterministic WHERE must not write PREWHERE TopK cache entries
+0
 --- Mixed PREWHERE and WHERE: first run records granule decisions
 0
 1

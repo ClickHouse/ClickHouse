@@ -4725,12 +4725,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
     /// recorded in the query condition cache under a key salted with the TopK plan parameters,
-    /// part set, and the post-PREWHERE filter that determines the running threshold (see
+    /// part set, and a deterministic post-PREWHERE filter that determines the running threshold (see
     /// `MergeTreeSelectProcessor::read` for the write and
     /// `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` for the consult).
     /// `allow_query_condition_cache` is already false here when `use_query_condition_cache_for_top_k`
     /// is off (see `setTopKColumn`), so reaching this point with the cache on means the salt applies.
-    if (top_k_filter_info && reader_settings.use_query_condition_cache)
+    if (top_k_filter_info && reader_settings.use_query_condition_cache
+        && (!query_info.filter_actions_dag
+            || isDeterministicAllowingTopKFilter(query_info.filter_actions_dag->getOutputs().front())))
     {
         size_t salt = top_k_filter_info->condition_hash;
         if (query_info.filter_actions_dag)

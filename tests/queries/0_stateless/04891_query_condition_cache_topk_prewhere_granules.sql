@@ -78,6 +78,14 @@ SELECT k FROM tab WHERE w = 0 ORDER BY k ASC LIMIT 5;
 SELECT '--- Different WHERE must not reuse the PREWHERE granule decisions';
 SELECT k FROM tab WHERE w = 1 ORDER BY k ASC LIMIT 5;
 
+-- The post-PREWHERE predicate determines the dynamic threshold. A non-deterministic
+-- predicate cannot safely share PREWHERE TopK granule decisions between executions,
+-- even when its structural DAG hash is unchanged.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT '--- Non-deterministic WHERE must not write PREWHERE TopK cache entries';
+SELECT k FROM tab WHERE rand() % 2 = 0 ORDER BY k ASC LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
 -- A query with an explicit PREWHERE and a separate WHERE must use the exact key shape
 -- written by the PREWHERE path: combine(prewhere_hash, combine(topk_hash, where_hash)).
 SYSTEM CLEAR QUERY CONDITION CACHE;
