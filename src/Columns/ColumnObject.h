@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -16,6 +18,30 @@
 
 namespace DB
 {
+
+/// Sorts container by compare and keeps only the top `limit` elements. Shared between ColumnObject
+/// and SerializationObject, both of which need to pick the top MAX_SHARED_DATA_STATISTICS_SIZE
+/// shared-data paths by frequency out of a larger candidate set.
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
 
 class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnObject>
 {
