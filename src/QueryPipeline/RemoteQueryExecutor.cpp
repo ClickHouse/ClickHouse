@@ -688,6 +688,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             {
                 cancel_requested = false;
                 cancel_delegated_to_reader = true;
+
+                /// A hard cancellation supersedes a soft drain that `finish` delegated while
+                /// this thread was blocked in `receivePacket`. This thread sends `Cancel` and
+                /// returns below, so it must not claim drain ownership: a later `finish` then
+                /// eagerly disconnects the connections with unread packets.
+                drain_requested = false;
             }
 
             drain_delegated_to_reader = drain_requested;
