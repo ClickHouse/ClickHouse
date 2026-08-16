@@ -659,6 +659,12 @@ FIRST_KEYWORD_CASES = [
     ("empty", "", ""),
     ("keyword_ends_at_paren", "CREATE(", "CREATE"),
     ("keyword_ends_at_semicolon", "DROP;", "DROP"),
+    # A comment may start directly after a keyword. It still terminates the
+    # keyword token, so the DDL must be routed to setup / teardown rather
+    # than being benchmarked as a workload or suppressing the retry.
+    ("inline_block_comment_after_create", "CREATE/* note */ TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
+    ("inline_dash_comment_after_alter", "ALTER-- note\nTABLE t MODIFY SETTING x = 1", "ALTER"),
+    ("inline_slash_comment_after_drop", "DROP// note\nTABLE t", "DROP"),
 ]
 
 

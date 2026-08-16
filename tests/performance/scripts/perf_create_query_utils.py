@@ -93,7 +93,9 @@ def first_keyword(sql):
     """
     pos = skip_whitespace_and_comments(sql, 0)
     end = pos
-    while end < len(sql) and sql[end] not in (" ", "\t", "\n", "\r", "(", ";"):
+    while end < len(sql):
+        if sql[end] in (" ", "\t", "\n", "\r", "(", ";") or comment_end(sql, end) is not None:
+            break
         end += 1
     return sql[pos:end].upper()
 
