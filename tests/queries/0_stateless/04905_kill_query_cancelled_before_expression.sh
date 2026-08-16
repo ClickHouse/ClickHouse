@@ -43,6 +43,18 @@ run_cancelled_query()
     # HTTP request wait for the killed query to finish even with `ASYNC`. Override it for the
     # control request so it can release the failpoint immediately after dispatching the kill.
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}' ASYNC" >/dev/null
+
+    # Do not release the failpoint until the asynchronous kill has reached the query. Otherwise,
+    # the query can resume and park at the post-expression failpoint before cancellation is set.
+    local cancelled=0
+    for _ in {1..300}
+    do
+        cancelled=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}' AND is_cancelled")
+        [[ "$cancelled" -ge 1 ]] && break
+        sleep 0.1
+    done
+    [[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; return 1; }
+
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
 
     wait "$client_pid"
