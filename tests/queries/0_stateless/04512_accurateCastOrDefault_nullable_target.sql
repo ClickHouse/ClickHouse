@@ -21,3 +21,11 @@ SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32
 -- null map, but it is still a successful cast to a Nullable target.
 SELECT accurateCastOrDefault(CAST(NULL, 'Dynamic'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
 SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32)'));
+
+-- `Dynamic` and `Variant` source NULLs are preserved for non-Nullable targets
+-- when `cast_keep_nullable` is enabled, just like physically Nullable sources.
+SET cast_keep_nullable = 1;
+SELECT accurateCastOrDefault(CAST(NULL, 'Dynamic'), 'UInt32');
+SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'UInt32');
+SELECT toUInt32OrDefault(CAST(NULL, 'Dynamic'));
+SELECT toUInt32OrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'));
