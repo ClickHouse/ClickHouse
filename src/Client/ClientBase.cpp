@@ -1399,9 +1399,10 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                     }
                 });
 
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
+                auto file_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
                     logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
-                logs_out_terminal_buf = assert_cast<WriteBufferFromFileDescriptor *>(out_logs_buf.get());
+                logs_out_terminal_buf = file_logs_buf.get();
+                out_logs_buf = std::move(file_logs_buf);
                 wb = out_logs_buf.get();
             }
         }

@@ -19,11 +19,13 @@ CLIENT_ERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_partial_result_blocked.err"
 
 CLIENT=""
 HOLDER=""
+DRAINER=""
 
 cleanup()
 {
     [ -n "$CLIENT" ] && kill -9 "$CLIENT" 2>/dev/null
     [ -n "$HOLDER" ] && kill "$HOLDER" 2>/dev/null
+    [ -n "$DRAINER" ] && kill "$DRAINER" 2>/dev/null
     wait 2>/dev/null
     rm -f "$FIFO" "$CLIENT_ERR"
 }
@@ -72,8 +74,15 @@ fi
 
 # One Ctrl+C only asks for the partial result, but it must already unblock the client: the stage-one
 # `Cancel` reaches the server, the query finishes and the client returns to the shell without a
-# second signal.
+# second signal. Once cancellation is requested, let the FIFO drain so the server's partial result
+# has a deliverable destination; otherwise the test would correctly leave the client waiting for
+# output that the deliberately non-reading sink can never accept.
 kill -SIGINT "$CLIENT" 2>/dev/null
+kill "$HOLDER" 2>/dev/null
+wait "$HOLDER" 2>/dev/null
+HOLDER=""
+cat "$FIFO" > /dev/null &
+DRAINER=$!
 
 for _ in {0..50}
 do

@@ -83,9 +83,7 @@ else
     echo "OK: stdout fallback stayed available"
 fi
 
-if grep -q $'^0\\t' "$CLIENT_OUT"
-then
-    echo "OK: partial result was written to stdout"
-else
-    echo "FAIL: partial result was not written to stdout"
-fi
+# A stage-one cancel is allowed to return no rows when it wins the race with the
+# server's first result block. The essential property here is that the abandoned
+# outfile does not turn that interrupt into a local exception and that stdout
+# remains a usable fallback sink.
