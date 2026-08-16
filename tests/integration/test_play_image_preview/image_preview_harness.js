@@ -994,14 +994,17 @@ async function main() {
         const page = await bootPage(js);
         const res = JSON.parse(await page.run(`(async () => {
             const quoted = await detectFramingSetting("SELECT 'framing_output_format = None'");
+            const column = await detectFramingSetting("SELECT settings x, framing_output_format = 'None' FROM t");
             const identifier = await detectExplicitFormatClause('WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1');
             const clause = await detectExplicitFormatClause('SELECT 1 FORMAT JSONCompactColumns');
             const inputSetting = await detectFramingSetting("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
             const inputPayload = await detectExplicitFormatClause("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
-            return JSON.stringify({ quoted, identifier, clause, inputSetting, inputPayload });
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload });
         })()`));
         check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
             !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
+        check('fallback-tokenizer', 'a column named settings does not open a SETTINGS clause',
+            !res.column.user_framing && !res.column.user_disables_framing, res);
         check('fallback-tokenizer', 'identifier uses of format do not become a FORMAT clause',
             res.identifier === null, res);
         check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',

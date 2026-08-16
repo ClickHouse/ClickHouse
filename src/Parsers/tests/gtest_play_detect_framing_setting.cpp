@@ -268,6 +268,12 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
             const std::string lower = toLower(t.text);
             const bool is_settings = lower == "settings";
             const bool is_set = lower == "set" && at_statement_start;
+            /// `SELECT settings x, ...` starts with exactly the same candidate shorthand-list
+            /// shape as `... SETTINGS x, ...`, but `settings` immediately following `SELECT` is
+            /// necessarily a select-list identifier. Do not let its later comma-separated
+            /// expression open a settings context merely because it eventually reaches `FROM`.
+            const bool follows_select = is_settings && i > 0 && tokens[i - 1].type == DB::TokenType::BareWord
+                && toLower(tokens[i - 1].text) == "select";
             /// A real settings context is not just the keyword: the keyword must be followed by an
             /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
             /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`, so
@@ -277,7 +283,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
             /// ENDS where a settings list can end - see `list_ends_properly` below. A column merely
             /// named `settings` in the query body stays out of the walk either way: it is followed by
             /// a `,` right away, by an implicit alias, or its "list" runs into a `FROM`.
-            if ((is_settings || is_set) && i + 2 < tokens.size() && settingName(tokens[i + 1]).has_value()
+            if ((is_settings || is_set) && !follows_select && i + 2 < tokens.size() && settingName(tokens[i + 1]).has_value()
                 && (tokens[i + 2].type == DB::TokenType::Equals || tokens[i + 2].type == DB::TokenType::Comma))
             {
                 /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand

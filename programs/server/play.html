@@ -13742,6 +13742,12 @@ async function detectFramingSetting(query)
             const lower = t.token.toLowerCase();
             const is_settings = lower === 'settings';
             const is_set = lower === 'set' && at_statement_start;
+            /// `SELECT settings x, ...` starts with exactly the same candidate shorthand-list
+            /// shape as `... SETTINGS x, ...`, but `settings` immediately following `SELECT` is
+            /// necessarily a select-list identifier. Do not let its later comma-separated
+            /// expression open a settings context merely because it eventually reaches `FROM`.
+            const follows_select = is_settings && tokens[i - 1]
+                && tokens[i - 1].type === TT.BareWord && tokens[i - 1].token.toLowerCase() === 'select';
             /// A real settings context is not just the keyword: the keyword must be followed by an
             /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
             /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`,
@@ -13756,7 +13762,7 @@ async function detectFramingSetting(query)
             /// String', (1, 'None'))` the keyword is followed by a `,` right away, in `SELECT
             /// settings framing_output_format FROM t` by an implicit alias, and in `SELECT settings
             /// x, framing_output_format = 'None' FROM t` the list would run into a `FROM`.
-            if ((is_settings || is_set)
+            if ((is_settings || is_set) && !follows_select
                 && settingName(tokens[i + 1]) !== null
                 && tokens[i + 2] && (tokens[i + 2].type === TT.Equals || tokens[i + 2].type === TT.Comma)) {
                 /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand
