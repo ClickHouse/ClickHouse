@@ -57,7 +57,7 @@ timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_sorted_stream_b
 }
 
 # Kill the query while one stream is held right before the fallback evaluation.
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
 # Only now arm the re-entry trap: every processor of the query is already cancelled, so with the
 # cancellation guards in place nothing reaches it and the query finishes. Without the guards the outer

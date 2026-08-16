@@ -33,7 +33,7 @@ run_cancelled_query()
     if ! timeout 30 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${before_failpoint} PAUSE"
     then
         echo "FAIL: timed out waiting for ${before_failpoint}"
-        ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
         return 1
     fi
 

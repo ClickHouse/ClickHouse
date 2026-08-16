@@ -41,12 +41,12 @@ timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
 if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT totals_having_transform_totals_pause PAUSE"
 then
     echo "FAIL: timed out waiting for the totals_having_transform_totals_pause failpoint"
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
     exit 1
 fi
 
 # Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on all functions
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
 # Release the failpoint - prepareTotals should observe the cancellation and return early
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_totals_pause"

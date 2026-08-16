@@ -51,12 +51,12 @@ timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
 if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT query_condition_cache_final_flush_pause PAUSE"
 then
     echo "FAIL: timed out waiting for the query_condition_cache_final_flush_pause failpoint"
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
     exit 1
 fi
 
 # Kill the query (ASYNC) — onCancel cancels functions and sets isCancelled
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
 # Disable failpoint — query sees isCancelled() and returns without writing the final entry to cache.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT query_condition_cache_final_flush_pause"

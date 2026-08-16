@@ -61,14 +61,14 @@ timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_anal
 if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_guest_pause PAUSE"
 then
     echo "FAIL: timed out waiting for the wasm_guest_pause failpoint — the WASM guest code did not start executing"
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
     exit 1
 fi
 
 # Kill the query (ASYNC) — this triggers onCancel -> cancelExecution -> interrupt_source.request_stop()
 # The StopCallback registered in invokeImpl sets WasmEdge's cost limit to 0,
 # causing CostLimitExceeded on the next instruction after the host function returns.
-${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
 # Disable failpoint — unblocks _wasm_signal_ready(), which returns to the WASM guest code
 # The guest then enters the infinite loop, and the first WASM instruction triggers
