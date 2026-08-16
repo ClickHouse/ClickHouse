@@ -829,7 +829,6 @@ prepare_triage_sandbox_config()
     # triage: use a private copy mounted over the common config only in the
     # Bubblewrap namespace. Besides credential helpers, remove all HTTPS
     # extra headers and include files, which can carry authentication tokens.
-    config="$wt/tmp/continue-all-prs/triage-git-config"
     mkdir -p "${config%/*}" || return 1
     cp "$(git -C "$wt" rev-parse --git-path config)" "$config" || return 1
     git config --file "$config" --unset-all credential.helper 2>/dev/null || true
