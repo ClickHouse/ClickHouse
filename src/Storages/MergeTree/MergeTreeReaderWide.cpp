@@ -90,67 +90,11 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
-bool MergeTreeReaderWide::canServeWholeRangeFromCache() const
-{
-    /// Mirror the cache-hit conditions used in readRows, but for the reader's
-    /// entire mark range, to decide whether prefetching can be skipped.
-    if (!columns_cache || !settings.enable_columns_cache_reads)
-        return false;
-    if (data_part_info_for_read->getTableUUID() == UUIDHelpers::Nil
-        || data_part_info_for_read->isProjectionPart())
-        return false;
-    if (all_mark_ranges.getNumberOfMarks() == 0)
-        return false;
-
-    const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-
-    /// The cache stores blocks per contiguous mark range (readRows bounds them by
-    /// `current_range_last_mark`), so check each range separately: a cached block
-    /// never spans the gaps between ranges of a multi-range task.
-    for (const auto & mark_range : all_mark_ranges)
-    {
-        const size_t row_begin = index_granularity.getMarkStartingRow(mark_range.begin);
-        const size_t row_end = (mark_range.end < index_granularity.getMarksCount())
-            ? index_granularity.getMarkStartingRow(mark_range.end)
-            : data_part_info_for_read->getRowCount();
-
-        for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
-        {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
-                continue;
-
-            auto intersecting = columns_cache->getIntersecting(
-                data_part_info_for_read->getTableUUID(),
-                data_part_info_for_read->getPartName(),
-                columns_to_read[pos].name,
-                row_begin,
-                row_end);
-
-            /// Need exactly one cached block fully containing the requested range,
-            /// the same condition readRows uses to serve a column from cache.
-            if (!(intersecting.size() == 1
-                  && intersecting[0].first.row_begin <= row_begin
-                  && intersecting[0].first.row_end >= row_end))
-                return false;
-        }
-    }
-
-    return true;
-}
-
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
     if (all_mark_ranges.getNumberOfMarks() == 0)
-        return;
-
-    /// If the whole range can be served from the columns cache, readRows will not
-    /// touch the data streams, so issuing prefetches here would spend I/O
-    /// (object-storage reads on remote parts) fetching data we will never read.
-    /// Skip the prefetch in that case; if the entry is evicted before readRows,
-    /// it falls back to a normal (unprefetched) disk read, which stays correct.
-    if (canServeWholeRangeFromCache())
         return;
 
     try

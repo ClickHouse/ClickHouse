@@ -135,9 +135,6 @@ private:
     UInt64 cache_table_generation = 0;
     UInt64 cache_part_generation = 0;
 
-    /// True if all mark ranges of the task can be served from the columns cache,
-    /// so the prefetch path can skip scheduling stream reads. See prefetchBeginOfRange.
-    bool canServeWholeRangeFromCache() const;
 };
 
 }
