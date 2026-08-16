@@ -49,11 +49,6 @@ public:
         buffer.emplace_back(timestamp, value);
     }
 
-    /// Bulk `add` of `count` samples in one append. Produces the same samples as adding them one by one: they
-    /// are appended as is, and if they violate the sorted invariant (out-of-order or duplicate timestamps -
-    /// rare) the next `sort` restores it, with the same result because the `getMax` deduplication is
-    /// order-independent. `ALWAYS_INLINE` so that the loops are compiled - and vectorized - with the target
-    /// options of the caller, the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
     ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps, const ValueType * __restrict values, size_t count)
     {
         if (count == 0)

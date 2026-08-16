@@ -957,17 +957,6 @@ private:
         return scanned;
     }
 
-    /// Batch counterpart of `add` for samples of one aggregation state. Requires `fast_bucket_math`.
-    ///
-    /// Instead of per-sample bucket math and a per-sample hash-map lookup, the batch is processed in runs of
-    /// consecutive samples that fall into one bucket's time range (or one skip range): real samples mostly
-    /// arrive in timestamp order and a bucket typically covers many scrape intervals, so runs are long. Each
-    /// run costs one `classifySampleFast` (with its integer division), one bucket lookup and one bulk append;
-    /// within the run each sample costs two comparisons (`scanSamplesInRange`) and a store. On randomly
-    /// ordered timestamps runs degenerate to one sample and this matches the cost of the plain loop.
-    /// Compiled for x86-64-v4 in addition to the default target ('CPU dispatch'): the run scan and the bulk
-    /// append of `Samples::addMany` are data-parallel loops that profit from the wider vectors, and
-    /// `addSamples` picks the v4 variant at runtime on CPUs with AVX-512.
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(void NO_INLINE),
     addSamplesToBucketsImpl,
@@ -991,7 +980,9 @@ private:
     })
     )
 
-    /// The flagged (`-If` condition or NULL map) counterpart: flags break runs unpredictably, so samples are
+    /// The flagged counterpart, reached with the NULL map of a `Nullable` value column
+    /// (`addBatchSinglePlaceNotNull`) and with the condition column of the `-If` combinator
+    /// (`if_argument_pos`, e.g. `timeSeriesRateToGridIf`): flags break runs unpredictably, so samples are
     /// added one by one, but the bucket resolved for the previous sample is reused while timestamps stay in
     /// its range - including a skip range (`bucket == nullptr`). Requires `fast_bucket_math`.
     template <bool flag_value_to_include>
