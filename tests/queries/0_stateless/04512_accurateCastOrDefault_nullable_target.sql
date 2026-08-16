@@ -30,7 +30,7 @@ SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'Nul
 -- rather than being forced into an outer Nullable column.
 SELECT accurateCastOrDefault(42, 'Dynamic');
 SELECT accurateCastOrDefault(42, 'Variant(UInt8, String)');
-SELECT accurateCastOrDefault(42, 'LowCardinality(Nullable(UInt32))');
+SELECT accurateCastOrDefault(42, 'LowCardinality(Nullable(UInt32))') SETTINGS allow_suspicious_low_cardinality_types = 1;
 
 -- `Dynamic` and `Variant` source NULLs are preserved for non-Nullable targets
 -- when `cast_keep_nullable` is enabled, just like physically Nullable sources.
