@@ -61,11 +61,13 @@ private:
             Block sample_block;
             MutableColumns columns;
             ASTExpressionList columns_ast;
+            Int32 relation_id;
             std::vector<size_t> key_column_indices;
             std::vector<UnchangedToastValue> unchanged_toast_values;
 
             explicit Buffer(
                 ColumnsWithTypeAndName && columns_,
+                Int32 relation_id_,
                 std::vector<size_t> key_column_indices_,
                 const ExternalResultDescription & table_description_);
 

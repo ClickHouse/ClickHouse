@@ -144,9 +144,11 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     ColumnsWithTypeAndName && columns_,
+    Int32 relation_id_,
     std::vector<size_t> key_column_indices_,
     const ExternalResultDescription & table_description_)
-    : key_column_indices(std::move(key_column_indices_))
+    : relation_id(relation_id_)
+    , key_column_indices(std::move(key_column_indices_))
 {
     for (const auto column_idx : key_column_indices)
     {
@@ -1043,7 +1045,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             }
 
             storage_data.addBuffer(
-                std::make_unique<StorageData::Buffer>(std::move(columns), std::move(key_column_indices), description));
+                std::make_unique<StorageData::Buffer>(
+                    std::move(columns), relation_id, std::move(key_column_indices), description));
             tables_to_sync.insert(table_name);
             break;
         }
@@ -1099,14 +1102,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     fmt::format("Table {} is skipped from replication because an unchanged TOAST value cannot be restored",
                                 table_name));
 
-                for (const auto & [relation_id, relation_name] : relation_id_to_name)
-                {
-                    if (relation_name == table_name)
-                    {
-                        markTableAsSkipped(relation_id, table_name);
-                        break;
-                    }
-                }
+                markTableAsSkipped(buffer->relation_id, table_name);
                 break;
             }
 

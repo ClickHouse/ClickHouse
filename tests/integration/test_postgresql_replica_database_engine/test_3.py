@@ -365,7 +365,7 @@ def test_toast_in_replica_identity(started_cluster):
     )
     assert (
         instance.query(f"SELECT length(id), bad_value, other FROM test_database.{table}")
-        == "2500\t0.00\tupdated\n"
+        == "2500\t0\tupdated\n"
     )
     assert (
         instance.query(f"SELECT other FROM test_database.{other_table}")
@@ -412,8 +412,12 @@ def test_toast_restore_missing_source_row_skips_only_affected_table(started_clus
     # Simulate a table-local replica desynchronization. The PostgreSQL update
     # below retains `toast_value`, so restoration cannot find the row in the
     # nested ClickHouse table and must skip only this table.
+    nested_table = instance.query(
+        f"SELECT concat('default.`', toString(uuid), '_nested`') "
+        f"FROM system.tables WHERE database = 'test_database' AND name = '{table}'"
+    ).strip()
     instance.query(
-        f"ALTER TABLE test_database.{table} DELETE WHERE id = 1 SETTINGS mutations_sync = 2"
+        f"ALTER TABLE {nested_table} DELETE WHERE id = 1 SETTINGS mutations_sync = 2"
     )
     pg_manager.execute(f"UPDATE {table} SET other = 'unreplicated' WHERE id = 1")
     pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
