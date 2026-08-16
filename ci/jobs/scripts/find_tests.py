@@ -51,12 +51,26 @@ class Targeting:
     # The selected-test sanitizer jobs replace their full-suite counterparts,
     # so a change to the harness itself must not leave every one of those jobs
     # with an empty selection. Keep one inexpensive test for each of the
-    # parallel and sequential flavors. Both are compatible with the sanitizer
-    # and storage configurations used by the selected-test jobs.
+    # parallel and sequential flavors.
     STATELESS_HARNESS_SMOKE_TESTS = (
         "00001_select_1.",
         "01109_exchange_tables.",
     )
+
+    # Feature-specific jobs also need to exercise the option that differentiates
+    # them from the ordinary parallel or sequential lanes. Each pair contains a
+    # parallel-safe test followed by a `no-parallel` test; flavor filtering below
+    # retains the one suitable for the current lane.
+    STATELESS_HARNESS_FEATURE_SMOKE_TESTS = {
+        "s3 storage": (
+            "03741_s3_glob_table_path_pushdown.",
+            "02302_s3_file_pruning.",
+        ),
+        "distributed plan": (
+            "04367_distributed_plan_merge_scatter_multishard.",
+            "04648_distributed_plan_task_error_propagation.",
+        ),
+    }
 
     # Keep this in sync with the functional-test runner inputs in
     # `common_ft_job_config` and with the selected-test orchestration. A
@@ -69,6 +83,7 @@ class Targeting:
         "ci/jobs/scripts/clickhouse_proc.py",
         "ci/jobs/scripts/find_tests.py",
         "ci/jobs/scripts/functional_tests_results.py",
+        "ci/jobs/scripts/workflow_hooks/filter_job.py",
         "ci/jobs/scripts/server_cleanup.py",
         "ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
         "ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
@@ -365,11 +380,16 @@ class Targeting:
         if include_harness_smoke and any(
             self._is_stateless_harness_file(fpath) for fpath in changed_files
         ):
+            smoke_tests = list(self.STATELESS_HARNESS_SMOKE_TESTS)
+            job_name = getattr(self.info, "job_name", "").lower()
+            for option, feature_smoke_tests in self.STATELESS_HARNESS_FEATURE_SMOKE_TESTS.items():
+                if option in job_name:
+                    smoke_tests.extend(feature_smoke_tests)
             print(
                 "Functional-test harness changed; adding deterministic smoke tests: "
-                f"{list(self.STATELESS_HARNESS_SMOKE_TESTS)}"
+                f"{smoke_tests}"
             )
-            result.update(self.STATELESS_HARNESS_SMOKE_TESTS)
+            result.update(smoke_tests)
 
         for fpath in changed_files:
             if not fpath.startswith("tests/queries/0_stateless/"):

@@ -149,7 +149,9 @@ def test_selected_tests_fail_when_changed_file_lookup_fails():
 
 def test_selected_tests_add_smoke_tests_for_harness_change():
     targeter = Targeting.__new__(Targeting)
-    targeter.info = SimpleNamespace(is_local_run=False, get_changed_files=lambda: [])
+    targeter.info = SimpleNamespace(
+        is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
+    )
     targeter._diff_text = "+++ b/ci/jobs/functional_tests.py\n"
 
     assert targeter.get_changed_tests(include_harness_smoke=True) == [
@@ -160,7 +162,9 @@ def test_selected_tests_add_smoke_tests_for_harness_change():
 
 def test_selected_tests_add_smoke_tests_for_rendered_workflow_change():
     targeter = Targeting.__new__(Targeting)
-    targeter.info = SimpleNamespace(is_local_run=False, get_changed_files=lambda: [])
+    targeter.info = SimpleNamespace(
+        is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
+    )
     targeter._diff_text = "+++ b/.github/workflows/pull_request.yml\n"
 
     assert targeter.get_changed_tests(include_harness_smoke=True) == [
@@ -171,11 +175,47 @@ def test_selected_tests_add_smoke_tests_for_rendered_workflow_change():
 
 def test_selected_tests_do_not_add_smoke_tests_for_query_change():
     targeter = Targeting.__new__(Targeting)
-    targeter.info = SimpleNamespace(is_local_run=False, get_changed_files=lambda: [])
+    targeter.info = SimpleNamespace(
+        is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
+    )
     targeter._diff_text = "+++ b/tests/queries/0_stateless/00001_select_1.sql\n"
 
     assert targeter.get_changed_tests(include_harness_smoke=True) == [
         "00001_select_1."
+    ]
+
+
+def test_selected_tests_add_feature_smoke_tests_for_harness_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(
+        is_local_run=False,
+        get_changed_files=lambda: [],
+        job_name="Stateless tests (amd_tsan, s3 storage, parallel, selected tests)",
+    )
+    targeter._diff_text = "+++ b/ci/jobs/scripts/workflow_hooks/filter_job.py\n"
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1.",
+        "01109_exchange_tables.",
+        "02302_s3_file_pruning.",
+        "03741_s3_glob_table_path_pushdown.",
+    ]
+
+
+def test_selected_tests_add_distributed_plan_smoke_tests_for_harness_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(
+        is_local_run=False,
+        get_changed_files=lambda: [],
+        job_name="Stateless tests (amd_asan_ubsan, distributed plan, parallel, selected tests)",
+    )
+    targeter._diff_text = "+++ b/ci/jobs/functional_tests.py\n"
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1.",
+        "01109_exchange_tables.",
+        "04367_distributed_plan_merge_scatter_multishard.",
+        "04648_distributed_plan_task_error_propagation.",
     ]
 
 
