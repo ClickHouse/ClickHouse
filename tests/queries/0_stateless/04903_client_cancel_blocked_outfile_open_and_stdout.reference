@@ -1,0 +1,3 @@
+OK: client terminated after Ctrl+C
+OK: stdout fallback stayed available
+OK: partial result was written to stdout

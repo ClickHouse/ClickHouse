@@ -1151,26 +1151,41 @@ try
                 int out_file_fd = openFileCancellable(
                     out_file, flags, [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
 
-                /// The result set has nowhere to go, so this is a cancellation of the query itself -
-                /// including with `partial_result_on_first_cancel`, where the partial result would
-                /// have been written to this very sink.
                 if (out_file_fd == -1)
-                    throw Exception(
-                        ErrorCodes::QUERY_WAS_CANCELLED,
-                        "Query was cancelled while waiting for {} to be opened for writing",
-                        out_file);
-
-                /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
-                /// covers the case when it throws before doing so.
-                SCOPE_EXIT({
-                    if (out_file_fd != -1)
+                {
+                    /// `AND STDOUT` retains a deliverable result sink. Do not turn the interrupted
+                    /// outfile open into a local format error: with `partial_result_on_first_cancel`
+                    /// the first signal must still reach the server and its partial result must be
+                    /// printed to stdout.
+                    if (query_with_output->isIntoOutfileWithStdout())
                     {
-                        [[maybe_unused]] int err = ::close(out_file_fd);
-                        chassert(!(err && errno == EBADF));
+                        select_into_file = false;
                     }
-                });
+                    else
+                    {
+                        /// The result set has nowhere to go, so this is a cancellation of the query
+                        /// itself - including with `partial_result_on_first_cancel`, where the partial
+                        /// result would have been written to this very sink.
+                        throw Exception(
+                            ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Query was cancelled while waiting for {} to be opened for writing",
+                            out_file);
+                    }
+                }
 
-                auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
+                if (out_file_fd != -1)
+                {
+                    /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
+                    /// covers the case when it throws before doing so.
+                    SCOPE_EXIT({
+                        if (out_file_fd != -1)
+                        {
+                            [[maybe_unused]] int err = ::close(out_file_fd);
+                            chassert(!(err && errno == EBADF));
+                        }
+                    });
+
+                    auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file_fd, out_file, DBMS_DEFAULT_BUFFER_SIZE);
 
                 /// Keep the primary `INTO OUTFILE` sink responsive to cancellation, just like the
                 /// `std_out` result-set path and the `AND STDOUT` mirror below. A non-regular target
@@ -1180,19 +1195,19 @@ try
                 /// as non-blocking), so nothing is dropped and the complete file is preserved. The
                 /// `cancelledWhileRunning()` guard keeps the final flush in `resetOutput()` from discarding
                 /// already-produced output on an exception path, where the query was never cancelled.
-                armResponsiveOutput(*out_file_write_buf);
+                    armResponsiveOutput(*out_file_write_buf);
 
-                out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::move(out_file_write_buf),
-                    compression_method,
-                    static_cast<int>(compression_level),
-                    /*zstd_window_log=*/ 0,
-                    client_context->getSettingsRef()[Setting::snappy_mode]
-                );
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::move(out_file_write_buf),
+                        compression_method,
+                        static_cast<int>(compression_level),
+                        /*zstd_window_log=*/ 0,
+                        client_context->getSettingsRef()[Setting::snappy_mode]
+                    );
 
-                if (query_with_output->isIntoOutfileWithStdout())
-                {
-                    select_into_file_and_stdout = true;
+                    if (query_with_output->isIntoOutfileWithStdout())
+                    {
+                        select_into_file_and_stdout = true;
 
                     /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
                     /// stdout buffer rather than through `std_out`, so install the same cancellation
@@ -1208,8 +1223,9 @@ try
                     /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
                     select_into_file_and_stdout_buf = stdout_buf;
 
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(
-                        ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
+                        out_file_buf = std::make_unique<ForkWriteBuffer>(
+                            ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
+                    }
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
