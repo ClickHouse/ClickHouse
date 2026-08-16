@@ -39,7 +39,10 @@ run_cancelled_query()
 
     # The query is deliberately held at the failpoint, so a synchronous `KILL QUERY`
     # waits for it to finish and prevents this test from releasing the failpoint.
-    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '${query_id}' ASYNC" >/dev/null
+    # The stateless-test random settings can enable `http_wait_end_of_query`, which makes the
+    # HTTP request wait for the killed query to finish even with `ASYNC`. Override it for the
+    # control request so it can release the failpoint immediately after dispatching the kill.
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}' ASYNC" >/dev/null
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
 
     wait "$client_pid"
