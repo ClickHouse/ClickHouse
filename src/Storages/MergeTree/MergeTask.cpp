@@ -973,11 +973,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// they belong to. Choosing it from the projection's own (much smaller) combined size would
         /// leave a projection of a large (`ZSTD`) parent part on the size-aware `LZ4` - and would
         /// even downgrade a projection that was already written as `ZSTD` back to `LZ4`. The parent
-        /// resolves its codec before its projections are merged. `is_explicit_recompression` stays
-        /// at its default here: the inherited codec does not come from a `RECOMPRESS` TTL entry of
-        /// the projection itself.
+        /// resolves its codec before its projections are merged. Preserve whether the parent codec
+        /// came from an explicit `RECOMPRESS` TTL: adaptive codec selection must not replace that
+        /// codec while rewriting the projection data.
         chassert(global_ctx->parent_part->default_codec);
         global_ctx->compression_codec = global_ctx->parent_part->default_codec;
+        global_ctx->is_explicit_recompression = isExplicitRecompression(
+            global_ctx->metadata_snapshot->getRecompressionTTLs(),
+            global_ctx->parent_part->ttl_infos.recompression_ttl,
+            global_ctx->time_of_merge);
     }
     else
     {
