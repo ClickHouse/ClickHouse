@@ -43,10 +43,11 @@ namespace
         /// A unique wrapper can still have shared subcolumns, so always use the deep COW path.
         /// Keep the original pointer intact until the replacement is fully ready, so an exception
         /// inside `filter` leaves `nested` valid rather than moved-from.
-        auto cloned = IColumn::mutate(std::move(nested));
-        SCOPE_EXIT({ if (!nested) nested = std::move(cloned); });
+        auto * nested_slot = &nested;
+        auto cloned = IColumn::mutate(std::move(*nested_slot));
+        SCOPE_EXIT({ if (!*nested_slot) *nested_slot = std::move(cloned); });
         cloned->filter(filt);
-        nested = std::move(cloned);
+        *nested_slot = std::move(cloned);
     }
 }
 

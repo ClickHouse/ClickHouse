@@ -518,8 +518,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// shared column instead, so subsequent mutations are safe and don't affect other holders.
     /// Keep the caller's slot intact until deserialization succeeds. In particular, moving it
     /// into `mutate` would leave the slot null if a later read throws.
-    auto mutable_column = IColumn::mutate(std::move(column));
-    SCOPE_EXIT({ if (!column) column = std::move(mutable_column); });
+    auto * column_slot = &column;
+    auto mutable_column = IColumn::mutate(std::move(*column_slot));
+    SCOPE_EXIT({ if (!*column_slot) *column_slot = std::move(mutable_column); });
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
 
     settings.path.push_back(Substream::ArraySizes);
@@ -555,7 +556,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }
 
-    column = std::move(mutable_column);
+    *column_slot = std::move(mutable_column);
 
 }
 

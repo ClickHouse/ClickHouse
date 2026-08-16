@@ -581,11 +581,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             /// compaction that follows — would then mutate storage still referenced by the cache, the same
             /// COW hole the size readers close. Clone when shared; `IColumn::mutate` is a no-op when
             /// uniquely owned.
-            ColumnPtr & discriminators = col.getLocalDiscriminatorsPtr();
-            MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(discriminators));
-            SCOPE_EXIT({ if (!discriminators) discriminators = std::move(mutable_discriminators); });
+            auto * discriminators_slot = &col.getLocalDiscriminatorsPtr();
+            MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(*discriminators_slot));
+            SCOPE_EXIT({ if (!*discriminators_slot) *discriminators_slot = std::move(mutable_discriminators); });
             mutable_discriminators->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-            discriminators = std::move(mutable_discriminators);
+            *discriminators_slot = std::move(mutable_discriminators);
         }
         else
             insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache, true);
@@ -599,11 +599,11 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
         /// The substream cache and sibling readers can retain this column. Deep-unshare before
         /// appending or compacting discriminators, then keep the cache entry on the old column.
-        auto & discriminators_ptr = col.getLocalDiscriminatorsPtr();
-        auto mutable_discriminators = IColumn::mutate(std::move(discriminators_ptr));
-        SCOPE_EXIT({ if (!discriminators_ptr) discriminators_ptr = std::move(mutable_discriminators); });
+        auto * discriminators_slot = &col.getLocalDiscriminatorsPtr();
+        auto mutable_discriminators = IColumn::mutate(std::move(*discriminators_slot));
+        SCOPE_EXIT({ if (!*discriminators_slot) *discriminators_slot = std::move(mutable_discriminators); });
         size_t prev_size = mutable_discriminators->size();
-        discriminators_ptr = std::move(mutable_discriminators);
+        *discriminators_slot = std::move(mutable_discriminators);
 
         /// Deserialize discriminators according to serialization mode.
         /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.
