@@ -932,7 +932,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         if (create.isParameterizedView())
         {
-            if (!create.attach)
+            if (!internal && !create.attach_short_syntax)
             {
                 const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(getContext()->getSettingsRef());
                 for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
