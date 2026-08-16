@@ -8,6 +8,12 @@ INSERT INTO qbit VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [-1, -2, -3, -4, -5, 
 SELECT id, vec[1], vec[8], vec[-1], arrayElement(vec, 3) FROM qbit ORDER BY id;
 SELECT DISTINCT toTypeName(vec[1]) FROM qbit;
 
+SELECT 'Array indices';
+SELECT id, arrayElement(vec, [2, 4, 1]), arrayElement(vec, [-1, 9, -9]) FROM qbit ORDER BY id;
+SELECT arrayElement(CAST([10, 20, 30, 40] AS QBit(Float32, 4)), [2, 4, 1]);
+SELECT arrayElement(CAST([10, 20, 30, 40] AS QBit(Float32, 4)), [toNullable(2), NULL, 9]), toTypeName(arrayElement(CAST([10, 20, 30, 40] AS QBit(Float32, 4)), [toNullable(2), NULL, 9]));
+SELECT arrayElementOrNull(CAST([10, 20, 30, 40] AS QBit(Float32, 4)), [2, 9, -1]);
+
 SELECT 'Out-of-range index gives the default value, or NULL for arrayElementOrNull';
 SELECT vec[9], vec[-9], arrayElementOrNull(vec, 9), arrayElementOrNull(vec, 1) FROM qbit ORDER BY id;
 

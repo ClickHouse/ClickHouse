@@ -190,6 +190,9 @@ private:
     template <typename T>
     ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
+    template <typename T>
+    ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+
     using Offsets = ColumnArray::Offsets;
 
     static bool matchKeyToIndexNumber(
@@ -2457,6 +2460,140 @@ ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName &
     }
 }
 
+template <ArrayElementExceptionMode mode>
+template <typename T>
+ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    using Word = std::conditional_t<
+        sizeof(T) == 1,
+        uint8_t,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+    const size_t dimension = qbit_type.getDimension();
+    const size_t stride = qbit_type.getStride();
+    const size_t element_size = qbit_type.getElementSize();
+    const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(
+        qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column);
+    const auto & tuple = qbit_col.getNestedData();
+
+    const ColumnArray * index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
+    ColumnPtr materialized_index;
+    if (!index_array)
+    {
+        materialized_index = arguments[1].column->convertToFullColumnIfConst();
+        index_array = checkAndGetColumn<ColumnArray>(materialized_index.get());
+    }
+    if (!index_array)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+
+    ColumnPtr index_holder = recursiveRemoveLowCardinality(index_array->getDataPtr());
+    const auto * nullable_index = checkAndGetColumn<ColumnNullable>(index_holder.get());
+    const IColumn & index_data = nullable_index ? nullable_index->getNestedColumn() : *index_holder;
+    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+    const auto & offsets = index_array->getOffsets();
+    const size_t total_indices = input_rows_count ? offsets[input_rows_count - 1] : 0;
+
+    auto result = ColumnVector<T>::create(total_indices);
+    auto & result_data = result->getData();
+    memset(result_data.data(), 0, total_indices * sizeof(T));
+
+    const bool result_is_nullable = is_null_mode || nullable_index;
+    ColumnUInt8::MutablePtr null_map;
+    if (result_is_nullable)
+        null_map = ColumnUInt8::create(total_indices, UInt8(0));
+
+    auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
+    {
+        return reinterpret_cast<const UInt8 *>(
+            assert_cast<const ColumnFixedString &>(tuple.getColumn(group * element_size + bit)).getChars().data());
+    };
+
+    auto extract_into = [&](size_t output_row, size_t qbit_row, size_t element)
+    {
+        const size_t group = element / stride;
+        const size_t within_group = element % stride;
+        const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+        const size_t bit_in_byte = within_group % 8;
+
+        Word word = 0;
+        for (size_t bit = 0; bit < element_size; ++bit)
+        {
+            const UInt8 byte = plane_chars(group, bit)[qbit_row * bytes_per_group + byte_offset];
+            word |= static_cast<Word>(static_cast<Word>((byte >> bit_in_byte) & 1) << (element_size - 1 - bit));
+        }
+        result_data[output_row] = std::bit_cast<T>(word);
+    };
+
+    auto process = [&]<typename IndexType>(const PaddedPODArray<IndexType> & indices)
+    {
+        size_t output_row = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const size_t begin = row ? offsets[row - 1] : 0;
+            for (size_t pos = begin; pos < offsets[row]; ++pos, ++output_row)
+            {
+                if (index_null_map && (*index_null_map)[pos])
+                {
+                    if (null_map)
+                        null_map->getData()[output_row] = 1;
+                    continue;
+                }
+
+                std::optional<size_t> element;
+                if constexpr (std::is_signed_v<IndexType>)
+                {
+                    if (indices[pos] > 0 && static_cast<UInt64>(indices[pos]) <= dimension)
+                        element = static_cast<size_t>(indices[pos] - 1);
+                    else if (indices[pos] < 0)
+                    {
+                        const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(indices[pos]);
+                        if (abs_index <= dimension)
+                            element = dimension - static_cast<size_t>(abs_index);
+                    }
+                }
+                else if (indices[pos] >= 1 && indices[pos] <= dimension)
+                    element = static_cast<size_t>(indices[pos] - 1);
+
+                if (element)
+                    extract_into(output_row, qbit_is_const ? 0 : row, *element);
+                else if constexpr (is_null_mode)
+                    null_map->getData()[output_row] = 1;
+            }
+        }
+    };
+
+    auto dispatch = [&](const auto * column) -> bool
+    {
+        if (!column)
+            return false;
+        process(column->getData());
+        return true;
+    };
+
+    if (!dispatch(checkAndGetColumn<ColumnVector<UInt8>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt16>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt32>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<UInt64>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int8>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int16>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int32>>(&index_data))
+        && !dispatch(checkAndGetColumn<ColumnVector<Int64>>(&index_data)))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}", arguments[1].column->getName(), getName());
+
+    auto result_offsets = ColumnArray::ColumnOffsets::create();
+    result_offsets->getData().assign(offsets.begin(), offsets.begin() + input_rows_count);
+    ColumnPtr result_data_column;
+    if (null_map)
+        result_data_column = ColumnNullable::create(std::move(result), std::move(null_map));
+    else
+        result_data_column = std::move(result);
+    return ColumnArray::create(std::move(result_data_column), std::move(result_offsets));
+}
+
 /** A QBit stores each vector bit-transposed: tuple column `group * element_size + bit` is a FixedString bit plane
   * holding bit `bit` (MSB first) of the `stride` dimensions of stride group `group`. Within a plane each byte holds
   * one octet of 8 dimensions, high octets at low byte offsets, LSB-first within a byte (see
@@ -2476,6 +2613,9 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
         sizeof(T) == 1,
         uint8_t,
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
+        return executeQBitWithArrayIndex<T>(arguments, input_rows_count);
 
     const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
     const size_t dimension = qbit_type.getDimension();
@@ -2652,6 +2792,25 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
     if (const auto * qbit_type = checkAndGetDataType<DataTypeQBit>(arguments[0].get()))
     {
+        if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
+        {
+            auto index_element_type = recursiveRemoveLowCardinality(index_array_type->getNestedType());
+            const bool index_element_is_nullable = index_element_type->isNullable();
+            if (!isNativeInteger(removeNullable(index_element_type)))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument for function '{}' must be integer or array of integers, got '{}' instead",
+                    getName(),
+                    arguments[1]->getName());
+            }
+
+            auto element_type = qbit_type->getElementType();
+            if ((is_null_mode || index_element_is_nullable) && element_type->canBeInsideNullable())
+                element_type = makeNullable(element_type);
+            return std::make_shared<DataTypeArray>(element_type);
+        }
+
         if (!isNativeInteger(arguments[1]))
         {
             throw Exception(
