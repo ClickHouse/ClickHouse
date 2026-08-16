@@ -1032,8 +1032,26 @@ void ClientBase::armResponsiveOutput(WriteBufferFromFileDescriptor & buf)
     ///   arrives, so that even with `partial_result_on_first_cancel` a stuck sink cannot keep the
     ///   client from reacting to the first Ctrl+C.
     buf.setCancellationHook(
-        [this]() { return query_interrupt_handler.cancelledWhileRunning(); },
-        [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
+        [this]() { return outputCancelledWhileRunning(); },
+        [this]() { return outputInterruptedWhileRunning(); });
+}
+
+
+bool ClientBase::outputCancelledWhileRunning() const
+{
+    const Int32 signals_before_teardown = output_teardown_signal_baseline.load();
+    if (signals_before_teardown >= 0)
+        return query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown);
+    return query_interrupt_handler.cancelledWhileRunning();
+}
+
+
+bool ClientBase::outputInterruptedWhileRunning() const
+{
+    const Int32 signals_before_teardown = output_teardown_signal_baseline.load();
+    if (signals_before_teardown >= 0)
+        return query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown);
+    return query_interrupt_handler.interruptedWhileRunning();
 }
 
 
@@ -2311,6 +2329,7 @@ void ClientBase::onEndOfStream()
     /// teardown write: output_format->finalize() below runs before resetOutput() and can itself
     /// block on a pager or stdout sink.
     const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
+    output_teardown_signal_baseline.store(signals_before_teardown);
 
     if (need_render_progress && tty_buf)
     {
@@ -2484,6 +2503,8 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
     /// finalization can block on an output sink. A Ctrl+C in that window must be treated as a
     /// teardown cancellation rather than folded into the baseline.
     const Int32 teardown_signal_baseline = signals_before_teardown.value_or(query_interrupt_handler.receivedSignalCount());
+    output_teardown_signal_baseline.store(teardown_signal_baseline);
+    SCOPE_EXIT({ output_teardown_signal_baseline.store(-1); });
 
     /// When resetOutput() runs as the outer teardown in processParsedSingleQuery(), the interrupt
     /// handler is already stopped (its SCOPE_EXIT in processOrdinaryQuery()/processInsertQuery()
@@ -2547,37 +2568,10 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
     output_format.reset();
     pending_progress.reset();
 
-    /// output_format.reset() above joined the parallel-formatting collector, the only other reader of
-    /// std_out's cancellation hook (WriteBufferFromFileDescriptor::nextImpl), so the hook can now be
-    /// re-pointed for the teardown flushes below and cleared at function end without racing it.
-    /// Use the very same predicate as the in-query hooks: honor a cancellation only while the interrupt
-    /// handler is still armed for this query. On exception paths the handler is already stopped here
-    /// (its cancelled() is then unconditionally true), so cancelledWhileRunning() is false and the
-    /// teardown flush is not treated as cancelled - this avoids discarding already-produced output. On normal completion
-    /// the handler is still armed, so a fresh Ctrl+C during a teardown flush to a slow/stuck stdout is
-    /// honored regardless of whether the signal raced in before or after this point. Basing the
-    /// predicate on a captured `!cancelled()` instead would go permanently inert if the signal arrived
-    /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
-    /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
-    ///
-    if (std_out)
-        armResponsiveOutput(*std_out);
-    /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
-    /// flushes below still clear the progress indication through it (std_out_wrapper->finalize()
-    /// triggers the progress-clearing flush callback installed in initOutputFormat), so re-point
-    /// it the same way.
-    if (tty_buf)
-        armResponsiveOutput(*tty_buf);
-    /// The per-query pager and `INTO OUTFILE ... AND STDOUT` stdout buffers carry the same
-    /// handler-based hook (installed in initOutputFormat), and are finalized by the teardown
-    /// flushes below (std_out_wrapper->finalize() and out_file_buf->finalize() respectively).
-    /// Re-point them too, otherwise on an exception path (where the handler has been stopped but
-    /// the query was not genuinely cancelled) finalizing them would discard already-produced
-    /// output. They are destroyed in this function, so they need no clearing afterwards.
-    if (pager_cmd)
-        armResponsiveOutput(pager_cmd->in);
-    if (select_into_file_and_stdout_buf)
-        armResponsiveOutput(*select_into_file_and_stdout_buf);
+    /// The cancellation-hook predicates read output_teardown_signal_baseline, which was recorded
+    /// before output_format->finalize() above. Thus an earlier stage-one interrupt cannot abort a
+    /// footer or another teardown flush, while a fresh Ctrl+C remains responsive. Keeping the same
+    /// hook object is also necessary until output_format.reset() joins the parallel formatter.
     SCOPE_EXIT({
         if (std_out)
             std_out->setCancellationHook({});

@@ -321,6 +321,9 @@ private:
     /// WriteBufferFromFileDescriptor::setCancellationHook.
     void armResponsiveOutput(WriteBufferFromFileDescriptor & buf);
 
+    bool outputCancelledWhileRunning() const;
+    bool outputInterruptedWhileRunning() const;
+
     String getPrompt() const;
 
     void resetOutput(std::optional<Int32> signals_before_teardown = {});
@@ -482,6 +485,11 @@ protected:
 
     QueryInterruptHandler query_interrupt_handler;
 
+    /// Once result processing reaches teardown, only interrupt signals received after this
+    /// baseline may abandon an output flush. This lets a stage-one interrupt request a partial
+    /// result without truncating its footer. It is read by parallel-formatting worker threads.
+    std::atomic<Int32> output_teardown_signal_baseline = -1;
+
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
@@ -588,8 +596,8 @@ protected:
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
     /// The stdout buffer used by `INTO OUTFILE ... AND STDOUT` (wrapped inside out_file_buf).
-    /// Kept separately so its cancellation hook can be re-pointed during teardown in resetOutput(),
-    /// exactly like std_out's.
+    /// Kept separately so its cancellation hook remains valid during teardown, exactly like
+    /// std_out's.
     std::shared_ptr<WriteBufferFromFileDescriptor> select_into_file_and_stdout_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
