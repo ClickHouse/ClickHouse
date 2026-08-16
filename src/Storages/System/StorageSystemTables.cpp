@@ -1185,6 +1185,21 @@ protected:
                         }
                         if (can_read)
                         {
+                            /// A `SQL SECURITY DEFINER` / `NONE` view reads its stored SELECT under an
+                            /// effective context rather than the caller's. Its modification hash consequently
+                            /// tracks source tables the caller may not be allowed to read, which would expose
+                            /// source-table churn through `system.tables`. Do not recurse through such a view
+                            /// from this introspection path. Query-cache and refresh consistency still use the
+                            /// effective context because they need to describe the rows that the view actually
+                            /// returns.
+                            if (typeid_cast<const StorageView *>(table.get())
+                                && metadata_snapshot->sql_security_type
+                                && *metadata_snapshot->sql_security_type != SQLSecurityType::INVOKER)
+                            {
+                                res_columns[res_index++]->insertDefault();
+                                continue;
+                            }
+
                             /// Refresh lazily applied external metadata before hashing, so that the value
                             /// shown here does not change after the table's first ordinary read merely
                             /// because that read performed the update (see

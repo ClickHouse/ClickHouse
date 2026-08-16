@@ -994,8 +994,8 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// target at all - neither the definer's nor the caller's - so unlike `StorageView` no row-policy
         /// change can move the result here; failing closed on the effective reader's policy (which
         /// `computeTableModificationHashForConsistency` does) is merely conservative. See
-        /// `StorageView::getModificationHash` for the rest of the reasoning, including why exposing the
-        /// resulting hash is not a leak of the definer's data.
+        /// `StorageView::getModificationHash` for the rest of the reasoning. Unlike `system.tables`, this
+        /// query-consistency path must use the effective reader context because it describes the rows read.
         auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
 
         /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
