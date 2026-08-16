@@ -105,7 +105,7 @@ possible_properties = {
     "aggregate_function_group_array_max_element_size": threshold_generator(
         0.2, 0.2, 0, 10000
     ),
-    "allow_feature_tier": lambda: random.randint(0, 2),
+    "allow_feature_tier": lambda: random.randint(0, 3),
     "allow_use_jemalloc_memory": true_false_lambda,
     "async_insert_queue_flush_on_shutdown": true_false_lambda,
     "async_insert_threads": threads_lambda,
