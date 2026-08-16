@@ -255,6 +255,8 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
         "EXISTS TABLE db.t INTO OUTFILE 'x'",
         "DESCRIBE TABLE db.t FORMAT JSONEachRow",
         "CREATE TABLE db.t (a UInt64) ENGINE = MergeTree ORDER BY a",
+        "CREATE TABLE t (a UInt64) ENGINE = Memory COMMENT 'c' AS SELECT 1",
+        "CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR COMMENT 'c' AS SELECT 1",
         "KILL QUERY WHERE query_id = 'x' FORMAT JSONEachRow",
         "SELECT 1 INTO OUTFILE 'x' FORMAT JSONEachRow",
     };
@@ -366,6 +368,11 @@ TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
     EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP VIEW t"));
     EXPECT_NE(hashOf("DETACH TABLE t"), hashOf("DETACH TABLE t PERMANENTLY"));
     EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE 'x%'"), hashOf("TRUNCATE TABLES FROM db LIKE 'y%'"));
+
+    std::string like_with_flag_byte = "TRUNCATE TABLES FROM db LIKE 'x";
+    like_with_flag_byte += '\x01';
+    like_with_flag_byte += "'";
+    EXPECT_NE(hashOf(like_with_flag_byte), hashOf("TRUNCATE TABLES FROM db NOT LIKE 'x'"));
 
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM u"));
     EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));

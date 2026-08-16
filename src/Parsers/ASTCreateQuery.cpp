@@ -389,38 +389,74 @@ ASTPtr ASTCreateQuery::clone() const
     /// so the clone has the same tree hash.
     cloneTableOptions(*res);
 
-    if (columns_list)
-        res->set(res->columns_list, columns_list->clone());
-    if (aliases_list)
-        res->set(res->aliases_list, aliases_list->clone());
-    if (storage)
-        res->set(res->storage, storage->clone());
-    if (select)
-        res->set(res->select, select->clone());
-    if (table_overrides)
-        res->set(res->table_overrides, table_overrides->clone());
-    if (targets)
-        res->set(res->targets, targets->clone());
-    if (sql_security)
-        res->set(res->sql_security, sql_security->clone());
-    if (watermark_function)
-        res->set(res->watermark_function, watermark_function->clone());
-    if (lateness_function)
-        res->set(res->lateness_function, lateness_function->clone());
-
-    if (dictionary)
+    if (is_dictionary)
     {
         chassert(is_dictionary);
-        res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
-        res->set(res->dictionary, dictionary->clone());
+        if (dictionary_attributes_list)
+            res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
+        if (dictionary)
+            res->set(res->dictionary, dictionary->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
     }
-
-    if (refresh_strategy)
-        res->set(res->refresh_strategy, refresh_strategy->clone());
-    if (as_table_function)
-        res->set(res->as_table_function, as_table_function->clone());
-    if (comment)
-        res->set(res->comment, comment->clone());
+    else if (is_window_view)
+    {
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
+        if (watermark_function)
+            res->set(res->watermark_function, watermark_function->clone());
+        if (lateness_function)
+            res->set(res->lateness_function, lateness_function->clone());
+        if (select)
+            res->set(res->select, select->clone());
+        if (targets)
+            res->set(res->targets, targets->clone());
+    }
+    else if (is_ordinary_view || is_materialized_view)
+    {
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
+        if (aliases_list)
+            res->set(res->aliases_list, aliases_list->clone());
+        if (refresh_strategy)
+            res->set(res->refresh_strategy, refresh_strategy->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (sql_security)
+            res->set(res->sql_security, sql_security->clone());
+        if (select)
+            res->set(res->select, select->clone());
+        if (targets)
+            res->set(res->targets, targets->clone());
+    }
+    else if (database && !table)
+    {
+        if (storage)
+            res->set(res->storage, storage->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (table_overrides)
+            res->set(res->table_overrides, table_overrides->clone());
+    }
+    else
+    {
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
+        if (storage)
+            res->set(res->storage, storage->clone());
+        if (as_table_function)
+            res->set(res->as_table_function, as_table_function->clone());
+        if (comment)
+            res->set(res->comment, comment->clone());
+        if (sql_security)
+            res->set(res->sql_security, sql_security->clone());
+        if (select)
+            res->set(res->select, select->clone());
+        if (targets)
+            res->set(res->targets, targets->clone());
+    }
 
     cloneOutputOptions(*res);
 

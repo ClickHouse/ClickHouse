@@ -35,12 +35,18 @@ void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     /// These query modes and filters are not children. `no_ddl_lock` and `no_access_check` are
     /// internal execution details, never represented in SQL, and deliberately stay out of the hash.
     hash_state.update(static_cast<UInt8>(kind));
-    hash_state.update(cluster);
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster);
     hash_state.update(if_exists);
     hash_state.update(if_empty);
     hash_state.update(has_all);
     hash_state.update(has_tables);
-    hash_state.update(like);
+    update_string(like);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
     hash_state.update(is_dictionary);
