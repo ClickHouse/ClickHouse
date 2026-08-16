@@ -839,19 +839,21 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                     "Failed to re-add table `{}` to replication after a failed detach", table_name));
             }
 
-            if (table_readded)
-            {
-                rollback_tables_list();
-            }
-            else
+            if (!table_readded)
             {
                 /// Keep the wrapper published. The nested table still exists, and removing its wrapper
                 /// would strand it: a subsequent `DETACH TABLE ... PERMANENTLY` could no longer find it,
-                /// while `ATTACH TABLE` would collide with its physical metadata. The tables-list now
-                /// matches the publication, and `removeTableFromReplication` is idempotent when the
-                /// table is already absent from that publication, so after the transient re-add failure
-                /// is resolved the user can retry this detach and remove the nested table cleanly.
+                /// while `ATTACH TABLE` would collide with its physical metadata. Restore the persisted
+                /// tables-list even though the publication currently lacks the table: after a restart,
+                /// `fetchRequiredTables` detects that mismatch, recreates the publication from the
+                /// persisted list, and republishes the wrapper. `removeTableFromReplication` is idempotent
+                /// when the table is already absent from that publication, so after the transient re-add
+                /// failure is resolved the user can retry this detach and remove the nested table cleanly.
             }
+
+            /// This must be durable even if `addTableToReplication` failed: keeping the wrapper only
+            /// in memory makes the recovery path disappear after a server restart.
+            rollback_tables_list();
 
             e.addMessage("while dropping the nested table of detached table `" + table_name + "`");
             throw;

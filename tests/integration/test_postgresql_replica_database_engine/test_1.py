@@ -770,8 +770,10 @@ def test_failed_detach_remains_retryable_after_failed_rollback(started_cluster):
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
         )
 
-    # Even when re-adding the table to replication also fails, the wrapper remains visible, so the
-    # surviving nested table is not stranded and the DETACH can be retried.
+    # Even when re-adding the table to replication also fails, the wrapper remains visible and the
+    # persisted tables list is restored, so the surviving nested table is not stranded and the DETACH
+    # can still be retried after a restart.
+    instance.restart_clickhouse()
     assert table_name in instance.query("SHOW TABLES FROM test_database").split()
 
     # A retry works even though the prior rollback could not re-add the table to the publication.
