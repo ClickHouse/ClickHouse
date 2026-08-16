@@ -55,6 +55,7 @@ private:
     const Names user_requested_columns;
     const size_t requested_num_streams;
     const UInt64 max_block_size;
+    const bool unordered;
     const MergeTreeBoundsSubscriptionPtr subscription;
     /// Streaming settings of the query (bounded flag, cursor, watermark); a query property read from `query_info`.
     const StreamSettings stream_settings;
