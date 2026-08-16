@@ -945,7 +945,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         auto map_json_info = tryMatchJSONSubcolumn(
             map_column_name, json_path_values_configuration->column_name);
         if (!map_json_info
-            || json_path_values_configuration->path_matcher->shouldSkip(map_json_info->path)
+            || !json_path_values_configuration->path_matcher->shouldIndex(map_json_info->path)
             || hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
             return std::nullopt;
         const auto map_type = json_path_values_configuration->json_type->tryGetSubcolumnType(map_json_info->path);
@@ -997,7 +997,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         auto map_json_info = tryMatchJSONSubcolumn(
             map_column_name, json_path_values_configuration->column_name);
         if (map_json_info
-            && !json_path_values_configuration->path_matcher->shouldSkip(map_json_info->path)
+            && json_path_values_configuration->path_matcher->shouldIndex(map_json_info->path)
             && !hasUnindexedJSONPathValuesTypedAncestor(object_type, map_json_info->path))
         {
             const auto map_type = json_path_values_configuration->json_type->tryGetSubcolumnType(map_json_info->path);
@@ -1033,7 +1033,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         node.getColumnName(), json_path_values_configuration->column_name);
     if (json_info)
     {
-        if (json_path_values_configuration->path_matcher->shouldSkip(json_info->subcolumn.path)
+        if (!json_path_values_configuration->path_matcher->shouldIndex(json_info->subcolumn.path)
             || hasUnindexedJSONPathValuesTypedAncestor(object_type, json_info->subcolumn.path))
             return std::nullopt;
         return JSONPathValuesNodeInfo{

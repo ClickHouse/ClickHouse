@@ -24,23 +24,118 @@ namespace DB::JSONPathValues
 class PathMatcher
 {
 public:
-    PathMatcher(std::vector<String> skip_paths_, std::vector<String> skip_path_regexps_)
-        : skip_path_regexps(std::move(skip_path_regexps_))
+    PathMatcher(
+        std::vector<String> include_paths_,
+        std::vector<String> include_path_regexps_,
+        std::vector<String> skip_paths_,
+        std::vector<String> skip_path_regexps_)
+        : include_paths(normalizePaths(std::move(include_paths_)))
+        , include_path_regexps(normalizeStrings(std::move(include_path_regexps_)))
+        , skip_paths(normalizePaths(std::move(skip_paths_)))
+        , skip_path_regexps(normalizeStrings(std::move(skip_path_regexps_)))
     {
-        std::sort(skip_paths_.begin(), skip_paths_.end());
-        skip_paths_.erase(std::unique(skip_paths_.begin(), skip_paths_.end()), skip_paths_.end());
-        for (auto & path : skip_paths_)
-        {
-            if (skip_paths.empty() || !matchesPathOrSubtree(path, skip_paths.back()))
-                skip_paths.emplace_back(std::move(path));
-        }
+        compileRegexps(include_path_regexps, include_regexps);
+        compileRegexps(skip_path_regexps, skip_regexps);
+    }
 
-        std::sort(skip_path_regexps.begin(), skip_path_regexps.end());
-        skip_path_regexps.erase(
-            std::unique(skip_path_regexps.begin(), skip_path_regexps.end()),
-            skip_path_regexps.end());
-        regexps.reserve(skip_path_regexps.size());
-        for (const auto & regexp_string : skip_path_regexps)
+    bool shouldIndex(std::string_view path) const
+    {
+        if (matchesAnyPathOrSubtree(path, skip_paths) || matchesAnyRegexp(path, skip_regexps))
+            return false;
+
+        return !hasIncludeFilter()
+            || matchesAnyPathOrSubtree(path, include_paths)
+            || matchesAnyRegexp(path, include_regexps);
+    }
+
+    bool shouldVisit(std::string_view path) const
+    {
+        if (matchesAnyPathOrSubtree(path, skip_paths))
+            return false;
+
+        /// An arbitrary include or skip regexp can match a descendant differently from its ancestor.
+        return !hasIncludeFilter()
+            || matchesAnyPathOrSubtree(path, include_paths)
+            || matchesAnyAncestor(path, include_paths)
+            || !include_regexps.empty();
+    }
+
+    const std::vector<String> & getIncludePaths() const { return include_paths; }
+    const std::vector<String> & getIncludePathRegexps() const { return include_path_regexps; }
+    const std::vector<String> & getSkipPaths() const { return skip_paths; }
+    const std::vector<String> & getSkipPathRegexps() const { return skip_path_regexps; }
+
+private:
+    using Regexps = std::vector<std::unique_ptr<re2::RE2>>;
+
+    bool hasIncludeFilter() const { return !include_paths.empty() || !include_regexps.empty(); }
+
+    static std::vector<String> normalizePaths(std::vector<String> paths)
+    {
+        std::sort(paths.begin(), paths.end());
+        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+
+        std::vector<String> result;
+        result.reserve(paths.size());
+        for (auto & path : paths)
+        {
+            if (!matchesAnyPathOrSubtree(path, result))
+                result.emplace_back(std::move(path));
+        }
+        return result;
+    }
+
+    static std::vector<String> normalizeStrings(std::vector<String> values)
+    {
+        std::sort(values.begin(), values.end());
+        values.erase(std::unique(values.begin(), values.end()), values.end());
+        return values;
+    }
+
+    static bool matchesAnyPathOrSubtree(std::string_view path, const std::vector<String> & paths)
+    {
+        while (true)
+        {
+            const auto it = std::lower_bound(
+                paths.begin(),
+                paths.end(),
+                path,
+                [](const String & lhs, std::string_view rhs) { return lhs.compare(rhs) < 0; });
+            if (it != paths.end() && *it == path)
+                return true;
+
+            const auto separator = path.find_last_of(".[");
+            if (separator == std::string_view::npos)
+                return false;
+            path = path.substr(0, separator);
+        }
+    }
+
+    static bool matchesAnyAncestor(std::string_view path, const std::vector<String> & paths)
+    {
+        String descendant_prefix(path);
+        descendant_prefix += '.';
+        auto it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
+        if (it != paths.end() && it->starts_with(descendant_prefix))
+            return true;
+
+        descendant_prefix.back() = '[';
+        it = std::lower_bound(paths.begin(), paths.end(), descendant_prefix);
+        return it != paths.end() && it->starts_with(descendant_prefix);
+    }
+
+    static bool matchesAnyRegexp(std::string_view path, const Regexps & regexps)
+    {
+        return std::any_of(
+            regexps.begin(),
+            regexps.end(),
+            [&](const auto & regexp) { return re2::RE2::PartialMatch(path, *regexp); });
+    }
+
+    static void compileRegexps(const std::vector<String> & regexp_strings, Regexps & regexps)
+    {
+        regexps.reserve(regexp_strings.size());
+        for (const auto & regexp_string : regexp_strings)
         {
             auto regexp = std::make_unique<re2::RE2>(regexp_string, regexpOptions());
             if (!regexp->ok())
@@ -53,36 +148,6 @@ public:
         }
     }
 
-    bool shouldSkip(std::string_view path) const
-    {
-        const auto it = std::upper_bound(skip_paths.begin(), skip_paths.end(), path);
-        if (it != skip_paths.begin() && matchesPathOrSubtree(path, *std::prev(it)))
-            return true;
-
-        for (const auto & regexp : regexps)
-        {
-            if (re2::RE2::PartialMatch(path, *regexp))
-                return true;
-        }
-        return false;
-    }
-
-    const std::vector<String> & getSkipPaths() const { return skip_paths; }
-    const std::vector<String> & getSkipPathRegexps() const { return skip_path_regexps; }
-
-private:
-    static bool matchesPathOrSubtree(std::string_view path, std::string_view prefix)
-    {
-        if (!path.starts_with(prefix))
-            return false;
-        auto suffix = path.substr(prefix.size());
-        if (suffix.empty() || suffix.starts_with('.'))
-            return true;
-        while (suffix.starts_with("[]"))
-            suffix.remove_prefix(2);
-        return suffix.empty() || suffix.starts_with('.');
-    }
-
     static re2::RE2::Options regexpOptions()
     {
         re2::RE2::Options options;
@@ -90,9 +155,12 @@ private:
         return options;
     }
 
+    std::vector<String> include_paths;
+    std::vector<String> include_path_regexps;
     std::vector<String> skip_paths;
     std::vector<String> skip_path_regexps;
-    std::vector<std::unique_ptr<re2::RE2>> regexps;
+    Regexps include_regexps;
+    Regexps skip_regexps;
 };
 
 inline constexpr UInt64 DEFAULT_MAX_TOKEN_BYTES = 1024;

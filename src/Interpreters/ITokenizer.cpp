@@ -45,37 +45,48 @@ namespace ErrorCodes
 
 JSONPathValuesTokenizer::JSONPathValuesTokenizer(
     size_t max_token_bytes_,
+    std::vector<String> include_paths,
+    std::vector<String> include_path_regexps,
     std::vector<String> skip_paths,
     std::vector<String> skip_path_regexps)
     : ITokenizerHelper(Type::JSONPathValues)
     , max_token_bytes(max_token_bytes_)
-    , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(std::move(skip_paths), std::move(skip_path_regexps)))
+    , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(
+        std::move(include_paths),
+        std::move(include_path_regexps),
+        std::move(skip_paths),
+        std::move(skip_path_regexps)))
 {
 }
 
 String JSONPathValuesTokenizer::getDescription() const
 {
-    if (path_matcher->getSkipPaths().empty() && path_matcher->getSkipPathRegexps().empty())
+    if (path_matcher->getIncludePaths().empty()
+        && path_matcher->getIncludePathRegexps().empty()
+        && path_matcher->getSkipPaths().empty()
+        && path_matcher->getSkipPathRegexps().empty())
         return fmt::format("{}({})", getName(), max_token_bytes);
 
-    String result = fmt::format("{}(max_token_bytes = {}, skip_paths = [", getName(), max_token_bytes);
-    bool first = true;
-    for (const auto & path : path_matcher->getSkipPaths())
+    auto append_array = [](String & result, const auto & values)
     {
-        if (!first)
-            result += ", ";
-        first = false;
-        result += quoteString(path);
-    }
+        bool first = true;
+        for (const auto & value : values)
+        {
+            if (!first)
+                result += ", ";
+            first = false;
+            result += quoteString(value);
+        }
+    };
+
+    String result = fmt::format("{}(max_token_bytes = {}, include_paths = [", getName(), max_token_bytes);
+    append_array(result, path_matcher->getIncludePaths());
+    result += "], include_paths_regexp = [";
+    append_array(result, path_matcher->getIncludePathRegexps());
+    result += "], skip_paths = [";
+    append_array(result, path_matcher->getSkipPaths());
     result += "], skip_paths_regexp = [";
-    first = true;
-    for (const auto & regexp : path_matcher->getSkipPathRegexps())
-    {
-        if (!first)
-            result += ", ";
-        first = false;
-        result += quoteString(regexp);
-    }
+    append_array(result, path_matcher->getSkipPathRegexps());
     result += "])";
     return result;
 }

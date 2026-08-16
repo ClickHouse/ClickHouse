@@ -72,6 +72,8 @@ std::vector<String> castStringArray(const Field & field, std::string_view argume
 
 std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(
     UInt64 max_token_bytes,
+    std::vector<String> include_paths = {},
+    std::vector<String> include_path_regexps = {},
     std::vector<String> skip_paths = {},
     std::vector<String> skip_path_regexps = {})
 {
@@ -86,6 +88,8 @@ std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(
 
     return std::make_unique<JSONPathValuesTokenizer>(
         max_token_bytes,
+        std::move(include_paths),
+        std::move(include_path_regexps),
         std::move(skip_paths),
         std::move(skip_path_regexps));
 }
@@ -132,11 +136,23 @@ std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(const ASTFunction & fu
     }
 
     UInt64 max_token_bytes = JSONPathValues::DEFAULT_MAX_TOKEN_BYTES;
+    std::vector<String> include_paths;
+    std::vector<String> include_path_regexps;
     std::vector<String> skip_paths;
     std::vector<String> skip_path_regexps;
     if (auto it = options.find("max_token_bytes"); it != options.end())
     {
         max_token_bytes = castAs<UInt64>(it->second, "max_token_bytes");
+        options.erase(it);
+    }
+    if (auto it = options.find("include_paths"); it != options.end())
+    {
+        include_paths = castStringArray(it->second, "include_paths", true);
+        options.erase(it);
+    }
+    if (auto it = options.find("include_paths_regexp"); it != options.end())
+    {
+        include_path_regexps = castStringArray(it->second, "include_paths_regexp", false);
         options.erase(it);
     }
     if (auto it = options.find("skip_paths"); it != options.end())
@@ -158,6 +174,8 @@ std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(const ASTFunction & fu
 
     return createJSONPathValuesTokenizer(
         max_token_bytes,
+        std::move(include_paths),
+        std::move(include_path_regexps),
         std::move(skip_paths),
         std::move(skip_path_regexps));
 }
