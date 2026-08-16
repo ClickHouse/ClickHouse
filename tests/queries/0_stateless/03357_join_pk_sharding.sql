@@ -2,7 +2,11 @@
 
 SET explain_query_plan_default = 'legacy';
 
-SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
+-- Pinned because the test asserts on join plan/order
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
+SET query_plan_optimize_join_order_limit = 10;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET use_statistics = 0;
 drop table if exists tab_l;

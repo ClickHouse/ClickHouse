@@ -8,6 +8,10 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
+-- Pin the DP search budget (default 100000): randomize-more can inject a tiny value (e.g. 1),
+-- and the dpsize-only queries below have no greedy fallback, so a small budget makes them run
+-- out of plans and throw EXPERIMENTAL_FEATURE_ERROR.
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
 
 -- R1: Small dimension table (Demo size: 10)
 CREATE TABLE R1 (

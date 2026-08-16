@@ -1684,9 +1684,19 @@ class SettingsRandomizer:
         "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
-        # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
-        # That is why we use it with fallback to 'greedy'.
-        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        # JoinOrderAlgorithm is a multi-enum {greedy, dpsize, dpsub, dphyp} tried in order with
+        # fallback. dpsize/dphyp handle inner joins only and dpsub/dphyp can still bail on
+        # disconnected components, so every combination keeps `greedy` in the chain: exhausting the
+        # chain throws EXPERIMENTAL_FEATURE_ERROR (joinOrder.cpp), which would break any test with
+        # outer joins. Listing an algorithm first still exercises it — greedy only catches the
+        # cases it cannot plan.
+        "query_plan_optimize_join_order_algorithm": lambda: random.choice([
+            'greedy',
+            'dpsize,greedy', 'dpsub,greedy', 'dphyp,greedy',
+            'greedy,dpsize', 'greedy,dpsub', 'greedy,dphyp',
+            'dphyp,dpsize,greedy', 'dpsub,dphyp,greedy',
+        ]),
+        "query_plan_optimize_join_order_max_searched_plans": lambda: random.choice([0, 1, 10, 100, 1000, 100000]),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
@@ -1699,7 +1709,8 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
-        "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
+        # 0 always builds the runtime filter, a huge value never does
+        "join_runtime_filter_min_probe_rows": lambda: random.choice([0, 100, 1000, 1_000_000]),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
@@ -1737,6 +1748,88 @@ class SettingsRandomizer:
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        "optimize_trivial_group_by_limit_query": lambda: random.random() > 0.05,
+        "query_plan_top_k_through_join": lambda: random.random() > 0.05,
+        "query_plan_push_limit_by_into_sort": lambda: random.random() > 0.05,
+        "allow_limit_by_partitions_independently": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_join": lambda: random.random() > 0.05,
+        "use_statistics_for_part_pruning": lambda: random.random() > 0.05,
+        "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
+        "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
+        "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
+        "read_in_order_use_virtual_row_per_block": lambda: random.random() < 0.3,
+        "distributed_index_analysis_only_on_coordinator": lambda: random.random() < 0.3,
+        "optimize_prewhere_after_pushdown": lambda: random.random() < 0.3,
+        # Don't randomize query_plan_optimize_lazy_final: with it on, a FINAL query that filters on
+        # a sorting-key column moved to PREWHERE and not in the SELECT list throws
+        # NOT_FOUND_COLUMN_IN_BLOCK (04627_prewhere_final_sorting_key_not_projected, the regression
+        # test for #111709, fails with the very exception it guards against). Re-add after
+        # https://github.com/ClickHouse/ClickHouse/issues/113704 is fixed.
+        # "query_plan_optimize_lazy_final": lambda: random.random() < 0.3,
+        "max_bytes_for_lazy_final": lambda: random.choice([0, 1, 256_000_000]),
+        # Gives inconsistent results
+        # "defer_partition_pruning_after_final": lambda: random.random() > 0.05,
+        # "min_filtered_ratio_for_lazy_final": lambda: random.choice([0.5, 1.0]),
+        "optimize_aggregation_in_order_limit": lambda: random.random() > 0.05,
+        "optimize_limit_by_function_keys": lambda: random.random() > 0.05,
+        "optimize_injective_functions_in_limit_by": lambda: random.random() > 0.05,
+        "optimize_limit_by_in_order": lambda: random.random() > 0.05,
+        "join_runtime_filter_from_fixed_hash_table": lambda: random.random() > 0.05,
+        "use_text_index_tokens_cache": lambda: random.random() > 0.05,
+        "use_text_index_header_cache": lambda: random.random() > 0.05,
+        "query_plan_min_columns_for_join_lazy_indexing": lambda: random.randint(0, 5),
+        "query_plan_max_limit_for_join_lazy_indexing": lambda: random.choice([0, 100, 1000, 10000]),
+        "compile_regular_expressions": lambda: random.randint(0, 1),
+        "min_count_to_compile_regular_expression": lambda: random.choice([0, 3]),
+        "query_plan_merge_expression_into_join": lambda: random.random() > 0.05,
+        "join_runtime_filter_size_from_hash_table_stats": lambda: random.random() > 0.05,
+        "use_partition_minmax_for_primary_key_pruning": lambda: random.random() > 0.05,
+        "optimize_and_compare_chain_max_hash_work": lambda: random.choice([0, 1, 1000, 5_000_000]),
+        # Don't randomize correlated_subqueries_use_in_memory_buffer: with it off, a correlated
+        # subquery over a recursive CTE throws NOT_IMPLEMENTED "Cannot clone ReadFromRecursiveCTEStep".
+        # "correlated_subqueries_use_in_memory_buffer": lambda: random.random() > 0.05,
+        "use_parquet_metadata_cache": lambda: random.randint(0, 1),
+        "allow_key_condition_coalesce_rewrite": lambda: random.random() > 0.05,
+        # "use_constant_folding_in_index_analysis": lambda: random.random() < 0.5,
+        "allow_aggregate_partitions_independently": lambda: random.random() > 0.05,
+        "enable_parallel_single_level_merge": lambda: random.random() > 0.05,
+        "query_plan_short_circuit_constant_false_join": lambda: random.random() > 0.05,
+        "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
+        "max_number_of_partitions_for_independent_distinct": lambda: random.choice([0, 1, 8, 16, 128, 1024]),
+        "enable_packed_string_keys_in_aggregation": lambda: random.random() > 0.05,
+        "query_plan_optimize_lazy_materialization_for_object_storage": lambda: random.random() > 0.05,
+        "use_query_condition_cache_for_top_k": lambda: random.random() < 0.3,
+        "use_text_index_negative_tokens_cache": lambda: random.random() > 0.05,
+        "optimize_redundant_comparisons": lambda: random.random() > 0.05,
+        "optimize_or_like_chain_min_patterns": lambda: random.choice([1, 2, 4, 10, 100]),
+        "optimize_or_like_chain_min_substrings": lambda: random.choice([1, 2, 4, 10, 100]),
+        "input_format_parquet_spatial_filter_push_down": lambda: random.random() > 0.05,
+        "enable_adaptive_aggregator": lambda: random.random() > 0.05,
+        # 1 freezes every thread's local table immediately, so every key goes through the
+        # per-bucket backlogs - the heaviest exercise of the new aggregation path
+        "adaptive_aggregator_freeze_threshold": lambda: random.choice(
+            [1, 16, 1024, 16384, 1000000]
+        ),
+        "query_plan_read_in_order_through_spilling_join": lambda: random.random() > 0.05,
+        "merge_tree_min_bytes_per_read_stream": lambda: random.choice(
+            [0, 1, 1024, 64 * 1024, 16 * 1024 * 1024]
+        ),
+        # The shrink transform is only installed when the ratio is > 1.0, so 1.0 is off
+        "shrink_over_allocated_columns_min_waste_ratio": lambda: random.choice(
+            [1.0, 1.01, 1.1, 1.5, 4.0]
+        ),
+        "shrink_over_allocated_columns_min_waste_bytes": lambda: random.choice(
+            [0, 1024, 16 * 1024 * 1024]
+        ),
+        "merge_tree_prefetch_json_shared_data_substreams": lambda: random.random() > 0.05,
+        "optimize_trivial_view_pushdown_to_distributed": lambda: random.random() > 0.05,
+        # Inert unless query_plan_direct_read_from_text_index (randomized above) is on
+        "query_plan_optimize_count_from_text_index": lambda: random.random() > 0.05,
+        # Forces the path allow_distinct_partitions_independently only opts into, so keep
+        # it rare: the cost heuristic it overrides exists for a reason
+        "force_distinct_partitions_independently": lambda: random.random() < 0.2,
+        # Don't randomize max_streams_for_union_step because it can break
+        # "max_streams_for_union_step": lambda: random.choice([0, 1, 2, 10]),
     }
 
     dependent_settings = {
@@ -1754,6 +1847,12 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
+        # part pruning via statistics requires statistics to be enabled
+        "use_statistics_for_part_pruning": "use_statistics",
+        # applying the projection index earlier is inert when the projection index is not applied
+        "use_projection_index_in_read_pools": "optimize_use_projection_filtering",
+        # the top-k variant of the query condition cache needs the cache itself to be on
+        "use_query_condition_cache_for_top_k": "use_query_condition_cache",
     }
 
     stress_test_only_settings = {
@@ -1803,6 +1902,13 @@ class SettingsRandomizer:
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
+        # function_implementation is picked from the values the server supports (probed at startup);
+        # "" is the adaptive server default, so leave the setting unset when it is chosen (an empty
+        # value would not survive the CLI serialization anyway).
+        if args.function_implementations:
+            impl = random.choice(args.function_implementations)
+            if impl:
+                random_settings["function_implementation"] = impl
         return random_settings
 
 
@@ -1881,6 +1987,9 @@ class MergeTreeSettingsRandomizer:
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
         "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
+        "text_index_max_memory_usage_before_flush": lambda: random.choice([4096, 65536, 1048576, 1073741824]),
+        "text_index_max_processed_tokens_before_flush": lambda: random.choice([1, 100, 10000, 100000000]),
+        "allow_experimental_adaptive_codec_selection": lambda: random.random() < 0.3,
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
@@ -1892,6 +2001,24 @@ class MergeTreeSettingsRandomizer:
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
         ),
+        "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
+        # Don't randomize the implicit-index settings below: they are not transparent to queries,
+        # they change what every table looks like, so they perturb the output of ~150 tests that
+        # print index metadata or plans, and pinning them one by one is not viable.
+        #
+        # `add_minmax_index_for_block_number_column` / `add_minmax_index_for_block_offset_column`
+        # add real `MINMAX` skipping indices named `auto_minmax_index__block_number` /
+        # `auto_minmax_index__block_offset`, which then show up in `SHOW INDEXES`,
+        # `system.data_skipping_indices`, part checksums and the `Skip` section of
+        # `EXPLAIN indexes = 1`. This is why their siblings
+        # `add_minmax_index_for_{numeric,string,temporal}_columns` are not randomized either.
+        # "add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
+        # "add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
+        #
+        # `part_minmax_index_columns = with_block_number_offset` gives every table a part-level
+        # min-max index even without a partition key, so `EXPLAIN indexes = 1` grows an extra
+        # `Min-Max / Condition: true` block everywhere.
+        # "part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
 
     @staticmethod
@@ -5211,6 +5338,22 @@ def collect_changed_merge_tree_settings(args):
     return list(map(lambda s: s.decode(), changed_settings))
 
 
+def collect_supported_function_implementations(args):
+    # function_implementation globally filters every ImplementationSelector-backed function, each with a
+    # different arch-tag set (greatCircleDistance has no x86-64-v3), so a value some function lacks
+    # raises NO_SUITABLE_FUNCTION_IMPLEMENTATION. "" (adaptive) always works; a forced value is safe
+    # only if every function accepts it, so probe a query spanning the narrowest-tag functions.
+    supported = [""]
+    probe = "SELECT ignore(sipHash64(materialize(1)), greatCircleDistance(materialize(0.), 0., 0., 0.))"
+    for impl in ("default", "x86-64-v3", "x86-64-v4"):
+        try:
+            clickhouse_execute(args, probe, settings={"function_implementation": impl})
+            supported.append(impl)
+        except Exception:
+            pass
+    return supported
+
+
 def check_table_column(args, database, table, column):
     return (
         int(
@@ -5831,6 +5974,7 @@ def main(args):
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
+    args.function_implementations = collect_supported_function_implementations(args)
 
     print(
         f"build_flags={args.build_flags} "

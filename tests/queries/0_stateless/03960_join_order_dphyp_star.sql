@@ -15,6 +15,7 @@ SET materialize_statistics_on_insert = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE st5_hub (k1 UInt32, k2 UInt32, k3 UInt32, k4 UInt32, k5 UInt32) ENGINE = MergeTree() PRIMARY KEY k1 SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE st5_s1  (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE st5_s2  (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

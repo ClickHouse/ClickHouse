@@ -22,6 +22,9 @@ SET enable_parallel_replicas = 0; -- The descriptors are not serialized with the
 
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 1, join_runtime_filter_from_fixed_hash_table = 1;
+-- Pinned to the default: the probe sides below are 20000 rows, so a randomized higher value skips
+-- the filter entirely and nothing is published.
+SET join_runtime_filter_min_probe_rows = 1000;
 
 
 -- Nullable probe + non-Nullable build: the common type Nullable(Int32) forces a cast on the build key.

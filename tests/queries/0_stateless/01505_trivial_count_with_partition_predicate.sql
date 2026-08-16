@@ -10,6 +10,9 @@ set max_rows_to_read = 1;
 set optimize_use_implicit_projections = 1;
 set optimize_trivial_count_query = 1;
 set optimize_use_projections = 1;
+-- Pin off: folding partition constants tightens granule pruning so the negative
+-- TOO_MANY_ROWS queries read fewer rows and stop erroring (counts unchanged).
+set use_constant_folding_in_index_analysis = 0;
 -- non-optimized
 select count() from test1 settings max_parallel_replicas = 3;
 -- optimized (toYear is monotonic and we provide the partition expr as is)
