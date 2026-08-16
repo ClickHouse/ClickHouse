@@ -108,6 +108,23 @@ def test_redirect_into_server_path_is_flagged(tmp_path):
         'echo broken > `${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
         " WHERE table = 't' AND active LIMIT 1\"`/data.bin\n",
     )
+    assert _run(
+        tmp_path,
+        'get_path() { ${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
+        " WHERE table = 't' AND active LIMIT 1\"; }\n"
+        'echo broken > "$(get_path)/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        'get_path() { ${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
+        " WHERE table = 't' AND active LIMIT 1\"; }\n"
+        'cat <<\'EOF\' > "$(get_path)/data.bin"\n'
+        "broken\nEOF\n",
+    )
+
+
+def test_tee_into_server_path_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'echo broken | tee "$path/data.bin"\n')
 
 
 def test_quoted_hash_payload_is_flagged(tmp_path):
@@ -201,6 +218,5 @@ def test_arrow_diagnostic_is_not_treated_as_redirection(tmp_path):
 
 
 def test_mktemp_scratch_redirect_is_not_flagged(tmp_path):
-    # Command substitution in a redirect only counts when the same line pulls the
-    # path out of a system table; `$(mktemp)` stays allowed.
+    # The only allowed command substitution in a redirect is a `mktemp` scratch path.
     assert not _run(tmp_path, FETCH_PART_PATH + 'echo x > "$(mktemp)"\n')

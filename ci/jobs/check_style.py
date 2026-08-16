@@ -274,7 +274,7 @@ MUTATION_CMD_PREFIX = (
 FILE_MUTATION_CMD_RE = re.compile(
     r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
     + MUTATION_CMD_PREFIX
-    + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
+    + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred|tee)\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
 # Redirection into a path built from a shell variable, except well-known test scratch areas.
@@ -282,12 +282,11 @@ REDIRECT_TO_VAR_RE = re.compile(
     r"(?<!-)>(?:>|\|)?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
     r"|CLICKHOUSE_USER_FILES|CLICKHOUSE_SCHEMA_FILES|CLICKHOUSE_LOG|\()"
 )
-# Redirection into a path built from an inline command substitution, e.g.
-# `echo x > "$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts ...")/foo"`. Command
-# substitution is handled separately from `$var` because a scratch path such as `$(mktemp)` is
-# fine, while a substitution that itself pulls a server path out of a system table is not - so
-# this pattern only counts when the same line also contains such a query.
+# Redirection into a path built from command substitution. A `$(mktemp)` scratch path is
+# fine, but any other substitution is suspicious once the file fetches a server path. This
+# includes helpers that conceal the system-table query from the redirection line.
 REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>(?:>|\|)?\s*\"?(?:\$\(|`)")
+REDIRECT_TO_MKTEMP_RE = re.compile(r"\$\(\s*mktemp\b")
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
 )
@@ -376,10 +375,7 @@ def check_no_server_data_manipulation(files):
                 or REDIRECT_TO_VAR_RE.search(code)
                 or (
                     REDIRECT_TO_COMMAND_SUBSTITUTION_RE.search(code)
-                    and (
-                        FETCHES_SERVER_PATH_RE.search(code)
-                        or FETCHES_SERVER_ROOT_RE.search(code)
-                    )
+                    and not REDIRECT_TO_MKTEMP_RE.search(code)
                 )
                 or CLICKHOUSE_DISKS_WRITE_RE.search(code)
             ):
