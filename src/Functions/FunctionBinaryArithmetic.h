@@ -3724,6 +3724,7 @@ public:
 
                 auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
                 auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+                auto arithmetic_arg_type = getArithmeticType(arg_type);
 
                 // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
                 // width (`DecimalBinaryOperation` feeds both operands into
@@ -3741,9 +3742,9 @@ public:
                 // so reject it (no pruning); a range on one side is monotonic on that range but not
                 // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
                 // divisor computes through floating point and never wraps.
-                if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                 {
-                    if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                    if (intDivRangeCrossesSignedWrap(arithmetic_arg_type, left_point, right_point))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
@@ -3870,6 +3871,18 @@ public:
         if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
             unwrapped = nullable->getNestedType().get();
         return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
+    }
+
+    /// Arithmetic substitutes `IPv4` and `IPv6` with their respective unsigned integer types
+    /// before execution. Monotonicity checks that depend on the integer width must use that
+    /// substituted type as well.
+    static DataTypePtr getArithmeticType(const DataTypePtr & type)
+    {
+        if (isIPv4(type))
+            return std::make_shared<DataTypeUInt32>();
+        if (isIPv6(type))
+            return std::make_shared<DataTypeUInt128>();
+        return type;
     }
 
     /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),

@@ -338,6 +338,20 @@ INSERT INTO m_cv_ipv VALUES ('1.0.0.1'), ('2.0.0.1'), ('3.0.0.1'), ('4.0.0.1'), 
 
 SELECT 'c9iii ipv eq', (SELECT count() FROM t_cv_ipv WHERE intDiv(a, 10) = 1677721) = (SELECT count() FROM m_cv_ipv WHERE intDiv(a, 10) = 1677721);
 
+-- `intDiv` substitutes IP keys with unsigned integers before applying a signed divisor. The
+-- ranges below cross the corresponding signed wrap, so key analysis must not prune away the
+-- values above the wrap.
+CREATE TABLE t_cv_ipwrap4 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
+CREATE TABLE m_cv_ipwrap4 (a IPv4) ENGINE = Memory;
+INSERT INTO t_cv_ipwrap4 VALUES ('127.255.255.254'), ('127.255.255.255'), ('128.0.0.0'), ('128.0.0.1');
+INSERT INTO m_cv_ipwrap4 VALUES ('127.255.255.254'), ('127.255.255.255'), ('128.0.0.0'), ('128.0.0.1');
+CREATE TABLE t_cv_ipwrap6 (a IPv6) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
+CREATE TABLE m_cv_ipwrap6 (a IPv6) ENGINE = Memory;
+INSERT INTO t_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('8000::1');
+INSERT INTO m_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('8000::1');
+SELECT 'c9iv ipv4 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100);
+SELECT 'c9iv ipv6 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100);
+
 -- ---------------------------------------------------------------------------------------------
 -- Case 8: pruning-liveness positive controls. The fix must not silently degrade the surviving
 -- shapes into "no pruning at all"; a boolean-equality row alone cannot see that.
@@ -402,3 +416,7 @@ DROP TABLE t_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m_cv_ipv SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE m_cv_ip8 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE m_cv_ipwrap4 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE m_cv_ipwrap6 SETTINGS ignore_drop_queries_probability = 0;
