@@ -88,6 +88,25 @@ TEST(ColumnLowCardinality, InsertManyFromSharedDictionaryExpandsIndex)
         ASSERT_EQ((*destination)[i], Field(UInt64(256)));
 }
 
+TEST(ColumnLowCardinality, InsertManyFromSeparateDictionaryExpandsIndex)
+{
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto source = low_cardinality_type->createColumn();
+    source->insert(Field(UInt64(256)));
+
+    auto destination = low_cardinality_type->createColumn();
+    for (UInt64 i = 0; i < 256; ++i)
+        destination->insert(Field(i));
+
+    destination->insertManyFrom(*source, 0, 3);
+
+    const auto & destination_low_cardinality = assert_cast<const ColumnLowCardinality &>(*destination);
+    ASSERT_EQ(destination->size(), 259);
+    ASSERT_EQ(destination_low_cardinality.getSizeOfIndexType(), sizeof(UInt16));
+    for (size_t i = 256; i < destination->size(); ++i)
+        ASSERT_EQ((*destination)[i], Field(UInt64(256)));
+}
+
 TEST(ColumnLowCardinality, Clone)
 {
     auto data_type = std::make_shared<DataTypeInt32>();

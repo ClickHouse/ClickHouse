@@ -61,6 +61,12 @@ static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
     dst.insertManyFrom(src, size / 2, size);
 }
 
+static NO_INLINE void insertFromRepeatedly(IColumn & dst, const IColumn & src, size_t position, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        dst.insertFrom(src, position);
+}
+
 static ColumnPtr mockLowCardinalityColumn(const DataTypePtr & type, size_t rows)
 {
     auto column = type->createColumn();
@@ -124,6 +130,49 @@ static void BM_insertManyFromLowCardinalityShared(benchmark::State & state)
     }
 }
 
+template <const std::string & str_type>
+static void BM_insertFromRepeatedlyLowCardinality(benchmark::State & state)
+{
+    auto type = DataTypeFactory::instance().get(str_type);
+    auto src = mockLowCardinalityColumn(type, ROWS);
+    const size_t position = src->size() / 2;
+    const size_t length = state.range(0);
+
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+        auto dst = type->createColumn();
+        dst->reserve(length);
+        state.ResumeTiming();
+
+        insertFromRepeatedly(*dst, *src, position, length);
+        benchmark::DoNotOptimize(dst);
+    }
+}
+
+template <const std::string & str_type>
+static void BM_insertFromRepeatedlyLowCardinalityShared(benchmark::State & state)
+{
+    auto type = DataTypeFactory::instance().get(str_type);
+    auto src = mockLowCardinalityColumn(type, ROWS);
+    const auto & src_low_cardinality = assert_cast<const ColumnLowCardinality &>(*src);
+    const size_t position = src->size() / 2;
+    const size_t length = state.range(0);
+
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+        auto dst = type->createColumn();
+        auto & dst_low_cardinality = assert_cast<ColumnLowCardinality &>(*dst);
+        dst_low_cardinality.setSharedDictionary(src_low_cardinality.getDictionaryPtr());
+        dst->reserve(length);
+        state.ResumeTiming();
+
+        insertFromRepeatedly(*dst, *src, position, length);
+        benchmark::DoNotOptimize(dst);
+    }
+}
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
@@ -176,4 +225,13 @@ BENCHMARK_TEMPLATE(BM_insertManyFromLowCardinality, type_low_cardinality_uint64)
 BENCHMARK_TEMPLATE(BM_insertManyFromLowCardinalityShared, type_low_cardinality_string)
     ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
 BENCHMARK_TEMPLATE(BM_insertManyFromLowCardinalityShared, type_low_cardinality_uint64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+
+BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyLowCardinality, type_low_cardinality_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyLowCardinality, type_low_cardinality_uint64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyLowCardinalityShared, type_low_cardinality_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertFromRepeatedlyLowCardinalityShared, type_low_cardinality_uint64)
     ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
