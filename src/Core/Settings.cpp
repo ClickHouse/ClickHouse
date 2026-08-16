@@ -6597,7 +6597,7 @@ Possible values:
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
 down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
-wide `String` / `FixedString` / `Array` / `Map` argument, so the argument is no longer carried through those steps.
+wide `String` / `FixedString` argument, so the argument is no longer carried through those steps.
 The rewrite is only applied when the argument column is not needed above the step it is pushed below.
 
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
