@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Common/MemoryTracker.h>
+#include <Common/checkStackSize.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
@@ -782,6 +783,10 @@ private:
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
 
+/// Maximum number of nodes `insertWouldDuplicateNonParallelSink` visits before failing closed. Its walk
+/// counts each path separately, so a graph whose branches reconverge costs more than its node count.
+static constexpr size_t max_duplicate_sink_walk_visits = 10000;
+
 bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -936,6 +941,195 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     /// hazard scan over `storages` checks them (and whether their targets actually deduplicate)
     /// directly - nothing is hidden.
     return false;
+}
+
+
+InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+    const StorageID & source, const StorageID & new_view_target, ContextPtr context)
+{
+    const auto & catalog = DatabaseCatalog::instance();
+
+    /// Set whenever a branch cannot be resolved, so that an otherwise negative answer is reported as
+    /// unknown instead of as safe.
+    bool undecided = false;
+
+    StorageIDSet active;
+    /// Admits each edge once, within the current path or within the whole walk per `count_per_path`.
+    /// Keyed on the edge, not on the node: whether a view is pushed to depends on which parent it was
+    /// reached from, so memoizing a view by name alone would carry a stale edge's verdict to the live one.
+    std::unordered_set<String> path_edges;
+    /// Length-prefixed, because a database or table name may itself contain any separator.
+    auto edge_key = [](const StorageIDMaybeEmpty & node)
+    { return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name); };
+
+    size_t visits = 0;
+
+    /// A proven duplicate ends the walk: no further count can change that answer.
+    bool proven = false;
+
+    /// Whether an edge is admitted once per path rather than once per walk. Counting per path is what
+    /// proves a duplicate below a convergence, and it costs a path enumeration, so only the walk that
+    /// decides pays for it.
+    bool count_per_path = false;
+
+    /// `parent` is empty at the root of a branch, where there is no edge to validate. `resolved` carries
+    /// a storage to walk as handed over rather than looked up: a proxy renames the storage it wraps to
+    /// the proxy's own id, so a lookup would return the proxy again.
+    struct Node
+    {
+        StorageIDMaybeEmpty id;
+        StorageIDMaybeEmpty parent;
+        StoragePtr resolved = nullptr;
+        size_t depth = 0;
+    };
+
+    /// Counted rather than collected: two live edges reaching one such sink within a single branch
+    /// already build two sinks on it, with no second branch involved.
+    using SinkCounts = std::
+        unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+    /// The sinks the source reaches without the new view, once the first walk has collected them.
+    const SinkCounts * baseline = nullptr;
+
+    /// Counts in `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
+    /// into `node.id` builds a sink, over the edges `collectAllDependencies` follows.
+    std::function<void(const Node &, SinkCounts &)> collect = [&](const Node & node, SinkCounts & sinks)
+    {
+        /// A view chain is bounded only by the catalog.
+        checkStackSize();
+
+        if (proven)
+            return;
+
+        if (node.depth > max_insert_forwarding_depth || ++visits > max_duplicate_sink_walk_visits)
+        {
+            undecided = true;
+            return;
+        }
+
+        StoragePtr storage = node.resolved;
+        bool holds_active_entry = false;
+        String walked_edge;
+        if (!storage)
+        {
+            if (active.contains(node.id))
+            {
+                undecided = true;
+                return;
+            }
+            walked_edge = edge_key(node.id) + edge_key(node.parent);
+            if (!path_edges.insert(walked_edge).second)
+                return;
+            storage = catalog.tryGetTable(node.id, context);
+            if (!storage)
+            {
+                undecided = true;
+                return;
+            }
+            active.insert(node.id);
+            holds_active_entry = true;
+        }
+        SCOPE_EXIT({
+            if (holds_active_entry)
+                active.erase(node.id);
+            if (count_per_path && !walked_edge.empty())
+                path_edges.erase(walked_edge);
+        });
+
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
+        {
+            /// `ALTER ... MODIFY QUERY` and a reused table name leave dependency edges that no longer
+            /// hold; a view reached over such an edge is not pushed to by this `INSERT`.
+            auto metadata = storage->getInMemoryMetadataPtr(context, false);
+            StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
+            if (!node.parent.empty() && select_table_id != node.parent)
+                return;
+
+            /// A view is written *through* to its target, never *to*.
+            collect({materialized_view->getTargetTableId(), node.id}, sinks);
+            return;
+        }
+
+        /// A window view is pushed its own inner storage; its external target is written by the separate
+        /// `INSERT` that `StorageWindowView::fire` runs.
+        if (dynamic_cast<const StorageWindowView *>(storage.get()))
+            return;
+
+        /// Dependent views belong to the id, and a proxy hop revisits an id whose views were already
+        /// taken.
+        if (!node.resolved)
+        {
+            for (const auto & view_id : catalog.getDependentViews(node.id))
+            {
+                collect({view_id, node.id}, sinks);
+                /// Everything past this point either counts a further sink or resolves a storage, and
+                /// resolving one may throw; neither can change an answer that is already proven.
+                if (proven)
+                    return;
+            }
+        }
+
+        /// A `Buffer` and a `Distributed` forward the rows into an `INSERT` of their own, whose sinks this
+        /// walk does not model: a branch that reaches one of them ends here.
+        if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
+            return;
+
+        /// An `Alias` runs a nested `INSERT` into its target per sink and a proxy hands the write to the
+        /// storage it wraps, so the target's sink is built as the root of that nested write.
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        {
+            if (auto target = alias->tryGetTargetTable())
+                collect({target->getStorageID(), {}, nullptr, node.depth + 1}, sinks);
+            else
+                undecided = true;
+            return;
+        }
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        {
+            /// Resolving a lazy proxy materializes and starts up the storage it wraps.
+            if (auto nested = proxy->getNested())
+                collect({node.id, node.parent, nested, node.depth + 1}, sinks);
+            else
+                undecided = true;
+            return;
+        }
+
+        if (storage->supportsParallelInsert())
+            return;
+
+        /// Every count is reached over a live edge admitted once per path, so a second count is a second
+        /// path and therefore a second sink: positive proof even when another branch stayed unresolved.
+        /// A sink the source already reaches proves the same. Both only once `baseline` holds the set the
+        /// source reaches without this view, since a duplicate already in that set is not its doing.
+        auto sink_id = storage->getStorageID();
+        size_t reached = ++sinks[sink_id];
+        if (baseline && (reached >= 2 || baseline->contains(sink_id)))
+            proven = true;
+    };
+
+    /// Resolving a storage runs the code that materializes it, which may throw. A throw says nothing
+    /// about the branches already walked, so it degrades the answer to unknown rather than discarding
+    /// a duplicate the walk had already proven.
+    SinkCounts reachable_now;
+    SinkCounts reachable_from_new_view;
+    try
+    {
+        collect({source, {}}, reachable_now);
+
+        baseline = &reachable_now;
+        count_per_path = true;
+        path_edges.clear();
+        collect({new_view_target, {}}, reachable_from_new_view);
+    }
+    catch (...)
+    {
+        undecided = true;
+    }
+
+    if (proven)
+        return DuplicateNonParallelSinkVerdict::Hazardous;
+
+    return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;
 }
 
 
