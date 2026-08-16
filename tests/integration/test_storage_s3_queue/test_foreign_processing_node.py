@@ -958,17 +958,13 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
         ).encode()
 
     try:
-        # A foreign processor failed `test_1.csv`, then processed `test_2.csv`.
-        # The ordered high-water mark now covers both files, but the failed node is
-        # still authoritative for `test_1.csv`.
-        zk.ensure_path(f"{keeper_path}/failed")
+        # First make the queue cache a foreign `processing` observation for `test_1.csv`.
+        # Terminal-state write-back only refreshes existing cache entries: a file skipped
+        # before it is ever considered has no `FileStatus` to expose in the system table.
+        zk.ensure_path(f"{keeper_path}/processing")
         zk.create(
-            f"{keeper_path}/failed/{failed_node}",
-            foreign_node_metadata(failed_file, exception="Failed by another processor", retries=100),
-        )
-        zk.create(
-            f"{keeper_path}/processed",
-            foreign_node_metadata(later_processed_file, exception="", retries=0),
+            f"{keeper_path}/processing/{failed_node}",
+            foreign_node_metadata(failed_file, exception="", retries=0),
         )
 
         create_mv(node, table_name, dst_table_name)
@@ -978,6 +974,23 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
                 f"SELECT status, exception FROM system.s3queue_metadata_cache "
                 f"WHERE file_path LIKE '%{failed_file}'"
             ).strip()
+
+        run_with_retry(lambda x: x == "Processing\\t", get_cached_record)
+
+        # The foreign processor now fails `test_1.csv`, then processes `test_2.csv`.
+        # The ordered high-water mark covers both files, but the failed node remains
+        # authoritative for the cached record of `test_1.csv`.
+        zk.delete(f"{keeper_path}/processing/{failed_node}")
+        zk.ensure_path(f"{keeper_path}/failed")
+        zk.create(
+            f"{keeper_path}/failed/{failed_node}",
+            foreign_node_metadata(failed_file, exception="Failed by another processor", retries=100),
+        )
+        processed_metadata = foreign_node_metadata(later_processed_file, exception="", retries=0)
+        if zk.exists(f"{keeper_path}/processed"):
+            zk.set(f"{keeper_path}/processed", processed_metadata)
+        else:
+            zk.create(f"{keeper_path}/processed", processed_metadata)
 
         run_with_retry(lambda x: x == "Failed\tFailed by another processor", get_cached_record)
         assert node.query(f"SELECT count() FROM {dst_table_name}").strip() == "0"
