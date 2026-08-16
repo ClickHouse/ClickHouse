@@ -35,7 +35,7 @@ WITH sketch AS (
     SELECT serializedQuantiles(number) AS s
     FROM numbers(1000)
 )
-SELECT 
+SELECT
     percentileFromQuantiles(s, 0.50) AS median,
     percentileFromQuantiles(s, 0.95) AS p95,
     percentileFromQuantiles(s, 0.99) AS p99
@@ -52,14 +52,14 @@ FROM sketch;
 
 ```sql
 WITH sketches AS (
-    SELECT 
+    SELECT
         service,
         serializedQuantiles(latency_ms) AS sketch
     FROM requests
     WHERE timestamp >= now() - INTERVAL 1 HOUR
     GROUP BY service
 )
-SELECT 
+SELECT
     service,
     percentileFromQuantiles(sketch, 0.50) AS p50_ms,
     percentileFromQuantiles(sketch, 0.95) AS p95_ms,
@@ -76,7 +76,7 @@ WITH merged AS (
     FROM daily_latency_table
     WHERE date >= toStartOfWeek(now())
 )
-SELECT 
+SELECT
     percentileFromQuantiles(weekly, 0.25) AS p25,
     percentileFromQuantiles(weekly, 0.50) AS p50,
     percentileFromQuantiles(weekly, 0.75) AS p75,
@@ -89,7 +89,7 @@ FROM merged;
 ### Example 4: Compare Before/After
 
 ```sql
-WITH 
+WITH
     before AS (
         SELECT serializedQuantiles(latency_ms) AS sketch
         FROM requests
@@ -100,7 +100,7 @@ WITH
         FROM requests
         WHERE date = today()
     )
-SELECT 
+SELECT
     percentileFromQuantiles((SELECT sketch FROM before), 0.95) AS yesterday_p95,
     percentileFromQuantiles((SELECT sketch FROM after), 0.95) AS today_p95,
     (today_p95 - yesterday_p95) / yesterday_p95 * 100 AS change_percent;

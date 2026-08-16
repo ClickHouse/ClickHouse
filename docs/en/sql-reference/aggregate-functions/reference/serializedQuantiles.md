@@ -75,7 +75,7 @@ GROUP BY service;
 ### Example 1: Basic Percentile Estimation {#example-1-basic-percentile-estimation}
 
 ```sql
-SELECT 
+SELECT
     percentileFromQuantiles(serializedQuantiles(number), 0.5) AS median,
     percentileFromQuantiles(serializedQuantiles(number), 0.95) AS p95,
     percentileFromQuantiles(serializedQuantiles(number), 0.99) AS p99
@@ -92,14 +92,14 @@ FROM numbers(1000);
 
 ```sql
 WITH sketches AS (
-    SELECT 
+    SELECT
         service,
         serializedQuantiles(latency_ms) AS latency_sketch
     FROM requests
     WHERE timestamp >= now() - INTERVAL 1 HOUR
     GROUP BY service
 )
-SELECT 
+SELECT
     service,
     percentileFromQuantiles(latency_sketch, 0.50) AS p50_latency_ms,
     percentileFromQuantiles(latency_sketch, 0.95) AS p95_latency_ms,
@@ -111,7 +111,7 @@ ORDER BY service;
 ### Example 3: Comparing Distributions {#example-3-comparing-distributions}
 
 ```sql
-WITH 
+WITH
     before AS (
         SELECT serializedQuantiles(latency_ms) AS sketch
         FROM requests
@@ -122,7 +122,7 @@ WITH
         FROM requests
         WHERE date = '2024-01-02'
     )
-SELECT 
+SELECT
     percentileFromQuantiles((SELECT sketch FROM before), 0.95) AS before_p95,
     percentileFromQuantiles((SELECT sketch FROM after), 0.95) AS after_p95,
     (after_p95 - before_p95) / before_p95 * 100 AS percent_change;

@@ -45,7 +45,7 @@ WHERE date = today();
 ### Combine with Aggregation
 
 ```sql
-SELECT 
+SELECT
     service,
     cardinalityFromHLL(mergeSerializedHLL(user_sketch)) AS total_unique_users
 FROM hourly_metrics
@@ -72,14 +72,14 @@ FROM numbers(1000);
 
 ```sql
 WITH daily_sketches AS (
-    SELECT 
+    SELECT
         date,
         serializedHLL(user_id) AS user_sketch
     FROM events
     WHERE date >= today() - 30
     GROUP BY date
 )
-SELECT 
+SELECT
     date,
     cardinalityFromHLL(user_sketch) AS daily_active_users
 FROM daily_sketches
@@ -89,7 +89,7 @@ ORDER BY date;
 ### Example 3: Multi-Dimensional Analysis
 
 ```sql
-SELECT 
+SELECT
     region,
     platform,
     cardinalityFromHLL(serializedHLL(12)(user_id)) AS unique_users
@@ -102,7 +102,7 @@ ORDER BY unique_users DESC;
 ### Example 4: Union of Sets
 
 ```sql
-WITH 
+WITH
     mobile_users AS (SELECT serializedHLL(user_id) AS s FROM events WHERE platform = 'mobile'),
     web_users AS (SELECT serializedHLL(user_id) AS s FROM events WHERE platform = 'web'),
     all_users AS (SELECT mergeSerializedHLL(s) AS m FROM (SELECT s FROM mobile_users UNION ALL SELECT s FROM web_users))
@@ -115,7 +115,7 @@ SELECT cardinalityFromHLL(m) AS total_unique_users FROM all_users;
 WITH data AS (
     SELECT number FROM numbers(10000)
 )
-SELECT 
+SELECT
     count(DISTINCT number) AS exact_count,
     cardinalityFromHLL(serializedHLL(number)) AS hll_estimate,
     abs(hll_estimate - exact_count) / exact_count * 100 AS error_percent

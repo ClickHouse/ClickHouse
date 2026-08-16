@@ -48,7 +48,7 @@ WITH sketch AS (
     SELECT serializedTDigest(latency_ms) AS tdigest
     FROM requests
 )
-SELECT 
+SELECT
     percentileFromTDigest(tdigest, 0.50) AS p50,
     percentileFromTDigest(tdigest, 0.99) AS p99,
     percentileFromTDigest(tdigest, 0.999) AS p999
@@ -63,7 +63,7 @@ WITH merged AS (
     FROM daily_tdigest_table
     WHERE date >= toStartOfWeek(now())
 )
-SELECT 
+SELECT
     percentileFromTDigest(weekly_sketch, 0.99) AS weekly_p99
 FROM merged;
 ```

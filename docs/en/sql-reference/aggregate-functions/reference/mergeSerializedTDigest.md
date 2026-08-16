@@ -39,14 +39,14 @@ The merge operation is:
 
 ```sql
 WITH hourly_sketches AS (
-    SELECT 
+    SELECT
         toStartOfHour(timestamp) AS hour,
         serializedTDigest(latency_ms) AS sketch
     FROM requests
     WHERE date = today()
     GROUP BY hour
 )
-SELECT 
+SELECT
     percentileFromTDigest(mergeSerializedTDigest(sketch), 0.99) AS daily_p99,
     percentileFromTDigest(mergeSerializedTDigest(sketch), 0.999) AS daily_p999
 FROM hourly_sketches;
@@ -55,7 +55,7 @@ FROM hourly_sketches;
 ### Example 2: Cross-Region Aggregation {#example-2-cross-region-aggregation}
 
 ```sql
-SELECT 
+SELECT
     service,
     percentileFromTDigest(mergeSerializedTDigest(sketch), 0.50) AS global_p50,
     percentileFromTDigest(mergeSerializedTDigest(sketch), 0.99) AS global_p99,
@@ -68,9 +68,9 @@ GROUP BY service;
 
 ```sql
 -- Merge sketches from external system stored as base64
-SELECT 
+SELECT
     percentileFromTDigest(
-        mergeSerializedTDigest(1)(base64_sketch), 
+        mergeSerializedTDigest(1)(base64_sketch),
         0.999
     ) AS p999
 FROM external_tdigest_data;

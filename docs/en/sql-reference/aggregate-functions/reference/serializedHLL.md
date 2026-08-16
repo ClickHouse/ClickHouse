@@ -119,10 +119,10 @@ FROM numbers(1000);
 ### Example 2: Accuracy Comparison {#example-2-accuracy-comparison}
 
 ```sql
-WITH 
+WITH
     lg8 AS (SELECT cardinalityFromHLL(serializedHLL(8)(number)) AS c FROM numbers(10000)),
     lg12 AS (SELECT cardinalityFromHLL(serializedHLL(12)(number)) AS c FROM numbers(10000))
-SELECT 
+SELECT
     (SELECT c FROM lg8) AS lg_k_8_estimate,
     (SELECT c FROM lg12) AS lg_k_12_estimate,
     abs((SELECT c FROM lg12) - 10000) < abs((SELECT c FROM lg8) - 10000) AS lg12_more_accurate;
@@ -137,7 +137,7 @@ SELECT
 ### Example 3: Different Storage Types {#example-3-different-storage-types}
 
 ```sql
-SELECT 
+SELECT
     length(serializedHLL(10, 'HLL_4')(number)) AS hll4_size,
     length(serializedHLL(10, 'HLL_6')(number)) AS hll6_size,
     length(serializedHLL(10, 'HLL_8')(number)) AS hll8_size

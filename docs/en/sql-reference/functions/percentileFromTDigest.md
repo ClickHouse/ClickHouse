@@ -36,7 +36,7 @@ WITH sketch AS (
     FROM requests
     WHERE service = 'api'
 )
-SELECT 
+SELECT
     percentileFromTDigest(tdigest, 0.50) AS p50,
     percentileFromTDigest(tdigest, 0.99) AS p99,
     percentileFromTDigest(tdigest, 0.999) AS p999,
@@ -54,7 +54,7 @@ FROM sketch;
 
 ```sql
 WITH daily_sketch AS (
-    SELECT 
+    SELECT
         date,
         service,
         mergeSerializedTDigest(hourly_tdigest) AS daily_tdigest
@@ -62,7 +62,7 @@ WITH daily_sketch AS (
     WHERE date >= today() - 7
     GROUP BY date, service
 )
-SELECT 
+SELECT
     service,
     avg(percentileFromTDigest(daily_tdigest, 0.95)) AS avg_p95,
     max(percentileFromTDigest(daily_tdigest, 0.95)) AS max_p95,
@@ -76,14 +76,14 @@ GROUP BY service;
 
 ```sql
 WITH regional_sketches AS (
-    SELECT 
+    SELECT
         region,
         serializedTDigest(latency_ms) AS sketch
     FROM requests
     WHERE timestamp >= now() - INTERVAL 1 HOUR
     GROUP BY region
 )
-SELECT 
+SELECT
     region,
     percentileFromTDigest(sketch, 0.50) AS median,
     percentileFromTDigest(sketch, 0.95) AS p95,

@@ -12,14 +12,14 @@ CREATE TABLE daily_user_sketches (
 
 -- Simulate 7 days of user activity
 INSERT INTO daily_user_sketches
-SELECT 
+SELECT
     toDate('2024-01-01') + outer.number AS date,
     serializedHLL(outer.number * 1000 + inner.number) AS sketch
 FROM numbers(7) AS outer, numbers(1000) AS inner
 GROUP BY date;
 
 -- Get weekly cardinality
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 6500 AND 7500 AS weekly_cardinality_ok
 FROM daily_user_sketches;
 
@@ -37,7 +37,7 @@ CREATE TABLE hourly_latency_sketches (
 
 -- Simulate 24 hours of latency data for 3 services
 INSERT INTO hourly_latency_sketches
-SELECT 
+SELECT
     toDateTime('2024-01-01 00:00:00') + toIntervalHour(h.number) AS hour,
     s.service AS service,
     serializedQuantiles(rand() % 1000) AS sketch
@@ -46,13 +46,13 @@ GROUP BY hour, service;
 
 -- Get daily percentiles per service
 WITH daily_sketches AS (
-    SELECT 
+    SELECT
         service,
         mergeSerializedQuantiles(sketch) AS merged
     FROM hourly_latency_sketches
     GROUP BY service
 )
-SELECT 
+SELECT
     service,
     percentileFromQuantiles(merged, 0.5) BETWEEN 0 AND 1000 AS p50_ok,
     percentileFromQuantiles(merged, 0.95) BETWEEN 0 AND 1000 AS p95_ok,
@@ -80,7 +80,7 @@ INSERT INTO incremental_sketches
 SELECT 1 AS id, serializedHLL(number + 500) AS sketch FROM numbers(1000);
 
 -- Get final cardinality (should be around 1500 due to overlap)
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 1400 AND 1600 AS incremental_ok
 FROM incremental_sketches;
 
@@ -97,7 +97,7 @@ CREATE TABLE multi_dim_sketches (
 ) ENGINE = Memory;
 
 INSERT INTO multi_dim_sketches
-SELECT 
+SELECT
     arrayJoin(['US', 'EU', 'ASIA']) AS region,
     arrayJoin(['A', 'B', 'C']) AS product,
     serializedHLL(number) AS sketch
@@ -105,7 +105,7 @@ FROM numbers(100)
 GROUP BY region, product;
 
 -- Aggregate by region only
-SELECT 
+SELECT
     region,
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS cardinality_ok
 FROM multi_dim_sketches
@@ -113,7 +113,7 @@ GROUP BY region
 ORDER BY region;
 
 -- Aggregate by product only
-SELECT 
+SELECT
     product,
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS cardinality_ok
 FROM multi_dim_sketches
@@ -121,7 +121,7 @@ GROUP BY product
 ORDER BY product;
 
 -- Global aggregate
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS global_cardinality_ok
 FROM multi_dim_sketches;
 
@@ -138,7 +138,7 @@ CREATE TABLE minute_sketches (
 
 -- Simulate 1 day of minute-level data
 INSERT INTO minute_sketches
-SELECT 
+SELECT
     toDateTime('2024-01-01 00:00:00') + toIntervalMinute(outer.number) AS timestamp,
     serializedHLL(outer.number % 1000 + inner.number) AS sketch
 FROM numbers(1440) AS outer, numbers(10) AS inner
@@ -146,13 +146,13 @@ GROUP BY timestamp;
 
 -- Hourly rollup
 WITH hourly AS (
-    SELECT 
+    SELECT
         toStartOfHour(timestamp) AS hour,
         mergeSerializedHLL(sketch) AS hourly_sketch
     FROM minute_sketches
     GROUP BY hour
 )
-SELECT 
+SELECT
     count() = 24 AS has_24_hours,
     cardinalityFromHLL(mergeSerializedHLL(hourly_sketch)) BETWEEN 900 AND 1100 AS daily_cardinality_ok
 FROM hourly;
@@ -170,14 +170,14 @@ CREATE TABLE persistent_sketches (
 ) ENGINE = Memory;
 
 INSERT INTO persistent_sketches
-SELECT 
+SELECT
     1 AS id,
     serializedHLL(number) AS sketch_hll,
     serializedQuantiles(number) AS sketch_quantiles
 FROM numbers(10000);
 
 -- Retrieve and use stored sketches
-SELECT 
+SELECT
     cardinalityFromHLL(sketch_hll) BETWEEN 9500 AND 10500 AS hll_ok,
     percentileFromQuantiles(sketch_quantiles, 0.5) BETWEEN 4500 AND 5500 AS quantile_ok
 FROM persistent_sketches
@@ -188,7 +188,7 @@ DROP TABLE persistent_sketches;
 -- Test: Combining sketches from different time periods
 SELECT 'Test 7: Union of sketches from different time periods';
 
-WITH 
+WITH
     week1 AS (SELECT serializedHLL(number) AS sketch FROM numbers(1000)),
     week2 AS (SELECT serializedHLL(number + 500) AS sketch FROM numbers(1000)),
     week3 AS (SELECT serializedHLL(number + 1000) AS sketch FROM numbers(1000)),
@@ -197,18 +197,18 @@ WITH
         UNION ALL SELECT sketch FROM week2
         UNION ALL SELECT sketch FROM week3
     )
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 1800 AND 2200 AS union_cardinality_ok
 FROM all_weeks;
 
 -- Test: Sketch size efficiency
 SELECT 'Test 8: Sketch size efficiency';
 
-WITH 
+WITH
     small_sketch AS (SELECT length(serializedHLL(number)) AS s FROM numbers(100)),
     medium_sketch AS (SELECT length(serializedHLL(number)) AS s FROM numbers(10000)),
     large_sketch AS (SELECT length(mergeSerializedHLL(sketch)) AS s FROM (SELECT serializedHLL(number) AS sketch FROM numbers(1000000)))
-SELECT 
+SELECT
     (SELECT s FROM small_sketch) AS size_small,
     (SELECT s FROM medium_sketch) AS size_medium,
     (SELECT s FROM large_sketch) AS size_large,
@@ -232,9 +232,9 @@ INSERT INTO test_distributions
 SELECT 'skewed' AS dist_type, mergeSerializedQuantiles(sketch) AS sketch
 FROM (SELECT serializedQuantiles(pow(number, 2)) AS sketch FROM numbers(100));
 
-SELECT 
+SELECT
     percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'uniform'), 0.5) BETWEEN 400 AND 600 AS uniform_median_ok,
-    percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.95) > 
+    percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.95) >
     percentileFromQuantiles((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.5) AS skewed_increasing
 FROM (SELECT 1);
 
@@ -243,11 +243,11 @@ DROP TABLE test_distributions;
 -- Test: Error handling with empty results
 SELECT 'Test 10: Empty result handling';
 
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(sketch)) = 0 AS hll_empty_ok,
     isNaN(percentileFromQuantiles(mergeSerializedQuantiles(q_sketch), 0.5)) AS quantile_empty_ok
 FROM (
-    SELECT 
+    SELECT
         serializedHLL(number) AS sketch,
         serializedQuantiles(number) AS q_sketch
     FROM numbers(0)
@@ -266,12 +266,12 @@ CREATE TABLE business_metrics (
 
 -- Simulate business data for 3 regions over 5 days using higher precision
 INSERT INTO business_metrics
-SELECT 
+SELECT
     toDate('2024-01-01') + d.number AS date,
     r.region AS region,
     serializedHLL(14, 'HLL_4')(d.number * 10000 + r.region_id * 1000 + c.number) AS customer_sketch,
     serializedHLL(12, 'HLL_8')(d.number * 50000 + r.region_id * 5000 + t.number) AS transaction_sketch
-FROM 
+FROM
     numbers(5) AS d,
     (
         /* Important: keep region and region_id paired (no cartesian product). */
@@ -289,14 +289,14 @@ GROUP BY date, region;
 
 -- Aggregate by region with matching merge parameters
 WITH regional_totals AS (
-    SELECT 
+    SELECT
         region,
         mergeSerializedHLL(14, 'HLL_4')(customer_sketch) AS merged_customers,
         mergeSerializedHLL(12, 'HLL_8')(transaction_sketch) AS merged_transactions
     FROM business_metrics
     GROUP BY region
 )
-SELECT 
+SELECT
     region,
     cardinalityFromHLL(merged_customers) BETWEEN 2400 AND 2600 AS customers_ok,
     cardinalityFromHLL(merged_transactions) BETWEEN 4800 AND 5200 AS transactions_ok
@@ -304,7 +304,7 @@ FROM regional_totals
 ORDER BY region;
 
 -- Get global totals
-SELECT 
+SELECT
     cardinalityFromHLL(mergeSerializedHLL(14, 'HLL_4')(customer_sketch)) BETWEEN 7000 AND 8000 AS total_customers_ok,
     cardinalityFromHLL(mergeSerializedHLL(12, 'HLL_8')(transaction_sketch)) BETWEEN 14000 AND 16000 AS total_transactions_ok
 FROM business_metrics;
@@ -314,14 +314,14 @@ DROP TABLE business_metrics;
 -- Test: Compare default vs high-precision parameters
 SELECT 'Test 12: Accuracy comparison - default vs high-precision';
 
-WITH 
+WITH
     default_precision AS (
         SELECT cardinalityFromHLL(serializedHLL(number)) AS estimate FROM numbers(10000)
     ),
     high_precision AS (
         SELECT cardinalityFromHLL(serializedHLL(14)(number)) AS estimate FROM numbers(10000)
     )
-SELECT 
-    abs((SELECT estimate FROM default_precision) - 10000) > 
+SELECT
+    abs((SELECT estimate FROM default_precision) - 10000) >
     abs((SELECT estimate FROM high_precision) - 10000) AS high_precision_more_accurate
 FROM (SELECT 1);

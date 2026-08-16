@@ -42,14 +42,14 @@ This makes it ideal for distributed aggregation in ClickHouse.
 
 ```sql
 WITH daily_sketches AS (
-    SELECT 
+    SELECT
         toDate(timestamp) AS date,
         serializedQuantiles(latency_ms) AS sketch
     FROM requests
     WHERE timestamp >= toStartOfWeek(now())
     GROUP BY date
 )
-SELECT 
+SELECT
     percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.95) AS weekly_p95
 FROM daily_sketches;
 ```
@@ -58,7 +58,7 @@ FROM daily_sketches;
 
 ```sql
 -- Aggregate from multiple distributed shards
-SELECT 
+SELECT
     service,
     percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.50) AS p50,
     percentileFromQuantiles(mergeSerializedQuantiles(sketch), 0.95) AS p95,
@@ -97,9 +97,9 @@ GROUP BY service, date;
 
 ```sql
 -- Merge sketches stored as base64 strings
-SELECT 
+SELECT
     percentileFromQuantiles(
-        mergeSerializedQuantiles(1)(base64_sketch), 
+        mergeSerializedQuantiles(1)(base64_sketch),
         0.95
     ) AS p95
 FROM external_sketches

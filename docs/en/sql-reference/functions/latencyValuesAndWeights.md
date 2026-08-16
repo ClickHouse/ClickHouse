@@ -48,7 +48,7 @@ FROM sketch;
 ### Example 2: Export for External Analysis
 
 ```sql
-SELECT 
+SELECT
     service,
     date,
     latencyValuesAndWeights(daily_sketch) AS sketch_json
@@ -60,7 +60,7 @@ ORDER BY service, date;
 ### Example 3: Parse and Analyze
 
 ```sql
-WITH 
+WITH
     sketch AS (
         SELECT serializedQuantiles(number) AS s
         FROM numbers(100)
@@ -69,7 +69,7 @@ WITH
         SELECT latencyValuesAndWeights(s) AS data
         FROM sketch
     )
-SELECT 
+SELECT
     JSONExtractArrayRaw(data, 'values') AS values_array,
     JSONExtractArrayRaw(data, 'weights') AS weights_array
 FROM json_data;

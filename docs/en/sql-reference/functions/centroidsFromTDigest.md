@@ -34,7 +34,7 @@ WITH sketch AS (
     SELECT serializedTDigest(number) AS tdigest
     FROM numbers(1000)
 )
-SELECT 
+SELECT
     centroidsFromTDigest(tdigest) AS centroids_json
 FROM sketch;
 ```
@@ -47,7 +47,7 @@ WITH sketch AS (
     FROM requests
     WHERE service = 'api'
 )
-SELECT 
+SELECT
     centroidsFromTDigest(tdigest) AS centroids_json
 FROM sketch
 LIMIT 10;
@@ -56,12 +56,12 @@ LIMIT 10;
 ### Example 3: Custom Analysis
 
 ```sql
-WITH 
+WITH
     sketch AS (
         SELECT serializedTDigest(latency_ms) AS tdigest
         FROM requests
     ),
-SELECT 
+SELECT
     centroidsFromTDigest(tdigest) AS centroids_json
 FROM sketch;
 ```

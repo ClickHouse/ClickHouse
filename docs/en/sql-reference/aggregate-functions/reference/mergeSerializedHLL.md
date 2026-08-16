@@ -103,14 +103,14 @@ CREATE TABLE daily_metrics (
 ORDER BY date;
 
 INSERT INTO daily_metrics
-SELECT 
+SELECT
     toDate('2024-01-01') + number AS date,
     serializedHLL(rand() % 100000) AS user_sketch
 FROM numbers(30)
 GROUP BY date;
 
 -- Get monthly cardinality
-SELECT 
+SELECT
     toStartOfMonth(date) AS month,
     cardinalityFromHLL(mergeSerializedHLL(user_sketch)) AS monthly_unique_users
 FROM daily_metrics
@@ -121,7 +121,7 @@ GROUP BY month;
 
 ```sql
 WITH regional_sketches AS (
-    SELECT 
+    SELECT
         region,
         serializedHLL(12)(user_id) AS user_sketch
     FROM events
@@ -136,7 +136,7 @@ FROM regional_sketches;
 ```sql
 -- Minute-level sketches
 CREATE MATERIALIZED VIEW minute_metrics AS
-SELECT 
+SELECT
     toStartOfMinute(timestamp) AS minute,
     serializedHLL(10, 'HLL_8')(session_id) AS session_sketch
 FROM events
@@ -144,14 +144,14 @@ GROUP BY minute;
 
 -- Hourly rollup
 CREATE MATERIALIZED VIEW hourly_metrics AS
-SELECT 
+SELECT
     toStartOfHour(minute) AS hour,
     mergeSerializedHLL(0, 10, 'HLL_8')(session_sketch) AS session_sketch
 FROM minute_metrics
 GROUP BY hour;
 
 -- Query hourly unique sessions
-SELECT 
+SELECT
     hour,
     cardinalityFromHLL(session_sketch) AS unique_sessions
 FROM hourly_metrics
@@ -161,7 +161,7 @@ WHERE hour >= now() - INTERVAL 24 HOUR;
 ### Example 4: Union of Disjoint Sets {#example-4-union-of-disjoint-sets}
 
 ```sql
-WITH 
+WITH
     set1 AS (SELECT serializedHLL(number) AS s FROM numbers(1000)),
     set2 AS (SELECT serializedHLL(number + 1000) AS s FROM numbers(1000)),
     merged AS (SELECT mergeSerializedHLL(s) AS m FROM (SELECT s FROM set1 UNION ALL SELECT s FROM set2))
