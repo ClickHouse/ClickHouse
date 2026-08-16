@@ -124,7 +124,8 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'pipeline_limited=false' in rerun_workflow
     assert '"running the limited CI suite"' in rerun_workflow
     assert 'Refreshed the review-thread status without rerunning full CI.' in rerun_workflow
-    assert 'context="$MERGEABLE_CHECK_STATUS_NAME"' not in rerun_workflow
+    assert 'if [ "$desired_blocked" = "true" ]; then' in rerun_workflow
+    assert '-f state=failure -f context="$MERGEABLE_CHECK_STATUS_NAME"' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
 

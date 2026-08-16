@@ -176,8 +176,14 @@ jobs:
               -f description="$description" \
               -f target_url="https://github.com/$GH_REPO/pull/$pr"
             # `Mergeable Check` is the aggregate verdict of the PR workflow.
-            # Do not overwrite a real CI failure just because the independent
-            # review-thread gate state changed.
+            # A new unresolved thread must block merging immediately, but do
+            # not turn an unrelated CI failure into success when it resolves.
+            if [ "$desired_blocked" = "true" ]; then
+              gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
+                -f state=failure -f context="$MERGEABLE_CHECK_STATUS_NAME" \
+                -f description="$description" \
+                -f target_url="https://github.com/$GH_REPO/pull/$pr"
+            fi
             echo "Refreshed the review-thread status without rerunning full CI."
             exit 0
           fi
