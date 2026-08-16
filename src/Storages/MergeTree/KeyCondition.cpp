@@ -2612,7 +2612,7 @@ static bool tryPrepareSetColumnsForIndex(
         const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
         size_t set_size = cast_failure_null_map.size();
 
-        const bool key_is_nullable = isNullable(key_column_type);
+        const bool key_is_nullable = key_column_type->isNullable();
 
         /// A NULL set element can match a Nullable key, so preserve it in that case. Otherwise it
         /// cannot match any key value - under regular `IN`, `nullIn` and `has` semantics alike.
@@ -2625,8 +2625,9 @@ static bool tryPrepareSetColumnsForIndex(
 
         if (key_is_nullable && source_null_map)
         {
-            auto null_map = ColumnUInt8::create(cast_failure_null_map);
-            auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumnPtr(), std::move(null_map));
+            auto null_map = ColumnUInt8::create();
+            null_map->getData() = cast_failure_null_map;
+            auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
             nullable_set_column->applyNullMap(*source_null_map);
             set_column = std::move(nullable_set_column);
         }
