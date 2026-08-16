@@ -1514,6 +1514,17 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
         return true;
 
+    /// Parameterized views never analyze their SELECT when they are created, and validating a column
+    /// alias list for an ordinary view can fail before its SELECT is analyzed. Conservatively skip the
+    /// hook for both forms: this also covers an invalid alias list without reattaching its source first.
+    if (create.isView() && create.select && (create.isParameterizedView() || create.aliases_list))
+        return true;
+
+    /// `ATTACH ... FROM` validates that its path is inside `user_files` before it substitutes UDFs or
+    /// analyzes an `AS` source / `AS SELECT`. Do not reattach a source before a path-rejected statement.
+    if (create.attach && create.has_attach_from_path)
+        return true;
+
     /// `InterpreterCreateQuery::createTable` validates a view's `SQL SECURITY` clause immediately after
     /// the destination access check and before it reads an `AS src` source or a populating `SELECT`.
     /// It first adds an empty clause when SQL security is mandatory for this view, so mirror that on a

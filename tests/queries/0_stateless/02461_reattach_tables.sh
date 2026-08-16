@@ -706,6 +706,16 @@ check_if_not_detached "CREATE TABLE IF NOT EXISTS t_reattach_dest_taken ENGINE =
 check_if_not_detached "CREATE VIEW IF NOT EXISTS t_reattach_dest_taken AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
 check_fails_kind_without_detach "CREATE TABLE t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "TABLE_ALREADY_EXISTS"
 
+# A parameterized view does not analyze its SELECT at creation time, and validation of an ordinary
+# view's alias list can fail before it does. Neither form may detach its source.
+check_if_not_detached "CREATE VIEW t_reattach_parameterized_view AS SELECT * FROM t_reattach_dest_src WHERE a = {p:UInt64}" "t_reattach_dest_src"
+${CLICKHOUSE_CLIENT} -q "DROP VIEW t_reattach_parameterized_view"
+check_fails_kind_without_detach "CREATE VIEW t_reattach_alias_view (a) AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "BAD_ARGUMENTS"
+
+# `ATTACH ... FROM` validates its data path before inspecting an `AS` source, so a rejected path must
+# leave that source attached.
+check_fails_kind_without_detach "ATTACH TABLE t_reattach_attach_from_dst FROM '/outside' ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "PATH_ACCESS_DENIED"
+
 # SQL UDF substitution runs before `CREATE VIEW` reads its source. A recursive UDF makes substitution
 # fail with `UNSUPPORTED_METHOD`, so the source must remain attached.
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_udf"
