@@ -2,7 +2,7 @@
 -- The non-intersecting plan must both copy the index read tasks and drop is_deleted=1 rows.
 
 DROP TABLE IF EXISTS tab;
--- Lazy FINAL is gated on the new analyzer (QueryPlanOptimizationSettings:
+-- Lazy FINAL is gated on the analyzer (QueryPlanOptimizationSettings:
 -- optimize_lazy_final = query_plan_optimize_lazy_final && allow_experimental_analyzer),
 -- so in the old-analyzer CI lane the optimization never fires and the plan-shape
 -- assertions below (union / is_deleted filter) read 0 while results stay correct. Pin it on.
