@@ -1,4 +1,5 @@
 #include <Common/BufferAllocationPolicy.h>
+#include <Core/Defines.h>
 #include <base/defines.h>
 
 #include <algorithm>
