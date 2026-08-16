@@ -40,3 +40,11 @@ SELECT accurateCastOrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'), 'UIn
 SELECT toUInt32OrDefault(CAST(NULL, 'Dynamic'));
 SELECT toUInt32OrDefault(CAST(NULL, 'Variant(UInt8, String, Nothing)'));
 SELECT toUInt32OrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'));
+
+-- Native NULL carriers cannot be wrapped in an outer Nullable column.
+SELECT accurateCastOrDefault(NULL, 'Dynamic');
+SELECT accurateCastOrDefault(NULL, 'Variant(UInt8, String)');
+SELECT accurateCastOrDefault(CAST(NULL, 'LowCardinality(Nullable(String))'), 'LowCardinality(Nullable(UInt32))')
+    SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+SET cast_keep_nullable = 0;

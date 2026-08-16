@@ -114,7 +114,7 @@ public:
         if (user_target_type->isNullable())
             result_type = makeNullable(result_type);
 
-        if (keep_nullable && canContainNull(*arguments.front().type))
+        if (keep_nullable && canContainNull(*arguments.front().type) && result_type->canBeInsideNullable())
             result_type = makeNullable(result_type);
 
         if (arguments.size() == 3)
