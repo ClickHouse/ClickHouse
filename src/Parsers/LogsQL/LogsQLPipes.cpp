@@ -497,6 +497,15 @@ void LogsQLParser::parsePipeCopy(Layer & layer)
 
     wrapLayerIf(layer, !layer.select.empty());
 
+    const auto numeric_bucket_fields = layer.numeric_bucket_fields;
+    for (const auto & [source, target] : copies)
+    {
+        if (numeric_bucket_fields.contains(source))
+            layer.numeric_bucket_fields.insert(target);
+        else
+            layer.numeric_bucket_fields.erase(target);
+    }
+
     /// `* EXCEPT (...)` overwrites existing same-named columns instead of duplicating them
     /// (see the comment in `appendComputedColumn`).
     auto except = make_intrusive<ASTColumnsExceptTransformer>();
@@ -540,6 +549,16 @@ void LogsQLParser::parsePipeRename(Layer & layer)
     }
 
     wrapLayerIf(layer, layer.has_projection || layer.has_aggregation);
+
+    const auto numeric_bucket_fields = layer.numeric_bucket_fields;
+    for (const auto & [source, target] : renames)
+    {
+        layer.numeric_bucket_fields.erase(source);
+        layer.numeric_bucket_fields.erase(target);
+    }
+    for (const auto & [source, target] : renames)
+        if (numeric_bucket_fields.contains(source))
+            layer.numeric_bucket_fields.insert(target);
 
     /// Both the source and the target are excluded from `*`: the source is renamed away,
     /// and an already-existing target column is overwritten rather than duplicated.

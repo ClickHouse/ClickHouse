@@ -34,6 +34,8 @@ _time:[2024-01-01T00:00:00Z, 2024-01-01T00:00:00Z] | count();
 * | stats by (bucket:10) count() | sort by (bucket);
 * | stats by (bucket:1) count() | sort by (bucket);
 * | stats by (fractional_bucket:10) count() | sort by (fractional_bucket);
+* | stats by (size:1) count() | rename size as renamed_size | sort by (renamed_size);
+* | stats by (size:1) count() | copy size as copied_size | sort by (copied_size);
 
 -- Ranking and partitioning operate on the schema produced by a projection pipe.
 * | fields level | sort by (level) partition by (level) limit 1;
