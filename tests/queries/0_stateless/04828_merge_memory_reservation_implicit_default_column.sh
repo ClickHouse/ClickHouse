@@ -67,5 +67,5 @@ ${CLICKHOUSE_LOCAL} -q "
     OPTIMIZE TABLE t_merge_mem_implicit_default_patch FINAL SETTINGS optimize_throw_if_noop = 1;
 
     SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_mem_implicit_default_patch' AND active AND startsWith(name, 'all_');
-    SELECT id, a FROM t_merge_mem_implicit_default_patch ORDER BY id;
+    SELECT id, if(a = '', '<empty>', a) FROM t_merge_mem_implicit_default_patch ORDER BY id;
 " -- --merges_mutations_memory_usage_soft_limit=1
