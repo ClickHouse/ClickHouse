@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int THERE_IS_NO_QUERY;
     extern const int UNKNOWN_TABLE;
 }
 
