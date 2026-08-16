@@ -351,6 +351,15 @@ namespace
         return res;
     }
 
+    /// `ALLOWED_LATENESS` is a lower bound, so one before the epoch means that no rows can be
+    /// late yet. Saturate an underflow instead of turning a valid early-epoch timestamp into an
+    /// exception. The interval itself is validated separately when the view is created or attached.
+    UInt32 subtractTimeSaturating(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        UInt32 res = addTime(time_sec, kind, -num_units, time_zone);
+        return res < time_sec ? res : 0;
+    }
+
     /// Rejects a window definition whose interval cannot be represented by `DateTime32`, so that
     /// a window view fails at creation instead of breaking later, when its bounds are advanced.
     void checkIntervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
@@ -497,7 +506,7 @@ UInt32 StorageWindowView::getCleanupBound()
 
     auto w_bound = max_fired_watermark;
     if (allowed_lateness)
-        w_bound = addTimeStrictly(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+        w_bound = subtractTimeSaturating(w_bound, lateness_kind, lateness_num_units, *time_zone);
     return getWindowLowerBound(w_bound);
 }
 
@@ -1617,7 +1626,7 @@ void StorageWindowView::writeIntoWindowView(
     // Filter outdated data
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
-        lateness_bound = addTimeStrictly(t_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
+        lateness_bound = subtractTimeSaturating(t_max_timestamp, window_view.lateness_kind, window_view.lateness_num_units, *window_view.time_zone);
 
         if (window_view.is_watermark_bounded)
         {
@@ -1742,10 +1751,6 @@ void StorageWindowView::writeIntoWindowView(
             if (window_view.is_watermark_bounded)
                 addTimeStrictly(
                     block_max_timestamp, window_view.watermark_kind, window_view.watermark_num_units, *window_view.time_zone);
-            if (window_view.allowed_lateness)
-                addTimeStrictly(
-                    block_max_timestamp, window_view.lateness_kind, -window_view.lateness_num_units, *window_view.time_zone);
-
             window_view.updateMaxTimestamp(block_max_timestamp);
         }
     }
