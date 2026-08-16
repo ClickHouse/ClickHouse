@@ -64,10 +64,10 @@
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
--- a comparison without bool keeps the left samples, so group_right takes the labels from the right but the order from the sorted left
-[('__name__','mem'),('instance','host1'),('job','j1')]	2023-11-14 22:13:20.000	30
+-- group_right takes both the labels and the order from the right (many) side, even for a comparison without bool whose surviving samples come from the left
 [('__name__','mem'),('instance','host3'),('job','j1')]	2023-11-14 22:13:20.000	20
 [('__name__','mem'),('instance','host2'),('job','j1')]	2023-11-14 22:13:20.000	10
+[('__name__','mem'),('instance','host1'),('job','j1')]	2023-11-14 22:13:20.000	30
 -- or breaks ties within an unsorted side using a content hash of each row's tags, not row order
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10

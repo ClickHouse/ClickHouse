@@ -95,10 +95,10 @@ SELECT '-- topk with by(...) grouping carries a bucket-aware sort order (buckets
 -- ORDER BY normalizes away the hash-based bucket order; 04627_promql_topk_bottomk_grouped_order covers it.
 SELECT * FROM prometheusQuery(ts, 'topk(2, up) by (instance) or vector(99)', $EVAL_TIME) ORDER BY tags;
 
-SELECT '-- a comparison without bool keeps the left samples, so group_right takes the labels from the right but the order from the sorted left';
--- All 3 comparisons are true, so this isolates ordering from filtering: the values are up's
--- (30, 20, 10) in sort_desc order, while the tags are mem's (its name, instance and job).
-SELECT * FROM prometheusQuery(ts, 'sort_desc(up) > on(instance) group_right mem', $EVAL_TIME);
+SELECT '-- group_right takes both the labels and the order from the right (many) side, even for a comparison without bool whose surviving samples come from the left';
+-- All 3 comparisons are true, so this isolates ordering from filtering: the values are up's,
+-- the tags are mem's, and the order is sort_desc(mem)'s (host3, host2, host1), not sort(up)'s.
+SELECT * FROM prometheusQuery(ts, 'sort(up) > on(instance) group_right sort_desc(mem)', $EVAL_TIME);
 "
 
 promql_client()
