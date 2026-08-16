@@ -64,9 +64,9 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers (exported as
-#                         ANTHROPIC_API_KEY or OPENAI_API_KEY according to
-#                         --agent). NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for the workers. `claude` reads
+#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
+#                         `CODEX_HOME`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
 #   --api-key-file FILE   Read the custom API key from FILE (not shown
 #                         in `ps`). Default: whatever API key or login the
@@ -140,6 +140,7 @@ MODEL=""               # model passed to the selected agent (empty -> its config
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
+API_KEY_PROVIDED=0      # whether either custom-key option was supplied
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -166,8 +167,8 @@ while [[ $# -gt 0 ]]; do
         --model)          MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
-        --api-key)        API_KEY="$2"; shift 2 ;;
-        --api-key-file)   API_KEY_FILE="$2"; shift 2 ;;
+        --api-key)        API_KEY="$2"; API_KEY_PROVIDED=1; shift 2 ;;
+        --api-key-file)   API_KEY_FILE="$2"; API_KEY_PROVIDED=1; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -198,18 +199,18 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for the worker processes. Export the variable used by the
-# selected agent so every worker inherits it.
+# Custom API key for worker processes. `claude` reads its key from the environment.
+# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
+# so it cannot inherit or overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
     API_KEY="$(tr -d ' \t\r\n' < "$API_KEY_FILE")"
 fi
-if [[ -n "$API_KEY" ]]; then
+if (( API_KEY_PROVIDED )); then
+    [[ -n "$API_KEY" ]] || { echo "${S}Error: --api-key must not be empty${R}" >&2; exit 1; }
     if [[ "$AGENT" == "claude" ]]; then
         export ANTHROPIC_API_KEY="$API_KEY"
-    else
-        export OPENAI_API_KEY="$API_KEY"
     fi
     CUSTOM_KEY=1
 else
@@ -222,6 +223,7 @@ fi
 # ChatGPT subscription usage is not billed per token.
 CODEX_INPUT_PRICE=""
 CODEX_CACHED_INPUT_PRICE=""
+CODEX_CACHE_WRITE_INPUT_PRICE=""
 CODEX_OUTPUT_PRICE=""
 CODEX_LONG_CONTEXT_PRICING=0
 
@@ -229,11 +231,13 @@ configure_codex_pricing()
 {
     case "$MODEL" in
         gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
-            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
-        gpt-5.6-terra|gpt-5.6-terra-*|gpt-5.4|gpt-5.4-20*)
-            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_CACHE_WRITE_INPUT_PRICE=6.25; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.6-terra|gpt-5.6-terra-*)
+            CODEX_INPUT_PRICE=2; CODEX_CACHED_INPUT_PRICE=0.2; CODEX_CACHE_WRITE_INPUT_PRICE=2.5; CODEX_OUTPUT_PRICE=12; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.6-luna|gpt-5.6-luna-*)
-            CODEX_INPUT_PRICE=1; CODEX_CACHED_INPUT_PRICE=0.1; CODEX_OUTPUT_PRICE=6; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=0.2; CODEX_CACHED_INPUT_PRICE=0.02; CODEX_CACHE_WRITE_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=1.2; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.4|gpt-5.4-20*)
+            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5-pro|gpt-5.5-pro-*|gpt-5.4-pro|gpt-5.4-pro-*)
             CODEX_INPUT_PRICE=30; CODEX_CACHED_INPUT_PRICE=30; CODEX_OUTPUT_PRICE=180; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5|gpt-5.5-20*)
@@ -255,17 +259,17 @@ configure_codex_pricing()
 
 estimate_codex_cost()
 {
-    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3"
+    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3" cache_write_input_tokens="$4"
     [[ -n "$CODEX_INPUT_PRICE" ]] || { printf '0'; return; }
-    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" \
-        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v op="$CODEX_OUTPUT_PRICE" \
+    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" -v cwi="$cache_write_input_tokens" \
+        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v cwip="${CODEX_CACHE_WRITE_INPUT_PRICE:-$CODEX_INPUT_PRICE}" -v op="$CODEX_OUTPUT_PRICE" \
         -v long="$CODEX_LONG_CONTEXT_PRICING" '
         BEGIN {
-            uncached = i - ci;
+            uncached = i - ci - cwi;
             if (uncached < 0) uncached = 0;
             input_multiplier = (long && i > 272000) ? 2 : 1;
             output_multiplier = (long && i > 272000) ? 1.5 : 1;
-            printf "%.9f", ((uncached * ip + ci * cip) * input_multiplier + o * op * output_multiplier) / 1000000;
+            printf "%.9f", ((uncached * ip + ci * cip + cwi * cwip) * input_multiplier + o * op * output_multiplier) / 1000000;
         }'
 }
 
@@ -585,14 +589,35 @@ STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
 declare -a WORKER_PIDS=()
 
+cleanup_worker_codex_auth()
+{
+    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
+
+    local wt
+    for wt in "${WT[@]-}"; do
+        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
+    done
+}
+
 stop_workers()
 {
     local roots own_pgid entry pid pgid
     local -a targets
-    local -A target_groups=()
+    local -a active_workers=() live_jobs=()
+    local -A target_groups=() worker_pid_set=()
 
-    (( ${#WORKER_PIDS[@]} )) || return 0
-    roots="${WORKER_PIDS[*]}"
+    # `WORKER_PIDS` retains exited child PIDs until `wait` completes. Resolve
+    # roots through the shell's live job table so a recycled PID can never be
+    # mistaken for a worker and signalled during interrupt handling.
+    for pid in "${WORKER_PIDS[@]}"; do
+        worker_pid_set["$pid"]=1
+    done
+    mapfile -t live_jobs < <(jobs -pr)
+    for pid in "${live_jobs[@]}"; do
+        [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
+    done
+    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
+    roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
     # Snapshot the complete descendant tree before sending any signal. Commands
@@ -646,13 +671,10 @@ stop_workers()
         read -r pid pgid <<< "$entry"
         kill -KILL "$pid" 2>/dev/null || true
     done
-    for pid in "${WORKER_PIDS[@]}"; do
-        kill -KILL "$pid" 2>/dev/null || true
-    done
-
-    if (( ${#WORKER_PIDS[@]} )); then
-        wait "${WORKER_PIDS[@]}" 2>/dev/null || true
+    if (( ${#active_workers[@]} )); then
+        wait "${active_workers[@]}" 2>/dev/null || true
     fi
+    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
@@ -688,7 +710,8 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer prompt usage
+    local sid deadline iter ec now remaining build_steer prompt usage codex_home
+    local -a codex_env
     local u_i u_o u_ci u_co u_cost
     local -a model_args
     sid=""
@@ -706,6 +729,27 @@ run_continue_pr()
     : > "$log"
     iter=0
     ec=0
+
+    # Codex API-key authentication is configured state, not an environment
+    # variable consumed by `codex exec`. Keep that state private to this worker
+    # and remove it after the run, so a requested key cannot fall back to or
+    # modify the caller's ambient Codex login.
+    codex_home=""
+    codex_env=()
+    if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
+        codex_home="$wt/tmp/continue-all-prs/codex-home"
+        codex_env=("CODEX_HOME=$codex_home")
+        mkdir -p "$codex_home"
+        rm -f "$codex_home/auth.json"
+        now=$(date +%s)
+        remaining=$(( deadline - now ))
+        (( remaining > 0 )) || return 124
+        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
+            ec=$?
+            rm -f "$codex_home/auth.json"
+            return "$ec"
+        }
+    fi
 
     while :; do
         iter=$(( iter + 1 ))
@@ -744,7 +788,7 @@ run_continue_pr()
                 prompt="/continue-pr-auto $url
 
 ${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" && timeout "$remaining" codex exec \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -755,7 +799,7 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && timeout "$remaining" codex exec resume \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
@@ -769,11 +813,11 @@ ${STEER_PROMPT} ${build_steer}"
                     [splits("\n") | fromjson?] as $events
                     | [([$events[] | select(.type == "turn.completed") | (.usage.input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.output_tokens // 0)] | add // 0),
-                     0,
+                     ([$events[] | select(.type == "turn.completed") | (.usage.cache_write_input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
                      0] | @tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}")
+                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
                 stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
             fi
             if [[ ! -s "$log.last" ]]; then
@@ -798,6 +842,7 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
+    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
     return "$ec"
 }
 

@@ -20,13 +20,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 يمكن أن يحتوي الاستعلام الواحد على عدة أوامر مفصولة بفواصل.
 
-يُحدَّد تزامن معالجة الاستعلام بواسطة الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync). وهو غير متزامن افتراضيًا.
+يُحدَّد تزامن معالجة الاستعلام بواسطة الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync). وهو غير متزامن افتراضيًا.
 
 **انظر أيضًا**
 
 * [التعديلات](/ar/reference/statements/alter/index#mutations)
 * [تزامن استعلامات ALTER](/ar/reference/statements/alter/index#synchronicity-of-alter-queries)
-* الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync)
+* الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync)
 * [`UPDATE` خفيف الوزن](/ar/reference/statements/update) - تحديث خفيف بديل يستخدم أجزاء التصحيح
 * [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - تطبيق التصحيحات يدويًا من التحديثات الخفيفة
 

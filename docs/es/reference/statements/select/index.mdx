@@ -1,6 +1,6 @@
 ---
 description: 'Documentación de la consulta SELECT'
-sidebarTitle: 'SELECT'
+sidebarTitle: 'Descripción general'
 slug: /sql-reference/statements/select/
 title: 'Consulta SELECT'
 doc_type: 'reference'
@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Todas las cláusulas son opcionales, excepto la lista obligatoria de expresiones inmediatamente después de `SELECT`, que se explica con más detalle [a continuación](#select-clause).
+La lista de expresiones inmediatamente después de `SELECT` es obligatoria; todas las demás cláusulas son opcionales.
 
-Los detalles de cada cláusula opcional se describen en secciones independientes, enumeradas en el mismo orden en que se ejecutan (excepto `SELECT` y `DISTINCT`, que aparecen primero por comodidad: sus expresiones se evalúan solo después de que finalizan las cláusulas anteriores, como se describe [a continuación](#select-clause)):
+`SELECT` y sus cláusulas opcionales se describen en secciones independientes:
 
 * [cláusula WITH](/es/reference/statements/select/with)
 * [cláusula SELECT](#select-clause)
@@ -61,6 +61,15 @@ Los detalles de cada cláusula opcional se describen en secciones independientes
 * [cláusula EXCEPT](/es/reference/statements/select/except)
 * [cláusula INTO OUTFILE](/es/reference/statements/select/into-outfile)
 * [cláusula FORMAT](/es/reference/statements/select/format)
+
+Una consulta también puede escribirse como una cadena lineal de transformaciones con [operadores de canalización](/es/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## Cláusula SELECT
@@ -199,7 +208,7 @@ Los valores extremos se calculan para las filas anteriores a `LIMIT`, pero poste
 
 Puede utilizar sinónimos (alias `AS`) en cualquier parte de una consulta.
 
-Las cláusulas `GROUP BY`, `ORDER BY` y `LIMIT BY` admiten argumentos posicionales. Para habilitarlos, active el ajuste [enable&#95;positional&#95;arguments](/es/reference/settings/session-settings#enable_positional_arguments). Por ejemplo, `ORDER BY 1,2` ordenará las filas de la tabla primero por la primera columna y luego por la segunda.
+Las cláusulas `GROUP BY`, `ORDER BY` y `LIMIT BY` admiten argumentos posicionales. Para habilitarlos, active el ajuste [enable&#95;positional&#95;arguments](/es/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Por ejemplo, `ORDER BY 1,2` ordenará las filas de la tabla primero por la primera columna y luego por la segunda.
 
 <div id="implementation-details">
   ## Detalles de implementación

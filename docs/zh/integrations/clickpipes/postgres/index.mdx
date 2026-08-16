@@ -76,7 +76,7 @@ Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以
 4. 填写您在前置条件步骤中配置的源 Postgres 数据库连接信息。
 
 <Info>
-  在开始添加连接信息之前，请确保您已在防火墙规则中将 ClickPipes IP addresses 加入白名单。您可以在[此处](/zh/integrations/clickpipes/home#list-of-static-ips)查看 ClickPipes IP addresses 列表。
+  在开始添加连接信息之前，请确保您已在防火墙规则中将 ClickPipes IP addresses 加入白名单。您可以在[此处](/zh/integrations/clickpipes/networking/static-ips)查看 ClickPipes IP addresses 列表。
   更多信息，请参阅本页[顶部](#prerequisites)链接的源 Postgres 设置指南。
 </Info>
 
@@ -88,7 +88,7 @@ Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以
 
 如果您的源 Postgres 数据库托管在 AWS 上，可以使用 AWS Private Link 连接到该数据库。这在您
 希望保持数据传输私有时非常有用。
-您可以按照[设置指南来建立连接](/zh/integrations/clickpipes/aws-privatelink)进行操作。
+您可以按照[设置指南来建立连接](/zh/integrations/clickpipes/networking/aws-privatelink)进行操作。
 
 <div id="optional-changing-tls-settings">
   #### &#x20;(可选) 修改 TLS 设置
@@ -113,7 +113,7 @@ Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以
 4. 点击“Verify Connection”验证连接。
 
 <Note>
-  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
+  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/networking/static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
 </Note>
 
 填写完连接信息后，点击“Next”。
@@ -149,10 +149,10 @@ Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以
 7. 您可以选择要从源 Postgres 数据库复制的表。选择表时，您还可以重命名目标端 ClickHouse 数据库中的表，并排除特定列。
 
 <Warning>
-  如果您在 ClickHouse 中定义的 ordering key 与 Postgres 中的 primary key 不同，请务必阅读相关的[注意事项](/zh/integrations/clickpipes/postgres/ordering-keys)。
+  如果您在 ClickHouse 中定义的排序键与 Postgres 中的 primary key 不同，请务必阅读相关的[注意事项](/zh/integrations/clickpipes/postgres/ordering-keys)。
 </Warning>
 
-8. 此外，您还可以提供自定义的 `PARTITION BY <expr>` 表达式，以控制目标端 [ClickHouse 表分区](/zh/partitions)。
+8. 此外，您还可以提供自定义的 `PARTITION BY <expr>` 表达式，以控制目标端 [ClickHouse 表分区](/zh/concepts/core-concepts/partitions)。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="分区方式" size="lg" border />
 

@@ -51,7 +51,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 以下のガイドは、すでに ClickHouse Cloud サービスを作成済みであることを前提としています。まだサービスを作成していない場合は、Managed ClickStack の [Getting Started](/ja/clickstack/getting-started/managed) ガイドに従ってください。これにより、このガイドと同じ状態、つまり ClickStack が有効になっており、オブザーバビリティデータを受け入れられる状態のサービスが用意されます。
 
 <Tabs>
-  <Tab title="新しいサービスを作成">
+  <Tab title="新しいサービスを作成する">
     <br />
 
     <Steps>
@@ -120,7 +120,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="ClickStack UI でインジェストを設定する" size="lg" />
 
-        &quot;Start Ingestion&quot;を選択すると、インジェストソースの選択画面が表示されます。Managed ClickStackは、主要なインジェストソースとしてOpenTelemetryおよび[Vector](https://vector.dev/)をサポートしています。また、[ClickHouse Cloudがサポートするインテグレーション](/ja/integrations/home)を使用して、独自のスキーマでClickHouseに直接データを送信することもできます。
+        「Start Ingestion」を選択すると、インジェストソースの選択を求められます。Managed ClickStackは主要なインジェストソースとしてOpenTelemetryおよび[Vector](https://vector.dev/)をサポートしています。ただし、ユーザーは[ClickHouse Cloudがサポートする統合](/ja/integrations/home)を使用して、独自のスキーマでClickHouseに直接データを送信することもできます。
 
         <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="ログソースを選択 - ClickStack UI" border />
 

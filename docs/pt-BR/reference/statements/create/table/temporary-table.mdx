@@ -1,0 +1,44 @@
+---
+description: 'Documentação sobre a criação de tabelas temporárias'
+keywords: ['tabela temporária', 'DDL']
+sidebarTitle: 'TEMPORARY TABLE'
+slug: /sql-reference/statements/create/table/temporary-table
+title: 'CREATE TEMPORARY TABLE'
+doc_type: 'reference'
+---
+
+<div id="temporary-table-support">
+  ## Suporte a tabelas temporárias
+</div>
+
+<Note>
+  Observe que as tabelas temporárias não são replicadas. Portanto, não há garantia de que os dados inseridos em uma tabela temporária estejam disponíveis em outras réplicas. As tabelas temporárias são especialmente úteis para consultar ou fazer join com pequenos conjuntos de dados externos durante uma única sessão.
+</Note>
+
+O ClickHouse oferece suporte a tabelas temporárias, que têm as seguintes características:
+
+* As tabelas temporárias desaparecem quando a sessão termina, inclusive se a conexão for perdida.
+* Uma tabela temporária usa o mecanismo de tabela Memory quando nenhum mecanismo é especificado e pode usar qualquer mecanismo de tabela, exceto Replicated e `KeeperMap`.
+* Não é possível especificar o DB de uma tabela temporária. Ela é criada fora dos bancos de dados.
+* Não é possível criar uma tabela temporária com uma consulta DDL distribuída em todos os servidores do cluster (usando `ON CLUSTER`): essa tabela existe apenas na sessão atual.
+* Se uma tabela temporária tiver o mesmo nome que outra tabela e uma consulta especificar o nome da tabela sem especificar o DB, a tabela temporária será usada.
+* No processamento distribuído de consultas, as tabelas temporárias com mecanismo Memory usadas em uma consulta são enviadas aos servidores remotos.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+Para criar uma tabela temporária, use a seguinte sintaxe:
+
+```sql
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) [ENGINE = engine]
+```
+
+Na maioria dos casos, as tabelas temporárias não são criadas manualmente, mas ao usar dados externos em uma consulta ou em `(GLOBAL) IN` distribuído. Para mais informações, consulte as seções correspondentes
+
+É possível usar tabelas com [ENGINE = Memory](/pt-BR/reference/engines/table-engines/special/memory) em vez de tabelas temporárias.

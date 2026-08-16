@@ -1112,7 +1112,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | Максимальное время ожидания при попытке чтения данных с удалённого диска                              | `10000` секунд        |
 | `remote_fs_read_backoff_max_tries`  | Максимальное количество попыток чтения с задержкой                                                    | `5`                   |
 
-Если запрос завершается исключением `DB:Exception Unreachable URL`, попробуйте изменить настройки: [http&#95;connection&#95;timeout](/ru/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/ru/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/ru/reference/settings/server-settings/settings#keep_alive_timeout).
+Если запрос завершается исключением `DB:Exception Unreachable URL`, попробуйте изменить настройки: [http&#95;connection&#95;timeout](/ru/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/ru/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/ru/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
 Чтобы получить файлы для загрузки, выполните:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` можно найти с помощью запроса `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).

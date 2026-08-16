@@ -28,8 +28,8 @@ Les types de parts déterminent comment les données des colonnes sont organisé
 
 Le type de part dépend des paramètres de table suivants :
 
-* [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_bytes_for_wide_part) : nombre minimal d’octets pour qu’une part utilise le format Wide
-* [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_rows_for_wide_part) : nombre minimal de lignes pour qu’une part utilise le format Wide
+* [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) : nombre minimal d’octets pour qu’une part utilise le format Wide
+* [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) : nombre minimal de lignes pour qu’une part utilise le format Wide
 
 Si le nombre d’octets ou de lignes d’une part de données est inférieur à la valeur du paramètre correspondant, la part est stockée au format `Compact` ; sinon, elle est stockée au format `Wide`.
 
@@ -71,10 +71,10 @@ Les statistiques de taille des colonnes ne sont pas calculées pour les parts Co
 
 Les formats de stockage déterminent la manière dont les fichiers d’une part sont physiquement stockés sur le disque.
 
-| Format     | Description                                                              | Disponibilité        |
-| ---------- | ------------------------------------------------------------------------ | -------------------- |
-| **Full**   | Chaque fichier est stocké individuellement dans le répertoire de la part | Open source et Cloud |
-| **Packed** | Tous les fichiers sont regroupés dans un seul fichier d’archive          | Open source et Cloud |
+| Format     | Description                                                                                                                                               | Disponibilité        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| **Full**   | Chaque fichier est stocké individuellement dans le répertoire de la part                                                                                  | Open source et Cloud |
+| **Packed** | La plupart des fichiers de la part sont regroupés dans un seul fichier d’archive (les projections et quelques fichiers de service sont écrits séparément) | Open source et Cloud |
 
 <div id="full-storage">
   ### Stockage Full
@@ -86,7 +86,7 @@ Dans le stockage Full, chaque part est constituée de plusieurs fichiers distinc
   ### Stockage Packed
 </div>
 
-Dans le stockage Packed, tous les fichiers d’une part sont regroupés dans une seule archive. Cela réduit considérablement le nombre d’opérations sur les fichiers, ce qui est essentiel pour un stockage distant comme S3, où chaque requête entraîne une latence et un coût.
+Dans le stockage Packed, la plupart des fichiers d’une part sont regroupés dans une seule archive. Les projections et quelques fichiers de service - `txn_version.txt`, `delete-on-destroy.txt` et `invalidated_system_columns.txt` - sont toujours écrits séparément, car ils peuvent être créés ou réécrits après l’écriture de la part elle-même. Cela réduit considérablement le nombre d’opérations sur les fichiers, ce qui est essentiel pour un stockage distant comme S3, où chaque requête entraîne une latence et un coût.
 
 **Avantages du stockage Packed :**
 
@@ -101,9 +101,9 @@ Dans le stockage Packed, tous les fichiers d’une part sont regroupés dans une
 
 Une part utilise le stockage Packed si **l’une** de ces conditions est remplie :
 
-* Octets non compressés &lt; [`min_bytes_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* Nombre de lignes &lt; [`min_rows_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* Niveau de fusion &lt; [`min_level_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* Octets non compressés &lt; [`min_bytes_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* Nombre de lignes &lt; [`min_rows_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* Niveau de fusion &lt; [`min_level_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Le stockage Packed est activé sur demande : les trois paramètres ont `0` comme valeur par défaut, de sorte que les parts utilisent le stockage Full sauf si vous augmentez l’un d’eux.
 
@@ -153,6 +153,10 @@ Ces deux concepts sont orthogonaux, et toutes les combinaisons sont possibles :
 </div>
 
 Vous pouvez examiner le type et le type de stockage des parts existantes à l’aide de la table [`system.parts`](/fr/reference/system-tables/parts) :
+
+<Note>
+  Dans ClickHouse open-source, `part_storage_type` est exposé par `system.parts` à partir de la version 26.9. Dans la version 26.8 et les versions antérieures, omettez `part_storage_type` de la requête et regroupez et triez uniquement par `part_type`.
+</Note>
 
 ```sql
 SELECT

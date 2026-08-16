@@ -1,0 +1,210 @@
+---
+description: '管道运算符文档'
+sidebarTitle: '管道运算符'
+slug: /sql-reference/statements/select/pipe-operators
+title: '管道运算符'
+doc_type: 'reference'
+---
+
+管道运算符允许将查询编写为可从上到下阅读的线性转换链，类似于 [GoogleSQL 的管道语法](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/)：
+
+```sql
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+
+任何 `SELECT` 查询后都可以接一串管道运算符。每个运算符均以 `|>` 标记开头，以上一个查询的结果作为输入，并在此基础上再进行一次转换。每个运算符内部均使用常规的 ClickHouse 语法。
+
+管道运算符是一种语法扩展：每个运算符都会将其前面的查询封装为子查询，因此生成的 AST 与使用嵌套子查询编写的等效查询的 AST 相同。上述查询等效于：
+
+```sql
+SELECT * FROM
+(
+    SELECT customer, sum(amount) AS total FROM
+    (
+        SELECT * FROM
+        (
+            SELECT * FROM orders
+        )
+        WHERE cancelled = 0
+    )
+    GROUP BY customer
+)
+ORDER BY total DESC
+LIMIT 3
+```
+
+<div id="from-queries">
+  ## FROM 查询
+</div>
+
+查询可以 `FROM` 子句开头，且此类查询中的 `SELECT` 子句为可选项；省略时，其效果等同于写入 `SELECT *`：
+
+```sql
+FROM orders;
+FROM orders WHERE amount > 100;
+FROM orders |> WHERE amount > 100;
+```
+
+表别名可带或不带 `AS` 关键字，与普通 `SELECT` 查询的 `FROM` 子句相同：`FROM orders o WHERE o.amount > 100`。唯一的例外是将裸词 `select` 用作别名：它位于表名之后时，会开始显式的 `SELECT` 子句，而不会被视为别名。名为 `select` 的表不受影响，仍可使用自己的别名：`FROM select s WHERE s.id = 1`。
+
+如果最后一个表的样本偏移量也可能被解析为查询级别的 `OFFSET`，则不能省略 `SELECT` 子句：在 `FROM t SAMPLE 1/10 OFFSET 5` 中，`OFFSET` 属于 `SAMPLE`；而在 `FROM t SAMPLE 1/10 SELECT * OFFSET 5` 中，它是查询级别的 `OFFSET`。需要显式指定 `SELECT` 以消除两者的歧义。如果查询后面紧接的子句不能位于查询级别 `OFFSET` 之前，则不存在歧义，`SELECT` 子句仍可照常省略：`FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`、`FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`。
+
+<div id="operators">
+  ## 运算符
+</div>
+
+<div id="where">
+  ### WHERE
+</div>
+
+`|> WHERE condition` 用于过滤输入行。在聚合之后使用时，其作用类似于 `HAVING`：
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> WHERE total > 100
+```
+
+<div id="select">
+  ### SELECT
+</div>
+
+`|> SELECT [DISTINCT] expr1 [AS alias1], ...` 仅将列出的表达式保留为输出列：
+
+```sql
+FROM orders |> SELECT customer, amount * 2 AS doubled
+```
+
+表达式列表末尾可以使用尾随逗号，位置与普通查询中 `SELECT` 子句的尾随逗号相同——其后可以是查询结束，也可以是下一个 `|>` 运算符：`FROM orders |> SELECT customer, amount, |> LIMIT 1`。`EXTEND` 和 `AGGREGATE` 运算符也同样如此。
+
+<div id="extend">
+  ### EXTEND
+</div>
+
+`|> EXTEND expr1 [AS alias1], ...` 会将列出的表达式添加到输入列中；等同于 `SELECT *, expr1 AS alias1, ...`：
+
+```sql
+FROM orders |> EXTEND amount * 10 AS big
+```
+
+<div id="set">
+  ### SET
+</div>
+
+`|> SET column1 = expr1, ...` 用于替换所列列的值；它等同于 `SELECT * REPLACE (expr1 AS column1, ...)`：
+
+```sql
+FROM orders |> SET amount = amount + 1000
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+`|> DROP column1, ...` 用于删除列出的列；等同于 `SELECT * EXCEPT (column1, ...)`：
+
+```sql
+FROM orders |> DROP cancelled
+```
+
+<div id="as">
+  ### AS
+</div>
+
+`|> AS alias` 为下一个运算符的输入指定别名，以便在该运算符中引用，主要用于 JOIN：
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> AS agg
+|> JOIN orders AS o ON agg.customer = o.customer
+```
+
+<div id="aggregate">
+  ### AGGREGATE
+</div>
+
+`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` 对输入行进行聚合。输出列依次为分组列和聚合列。不使用 `GROUP BY` 时，整个输入将聚合为单行：
+
+```sql
+FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
+FROM orders |> AGGREGATE count() AS c;
+```
+
+<div id="distinct">
+  ### DISTINCT
+</div>
+
+`|> DISTINCT` 会去除重复行；等同于 `SELECT DISTINCT *`。
+
+<div id="order-by">
+  ### ORDER BY
+</div>
+
+`|> ORDER BY expr1 [ASC/DESC], ...` 用于对输入行排序。支持完整的 `ORDER BY` 子句语法，包括 `ORDER BY ALL`、`WITH FILL` 和 `INTERPOLATE`：
+
+```sql
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
+```
+
+<div id="limit-and-offset">
+  ### LIMIT 和 OFFSET
+</div>
+
+`|> LIMIT length [OFFSET offset]` 和 `|> OFFSET offset` 用于限制返回的行数：
+
+```sql
+FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
+```
+
+<div id="join-and-array-join">
+  ### JOIN 和 ARRAY JOIN
+</div>
+
+`|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` 会将输入与另一个表、子查询或表函数进行连接。支持所有类型的 [JOIN](/zh/reference/statements/select/join) 和 [ARRAY JOIN](/zh/reference/statements/select/array-join)，单个运算符中可包含多个连接，类似于 `FROM` 子句：
+
+```sql
+FROM customers
+|> AS c
+|> LEFT JOIN orders AS o ON c.name = o.customer
+|> ARRAY JOIN tags
+```
+
+由于每个运算符都会创建新的子查询作用域，表别名仅在同一运算符内可见 (即 `ON` 条件中) 。后续运算符看到的是 JOIN 结果中合并后的列，就像在 `SELECT *` 之后一样。
+
+也支持使用逗号形式的 CROSS JOIN，运算符的输入位于左侧：`FROM customers |> AS c |> , orders`。与其他 JOIN 一样，启用 `joined_subquery_requires_alias` 设置时，输入必须具有别名 (默认启用) 。
+
+与普通查询的 `FROM` 子句一样，`ARRAY JOIN` 后不能紧接逗号 (CROSS) JOIN：`ARRAY JOIN` 后的逗号始终属于其表达式列表。
+
+<div id="union-intersect-and-except">
+  ### UNION、INTERSECT 和 EXCEPT
+</div>
+
+`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`、`|> INTERSECT [ALL/DISTINCT] ...` 和 `|> EXCEPT [ALL/DISTINCT] ...` 将输入数据与其他查询的结果合并：
+
+```sql
+FROM orders
+|> SELECT customer
+|> UNION ALL (FROM customers |> SELECT name)
+|> DISTINCT
+```
+
+当操作数为单个查询时，括号可省略；但如果事件链在集合操作后继续使用另一个管道运算符，则必须加上括号——否则无法确定下一个运算符是作用于最后一个操作数，还是作用于整个结果。
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* 查询的 `WITH` 子句在所有后续管道运算符中始终可见，标量别名和 CTE 均是如此：`WITH 10 AS threshold FROM t |> WHERE x < threshold`。
+* 在 `INSERT ... SELECT` 中，写在 `INSERT` 前的 `WITH` 子句会附加到最外层生成的 `SELECT`，并在解析时通过 `enable_global_with_statement` 设置 (默认启用) 传递到内部管道阶段，方式与传递到手写的嵌套子查询相同。若禁用该设置，作用域为 `INSERT` 的 `WITH` 中定义的别名和 CTE 在管道阶段内将不可见，就像在手写子查询内不可见一样。
+* 与任何 `SELECT` 查询一样，由管道运算符生成的查询可以以 `SETTINGS` 子句结尾，该子句会附加到生成的查询：`FROM t |> LIMIT 1 SETTINGS max_threads = 1` 等同于 `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`。这同样适用于没有单独处理查询设置环节的场景，例如子查询、`CREATE VIEW` 或 `view` 表函数中。位于链中间的 `SETTINGS` 子句会保留在所在阶段，而该阶段将成为下一个运算符的子查询。对于带括号操作数的集合操作，不接受其后的 `SETTINGS`；等效的子查询形式在该位置同样不能包含 `SETTINGS` 子句。
+* 第一个管道运算符之前的查询中的 `SETTINGS` 子句会保留在该查询上，该查询会成为生成的包装查询的子查询。常规设置仍然有效，因为解析子查询时会应用其设置。唯一的例外是用于选择查询分析器的一对设置：`enable_analyzer` 及其别名 `allow_experimental_analyzer`。不允许在子查询中更改它们，因此 `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` 会引发 `INCORRECT_QUERY`，与等效的手写查询 `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1` 完全相同。请将这两个设置写在最后一个管道运算符之后，或在查询外部传入。
+* 管道运算符会绑定到其前的整个查询，包括集合操作：在 `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()` 中，聚合应用于 `UNION ALL` 的结果。若要在管道运算符后通过 `UNION` 继续查询，请使用 `|> UNION` 运算符或括号。
+* 管道运算符可用于任何需要 `SELECT` 查询的地方：子查询、`INSERT ... SELECT` (包括 `INSERT INTO t FROM src |> ...` 形式) 、`CREATE VIEW`、`view` 表函数等。
+* 不提供单独的就地列重命名运算符；请使用 `|> SELECT * EXCEPT (old_name), old_name AS new_name`，或使用 `SET` 和 `DROP` 运算符。

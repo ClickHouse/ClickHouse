@@ -9,10 +9,10 @@ doc_type: 'reference'
 `OFFSET` 和 `FETCH` 允许你分批检索数据。它们指定了你希望通过单次查询获取的一个行块。
 
 ```sql
--- SQL 标准风格：
+-- SQL Standard style:
 [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 
--- MySQL/PostgreSQL 风格：
+-- MySQL/PostgreSQL style:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
@@ -52,7 +52,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 </Note>
 
 <Note>
-  实际偏移量还可能取决于 [offset](/zh/reference/settings/session-settings#offset) 设置。
+  实际偏移量还可能取决于 [offset](/zh/reference/settings/session-settings/other#offset) 设置。
 </Note>
 
 <div id="examples">

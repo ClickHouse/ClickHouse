@@ -72,6 +72,13 @@ ClickHouse определяет по расширению имени файла,
   ```
 </Tip>
 
+Данные не обязательно должны быть локальными: вместо имени файла можно использовать URL, а схема URL выбирает соответствующий движок таблицы (`http://` и `https://` считываются как функция [url](/ru/reference/functions/table-functions/url), `s3://` — как функция [s3](/ru/reference/functions/table-functions/s3), `file://` — как функция [file](/ru/reference/functions/table-functions/file)):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)

@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 導入バージョン: v21.11.0
 
-指定されたベクトルの `L1` 空間 ([タクシー幾何学](https://en.wikipedia.org/wiki/Taxicab_geometry)) における単位ベクトルを計算します (タプルの各要素は座標です) 。
+指定されたベクトルの `L1` 空間 ([タクシー幾何学](https://en.wikipedia.org/wiki/Taxicab_geometry)) における単位ベクトルを計算します (タプルまたはArrayの各要素は座標です) 。
 
 **構文**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **別名**: `normalizeL1`
 
 **引数**
 
-* `tuple` — 数値から成るタプル。[`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値から成るタプルまたはArray。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` 入力の場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` 入力の場合は常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 導入バージョン: v21.11.0
 
-ユークリッド空間において、指定したベクトルの単位ベクトル (タプルの各要素は座標) を計算します ([ユークリッド距離](https://en.wikipedia.org/wiki/Euclidean_distance)を使用) 。
+ユークリッド空間において、指定されたベクトル (タプル または Array の要素が座標) の単位ベクトルを計算します ([ユークリッド距離](https://en.wikipedia.org/wiki/Euclidean_distance)を使用) 。
 
 **構文**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **別名**: `normalizeL2`
 
 **引数**
 
-* `tuple` — 数値からなるタプル。 [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値の `Tuple` または Array。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` を入力した場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を、それ以外の場合は `Array(Float64)` を返します。`Tuple` を入力した場合は、常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 導入バージョン: v21.11.0
 
-与えられたベクトルの単位ベクトル (タプルの各要素が座標) を、`L_{inf}` 空間で計算します ([最大ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\)) を使用) 。
+与えられたベクトルの単位ベクトル (タプルまたは配列の各要素が座標) を、`L_{inf}` 空間で計算します ([最大ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\)) を使用) 。
 
 **構文**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **別名**: `normalizeLinf`
 
 **引数**
 
-* `tuple` — 数値のタプルです。 [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値のタプルまたは配列です。 [`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` 入力の場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` 入力の場合は、常に `Tuple(Float64)` を返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — 1つ目のベクトル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 * `vector2` — 2つ目のベクトル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
-* `p` — べき指数。設定可能な値: `[1; inf)` の実数。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `p` — 指数。設定可能な値: `[1; inf)` の実数。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -567,7 +567,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * p=1 のとき、L1Norm (マンハッタン距離) と同等です。
 * p=2 のとき、L2Norm (ユークリッド距離) と同等です。
-* p=∞ のとき、LinfNorm (最大ノルム) と同等です。
+* `p` の値は 1 以上の有限数である必要があります。最大ノルム (p→∞ の極限) には、代わりに `LinfNorm` を使用してください。
 
 **構文**
 
@@ -580,7 +580,7 @@ LpNorm(vector, p)
 **引数**
 
 * `vector` — 数値からなるベクトルまたはタプル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
-* `p` — 指数。設定可能な値は `[1; inf)` の範囲の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `p` — 指数。設定可能な値は `[1; inf)` の範囲の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -606,24 +606,24 @@ SELECT LpNorm((1, -2), 2)
 
 導入バージョン: v21.11.0
 
-指定したベクトルの単位ベクトルを `Lp` 空間内で ([p-ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)を用いて) 計算します。タプルの各要素は座標を表します。
+[p-ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)を用いて、`Lp` 空間における指定したベクトルの単位ベクトルを計算します (タプルまたは配列の要素が座標に相当します) 。
 
 **構文**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **別名**: `normalizeLp`
 
 **引数**
 
-* `tuple` — 数値から成るタプル。[`Tuple(T)`](/ja/reference/data-types/tuple)
-* `p` — べき指数。設定可能な値は `[1; inf)` の範囲内の任意の数値です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `vector` — 数値からなるタプルまたは配列。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
+* `p` — 指数。設定可能な値は、範囲 `[1; inf)` の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
-単位ベクトルを返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` を入力した場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` を入力した場合は常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 

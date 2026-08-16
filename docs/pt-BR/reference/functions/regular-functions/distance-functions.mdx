@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um dado vetor (os elementos da tupla são as coordenadas) no espaço `L1` ([geometria do táxi](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Calcula o vetor unitário de um dado vetor (os elementos da tupla ou do array são as coordenadas) no espaço `L1` ([geometria do táxi](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
 **Sintaxe**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **Aliases**: `normalizeL1`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos de elemento for `Float32` ou `BFloat16`; caso contrário, `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um vetor dado (os elementos da tupla são as coordenadas) no espaço euclidiano (usando a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Calcula o vetor unitário de um vetor fornecido (os elementos da tupla ou do array são as coordenadas) no espaço euclidiano (usando a [distância euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **Sintaxe**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **Aliases**: `normalizeL2`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou um array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos de elemento for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um determinado vetor (os elementos da tupla são as coordenadas) no espaço `L_{inf}` (usando a [norma máxima](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
+Calcula o vetor unitário de um determinado vetor (os elementos da tupla ou array são as coordenadas) no espaço `L_{inf}` (usando a [norma máxima](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
 
 **Sintaxe**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **Aliases**: `normalizeLinf`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
+* `vector` — Uma tupla ou array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas do tipo `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos dos elementos for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas do tipo `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — Primeiro vetor. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
 * `vector2` — Segundo vetor. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
-* `p` — A potência. Valores possíveis: número real em `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `p` — A potência. Valores possíveis: número real em `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
@@ -567,8 +567,7 @@ Casos especiais:
 
 * Quando p=1, é equivalente a L1Norm (distância de Manhattan).
 * Quando p=2, é equivalente a L2Norm (distância euclidiana).
-* Quando p=∞, é equivalente a LinfNorm (norma máxima).
-*
+* O valor de `p` deve ser um número finito não inferior a um; para a norma máxima (o limite para p→∞), use `LinfNorm`.
 
 **Sintaxe**
 
@@ -581,7 +580,7 @@ LpNorm(vector, p)
 **Arguments**
 
 * `vector` — Vetor ou tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
-* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Returned value**
 
@@ -607,24 +606,24 @@ SELECT LpNorm((1, -2), 2)
 
 Introduzido em: v21.11.0
 
-Calcula o vetor unitário de um vetor dado (os elementos da tupla são as coordenadas) no espaço `Lp` (usando [norma p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
+Calcula o vetor unitário de um dado vetor (os elementos da tupla ou do array são as coordenadas) no espaço `Lp` (usando a [norma p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
 
 **Sintaxe**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **Aliases**: `normalizeLp`
 
 **Argumentos**
 
-* `tuple` — Uma tupla de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple)
-* `p` — A potência. Os valores possíveis são quaisquer números no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `vector` — Uma tupla ou um array de valores numéricos. [`Tuple(T)`](/pt-BR/reference/data-types/tuple) ou [`Array(T)`](/pt-BR/reference/data-types/array)
+* `p` — A potência. Os valores possíveis são números reais no intervalo `[1; inf)`. [`UInt*`](/pt-BR/reference/data-types/int-uint) ou [`Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
-Retorna o vetor unitário. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple)
+Retorna o vetor unitário. Para entradas `Array`, retorna `Array(Float32)` se o menor supertipo comum dos tipos dos elementos for `Float32` ou `BFloat16`; caso contrário, retorna `Array(Float64)`. Para entradas `Tuple`, sempre retorna `Tuple(Float64)`. [`Tuple(Float64)`](/pt-BR/reference/data-types/tuple) ou [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 

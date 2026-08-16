@@ -63,7 +63,7 @@ Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Se
 في هذه الحالة، يُحوِّل النظام قيمة الجانب الأيمن إلى نوع الجانب الأيسر،
 كما لو طُبِّقت الدالة [accurateCastOrNull](/ar/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) على الجانب الأيمن.
 
-يعني هذا أن نوع البيانات يصبح [Nullable](/ar/reference/data-types/nullable)، وإذا تعذّر إجراء التحويل، فإنه يُرجع [NULL](/ar/reference/settings/formats#input_format_null_as_default).
+يعني هذا أن نوع البيانات يصبح [Nullable](/ar/reference/data-types/nullable)، وإذا تعذّر إجراء التحويل، فإنه يُرجع [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default).
 
 **مثال**
 
@@ -127,7 +127,7 @@ ORDER BY EventDate ASC
   ## معالجة NULL
 </div>
 
-أثناء معالجة الطلب، يفترض عامل التشغيل `IN` أن ناتج أي عملية على [NULL](/ar/reference/settings/formats#input_format_null_as_default) يساوي دائمًا `0`، بغض النظر عمّا إذا كانت `NULL` على الجانب الأيمن أو الأيسر من المعامل. لا تُدرَج قيم `NULL` في أي مجموعة بيانات، ولا تُعدّ متساوية فيما بينها، ولا يمكن مقارنتها إذا كانت [transform&#95;null&#95;in = 0](/ar/reference/settings/session-settings#transform_null_in).
+أثناء معالجة الطلب، يفترض عامل التشغيل `IN` أن ناتج أي عملية على [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default) يساوي دائمًا `0`، بغض النظر عمّا إذا كانت `NULL` على الجانب الأيمن أو الأيسر من المعامل. لا تُدرَج قيم `NULL` في أي مجموعة بيانات، ولا تُعدّ متساوية فيما بينها، ولا يمكن مقارنتها إذا كانت [transform&#95;null&#95;in = 0](/ar/reference/settings/session-settings/other#transform_null_in).
 
 فيما يلي مثال باستخدام الجدول `t_null`:
 
@@ -270,7 +270,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
   ### الاستعلامات الفرعية الموزعة و max_rows_in_set
 </div>
 
-يمكنك استخدام [`max_rows_in_set`](/ar/reference/settings/session-settings#max_rows_in_set) و [`max_bytes_in_set`](/ar/reference/settings/session-settings#max_bytes_in_set) للتحكم في مقدار البيانات المنقولة أثناء الاستعلامات الموزعة.
+يمكنك استخدام [`max_rows_in_set`](/ar/reference/settings/session-settings/max-rows#max_rows_in_set) و [`max_bytes_in_set`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_set) للتحكم في مقدار البيانات المنقولة أثناء الاستعلامات الموزعة.
 
 وتزداد أهمية ذلك بشكل خاص إذا كان استعلام `GLOBAL IN` يُرجِع كمية كبيرة من البيانات. انظر عبارة SQL التالية:
 
@@ -278,7 +278,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-إذا لم يكن `some_predicate` انتقائيًا بدرجة كافية، فسيُرجع كمية كبيرة من البيانات ويتسبب في مشكلات بالأداء. في مثل هذه الحالات، من الحكمة الحدّ من نقل البيانات عبر الشبكة. لاحظ أيضًا أن [`set_overflow_mode`](/ar/reference/settings/session-settings#set_overflow_mode) مُعيَّن إلى `throw` (افتراضيًا)، ما يعني أنه يتم رفع استثناء عند بلوغ هذه العتبات.
+إذا لم يكن `some_predicate` انتقائيًا بدرجة كافية، فسيُرجع كمية كبيرة من البيانات ويتسبب في مشكلات بالأداء. في مثل هذه الحالات، من الحكمة الحدّ من نقل البيانات عبر الشبكة. لاحظ أيضًا أن [`set_overflow_mode`](/ar/reference/settings/session-settings/other#set_overflow_mode) مُعيَّن إلى `throw` (افتراضيًا)، ما يعني أنه يتم رفع استثناء عند بلوغ هذه العتبات.
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### الاستعلامات الفرعية الموزعة و max_parallel_replicas
@@ -308,4 +308,4 @@ SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 
 أحد الحلول البديلة، إذا كان `local_table_2` لا يستوفي المتطلبات، هو استخدام `GLOBAL IN` أو `GLOBAL JOIN`.
 
-إذا لم يكن لدى الجدول مفتاح أخذ عينات، فيمكن استخدام خيارات أكثر مرونة لـ [parallel&#95;replicas&#95;custom&#95;key](/ar/reference/settings/session-settings#parallel_replicas_custom_key)، وقد ينتج عنها سلوك مختلف وأكثر ملاءمة.
+إذا لم يكن لدى الجدول مفتاح أخذ عينات، فيمكن استخدام خيارات أكثر مرونة لـ [parallel&#95;replicas&#95;custom&#95;key](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key)، وقد ينتج عنها سلوك مختلف وأكثر ملاءمة.

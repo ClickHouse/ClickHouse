@@ -18,14 +18,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 ログの記録を開始するには、次の手順を実行します。
 
-1. [query&#95;views&#95;log](/ja/reference/settings/server-settings/settings#query_views_log) セクションでパラメータを設定します。
-2. [log&#95;query&#95;views](/ja/reference/settings/session-settings#log_query_views) を 1 に設定します。
+1. [query&#95;views&#95;log](/ja/reference/settings/server-settings/settings/query#query_views_log) セクションでパラメータを設定します。
+2. [log&#95;query&#95;views](/ja/reference/settings/session-settings/log-query#log_query_views) を 1 に設定します。
 
-データのフラッシュ間隔は、[query&#95;views&#95;log](/ja/reference/settings/server-settings/settings#query_views_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
+データのフラッシュ間隔は、[query&#95;views&#95;log](/ja/reference/settings/server-settings/settings/query#query_views_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
 
 ClickHouse はテーブルからデータを自動では削除しません。詳細については、[Introduction](/ja/reference/system-tables/overview#system-tables-introduction) を参照してください。
 
-`query_views_log` テーブルに記録されるクエリ数を減らすには、[log&#95;queries&#95;probability](/ja/reference/settings/session-settings#log_queries_probability)) 設定を使用できます。
+`query_views_log` テーブルに記録されるクエリ数を減らすには、[log&#95;queries&#95;probability](/ja/reference/settings/session-settings/log-queries#log_queries_probability)) 設定を使用できます。
 
 <div id="columns">
   ## カラム

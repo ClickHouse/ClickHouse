@@ -1,6 +1,6 @@
 ---
 title: '数据湖入门'
-sidebarTitle: '入门'
+sidebarTitle: '概览'
 slug: /use-cases/data-lake/getting-started
 description: '通过实践了解如何使用 ClickHouse 在开放表格式中查询、加速和回写数据。'
 keywords: ['数据湖', '湖仓', '快速开始', 'Iceberg', 'Delta Lake', 'hudi', 'paimon']
@@ -17,9 +17,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本指南中的截图来自 [ClickHouse Cloud](https://console.clickhouse.cloud) 的 SQL 控制台。所有查询均适用于 Cloud 和自管理部署。
 
+ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，以及 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎。**如果你的表位于数据目录中** (如 Glue、Unity Catalog、REST 等) ，请通过 `DataLakeCatalog` 连接，这样便可通过一个函数访问所有 Iceberg/Delta 表。下方的表函数和表引擎部分更适合临时查询，或者在已知具体存储路径且不使用目录时使用。
+
 <Steps>
   <Step title="直接查询 Iceberg 数据" id="query-directly">
-    最快的开始方式是使用 [`icebergS3()`](/zh/reference/functions/table-functions/iceberg) table function——将其指向 S3 中的 Iceberg 表，即可立即发起查询，无需任何设置。
+    最快的开始方式——尤其适用于临时查询，或不使用 catalog 时——是使用 [`icebergS3()`](/zh/reference/functions/table-functions/iceberg) table function。将其指向 S3 中的 Iceberg 表，即可立即发起查询，无需任何设置。
 
     查看 schema：
 
@@ -47,7 +49,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="创建持久化表引擎" id="table-engine">
-    如需重复访问，可使用 Iceberg 表引擎创建一个表，这样就无需每次都传递 path。数据仍保存在 S3 中，不会发生数据复制：
+    如果不使用 catalog，但需要反复查询同一路径，可使用 Iceberg 表引擎创建一个表，这样就无需每次都传递 path。数据仍保存在 S3 中，不会发生数据复制：
 
     ```sql
     CREATE TABLE hits_iceberg
@@ -72,7 +74,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="连接到目录" id="connect-catalog">
-    大多数组织都会通过数据目录管理 Iceberg 表，以集中管理表元数据并进行数据发现。ClickHouse 支持使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎连接到你的目录，并将目录中的所有表公开为一个 ClickHouse 数据库。这种方式扩展性更好，因此随着新的 Iceberg 表不断创建，无需额外操作，即可始终在 ClickHouse 中访问它们。
+    如果你的组织使用数据目录，这是我们推荐的集成方式。目录可以集中管理表元数据并进行数据发现——无需为每个存储 path 分别管理表定义，只需通过 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎连接一次即可。目录中的每个表都会显示为一个 ClickHouse 表，包括在你创建连接后于 upstream 新增的表。
+
+    <Warning>
+      **使用目录时推荐采用此方式**
+
+      对于使用 Glue、Unity Catalog、REST 和其他[受支持目录](/zh/guides/use-cases/data-warehousing/reference/index)的 production 工作负载，建议使用 `DataLakeCatalog`。当你已知特定 path 时，表函数和表引擎可以正常工作，但随着目录不断增长，它们不会保持同步，并且需要为每个表分别提供 credentials 或 path。
+    </Warning>
 
     下面是一个连接到 [AWS Glue](/zh/guides/use-cases/data-warehousing/glue-catalog) 的示例：
 
@@ -106,7 +114,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="执行查询" id="issue-query">
-    无论你在上文使用的是哪种方式——表函数、表引擎还是 catalog——同一套 ClickHouse SQL 都适用于这三者：
+    无论你在上文使用的是哪种方式——表函数、表引擎还是 `DataLakeCatalog`——同一套 ClickHouse SQL 都适用于这三者。在生产环境中，如果使用的是目录，应通过 `DataLakeCatalog` 数据库执行查询；其他示例仍适用于快速测试和基于 path 的访问：
 
     ```sql
     -- Table function
@@ -229,8 +237,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 现在你已经了解了完整工作流程，接下来可以深入了解各个方面：
 
+* [连接到目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — 推荐用于以目录为支撑的工作负载；包含 Delta 和 Iceberg 的完整 Unity Catalog 操作指南
 * [直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly) — 四种格式、集群方案、表引擎、缓存机制
-* [连接到目录](/zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — 包含 Delta 和 Iceberg 的完整 Unity Catalog 操作指南
 * [加速分析](/zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — schema 优化、索引、约 40 倍提速演示
 * [写入数据湖](/zh/guides/use-cases/data-warehousing/getting-started/writing-data) — 原始写入、聚合写入、类型映射
 * [支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix) — 不同格式和存储后端之间的功能对比

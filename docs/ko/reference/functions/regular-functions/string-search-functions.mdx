@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — 입력 컬럼. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array)
 * `needles` — 검색할 토큰. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 기본값으로 `splitByNonAlpha`가 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 입력 컬럼입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable) 또는 [`Nullable(FixedString)`](/ko/reference/data-types/nullable) 또는 [`Array(String)`](/ko/reference/data-types/array) 또는 [`Array(FixedString)`](/ko/reference/data-types/array) 또는 [`Array(Nullable(String))`](/ko/reference/data-types/array) 또는 [`Array(Nullable(FixedString))`](/ko/reference/data-types/array)
 * `needles` — 검색 대상 토큰입니다. [`String`](/ko/reference/data-types/string) 또는 [`Array(String)`](/ko/reference/data-types/array)
-* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
+* `tokenizer` — 사용할 토크나이저입니다. 유효한 인수는 `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, `array`입니다. 선택 사항이며, 명시적으로 설정하지 않으면 `splitByNonAlpha`가 기본값으로 사용됩니다. [`const String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**배열에서 검색할 needle을 토큰화 없이 있는 그대로 지정합니다**
+**배열에서 검색할 needle을 토큰화하지 않고 있는 그대로 지정합니다**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -913,7 +913,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 검색 전에 이 함수는 텍스트 인덱스에 지정된 토크나이저를 사용해 `input` 인수와 `phrase` 인수를 모두 토큰화합니다.
 컬럼에 텍스트 인덱스가 정의되어 있지 않으면, 선택적 세 번째 인수로 토크나이저를 제공한 경우를 제외하고 `splitByNonAlpha` 토크나이저를 대신 사용합니다.
-토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` 중 하나여야 합니다.
+토크나이저 인수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` 중 하나여야 합니다.
 
 <Note>
   텍스트 인덱스에 [전처리기](/ko/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index)가 정의되어 있으면(예: `lowerUTF8`), `hasPhrase`는 토큰화 전에 이를 `input`과 `phrase` 모두에 적용합니다.

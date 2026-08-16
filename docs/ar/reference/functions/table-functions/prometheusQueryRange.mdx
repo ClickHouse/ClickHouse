@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - وقت نهاية نطاق التقييم.
 * `step` - الخطوة المستخدَمة للتنقّل عبر وقت التقييم من `start_time` إلى `end_time` (شاملاً).
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المُعادة
 </div>
 
@@ -60,11 +60,11 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 | الفئة          | الدوال                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------ |
-| النطاق         | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | حساب المثلثات  | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| Type           | `scalar`, `vector`                                                                               |
+| نوع           | `scalar`, `vector`                                                                               |
 | مُدرَّج تكراري | `histogram_quantile`                                                                             |
 | أخرى           | `time`, `pi`                                                                                     |
 

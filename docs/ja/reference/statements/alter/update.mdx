@@ -20,13 +20,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 1 つのクエリに、カンマ区切りで複数のコマンドを含めることができます。
 
-クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
+クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
 
 **関連項目**
 
 * [ミューテーション](/ja/reference/statements/alter/index#mutations)
 * [ALTER クエリの同期性](/ja/reference/statements/alter/index#synchronicity-of-alter-queries)
-* [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定
+* [mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定
 * [論理更新 `UPDATE`](/ja/reference/statements/update) - パッチパートを使用する代替の論理更新
 * [`APPLY PATCHES`](/ja/reference/statements/alter/apply-patches) - 論理更新のパッチを手動で適用する
 

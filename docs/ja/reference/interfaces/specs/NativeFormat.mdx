@@ -364,22 +364,23 @@ Nativeのバイトストリームは、何よりもまず、そのwriterとreade
 
 各機能には `DBMS_MIN_REVISION_WITH_*` のしきい値があります。writer は自身のリビジョンがそのしきい値に達して初めてその機能を出力し、reader もまったく同じ条件でそれを期待します。こうして両者の動作はそろいますが、どちらか一方でもリビジョンを誤ると読み書きの前提がずれてしまいます。Nativeフォーマット で重要になるゲートは次のとおりです。
 
-| Feature                                 | Threshold constant                                                 | Revision | Effect when below threshold                                                                                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BlockInfo` prefix                      | (any value `> 0`)                                                  | `1`      | [`BlockInfo`](#blockinfo) プレフィックスは完全に省略され、block は `num_columns`、`num_rows`、columns だけになります。                                                                          |
-| `has_custom_serialization` byte         | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | カラムごとの [`has_custom_serialization`](#column-wire-layout) バイトは省略され、すべてのカラムでデフォルトのシリアライゼーションが使われます (spare、replicated、detached 形式は使われません) 。                             |
-| `LowCardinality` on the wire            | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 特殊ケースで、単純な「しきい値未満なら無効」という規則には**従いません**。`LowCardinality(T)` が基本型 `T` に落とされるのは、リビジョンが *0 ではなく* `54405` 未満の場合、または別途強制的に落とす場合だけです。リビジョン `0` では保持されます。詳しくは以下の注記を参照してください。 |
-| V2 `Dynamic` / `JSON` serialization     | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` と `JSON`/`Object` は V2 ではなく V1 のシリアライゼーション (`max_dynamic_*` パラメーター付き) を使用します。                                                                              |
-| Aggregate-function versioning           | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state は埋め込みバージョンなしで書き込まれます。                                                                                                                      |
-| `out_of_order_buckets` in `BlockInfo`   | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` のフィールド ID `3` は書き込まれません ([BlockInfo](#blockinfo) を参照) 。                                                                                                  |
-| Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | カラムが `ColumnBLOB` でラップされることはなく、`DETACHED` / `DETACHED_OVER_SPARSE` kind も現れません ([kind&#95;stack](#kind-stack-and-sparse-encoding) を参照) 。                             |
-| `DateTime(tz)` type parameter           | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | timezone パラメーターは `type` string から落とされ、`DateTime('UTC')` は単なる `DateTime` として通知されます。                                                                                   |
+| Feature                                        | Threshold constant                                                 | Revision | Effect when below threshold                                                                                                                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BlockInfo` prefix                             | (any value `> 0`)                                                  | `1`      | [`BlockInfo`](#blockinfo) プレフィックスは完全に省略され、block は `num_columns`、`num_rows`、columns だけになります。                                                                                                   |
+| `has_custom_serialization` byte                | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | カラムごとの [`has_custom_serialization`](#column-wire-layout) バイトは省略され、すべてのカラムでデフォルトのシリアライゼーションが使われます (spare、replicated、detached 形式は使われません) 。                                                      |
+| `LowCardinality` on the wire                   | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 特殊ケースで、単純な「しきい値未満なら無効」という規則には**従いません**。`LowCardinality(T)` が基本型 `T` に落とされるのは、リビジョンが *0 ではなく* `54405` 未満の場合、または別途強制的に落とす場合だけです。リビジョン `0` では保持されます。詳しくは以下の注記を参照してください。                          |
+| V2 `Dynamic` / `JSON` serialization            | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` と `JSON`/`Object` は V2 ではなく V1 のシリアライゼーション (`max_dynamic_*` パラメーター付き) を使用します。                                                                                                       |
+| Aggregate-function versioning                  | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state は埋め込みバージョンなしで書き込まれます。                                                                                                                                               |
+| `skip_degree` in `quantileDeterministic` state | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | `AggregateFunction(quantileDeterministic, ...)` state (および同じ関数の `quantiles`/`median` 表記) は、末尾の `UInt8 skip_degree` なしで state バージョン `0` として書き込まれます。[type aliases](#type-aliases) の注記を参照してください。 |
+| `out_of_order_buckets` in `BlockInfo`          | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` のフィールド ID `3` は書き込まれません ([BlockInfo](#blockinfo) を参照) 。                                                                                                                           |
+| Parallel block marshalling (`DETACHED`)        | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | カラムが `ColumnBLOB` でラップされることはなく、`DETACHED` / `DETACHED_OVER_SPARSE` kind も現れません ([kind&#95;stack](#kind-stack-and-sparse-encoding) を参照) 。                                                      |
+| `DateTime(tz)` type parameter                  | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | timezone パラメーターは `type` string から落とされ、`DateTime('UTC')` は単なる `DateTime` として通知されます。                                                                                                            |
 
-つまり、リビジョン `0` はほぼすべてにおいて最も保守的なエンコーディングになります。stream には `BlockInfo` も `has_custom_serialization` バイトも含まれず、`Dynamic`/`JSON` は V1、aggregate-function のバージョンもなく、timezone パラメーターが省かれた素の `DateTime` になります。
+つまり、リビジョン `0` はほぼすべてにおいて最も保守的なエンコーディングになります。stream には `BlockInfo` も `has_custom_serialization` バイトも含まれず、`Dynamic`/`JSON` は V1、aggregate-function のバージョンもなく、timezone パラメーターが省かれた素の `DateTime` になります。リビジョン `0` では aggregate-function の *state* バージョンが例外です。バージョンを導出する相手が存在しないためです。stream はそれを生成したもの (`StripeLog` データファイル、`Set`/`Join` backup、`Native` フォーマットファイル) によって書き込まれ、読み戻されます。そのため writer は state をバージョン `0` にダウングレードするのではなく、型に固定されたバージョンを保持します (通常どおり 型文字列 で明示します) 。バージョンを固定しない型だけがバージョン `0` で書き込まれます。
 
 唯一の例外が `LowCardinality` で、しかも重要な例外です。writer の判定は `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)` です。ポイントは先頭の `client_revision &&` です。リビジョンがちょうど `0` の場合、この条件全体は短絡評価で false になります。
 
-したがって、リビジョン `0` では — `FORMAT Native` のデフォルトですが — `LowCardinality(T)` は**落とされません**。その type string と block ごとの state prefix は stream に残り、リビジョン `0` の reader はそれらをそのまま読み取ります。落としが有効になるのは、`54405` 未満の 0 以外のリビジョンの場合か、リビジョンに関係なく強制された場合だけです。
+したがって、リビジョン `0` では — `FORMAT Native` のデフォルトですが — `LowCardinality(T)` は**落とされません**。その 型文字列 と block ごとの state prefix は stream に残り、リビジョン `0` の reader はそれらをそのまま読み取ります。落としが有効になるのは、`54405` 未満の 0 以外のリビジョンの場合か、リビジョンに関係なく強制された場合だけです。
 
 この強制を行うのが `remove_low_cardinality` フラグです。`FORMAT Native` の出力ではこれが設定されることはありませんが、native TCP 経路では `low_cardinality_allow_in_native_format = 0` のときに設定されます (デフォルトは `1`) 。言い換えると、この setting は native TCP の出力には影響しますが、`FORMAT Native` には何も影響しません。
 
@@ -1148,24 +1149,24 @@ Field 'b' stream (3 strings, 6 bytes):
 
 地理型は、ネストした配列やタプルの別名です。
 
-| 型文字列                         | 基底ワイヤ型                    |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 型文字列                               | 基底ワイヤ型                    |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 したがって、`Point` カラムは `Tuple(Float64, Float64)` とまったく同じようにデコードされ (表示は `(1,2)`) 、`Ring` は `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`) としてデコードされます。以降も同様に、階層に沿って上位の型へと続きます。
 
-`Geometry` も別名ですが、ネストした配列ではなく [`Variant`](#variant) の別名です。その payload は、上記 6 つの geo types の variant です。カラムヘッダーには型文字列 `Geometry` だけが含まれ、variant の内容までは**示されません**。そのため、デコーダーは自分でこれを展開する必要があります。ほかの `Variant` と同様に、discriminator は geo の別名の正規名を名前順にソートした順序に従います。`0` = `LineString`、`1` = `MultiLineString`、`2` = `MultiPolygon`、`3` = `Point`、`4` = `Polygon`、`5` = `Ring` です。選択された各値は、その後、上記の geo の別名に従ってデコードされます (`NULL` の場合は `Variant` の `NULL` discriminator `255` を使用します) 。
+`Geometry` も別名ですが、ネストした配列ではなく [`Variant`](#variant) の別名です。その ペイロード は、上記 7 つの geo types の variant です。カラムヘッダーには型文字列 `Geometry` だけが含まれ、variant の内容までは**示されません**。そのため、デコーダーは自分でこれを展開する必要があります。ユーザーが明示した `Variant` とは異なり、`Geometry` の 判別子 は名前順にソートされた順序には**従いません**。これらは互換性のために固定されており、新しい geo types は常に末尾に追加されます。対応は `0` = `LineString`、`1` = `MultiLineString`、`2` = `MultiPolygon`、`3` = `Point`、`4` = `Polygon`、`5` = `Ring`、`6` = `MultiPoint` です (`MultiPoint` は 26.7 で追加されました。古い server からの streams には 判別子 `6` は含まれません) 。選択された各値は、その後、上記の geo の別名に従ってデコードされます (`NULL` の場合は `Variant` の `NULL` 判別子 `255` を使用します) 。
 
 `SimpleAggregateFunction(func, T)` は、その値型 `T` の別名です。これはすでに確定済みの aggregate 値を格納するため、ワイヤ形式も表示も `T` と完全に同一です (`SimpleAggregateFunction(sum, UInt64)` は `UInt64` としてデコードされます) 。このように別名として扱われるのは単一値型の形式だけで、基底型自体は複合型である場合もあります。
 
 <Note>
-  関連する 2 つの型は**別名ではありません**。これらは有効な `Native` カラム型です。たとえば client は `-State` combinator や distributed aggregation から `AggregateFunction` カラムを受け取ることがあります。ただし、どちらもこのページの範囲外となる専用の payload を持ちます。
+  関連する 2 つの型は**別名ではありません**。どちらも有効な `Native` カラム型です。たとえば、クライアントは `-State` コンビネータまたは分散集約から `AggregateFunction` カラムを受け取ることができます。ただし、それぞれにこのページの対象外である専用のペイロードがあります。
 
-  * `AggregateFunction(func, ...)` は *中間* aggregation state を保持します (確定済みの値ではありません) 。そのバイナリ layout は aggregate function とバージョンに固有です。
-  * `QBit(T, N[, stride])` は、vector-search workloads 向けに bit planes を転置したベクトルを格納します。その on-wire stream layout (group-major の `FixedString` bit-plane streams で、明示的な `stride` を伴う `element_size * (N / stride)` 個) と、その binary type encoding (tag `0x36`、または `stride != N` の場合は `0x37` の `QBitWithStride`) は、[`QBit` data type page](/ja/reference/data-types/qbit) と [binary type encoding](/ja/reference/data-types/data-types-binary-encoding) reference に記載されています。そのため、`Native` reader はそれらを C++ source から復元する必要はありません。
+  * `AggregateFunction(func, ...)` は*中間的な*集約状態 (最終値ではない) を保持します。そのバイナリレイアウトは集約関数とバージョンに固有です。バージョン付き集約関数では、ゼロ以外の状態バージョンが型文字列の第 1 引数として明示されます。`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`。一方、バージョン `0` は出力されないため、型文字列は `AggregateFunction(quantileDeterministic, UInt64, UInt64)` のままです。ネゴシエート済みの接続 (リビジョンが `0` より大きい) では、writer はプロトコルリビジョン**のみ**に基づいてバージョンを選択します。バージョン `0` は wire 上では「バージョンが通知されていない」状態と区別できないため、ローカルの型に固定されているバージョンに基づいて選択することはありません。したがって、同じ関数でも接続ごとに異なるバージョンを通知でき、reader は最新バージョンを仮定するのではなく、型文字列からバージョンを取得する必要があります。リビジョン `0` ではバージョンを導出するピアが存在しません。ストリームは自己記述型であり、書き込んだ側が読み戻すため、型に固定されたバージョンは `0` にダウングレードされず、ストリーム (および通知される型文字列) に保持されます。`quantileDeterministic` (`quantilesDeterministic` および `medianDeterministic` という表記を含む) はリビジョン `54491` 以降でバージョン付きです。バージョン `1` では、状態の末尾に `UInt8 skip_degree` が追加され、そのプレフィックスはバージョン `0` とバイト単位で同一です。このリビジョン未満では writer はバージョン `0` の状態を出力するため、古いピアには影響しません。これは、コンテナー型内にネストされた状態にも同様に適用されます。`Array`、`Tuple`、`Map`、`Nullable`、`Variant` (代替型に明示されたバージョンは判別子の順序を変えずに型文字列を変更します) 、または `Nested` / `SimpleAggregateFunction` ラッパー内の場合です。`Variant` には、wire 表現がまったく存在しないエッジケースが 1 つあります。2 つの代替型が明示された状態バージョンだけ異なる場合 (型文字列が異なるためカラム型としては有効) 、ネゴシエートされたリビジョンに合わせて両方のバージョンを変更すると同じ代替型に統合されます。そのため送信者は、ペイロードが書き込まれたバージョンとは異なるバージョンを通知するのではなく、転送を失敗させる必要があります。`Dynamic` は、リビジョン由来のバージョニングに対する意図的な例外です。`Dynamic` カラムは、独自の型リストと[バイナリ型エンコーディング](/ja/reference/data-types/data-types-binary-encoding)を通じて、ネストされた型を自ら通知します。このエンコーディングの明示的なバージョンフィールドには明示された状態バージョンが含まれます (共有 variant の値は保存時にもこの方法で型を埋め込みます) 。これらの通知はカラム自身のデータの一部であり、すべてのピアおよび媒体で同一であるため、ネゴシエートされたリビジョンに合わせて書き換えられることはありません。したがって、`Dynamic` 値内にネストされた状態は、型に明示されたバージョン (`-State` クエリ結果ではバージョンが明示されるため、新しい状態にはこのバージョンが設定されています) で書き込まれ、型にバージョンが明示されていない場合はバージョン `0` で書き込まれます。これはすべての接続および媒体で同じです。
+  * `QBit(T, N[, stride])` は、ベクトル検索ワークロード向けにビットプレーンを転置したベクトルを格納します。その wire 上のストリームレイアウト (グループ優先の `FixedString` ビットプレーンストリームで、明示的な `stride` を持つ `element_size * (N / stride)` 個) およびバイナリ型エンコーディング (タグ `0x36`、または `stride != N` の場合は `0x37` `QBitWithStride`) は、[`QBit` データ型ページ](/ja/reference/data-types/qbit)と[バイナリ型エンコーディング](/ja/reference/data-types/data-types-binary-encoding)リファレンスに記載されています。そのため、`Native` reader は C++ ソースからこれらを復元する必要がありません。
 </Note>
 
 <div id="versioned-types">
@@ -1577,25 +1578,25 @@ flowchart LR
 | `0x82` | LZ4    | ボディは **LZ4 block format** です。*LZ4 のフレームフォーマットではありません*。magic number は含まれません。 |
 | `0x90` | ZSTD   | ボディは raw zstd の単一フレームストリームです (標準の zstd magic number はボディの一部です) 。            |
 
-メソッドバイトは [column-level codecs](/ja/reference/statements/create/table#column_compression_codec) もエンコードします。これらはストリーム全体の framing ではなく、MergeTree の オンディスク パスでカラムごとに適用されます。ただし、`decompress=1` の HTTP 入力パスでは各フレームのメソッドバイトから codec を取得するため、これらのどのバイトも正当な入力として現れます。したがって、仕様に準拠したデコーダは割り当て済みの空間全体を認識し、未実装のバイトはボディを誤って解釈するのではなく拒否しなければなりません。これらのボディは codec 固有であり、この汎用フレーム契約の対象外です。
+メソッドバイトは [column-level codecs](/ja/reference/statements/create/table/codec) もエンコードします。これらはストリーム全体の framing ではなく、MergeTree の オンディスク パスでカラムごとに適用されます。ただし、`decompress=1` の HTTP 入力パスでは各フレームのメソッドバイトから codec を取得するため、これらのどのバイトも正当な入力として現れます。したがって、仕様に準拠したデコーダは割り当て済みの空間全体を認識し、未実装のバイトはボディを誤って解釈するのではなく拒否しなければなりません。これらのボディは codec 固有であり、この汎用フレーム契約の対象外です。
 
-| Byte   | Method                                               |
-| ------ | ---------------------------------------------------- |
-| `0x91` | `Multiple` (ネストされた codec の数列をラップする composite codec)  |
-| `0x92` | `Delta`                                              |
-| `0x93` | `T64`                                                |
-| `0x94` | `DoubleDelta`                                        |
-| `0x95` | `Gorilla`                                            |
-| `0x96` | `AES_128_GCM_SIV` (暗号化)                              |
-| `0x97` | `AES_256_GCM_SIV` (暗号化)                              |
-| `0x98` | `FPC`                                                |
-| `0x9a` | `GCD`                                                |
-| `0x9c` | `ALP`                                                |
-| `0x9d` | `SZ3`                                                |
-| `0x9e` | `Quantized`                                          |
-| `0x9f` | `ZXC`                                                |
+| Byte   | Method                                              |
+| ------ | --------------------------------------------------- |
+| `0x91` | `Multiple` (ネストされた codec の数列をラップする composite codec) |
+| `0x92` | `Delta`                                             |
+| `0x93` | `T64`                                               |
+| `0x94` | `DoubleDelta`                                       |
+| `0x95` | `Gorilla`                                           |
+| `0x96` | `AES_128_GCM_SIV` (暗号化)                             |
+| `0x97` | `AES_256_GCM_SIV` (暗号化)                             |
+| `0x98` | `FPC`                                               |
+| `0x9a` | `GCD`                                               |
+| `0x9c` | `ALP`                                               |
+| `0x9d` | `SZ3`                                               |
+| `0x9e` | `Quantized`                                         |
+| `0x9f` | `ZXC`                                               |
 
-`0x9d` (`SZ3`) は、`Float32`、`Float64`、およびそれらの型の `Array` 向けの、誤差境界付きの**実験的**な非可逆 codec です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(SZ3)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x9f` (`ZXC`) は非対称の LZ codec で、圧縮は低速ですが、展開は非常に高速で、ratio は `LZ4` と `ZSTD` の中間です。`0x99` (`DeflateQpl`) と `0x9b` (`ZSTD_QPL`) のバイトは、その後削除された codec に割り当てられていました。これらは予約済みで、再利用されません。
+`0x9d` (`SZ3`) は、`Float32`、`Float64`、およびそれらの型の `Array` 向けの、誤差境界付きの**実験的**な非可逆 codec です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(SZ3)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x9f` (`ZXC`) は**実験的**な非対称 LZ codec で、圧縮は低速ですが、展開は非常に高速で、ratio は `LZ4` と `ZSTD` の中間です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(ZXC)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x99` (`DeflateQpl`) と `0x9b` (`ZSTD_QPL`) のバイトは、その後削除された codec に割り当てられていました。これらは予約済みで、再利用されません。
 
 `0x9e` (`Quantized`) は、高密度ベクトルカラム (`Array(Float32)` など) 向けの**実験的**なカラム codec です。`NONE` と同様にパススルーで、フル精度のボディはそのまま保存されますが、この codec があると、ベクトル検索の高速化に使われる compact な量子化 companion ストリームを書き出すシリアライゼーションが関連付けられます。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(Quantized(...))` を使って table を作成でき、展開時にはこのメソッドバイトが常に受け入れられます。
 

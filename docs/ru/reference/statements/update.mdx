@@ -57,13 +57,13 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 
 Легковесные обновления поддерживаются для движков [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), а также их версий [`Replicated`](/ru/reference/engines/table-engines/mergetree-family/replication) и [`Shared`](/ru/products/cloud/features/infrastructure/shared-merge-tree).
 
-Чтобы использовать легковесные обновления, нужно включить материализацию столбцов `_block_number` и `_block_offset` с помощью настроек таблицы [`enable_block_number_column`](/ru/reference/settings/merge-tree-settings#enable_block_number_column) и [`enable_block_offset_column`](/ru/reference/settings/merge-tree-settings#enable_block_offset_column).
+Чтобы использовать легковесные обновления, нужно включить материализацию столбцов `_block_number` и `_block_offset` с помощью настроек таблицы [`enable_block_number_column`](/ru/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) и [`enable_block_offset_column`](/ru/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
 <div id="lightweight-delete">
   ## Легковесные удаления
 </div>
 
-Запрос [легковесного `DELETE`](/ru/reference/statements/delete) можно выполнить как легковесный `UPDATE`, а не как мутацию `ALTER UPDATE`. Реализация легковесного `DELETE` управляется настройкой [`lightweight_delete_mode`](/ru/reference/settings/session-settings#lightweight_delete_mode).
+Запрос [легковесного `DELETE`](/ru/reference/statements/delete) можно выполнить как легковесный `UPDATE`, а не как мутацию `ALTER UPDATE`. Реализация легковесного `DELETE` управляется настройкой [`lightweight_delete_mode`](/ru/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
   ## Особенности производительности
@@ -88,7 +88,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 </div>
 
 Легковесные обновления, в отличие от тяжёлых мутаций, не ждут завершения текущих слияний/мутаций.
-Согласованность параллельных легковесных обновлений определяется настройками [`update_sequential_consistency`](/ru/reference/settings/session-settings#update_sequential_consistency) и [`update_parallel_mode`](/ru/reference/settings/session-settings#update_parallel_mode).
+Согласованность параллельных легковесных обновлений определяется настройками [`update_sequential_consistency`](/ru/reference/settings/session-settings/update#update_sequential_consistency) и [`update_parallel_mode`](/ru/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
   ## Разрешения для UPDATE

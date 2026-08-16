@@ -29,7 +29,7 @@ Une paire clé-valeur est composée d&#39;une clé suivie d&#39;un `key_value_de
 **Syntaxe**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - Caractère utilisé comme délimiteur entre la clé et la valeur. La valeur par défaut est `:`. [String](/fr/reference/data-types/string) ou [FixedString](/fr/reference/data-types/fixedstring).
 * `pair_delimiters` - Ensemble de caractères utilisés comme délimiteurs entre les paires. La valeur par défaut est `\space`, `,` et `;`. [String](/fr/reference/data-types/string) ou [FixedString](/fr/reference/data-types/fixedstring).
 * `quoting_character` - Caractère utilisé comme caractère de guillemet. La valeur par défaut est `"`. [String](/fr/reference/data-types/string) ou [FixedString](/fr/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - Stratégie de gestion des caractères de guillemet lorsqu&#39;ils apparaissent à des emplacements inattendus pendant les phases `read_key` et `read_value`. Valeurs possibles : `invalid`, `accept` et `promote`. Invalid supprimera la clé/valeur et reviendra à l&#39;état `WAITING_KEY`. Accept le traitera comme un caractère normal. Promote passera à l&#39;état `READ_QUOTED_{KEY/VALUE}` et commencera à partir du caractère suivant. La valeur par défaut est `INVALID`
+* `unexpected_quoting_character_strategy` - Stratégie de gestion des caractères de guillemet lorsqu&#39;ils apparaissent à des emplacements inattendus pendant les phases `read_key` et `read_value`. Valeurs possibles : `invalid`, `accept` et `promote`. Invalid supprimera la clé/valeur et reviendra à l&#39;état `WAITING_KEY`. Accept le traitera comme un caractère normal. Promote passera à l&#39;état `READ_QUOTED_{KEY/VALUE}` et commencera à partir du caractère suivant. La valeur par défaut est `PROMOTE`
 
 **Valeurs renvoyées**
 
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **Syntaxe**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Alias** : `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **Syntaxe**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Arguments**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introduit dans : v21.2.0
 
 Renvoie les clés de la map donnée.
-Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Lorsque ce paramètre est activé, la fonction lit uniquement la sous-colonne `keys` au lieu de lire la map entière.
 La requête `SELECT mapKeys(m) FROM table` est transformée en `SELECT m.keys FROM table`.
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introduit dans : v21.2.0
 
 Renvoie les valeurs de la map donnée.
-Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Lorsque ce paramètre est activé, la fonction lit uniquement la sous-colonne `values` au lieu de lire la map entière.
 La requête `SELECT mapValues(m) FROM table` est transformée en `SELECT m.values FROM table`.
 

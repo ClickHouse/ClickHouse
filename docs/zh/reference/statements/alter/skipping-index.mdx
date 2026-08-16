@@ -25,7 +25,9 @@ doc_type: 'reference'
   ## MATERIALIZE INDEX
 </div>
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 为指定的 `partition_name` 重建二级索引 `name`。该操作以[变更](/zh/reference/statements/alter/index#mutations)的形式实现。如果省略 `IN PARTITION` 部分，则会为整个表的数据重建该索引。
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 为指定的 `partition_name` 重建二级索引 `name`。该操作通过[变更](/zh/reference/statements/alter/index#mutations)实现。如果省略 `IN PARTITION` 部分，则会为整张表的数据重建索引。
+
+[`MATERIALIZE COLUMN`](/zh/reference/statements/alter/column#materialize-column) 不能完全替代 `MATERIALIZE INDEX`。对于同时属于 **wide + full-storage** 的 parts，它可能会重写列值，但不会刷新**独立存储的**跳过索引 (或文本索引) 文件。存储在 `skp_idx.packed` 中的普通跳过索引是例外：在 wide + full-storage parts 上，仍可强制重新计算这些索引 (即默认 [`packed_skip_index_max_bytes`](/zh/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) 阈值以下的小型跳过索引子流；全文索引不会以这种方式打包) 。对于**任何不是 wide + full-storage 的 part** (包括 **compact + full**、**compact + packed** 和 **wide + packed**) ，重写整个 part 可以重新计算已有索引——小型 parts 通常采用 compact 格式，但默认仍使用完整的 part 存储。对于已包含数据的表新增索引时 (仅元数据的 `ADD INDEX`) ，以及在 wide+full-storage parts 上重写列后需要立即重建独立索引文件时，请使用 `MATERIALIZE INDEX`，以获得**确定性 / 即时**的处理方式。启用 [`materialize_skip_indexes_on_merge`](/zh/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)，且未通过 [`exclude_materialize_skip_indexes_on_merge`](/zh/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge) 排除该索引时，历史 parts 上新添加的索引 (包括文本索引) 也可在后续合并时 materialize；否则，它们会保持未 materialize 状态，直到显式执行 `MATERIALIZE INDEX`。
 
 <div id="clear-index">
   ## CLEAR INDEX
@@ -39,3 +41,11 @@ doc_type: 'reference'
 <Note>
   只有使用 [`*MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎的表 (包括[复制型](/zh/reference/engines/table-engines/mergetree-family/replication)变体) 才支持索引操作。
 </Note>
+
+<div id="concurrent-alter-and-multi-clause-materialize-index">
+  ## 并发 `ALTER` 与多子句 `MATERIALIZE INDEX`
+</div>
+
+对于复制表，如果针对同一张表快速执行多个独立的 `ALTER`，而先前的 `ALTER` 尚未在副本上应用 (元数据仍然滞后——即使此前的 alter 已被分配，仍可能如此) ，则可能触发 `CANNOT_ASSIGN_ALTER` (代码 517) 。这是通用的并发元数据 `ALTER` / 变更情形 (并非仅限于变更) ；请将操作串行化或重试，通过 [`mutations_sync`](/zh/reference/settings/session-settings/mutations#mutations_sync) / [`system.mutations`](/zh/reference/system-tables/mutations) 中的 `is_done` 等待先前会产生变更的 alter 完成，或者在语法允许时，将彼此独立的元数据操作合并为一个多子句 `ALTER`。请参阅 [ALTER 查询的同步性](/zh/reference/statements/alter/index#synchronicity-of-alter-queries) 和 [并发分配 ALTER](/zh/reference/statements/alter/index#concurrent-alter-assignment-on-one-table)。
+
+一个 `ALTER` 中可以包含多个 `MATERIALIZE INDEX` 子句。仓库内已覆盖的情形是：在单条语句中，将多个 `ADD INDEX` 子句与针对这些新索引的 `MATERIALIZE INDEX` 一并组合使用 (`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`) 。这种组合形式适用于常规 (非 `DatabaseReplicated`) 数据库——`DatabaseReplicated` 会以 `QUERY_IS_PROHIBITED` 拒绝混合的 `ADD INDEX` + `MATERIALIZE INDEX` 分段。对于已存在的索引，仅物化的多子句形式在当前实现中遵循相同的元数据快照准备路径，但这种确切形式尚未由专门的无状态测试覆盖——在具备此类覆盖之前，应将其视为当前实现行为，而非单独保证的契约。若需按顺序应用，请每条语句只执行一个 `MATERIALIZE INDEX`，并使用 [`mutations_sync`](/zh/reference/settings/session-settings/mutations#mutations_sync) 等待。

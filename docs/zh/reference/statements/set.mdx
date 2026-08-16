@@ -43,13 +43,13 @@ SET TIME ZONE 'UTC';
 SET TIME ZONE 'Europe/Amsterdam';
 SET TIME ZONE 'America/New_York';
 
--- 验证当前会话时区
+-- Verify the current session time zone
 SELECT getSetting('session_timezone');
 ```
 
-timezone 值必须是 [IANA Time Zone Database](https://www.iana.org/time-zones) 中的有效名称。无效的 timezone 名称会导致 error。
+The timezone value must be a valid name from the [IANA Time Zone Database](https://www.iana.org/time-zones). An invalid timezone name will result in an error.
 
-有关 `session_timezone` 设置的更多信息，请参见 [session&#95;timezone](/zh/reference/settings/session-settings#session_timezone)。
+有关 `session_timezone` 设置的更多信息，请参见 [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)。
 
 <div id="setting-query-parameters">
   ## 设置查询参数

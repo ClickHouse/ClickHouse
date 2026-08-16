@@ -284,9 +284,9 @@ spec:
 
 合并是按键逐项进行的：只会替换你设置的值，而你
 省略的自动生成键 (证书路径、CA 配置) 会予以保留。可用选项请参阅
-[`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings#openssl)
+[`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings/other#openssl)
 ，`extraConfig` 的合并方式请参阅
-[Configuration → 嵌入式额外配置](/zh/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)。
+[配置 → 嵌入式额外配置](/zh/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)。
 
 <div id="troubleshoot">
   ## 验证与排查故障
@@ -321,4 +321,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 * [配置 → TLS/SSL 配置](/zh/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — 字段参考
 * [配置 → `additionalPorts`](/zh/products/kubernetes-operator/guides/configuration#additional-ports) — 保留端口
 * [API 参考文档 → ClusterTLSSpec](/zh/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings#openssl) — 可通过 `extraConfig` 覆盖的 TLS 选项
+* [`openSSL` 服务器设置](/zh/reference/settings/server-settings/settings/other#openssl) — 可通过 `extraConfig` 覆盖的 TLS 选项

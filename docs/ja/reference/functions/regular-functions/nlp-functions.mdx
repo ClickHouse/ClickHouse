@@ -10,10 +10,6 @@ keywords: ['NLP', '自然言語処理']
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<ExperimentalBadge />
-
-<CloudNotSupportedBadge />
-
 {/* 
     以下のタグ内の内容は、ドキュメントフレームワークのビルド時に
     system.functions から生成されたドキュメントに差し替えられます。タグは変更または削除しないでください。
@@ -28,12 +24,16 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 導入バージョン: v22.2.0
 
-UTF-8 以外でエンコードされた入力文字列の文字セットを検出します。
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は実験的機能であり、今後のリリースで予期しない後方互換性のない変更が加えられる可能性があります。
   有効にするには、`allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+UTF-8 以外でエンコードされた入力文字列の文字セットを検出します。
 
 **構文**
 
@@ -67,15 +67,19 @@ WINDOWS-1252
 
 導入バージョン: v22.2.0
 
-UTF-8 でエンコードされた入力文字列の言語を検出します。
-この関数は検出に [CLD2 ライブラリ](https://github.com/CLD2Owners/cld2) を使用し、2 文字の ISO 言語コードを返します。
+<ExperimentalBadge />
 
-入力が長いほど、言語検出の精度は高くなります。
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は実験的機能であり、今後のリリースで予測できない後方互換性のない変更が加えられる可能性があります。
   有効にするには `allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+UTF-8 でエンコードされた入力文字列の言語を検出します。
+この関数は検出に [CLD2 ライブラリ](https://github.com/CLD2Owners/cld2) を使用し、2 文字の ISO 言語コードを返します。
+
+入力が長いほど、言語検出の精度は高くなります。
 
 **構文**
 
@@ -109,12 +113,16 @@ fr
 
 導入バージョン: v22.2.0
 
-[`detectLanguage`](#detectLanguage) 関数と似ていますが、`detectLanguageMixed` は、テキスト内で各言語が占める割合を、2 文字の言語コードをキーとする `Map` として返します。
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は 実験的機能 であり、今後のリリースで予測不可能な後方互換性のない変更が加えられる可能性があります。
   有効にするには、`allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+[`detectLanguage`](#detectLanguage) 関数と似ていますが、`detectLanguageMixed` は、テキスト内で各言語が占める割合を、2 文字の言語コードをキーとする `Map` として返します。
 
 **構文**
 
@@ -148,13 +156,17 @@ SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追�
 
 導入バージョン: v22.2.0
 
-[`detectLanguage`](#detectLanguage) 関数と似ていますが、detectLanguageUnknown 関数は UTF-8 以外でエンコードされた文字列を扱える点が異なります。
-文字セットが UTF-16 または UTF-32 の場合は、こちらのバージョンを優先して使用してください。
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は 実験的機能 であり、今後のリリースで予測不能な後方互換性のない変更が加えられる可能性があります。
   有効にするには `allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+[`detectLanguage`](#detectLanguage) 関数と似ていますが、detectLanguageUnknown 関数は UTF-8 以外でエンコードされた文字列を扱える点が異なります。
+文字セットが UTF-16 または UTF-32 の場合は、こちらのバージョンを優先して使用してください。
 
 **構文**
 
@@ -188,18 +200,18 @@ de
 
 導入バージョン: v22.2.0
 
-指定されたテキストデータのセンチメントを判定します。
+<ExperimentalBadge />
 
-<Info>
-  **制限事項**
-
-  現時点でこの関数は、埋め込みの感情辞書を使用しており、ロシア語でのみ動作します。
-</Info>
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は実験的機能であり、今後のリリースで予測不能な後方互換性のない変更が加えられる可能性があります。
   有効にするには `allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+指定されたテキストデータのセンチメントを判定します。
+
+この関数は埋め込みの感情辞書を使用しており、現時点ではロシア語でのみ動作します。
 
 **構文**
 
@@ -236,14 +248,18 @@ SELECT
 
 導入バージョン: v21.9.0
 
-指定した単語に対してレンマ化を行います。
-この関数を使用するには辞書が必要です。辞書は [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models) から取得できます。
-ローカルファイルから辞書を読み込む方法の詳細については、[&quot;Dictionary の定義&quot;](/ja/reference/statements/create/dictionary/sources/local-file) ページを参照してください。
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
 
 <Warning>
   この関数は実験的機能であり、今後のリリースで予測不能な後方互換性のない変更が加えられる可能性があります。
   有効にするには、`allow_experimental_nlp_functions = 1` を設定してください。
 </Warning>
+
+指定した単語に対してレンマ化を行います。
+この関数を使用するには辞書が必要です。辞書は [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models) から取得できます。
+ローカルファイルから辞書を読み込む方法の詳細については、[&quot;Dictionary の定義&quot;](/ja/reference/statements/create/dictionary/sources/local-file) ページを参照してください。
 
 **構文**
 
@@ -348,6 +364,15 @@ bless
 
 導入バージョン: v21.9.0
 
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Warning>
+  この関数は実験的機能であり、今後のリリースで予測不能な後方互換性のない変更が加えられる可能性があります。
+  有効にするには `allow_experimental_nlp_functions = 1` を設定してください。
+</Warning>
+
 指定した単語の同義語を見つけます。
 
 同義語の拡張機能には 2 種類あります。
@@ -360,11 +385,6 @@ bless
 
 `wordnet` 拡張機能タイプでは、WordNet シソーラスを含むディレクトリへのパスを指定する必要があります。
 シソーラスには WordNet の sense index が含まれている必要があります。
-
-<Warning>
-  この関数は実験的機能であり、今後のリリースで予測不能な後方互換性のない変更が加えられる可能性があります。
-  有効にするには `allow_experimental_nlp_functions = 1` を設定してください。
-</Warning>
 
 **構文**
 
