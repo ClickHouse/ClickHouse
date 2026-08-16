@@ -251,6 +251,75 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
     return removed_stats;
 }
 
+/// Which indices this mutation rebuilds the granules of, among those the part already holds. It
+/// answers from `commands` alone, because `MutationsInterpreter` is built downstream of this
+/// function; an index it cannot decide counts as carried over, which costs pruning but never records
+/// a column at a type a carried-over granule was not built from.
+static NameSet collectIndicesRebuiltByMutation(
+    const MergeTreeData::DataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MutationCommands & commands)
+{
+    NameSet rebuilt;
+
+    bool rebuilds_every_index = std::ranges::any_of(
+        commands, [](const auto & command) { return command.affectsAllColumns(); });
+
+    /// Exactly the set `MutationsInterpreter` derives from the same commands. A wider one here would
+    /// claim a rebuild it does not perform.
+    NameSet updated_columns;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::READ_COLUMN && command.read_for_patch
+            && command.column_name != RowExistsColumn::name)
+            updated_columns.insert(command.column_name);
+
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+            for (const auto & child : alter->update_assignments->children)
+                updated_columns.insert(child->as<ASTAssignment &>().column_name);
+    }
+
+    StorageInMemoryMetadata::HasDependencyCallback has_dependency =
+        [&](const String & name, ColumnDependency::Kind kind)
+    {
+        if (kind == ColumnDependency::PROJECTION)
+            return part->hasProjection(name);
+        if (kind == ColumnDependency::SKIP_INDEX)
+            return part->hasSecondaryIndex(name, metadata_snapshot);
+        return true;
+    };
+
+    /// An index is rebuilt when one of its columns is written. Beyond the columns the commands name,
+    /// that is the closure over the metadata's dependencies: a column whose TTL expression this
+    /// mutation updates is expired by it, and appears nowhere else.
+    NameSet changed_columns;
+    if (!updated_columns.empty())
+    {
+        for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency))
+            if (!dependency.isReadOnly())
+                changed_columns.insert(dependency.column_name);
+    }
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+            continue;
+
+        if (rebuilds_every_index)
+        {
+            rebuilt.insert(index.name);
+            continue;
+        }
+
+        const auto & index_columns = index.expression->getRequiredColumns();
+        if (std::ranges::any_of(index_columns, [&](const auto & column)
+                { return updated_columns.contains(column) || changed_columns.contains(column); }))
+            rebuilt.insert(index.name);
+    }
+
+    return rebuilt;
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -608,10 +677,7 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
 
                 /// The new part must describe every column the index's granules were built from, or
-                /// `isPartTypeCompatible` has no type to compare against and refuses the index. Only
-                /// parts lacking the index files qualify: those are the ones whose granules get
-                /// rebuilt. Elsewhere the granules are hardlinked, so writing the column at the
-                /// current type would make a stale granule look compatible.
+                /// `isPartTypeCompatible` has no type to compare against and refuses the index.
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -676,8 +742,9 @@ static void splitAndModifyMutationCommands(
         }
 
         /// The column list belongs to the part, so a column recorded in it must carry a type that
-        /// matches the granules of every index on the part that reads it. An index the part already
-        /// holds files for keeps its granules by hardlink, so a column it reads must stay absent.
+        /// matches the granules of every index on the part that reads it. An index whose granules
+        /// this mutation carries over unchanged keeps them under the type they were built from, so
+        /// a column such an index reads must stay absent.
         if (!extra_columns_for_indices.empty())
         {
             NameSet indices_being_dropped;
@@ -685,9 +752,11 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::DROP_INDEX)
                     indices_being_dropped.insert(command.column_name);
 
+            auto rebuilt_indices = collectIndicesRebuiltByMutation(part, metadata_snapshot, commands);
+
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
-                if (indices_being_dropped.contains(index.name))
+                if (indices_being_dropped.contains(index.name) || rebuilt_indices.contains(index.name))
                     continue;
                 if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
                     continue;

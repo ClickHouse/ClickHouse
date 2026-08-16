@@ -3,7 +3,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 11-12 and 22-27 of the series started in 04165_skip_index_stale_type_after_alter: parts
+-- Cases 11-12 and 22-29 of the series started in 04165_skip_index_stale_type_after_alter: parts
 -- carrying index files for a column (or a subcolumn parent) they hold no bytes of. One test exceeded
 -- the flaky-check runtime limit under sanitizers, so the series is split, keeping the original case
 -- numbering.
@@ -28,12 +28,12 @@ SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE dat
 SYSTEM STOP MERGES t_absent_col;
 -- The expired column now reads as its type default everywhere, while the granules still hold the
 -- pre-expiry values: pruning on them would drop every row this must return.
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_col WHERE c = '') WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_col WHERE c = '') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_col WHERE c = '';
 SELECT count() FROM t_absent_col WHERE c = '' SETTINGS use_skip_indexes = 0;
 ALTER TABLE t_absent_col MODIFY COLUMN c Nullable(UInt64);
 KILL MUTATION WHERE table = 't_absent_col' AND database = currentDatabase() FORMAT Null;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_col WHERE c = 0) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_col WHERE c = 0) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_col WHERE c = 0;
 SELECT count() FROM t_absent_col WHERE c = 0 SETTINGS use_skip_indexes = 0;
 
@@ -72,12 +72,12 @@ SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE dat
 SYSTEM STOP MERGES t_absent_sub;
 -- p.x reads 0 for every row post-expiry, but the granules hold 0, 3, 6, ...: pruning on them keeps
 -- only the granule that happens to contain 0 and drops the other 15.
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_sub WHERE p.x = 0) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_sub WHERE p.x = 0) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_sub WHERE p.x = 0;
 SELECT count() FROM t_absent_sub WHERE p.x = 0 SETTINGS use_skip_indexes = 0;
 ALTER TABLE t_absent_sub MODIFY COLUMN p Tuple(x Nullable(UInt64));
 KILL MUTATION WHERE table = 't_absent_sub' AND database = currentDatabase() FORMAT Null;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_sub WHERE p.x = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_sub WHERE p.x = 150) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_sub WHERE p.x = 150;
 SELECT count() FROM t_absent_sub WHERE p.x = 150 SETTINGS use_skip_indexes = 0;
 
@@ -99,7 +99,7 @@ SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE dat
 SYSTEM STOP MERGES t_absent_bool_prefix;
 ALTER TABLE t_absent_bool_prefix MODIFY COLUMN `b.x` Bool;
 KILL MUTATION WHERE table = 't_absent_bool_prefix' AND database = currentDatabase() FORMAT Null;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'false') WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'false') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'false';
 SELECT count() FROM t_absent_bool_prefix WHERE toString(`b.x`) = 'false' SETTINGS use_skip_indexes = 0;
 
@@ -120,7 +120,7 @@ SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE dat
 SYSTEM STOP MERGES t_absent_bool_dotted;
 ALTER TABLE t_absent_bool_dotted MODIFY COLUMN `a.b` Tuple(x Nullable(UInt64));
 KILL MUTATION WHERE table = 't_absent_bool_dotted' AND database = currentDatabase() FORMAT Null;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 0) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 0) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 0;
 SELECT count() FROM t_absent_bool_dotted WHERE `a.b`.x = 0 SETTINGS use_skip_indexes = 0;
 
@@ -148,7 +148,7 @@ SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE dat
 SYSTEM STOP MERGES t_absent_qbit_sub;
 ALTER TABLE t_absent_qbit_sub MODIFY COLUMN vec QBit(Float64, 4);
 KILL MUTATION WHERE table = 't_absent_qbit_sub' AND database = currentDatabase() FORMAT Null;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)')) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)')) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)');
 SELECT count() FROM t_absent_qbit_sub WHERE `vec.8` = CAST(unhex('00'), 'FixedString(1)') SETTINGS use_skip_indexes = 0;
 
@@ -223,7 +223,7 @@ SELECT count() FROM t_rematerialize_absent WHERE c = 150 SETTINGS use_skip_index
 SYSTEM START MERGES t_rematerialize_absent;
 ALTER TABLE t_rematerialize_absent MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_rematerialize_absent' AND active AND column = 'c';
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rematerialize_absent WHERE c = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rematerialize_absent WHERE c = 150) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_rematerialize_absent WHERE c = 150;
 SELECT count() FROM t_rematerialize_absent WHERE c = 150 SETTINGS use_skip_indexes = 0;
 
@@ -245,21 +245,62 @@ ALTER TABLE t_two_indices_absent MODIFY COLUMN c Nullable(UInt64);
 KILL MUTATION WHERE table = 't_two_indices_absent' AND database = currentDatabase() FORMAT Null;
 SYSTEM STOP MERGES t_two_indices_absent;
 -- Pre-condition: idx_old refuses, because c is absent and its granules are stale (case 11).
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150) WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SYSTEM START MERGES t_two_indices_absent;
 ALTER TABLE t_two_indices_absent ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
 ALTER TABLE t_two_indices_absent MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 2, alter_sync = 2;
 SYSTEM STOP MERGES t_two_indices_absent;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active AND column = 'c';
+-- Both indices hold files, so a materialization that silently did nothing cannot pass: the
+-- assertions below would then be measuring one index instead of two.
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_two_indices_absent';
 -- ignore_data_skipping_indices is what isolates the two indices from each other.
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150
-    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE explain ILIKE '%Granules: 1/16%';
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150
-    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE explain ILIKE '%Granules: 1/16%';
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
 SELECT count() FROM t_two_indices_absent WHERE c = 150;
 SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_new';
 SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_old';
+
+SELECT '-- 29. a sibling index whose granules this mutation rebuilds does not keep the column absent';
+-- Case 28 keeps the column absent because idx_old carries its granules over. Here the same mutation
+-- also rebuilds them, so they are written from current data and the column can be recorded - which
+-- idx_new needs, or the index it just wrote is unusable. The UPDATE and the MATERIALIZE INDEX are
+-- one ALTER, which is the command set the pipeline also sees when two queued mutation entries are
+-- squashed. idx_old reads e as well as c, and updating e is what rebuilds it; c's own TTL is removed
+-- first so nothing re-expires c and the two effects stay separate.
+DROP TABLE IF EXISTS t_sibling_rebuilt;
+CREATE TABLE t_sibling_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND, e UInt64,
+    INDEX idx_old (c, e) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
+ALTER TABLE t_sibling_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_rebuilt' AND active AND column = 'c';
+ALTER TABLE t_sibling_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_rebuilt UPDATE e = e + 1 WHERE 1, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_rebuilt;
+-- Both commands share one mutation id, so the pipeline saw them as one command set. Two ids would
+-- mean two separate mutations and the case would silently stop covering the shape.
+SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_rebuilt' AND command LIKE '%idx_new%';
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_rebuilt' AND active AND column = 'c';
+-- Both indices hold files: a materialization that silently did nothing cannot pass.
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_sibling_rebuilt';
+-- Both were built from current data, so both must prune. No row holds '150' post-expiry, so a usable
+-- index drops every granule: 0/16, and 16/16 is exactly the refusal this case must not see.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_sibling_rebuilt WHERE c = '150';
+SELECT count() FROM t_sibling_rebuilt WHERE c = '150' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_sibling_rebuilt WHERE c = '';
+SELECT count() FROM t_sibling_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_absent_col;
 DROP TABLE t_pre_add_index;
@@ -273,3 +314,4 @@ DROP TABLE t_materialize_absent;
 DROP TABLE t_materialize_absent_sub;
 DROP TABLE t_rematerialize_absent;
 DROP TABLE t_two_indices_absent;
+DROP TABLE t_sibling_rebuilt;

@@ -198,6 +198,8 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -222,8 +224,6 @@ ColumnDependencies getAllColumnDependencies(
     }
 
     return dependencies;
-}
-
 }
 
 
