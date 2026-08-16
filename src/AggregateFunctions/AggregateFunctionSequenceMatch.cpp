@@ -296,7 +296,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number > arg_count - 1)
+                    if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
