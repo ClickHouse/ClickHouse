@@ -2274,20 +2274,27 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
     }
 }
 
-/// Non-blocking probe for stdin. An open pipe/socket with neither data nor EOF has no
-/// data at the time of the probe. This lets an INSERT with an inline data source proceed
-/// when it inherits an intentionally unused stdin. A delayed writer can still arrive
-/// after the probe; mixed inline and stdin input is therefore best-effort in this case.
+enum class StdinState
+{
+    Data,
+    EndOfFile,
+    Ambiguous,
+};
+
+/// Checks stdin without blocking. An open pipe/socket with neither data nor EOF is
+/// ambiguous: it can be an intentionally unused inherited stdin or a delayed writer.
+/// Callers with another INSERT data source must reject that state instead of deciding
+/// based on a timing-dependent snapshot.
 ///
 /// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
-/// `POLLERR`/`POLLNVAL`) is reported as "no data" rather than failing the INSERT.
+/// `POLLERR`/`POLLNVAL`) is reported as end of file rather than failing the INSERT.
 /// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
 /// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
 /// being silently swallowed.
-bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
+StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
 {
     if (std_in.hasPendingData())
-        return true;
+        return StdinState::Data;
 
     struct pollfd pfd{};
     pfd.fd = fd;
@@ -2305,18 +2312,18 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
         throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
 
     if (ret == 0)
-        return false;
+        return StdinState::Ambiguous;
 
     if (pfd.revents & (POLLERR | POLLNVAL))
-        return false;
+        return StdinState::EndOfFile;
 
     if (pfd.revents & POLLIN)
-        return true;
+        return StdinState::Data;
 
     if (pfd.revents & POLLHUP)
-        return false;
+        return StdinState::EndOfFile;
 
-    return false;
+    return StdinState::Ambiguous;
 }
 }
 
@@ -2439,17 +2446,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         return;
 
     /// When INSERT already has a primary data source (inline data or INFILE), use a
-    /// non-blocking poll to check whether stdin also has data. An open pipe without
-    /// data/EOF is treated as empty so an intentionally unused inherited stdin does
-    /// not block or reject the INSERT.
+    /// non-blocking poll to check stdin. Reject an open pipe without data/EOF because
+    /// it can be a delayed writer and silently ignoring it would lose data.
     /// When there is no other data source, use the blocking check as before.
     bool have_data_in_stdin = false;
     if (!is_interactive && !stdin_is_a_tty)
     {
         if (parsed_insert_query->data || parsed_insert_query->infile)
         {
-            have_data_in_stdin = isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
-                && isStdinNotEmptyAndValid(*std_in);
+            const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+            if (stdin_state == StdinState::Ambiguous)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported");
+
+            have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
         }
         else
             have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
@@ -2937,10 +2947,12 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
-                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
-                && isStdinNotEmptyAndValid(*std_in);
-            bool have_external_data = have_data_in_stdin || insert->infile;
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
+            bool have_external_data = stdin_state == StdinState::Ambiguous || have_data_in_stdin || insert->infile;
 
             if (have_external_data)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2949,10 +2961,12 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
-                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
-                && isStdinNotEmptyAndValid(*std_in);
-            bool have_external_data = have_data_in_stdin || insert->infile;
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
+            bool have_external_data = stdin_state == StdinState::Ambiguous || have_data_in_stdin || insert->infile;
 
             if (have_external_data)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
