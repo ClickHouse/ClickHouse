@@ -23,22 +23,20 @@ payload_length	UInt32
 payload	String
 raw	String
 --- classic pcap (HTTP over TCP) ---
-1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:10.0.0.5	::ffff:207.46.134.94	TCP	3267	80	ACK,PSH
---- pcapng (DHCP over UDP) ---
-1	['ETHERNET_II','IP','UDP','RAW']	UDP	68	67
-2	['ETHERNET_II','IP','UDP','RAW']	UDP	67	68
-3	['ETHERNET_II','IP','UDP','RAW']	UDP	68	67
-4	['ETHERNET_II','IP','UDP','RAW']	UDP	67	68
---- pcapng (ICMP) protocol/count ---
-ICMP	8
---- tls pcap: all Ethernet/IPv4/TCP ---
-16	16	16	16
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
+3	ETHERNET_II	['ETHERNET_II','IP','ICMP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	\N
+--- UDP ---
+2	['ETHERNET_II','IP','UDP']	UDP	68	67
+--- ICMP protocol/count ---
+ICMP	1
+--- all Ethernet/IPv4/TCP ---
+3	3	3	1
 --- length invariants hold across all fixtures ---
-http.pcap	0	0	0
-dhcp.pcapng	0	0	0
-icmp_ascii.pcapng	0	0	0
-tls13-20-chacha20poly1305.pcap	0	0	0
+packets.pcap	0	0	0
 --- subset of columns (only number, dst_port) ---
 1	80
+2	67
+3	\N
 --- schema inference via file() extension is PCAP-explicit only (count) ---
-4
+3

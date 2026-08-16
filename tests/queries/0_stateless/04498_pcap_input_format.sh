@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_DIR="$CUR_DIR/data_pcap"
+python3 "$DATA_DIR/generate.py"
 
 echo "--- schema ---"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/http.pcap', PCAP) FORMAT TSV" | cut -f1,2
@@ -14,32 +15,33 @@ $CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/http.pcap', PCAP) FORMAT TSV" | c
 echo "--- classic pcap (HTTP over TCP) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, link_type, protocols, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, tcp_flags
-FROM file('$DATA_DIR/http.pcap', PCAP)
+FROM file('$DATA_DIR/packets.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
-echo "--- pcapng (DHCP over UDP) ---"
+echo "--- UDP ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, protocols, ip_protocol, src_port, dst_port
-FROM file('$DATA_DIR/dhcp.pcapng', PCAP)
-ORDER BY number FORMAT TSV"
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_protocol = 'UDP' FORMAT TSV"
 
-echo "--- pcapng (ICMP) protocol/count ---"
+echo "--- ICMP protocol/count ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT ip_protocol, count()
-FROM file('$DATA_DIR/icmp_ascii.pcapng', PCAP)
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_protocol = 'ICMP'
 GROUP BY ip_protocol FORMAT TSV"
 
-echo "--- tls pcap: all Ethernet/IPv4/TCP ---"
+echo "--- all Ethernet/IPv4/TCP ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT
     count() AS packets,
     countIf(link_type = 'ETHERNET_II') AS ethernet,
     countIf(ip_version = 4) AS ipv4,
     countIf(ip_protocol = 'TCP') AS tcp
-FROM file('$DATA_DIR/tls13-20-chacha20poly1305.pcap', PCAP) FORMAT TSV"
+FROM file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV"
 
 echo "--- length invariants hold across all fixtures ---"
-for f in http.pcap dhcp.pcapng icmp_ascii.pcapng tls13-20-chacha20poly1305.pcap; do
+for f in packets.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -51,7 +53,7 @@ done
 
 echo "--- subset of columns (only number, dst_port) ---"
 $CLICKHOUSE_LOCAL -q "
-SELECT number, dst_port FROM file('$DATA_DIR/http.pcap', PCAP) ORDER BY number FORMAT TSV"
+SELECT number, dst_port FROM file('$DATA_DIR/packets.pcap', PCAP) ORDER BY number FORMAT TSV"
 
 echo "--- schema inference via file() extension is PCAP-explicit only (count) ---"
-$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_DIR/dhcp.pcapng', PCAP)"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_DIR/packets.pcap', PCAP)"

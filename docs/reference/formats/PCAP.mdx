@@ -56,12 +56,12 @@ The `PCAP` format produces the following columns:
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']` |
 | `eth_src` | `Nullable(String)` | Source MAC address, or `NULL` for non-Ethernet packets |
 | `eth_dst` | `Nullable(String)` | Destination MAC address |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP` |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`; empty for non-Ethernet packets |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier, if present |
 | `ip_version` | `Nullable(UInt8)` | `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source IP address; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
 | `dst_addr` | `Nullable(IPv6)` | Destination IP address |
-| `ip_protocol` | `LowCardinality(String)` | Transport protocol, for example `TCP`, `UDP` or `ICMP` |
+| `ip_protocol` | `LowCardinality(String)` | Protocol immediately inside the outer IP header, for example `TCP`, `UDP` or `ICMP`; empty for non-IP packets |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit |
 | `src_port` | `Nullable(UInt16)` | TCP/UDP source port |
 | `dst_port` | `Nullable(UInt16)` | TCP/UDP destination port |
@@ -72,9 +72,10 @@ The `PCAP` format produces the following columns:
 | `payload` | `String` | Transport-layer payload bytes |
 | `raw` | `String` | The full captured frame, starting at the link layer |
 
-All layer-specific columns are `Nullable`, so packets that do not contain a
-given layer (for example a non-IP packet, or a UDP packet that has no TCP
-fields) still produce a row.
+Layer-specific columns are `Nullable`, except `eth_type` and `ip_protocol`.
+Those two low-cardinality string columns use an empty string when their layer
+is absent. Packets that do not contain a given layer (for example a non-IP
+packet, or a UDP packet that has no TCP fields) still produce a row.
 
 The transport-layer payload is a suffix of the raw frame, so its position in
 `raw` is `capture_length - payload_length`, and

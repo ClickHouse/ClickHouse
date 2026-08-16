@@ -8,6 +8,7 @@
 #include <Common/PODArray.h>
 
 #include <cstdio>
+#include <atomic>
 #include <memory>
 
 namespace Tins
@@ -32,6 +33,7 @@ public:
     void resetParser() override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+    void onCancel() noexcept override { is_stopped = 1; }
 
 protected:
     Chunk read() override;
@@ -51,6 +53,7 @@ private:
     /// 1-based packet counter across the whole capture.
     size_t packet_number = 0;
     size_t approx_bytes_read_for_chunk = 0;
+    std::atomic_bool is_stopped = false;
 
     void initializeIfNeeded();
     void closeFile();

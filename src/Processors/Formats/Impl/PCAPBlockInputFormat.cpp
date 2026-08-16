@@ -188,7 +188,7 @@ void PCAPBlockInputFormat::initializeIfNeeded()
     /// Otherwise read the whole stream into memory and open it via fmemopen().
     {
         auto buf = WriteBufferFromVector<PODArray<char>>(file_contents);
-        copyData(*in, buf, nullptr);
+        copyData(*in, buf, is_stopped);
     }
 
     mem_file = fmemopen(file_contents.data(), file_contents.size(), "rb");
@@ -330,7 +330,8 @@ Chunk PCAPBlockInputFormat::read()
             Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true));
         Tins::PDU * pdu = pdu_owner.get();
         if (pdu == nullptr)
-            continue;
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "Cannot dissect packet {} in PCAP input", packet_number + 1);
 
         ++num_rows;
         ++packet_number;
@@ -446,9 +447,10 @@ Chunk PCAPBlockInputFormat::read()
             else { col_ip_ttl->insertDefault(); col_ip_ttl_null->insertValue(1); }
         }
 
-        /// Transport layer.
-        auto * tcp = pdu->find_pdu<Tins::TCP>();
-        auto * udp = pdu->find_pdu<Tins::UDP>();
+        /// Transport fields describe the same outer IP layer as the address fields.
+        Tins::PDU * ip_inner = ipv4 ? ipv4->inner_pdu() : (ipv6 ? ipv6->inner_pdu() : nullptr);
+        auto * tcp = dynamic_cast<Tins::TCP *>(ip_inner);
+        auto * udp = dynamic_cast<Tins::UDP *>(ip_inner);
 
         if (need[COL_IP_PROTOCOL])
         {
