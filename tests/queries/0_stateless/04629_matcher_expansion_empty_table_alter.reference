@@ -1,7 +1,3 @@
--- skip index over an ALIAS: allowed while empty, rejected once parts exist
-1	3
--- MATERIALIZED depending on EPHEMERAL: allowed while empty, no mutation queued
-0
-1	1001	1008
--- MATERIALIZED in the sort key: allowed while empty, rejected once parts exist
-1	1001	1001
+-- skip index over an ALIAS: rejected even while empty
+-- MATERIALIZED depending on EPHEMERAL: rejected even while empty
+-- MATERIALIZED in the sort key: rejected even while empty

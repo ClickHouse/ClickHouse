@@ -4976,7 +4976,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             local_context,
             /*with_alters=*/ false,
             (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode],
-            /*storage_has_active_parts=*/ supportsReplication() || getActivePartsCount() > 0,
+            /*storage_has_active_parts=*/ true,
             (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
 
         if (!mutation_commands.empty())
@@ -5349,11 +5349,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
 
-    /// The two guards below protect data already stored in parts. When the table has no active
-    /// parts, there are no stale index files to leave behind and nothing to rematerialize — the
-    /// ALTER only affects future inserts — so neither guard applies. Replicated tables always
-    /// take the guards: the local part state cannot prove that the table is empty on all replicas.
-    const bool alter_affects_existing_parts = supportsReplication() || getActivePartsCount() > 0;
+    /// An insert can retain the pre-ALTER metadata snapshot and commit its first part after this
+    /// check. Therefore an empty active-parts set does not prove that an ALTER affects only future
+    /// inserts; keep the guards conservative for every MergeTree family storage.
+    const bool alter_affects_existing_parts = true;
 
     /// Changing the effective expression of a skip index, or the normalized `preprocessor` /
     /// `postprocessor` arguments of a text index, invalidates index files built from the old

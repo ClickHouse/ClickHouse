@@ -1928,9 +1928,17 @@ std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(
         source_columns.push_back(col);
 
     std::unordered_map<String, Names> materialized_column_inputs;
+    /// Metadata loading deliberately retains stored expressions that predate the alias-lambda
+    /// capture rule. They must not make an unrelated `CLEAR COLUMN` fail while computing its
+    /// materialization closure. An ALTER that introduces such a violation is rejected during
+    /// default-expression validation before this helper is reached.
+    const auto legacy_capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(columns);
     for (const auto & column : columns)
     {
         if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+            continue;
+
+        if (legacy_capture_violations.contains(column.name))
             continue;
 
         auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns, context);
