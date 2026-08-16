@@ -47,26 +47,12 @@ SQLQueryPiece applyBinaryOperatorOr(
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
 
-    /// A side lacking `has_sort_order` would otherwise contribute the same constant fallback sort
-    /// key for every one of its rows in step 3 below, leaving their relative order unspecified by
-    /// `ORDER BY sort_key` in finalizeSQL.cpp. Break ties between rows of that side using
-    /// `timeSeriesGroupToSamplingKey(group)`, a stable hash computed purely from that row's own
-    /// tag content (see `ContextTimeSeriesTagsCollector::getSamplingKeyByGroup`). This is
-    /// deliberately NOT an attempt to preserve the side's "original" relative order: an earlier
-    /// version of this code used `rowNumberInAllBlocks()` for that purpose, reasoning that it
-    /// reflected the side's pre-join physical row order, but that turned out to still be
-    /// execution-order-dependent (observed to flip between real CI runs of the exact same compiled
-    /// query with the exact same pinned settings, most likely because `rowNumberInAllBlocks()`
-    /// depends on the arrival order of blocks at the point it's evaluated, which is not guaranteed
-    /// to be stable even under `max_threads = 1`). `group` itself is unsuitable for the same
-    /// reason: it is an incrementing index assigned by `ContextTimeSeriesTagsCollector` in
-    /// whichever order each set of tags is first registered during query execution, not a
-    /// pure function of tag content. `timeSeriesGroupToSamplingKey(group)`, by contrast, is a
-    /// `CityHash64` of the tag names/values themselves (already relied upon by `limitk` for the
-    /// same "deterministic regardless of read order" property), so it is genuinely reproducible
-    /// run to run. The tradeoff: ties are now broken by tag-content hash order, not by any notion
-    /// of "the order these rows originally appeared in", which was never well-defined anyway for
-    /// an unsorted side.
+    /// Prometheus emits all left rows first (in left order) and then the unmatched right rows (in
+    /// right order), so an instant `or` always materializes a sort key encoding that structure.
+    bool produce_sort_key = (left_argument.start_time == left_argument.end_time);
+
+    /// Within a side carrying no sort order of its own, ties are broken by a stable hash of each
+    /// row's own tag content: unlike row numbers or `group` ids, it doesn't depend on read order.
     auto fallbackSortKeyComponent = [](const String & table_name) -> ASTPtr
     {
         return makeExactSortKeyComponent(
@@ -144,9 +130,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             sort_key->setAlias(ColumnNames::SortKey);
             builder.select_list.push_back(std::move(sort_key));
         }
-        /// (No `else` branch: when `right` lacks a sort order, step 3 below derives its fallback
-        /// tiebreak straight from `step2.group`, which is already selected above, via
-        /// `timeSeriesGroupToSamplingKey()`. No separate column needs to be materialized here.)
+        /// (No `else` branch: when `right` lacks a sort order, step 3 derives its fallback
+        /// tiebreak from `step2.group`, which is already selected above.)
 
         builder.from_table = step1;
         builder.join_kind = JoinKind::Right;
@@ -216,7 +201,7 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        if (left_argument.has_sort_order || right_argument.has_sort_order)
+        if (produce_sort_key)
         {
             ASTPtr left_sort_key;
             if (left_argument.has_sort_order)
@@ -275,7 +260,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
-    res.has_sort_order = left_argument.has_sort_order || right_argument.has_sort_order;
+    res.has_sort_order = produce_sort_key;
 
     return res;
 }

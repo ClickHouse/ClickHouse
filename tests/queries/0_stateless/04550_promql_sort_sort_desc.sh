@@ -99,6 +99,12 @@ SELECT '-- group_right takes both the labels and the order from the right (many)
 -- All 3 comparisons are true, so this isolates ordering from filtering: the values are up's,
 -- the tags are mem's, and the order is sort_desc(mem)'s (host3, host2, host1), not sort(up)'s.
 SELECT * FROM prometheusQuery(ts, 'sort(up) > on(instance) group_right sort_desc(mem)', $EVAL_TIME);
+
+SELECT '-- or appends the unmatched right rows after the left rows, keeping each side''s own order';
+SELECT * FROM prometheusQuery(ts, 'sort_desc(up{instance=\"host1\"}) or (up{instance=\"host2\"} or up{instance=\"host3\"})', $EVAL_TIME);
+
+SELECT '-- swapping the nested or operands flips the suffix: its order follows the or structure, not tag hashes';
+SELECT * FROM prometheusQuery(ts, 'sort_desc(up{instance=\"host1\"}) or (up{instance=\"host3\"} or up{instance=\"host2\"})', $EVAL_TIME);
 "
 
 promql_client()
@@ -106,35 +112,13 @@ promql_client()
     $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 "$@"
 }
 
-echo "-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order"
-# `up{host2}` and `up{host3}` both lack a `sort_key` (see applyBinaryOperatorOr.cpp), so their
-# relative order in the output is decided by a fallback tiebreak. That tiebreak used to be
-# `rowNumberInAllBlocks()`, on the theory that it reflected each side's own physical row order;
-# that turned out to still be execution-order-dependent in practice, not merely in theory: the
-# exact same compiled query, on the exact same commit, with the exact same pinned `max_threads`
-# and `query_plan_join_swap_table` settings, was observed to produce opposite row orders on two
-# different real CI runs. It has since been replaced with `timeSeriesGroupToSamplingKey(group)`,
-# a `CityHash64` computed purely from each row's own tag content (the same primitive `limitk`
-# already relies on for deterministic-regardless-of-read-order sampling) - so host2 and host3 are
-# now ordered by a fixed hash of their own tags rather than by "the order they originally
-# appeared in" (a notion that was never well-defined for an unsorted side to begin with).
-#
-# We deliberately do NOT hardcode which of host2/host3 sorts first below: that would require
-# computing a CityHash64 value by hand, and guessing it (twice, previously) is exactly the
-# mistake that led here. Instead:
-#  (1) pipe through `sort` so the reference only has to encode the *set* of expected rows, not
-#      the tiebreak order coming out of the fallback hash;
-#  (2) separately assert that the *unsorted*, un-normalized output is byte-identical across two
-#      runs under deliberately different max_threads/query_plan_join_swap_table settings, which
-#      is the actual property being protected (a real, deterministic tiebreak, not one that
-#      happens to look stable under one fixed set of settings).
-#
-# This is the only case that cannot join the batch above: it needs two executions of the same
-# query under different settings, compared byte-for-byte in their raw, un-normalized row order.
-query='sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})'
-# Run the query once with default settings and reuse its output for both checks below
-# (the row-set check and the default-settings side of the determinism diff), instead of
-# running the same query/settings combination twice.
+echo "-- or breaks ties within a side carrying no order of its own using a content hash of each row's tags"
+# The suffix rows come from a plain selector, so their relative order is decided by the
+# `timeSeriesGroupToSamplingKey(group)` fallback tiebreak (see applyBinaryOperatorOr.cpp).
+# The hash order is not hardcoded here (computing a CityHash64 by hand is guesswork): the
+# reference encodes the sorted row *set*, and a second run under deliberately different
+# max_threads/query_plan_join_swap_table settings must produce byte-identical raw output.
+query='sort_desc(up{instance="host1"}) or up{instance=~"host2|host3"}'
 default_output=$(promql_client -q "$query")
 echo "$default_output" | LC_ALL=C sort
 diff <(echo "$default_output") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"

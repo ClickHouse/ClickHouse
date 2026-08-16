@@ -68,7 +68,15 @@
 [('__name__','mem'),('instance','host3'),('job','j1')]	2023-11-14 22:13:20.000	20
 [('__name__','mem'),('instance','host2'),('job','j1')]	2023-11-14 22:13:20.000	10
 [('__name__','mem'),('instance','host1'),('job','j1')]	2023-11-14 22:13:20.000	30
--- or breaks ties within an unsorted side using a content hash of each row's tags, not row order
+-- or appends the unmatched right rows after the left rows, keeping each side's own order
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+-- swapping the nested or operands flips the suffix: its order follows the or structure, not tag hashes
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- or breaks ties within a side carrying no order of its own using a content hash of each row's tags
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
