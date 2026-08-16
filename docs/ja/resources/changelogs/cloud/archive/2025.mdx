@@ -89,7 +89,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * **AWS Glue 向け ClickHouse Connector**
   [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s) で提供されている公式の [AWS Glue 向け ClickHouse Connector](/ja/integrations/connectors/data-ingestion/AWS/glue) を利用できるようになりました。これは、AWS Glue の Apache
-  Spark ベースのサーバーレスエンジンを利用して、ClickHouse と他のデータソース間でデータの抽出、変換、読み込みを行うためのものです。ClickHouse と Spark 間でテーブルを作成し、データの読み書きを行う方法については、[告知ブログ記事](http://clickhouse.com/blog/clickhouse-connector-aws-glue) を参照してください。
+  Spark ベースのサーバーレスエンジンを利用して、ClickHouse と他のデータソース間でデータの抽出、変換、読み込みを行うためのものです。ClickHouse と Spark 間でテーブルを作成し、データの読み書きを行う方法については、[告知ブログ記事](https://clickhouse.com/blog/clickhouse-connector-aws-glue) を参照してください。
 * **service の最小レプリカ数の変更**
   スケールアップした service は、[再度スケールダウンして](/ja/products/cloud/features/autoscaling/overview) 単一レプリカで利用できるようになりました (以前の最小値は 2 レプリカでした) 。注: 単一レプリカの service は可用性が低くなるため、本番環境での利用は推奨されません。
 * ClickHouse Cloud は今後、デフォルトで管理者ロールに対して、service のスケーリングおよび service バージョンのアップグレードに関する通知を送信します。通知設定で各自の通知設定を調整できます。
@@ -222,7 +222,6 @@ ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが、パ�
   **Developer**、または **Billing Admin** ロールを持つユーザーに割り当てる
   ことができます。詳しくは、
   [「ClickHouse Cloud のアクセス制御」](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users)
-  を参照してください。
 * ClickHouse Cloud では現在、**Enterprise** のお客様向けに、次のリージョンで
   **HIPAA** および **PCI** サービスを提供しています:
   AWS eu-central-1、AWS eu-west-2、AWS us-east-2。
@@ -247,7 +246,7 @@ ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが、パ�
   ソースからデータを移動する際も、トラフィックをパブリックインターネットに公開せずに
   済みます。また、VPC サービスエンドポイントを介したクロスリージョンアクセスにも
   対応しています。プライベートリンク 接続のセットアップは現在、
-  [完全にセルフサービス](/ja/integrations/clickpipes/aws-privatelink)
+  [完全にセルフサービス](/ja/integrations/clickpipes/networking/aws-privatelink)
   で ClickPipes から行えます。
 
 <div id="april-4-2025">
