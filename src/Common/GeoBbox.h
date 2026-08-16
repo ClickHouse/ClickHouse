@@ -481,7 +481,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// to tell `pointInPolygon`'s own point argument apart from its polygon-component arguments.
     struct ConstGeoField
     {
-        size_t arg_index;
+        size_t arg_index = 0;
         Field field;
     };
     std::vector<ConstGeoField> const_fields;
