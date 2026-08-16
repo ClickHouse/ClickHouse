@@ -86,7 +86,12 @@ private:
     /// value-form capabilities follow that rule, exactly as in `CustomSeparated`.
     bool readsTypedJSONValueTokens() const override { return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::JSON; }
     bool readsQuotedTextValues() const override { return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::Quoted; }
-    bool readsBoolWordIntoNumericColumn() const override { return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::JSON; }
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override
+    {
+        return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::JSON
+            ? BoolValueIntoNumericColumn::AllNumeric
+            : BoolValueIntoNumericColumn::None;
+    }
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

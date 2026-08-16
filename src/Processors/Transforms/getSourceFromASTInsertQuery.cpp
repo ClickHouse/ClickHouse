@@ -253,7 +253,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_uses_case_insensitive_column_matching = false;
     bool format_reads_numeric_into_ipv4 = false;
     bool format_reads_numeric_into_bool = true;
-    bool format_reads_bool_word_into_numeric = true;
+    BoolValueIntoNumericColumn format_bool_value_into_numeric = BoolValueIntoNumericColumn::AllNumeric;
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
     try
@@ -290,7 +290,7 @@ String getInsertDataSchemaMismatchDescription(
         format_uses_case_insensitive_column_matching = schema_reader->usesCaseInsensitiveColumnMatching();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
-        format_reads_bool_word_into_numeric = schema_reader->readsBoolWordIntoNumericColumn();
+        format_bool_value_into_numeric = schema_reader->readsBoolValueIntoNumericColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
     }
@@ -751,7 +751,7 @@ String getInsertDataSchemaMismatchDescription(
         /// and a `JSON` destination accepts an arbitrary token). The formats that re-parse the raw
         /// field with the destination's text deserializer reject the bare word for every numeric
         /// column — the numeric readers parse no word forms and have no `UInt8` special case
-        /// (`readsBoolWordIntoNumericColumn`, false for `TSV` / `CSV` / `TSKV` / `Form` /
+        /// (`readsBoolValueIntoNumericColumn`, `None` for `TSV` / `CSV` / `TSKV` / `Form` /
         /// `MySQLDump` and the configurable-escaping formats under a non-`JSON` rule). Their
         /// non-numeric destinations stay inconclusive — e.g. an `Enum` whose value names include the
         /// word (`Enum8('true' = 1, ...)`) reads it fine — as does everything about the formats that
@@ -768,9 +768,31 @@ String getInsertDataSchemaMismatchDescription(
                     return format_settings.json.read_bools_as_numbers;
                 return which_expected.isObject();
             }
-            if (!format_reads_bool_word_into_numeric
+            if (format_bool_value_into_numeric == BoolValueIntoNumericColumn::None
                 && (which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat()))
                 return false;
+            if (format_bool_value_into_numeric == BoolValueIntoNumericColumn::IntegerBacked)
+            {
+                switch (expected_unwrapped->getTypeId())
+                {
+                    case TypeIndex::Enum8:
+                    case TypeIndex::Int8:
+                    case TypeIndex::UInt8:
+                    case TypeIndex::Enum16:
+                    case TypeIndex::Int16:
+                    case TypeIndex::Date:
+                    case TypeIndex::UInt16:
+                    case TypeIndex::Date32:
+                    case TypeIndex::Int32:
+                    case TypeIndex::DateTime:
+                    case TypeIndex::UInt32:
+                    case TypeIndex::Int64:
+                    case TypeIndex::UInt64:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
             return !expected_is_nested;
         }
 

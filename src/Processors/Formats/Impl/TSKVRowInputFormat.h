@@ -65,7 +65,7 @@ private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
     bool readsNumericValueIntoBoolColumn() const override { return false; }
-    bool readsBoolWordIntoNumericColumn() const override { return false; }
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 
     bool first_row = true;
 };

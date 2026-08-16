@@ -53,6 +53,15 @@ echo "-- BSONEachRow: a boolean value for a Float64 column is a genuine structur
     printf '\x15\x00\x00\x00\x05u\x00\x04\x00\x00\x00\x04AAAA\x08x\x00\x01\x00'
 } | $CLICKHOUSE_LOCAL 2>&1 | check
 
+for type in 'Decimal32(2)' DateTime64 IPv4; do
+    echo "-- BSONEachRow: a boolean value for a $type column is a genuine structure mismatch"
+    {
+        echo "CREATE TABLE t (u UUID, x $type) ENGINE = Memory; INSERT INTO t FORMAT BSONEachRow"
+        # {u: Binary(subtype UUID, 4 bytes 'AAAA'), x: bool true}
+        printf '\x15\x00\x00\x00\x05u\x00\x04\x00\x00\x00\x04AAAA\x08x\x00\x01\x00'
+    } | $CLICKHOUSE_LOCAL 2>&1 | check
+done
+
 echo "-- MsgPack: a boolean value for a UInt8 column is valid (no false positive)"
 {
     echo "CREATE TABLE t (u UUID, x UInt8) ENGINE = Memory; INSERT INTO t SETTINGS input_format_msgpack_number_of_columns = 2 FORMAT MsgPack"
