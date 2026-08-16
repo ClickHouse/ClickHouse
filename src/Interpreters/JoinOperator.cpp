@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -253,7 +254,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -294,12 +295,13 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    /// A remote worker rebuilds its temporary-data scope locally. Even if the initiator has no
-    /// temporary storage, the worker can spill this serialized join, so the opt-in has to follow
-    /// the plan whenever that worker-visible execution can reach the codec.
+    /// The setting was added in serialization version 8. Older workers keep their established codec
+    /// behavior, so sending the unknown name would only prevent an in-memory execution on a worker that
+    /// has no temporary storage.
     auto worker_settings = *this;
     worker_settings.temporary_storage_available = true;
-    if (spillCodecNeedsExperimentalCodecsOptIn(
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
+        && spillCodecNeedsExperimentalCodecsOptIn(
             worker_settings.canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;

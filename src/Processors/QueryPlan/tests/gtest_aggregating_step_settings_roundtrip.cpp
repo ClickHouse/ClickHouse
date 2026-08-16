@@ -188,6 +188,30 @@ TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTempo
     EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_buffer_size], 123456);
 }
 
+TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const auto step = makeAggregatingStep(
+        /*serialize_string_with_zero_byte=*/false,
+        /*temporary_files_codec=*/"ZXC",
+        /*allow_experimental_codecs=*/true);
+    for (UInt64 version : {DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1,
+                           UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
+    {
+        QueryPlanSerializationSettings settings;
+        step->serializeSettings(settings, version);
+
+        WriteBufferFromOwnString out;
+        settings.writeChangedBinary(out);
+        EXPECT_EQ(
+            out.str().contains("allow_experimental_codecs"),
+            version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            << "version " << version;
+    }
+}
+
 TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)
 {
     tryRegisterFunctions();

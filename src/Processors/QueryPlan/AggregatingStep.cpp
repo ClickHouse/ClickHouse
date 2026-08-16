@@ -1141,24 +1141,23 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// worker has one, so the query settings travel independently with the step and are re-applied
     /// in `deserialize`.
     ///
-    /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
-    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
-    /// when the spill behavior of this step actually depends on it (see
+    /// `allow_experimental_codecs` is registered in serialization version 8. A pre-v8 peer preserves its
+    /// established temporary-file codec behavior, so the unknown name stays off its wire. For v8 and later
+    /// it goes on the wire only when the spill behavior of this step actually depends on it (see
     /// `spillCodecNeedsExperimentalCodecsOptIn`): `Aggregator::executeOnBlock` reaches
     /// `writeToTemporaryFile` only when `max_bytes_before_external_group_by` is set, only from a two-level
     /// hash-table state (which additionally needs a nonzero two-level threshold - both go to the receiver
     /// in the settings written above - and a method that can convert at all, see
     /// `aggregationCanGoTwoLevel`), so an aggregation that must stay in memory never resolves the codec
-    /// and must not carry the opt-in. A reader that does not receive it keeps the default (`false`), which
-    /// for such a plan encodes the identical spill behavior, and a peer too old to know the name rejects
-    /// only the plans that can actually spill with an experimental codec, instead of every plan with this
-    /// step.
+    /// and must not carry the opt-in. A v8 reader that does not receive it keeps the default (`false`),
+    /// which for such a plan encodes the identical spill behavior.
     settings[QueryPlanSerializationSetting::temporary_files_codec] = params.temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = params.temporary_files_buffer_size;
     const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
         && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
         && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
-    if (spillCodecNeedsExperimentalCodecsOptIn(
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC
+        && spillCodecNeedsExperimentalCodecsOptIn(
             external_aggregation_is_reachable,
             params.allow_experimental_codecs,
             params.temporary_files_codec))

@@ -2048,9 +2048,9 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings, join_operator);
+    join_settings.updatePlanSettings(settings, join_operator, version);
 
     /// The sorting settings of a join are consumed only by the sorts the planner adds around a
     /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`), so they must
@@ -2093,7 +2093,7 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
         && (join_settings.join_algorithms.front() == JoinAlgorithm::IE_JOIN
             || !join_operator.hasCrossSideEqualityCondition());
     bool join_can_use_sorting = full_sorting_merge_join_is_reachable || ie_join_is_reachable;
-    sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting);
+    sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting, version);
 }
 
 static void serializeNodeList(

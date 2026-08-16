@@ -65,7 +65,7 @@ public:
         /// `sorting_is_reachable` is false when these settings ride along a step that may never sort
         /// (a join whose enabled algorithms include no sorting-based one): the spill-codec opt-in must
         /// then stay off the wire (see `spillCodecNeedsExperimentalCodecsOptIn`).
-        void updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable, UInt64 version) const;
 
         bool operator==(const Settings & other) const = default;
     };

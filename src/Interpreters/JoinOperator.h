@@ -188,7 +188,7 @@ struct JoinSettings
         bool temporary_storage_available_ = true);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
-    void updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator) const;
+    void updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator, UInt64 version) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`

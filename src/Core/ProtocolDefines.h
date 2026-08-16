@@ -87,7 +87,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
 /// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
 /// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
+/// Version 8 registers the `allow_experimental_codecs` plan setting for temporary-file codecs. A peer
+/// below this version preserves its established temporary-file codec behavior, so the setting is withheld
+/// from it. This lets a mixed-version cluster execute an in-memory plan on an older worker that has no
+/// temporary storage, rather than rejecting the plan solely because it does not know the setting name.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 8;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -104,6 +108,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
+/// First query-plan serialization version that knows the `allow_experimental_codecs` plan setting for
+/// temporary-file codecs. Gates writing it in the sorting, aggregation, and join serialization paths.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC = 8;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

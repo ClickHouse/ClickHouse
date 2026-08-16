@@ -4,6 +4,7 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeString.h>
@@ -45,7 +46,8 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 }
 
 bool sortingStepCarriesSetting(
-    const String & codec, bool allow_experimental_codecs, size_t max_bytes_before_external_sort, bool sorting_is_reachable = true)
+    const String & codec, bool allow_experimental_codecs, size_t max_bytes_before_external_sort,
+    bool sorting_is_reachable = true, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     SortingStep::Settings sort_settings(/*max_block_size_=*/65536);
     sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -54,7 +56,7 @@ bool sortingStepCarriesSetting(
     sort_settings.max_bytes_in_block_before_external_sort = max_bytes_before_external_sort;
 
     QueryPlanSerializationSettings settings;
-    sort_settings.updatePlanSettings(settings, sorting_is_reachable);
+    sort_settings.updatePlanSettings(settings, sorting_is_reachable, version);
     return wireCarriesSetting(settings);
 }
 
@@ -72,10 +74,11 @@ JoinSettings makeJoinSettings(const String & codec, bool allow_experimental_code
     return join_settings;
 }
 
-bool joinCarriesSetting(const JoinSettings & join_settings, const JoinOperator & join_operator)
+bool joinCarriesSetting(
+    const JoinSettings & join_settings, const JoinOperator & join_operator, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     QueryPlanSerializationSettings settings;
-    join_settings.updatePlanSettings(settings, join_operator);
+    join_settings.updatePlanSettings(settings, join_operator, version);
     return wireCarriesSetting(settings);
 }
 
@@ -139,6 +142,13 @@ TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
 
     EXPECT_FALSE(sortingStepCarriesSetting(plain_codec, true, 1_MiB));
     EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, false, 1_MiB));
+
+    /// A pre-v8 worker has the established temporary-file codec behavior but does not know this setting
+    /// name. Omitting it allows that worker to execute an in-memory sort even when it has no temporary
+    /// storage.
+    EXPECT_FALSE(sortingStepCarriesSetting(
+        experimental_codec, true, 1_MiB, /*sorting_is_reachable=*/true,
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
@@ -170,6 +180,9 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     spilling_hash_without_temporary_storage.temporary_storage_available = false;
     EXPECT_FALSE(spilling_hash_without_temporary_storage.canSpillToTemporaryFiles(keyed_inner.join_operator));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
+    EXPECT_FALSE(joinCarriesSetting(
+        spilling_hash_without_temporary_storage, keyed_inner.join_operator,
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
 
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;
