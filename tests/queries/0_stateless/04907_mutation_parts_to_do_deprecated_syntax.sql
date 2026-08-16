@@ -23,8 +23,12 @@ SYSTEM STOP MERGES v0_r2;
 INSERT INTO v0_r1 VALUES ('2015-01-01', 2, 2);
 SYSTEM SYNC REPLICA v0_r2 PULL;
 
+-- An entry for a part r2 already holds can still be queued here; it gets skipped, not fetched.
 SELECT 'queue entries pending on r2', count() FROM system.replication_queue
-    WHERE database = currentDatabase() AND replica_name = 'r2';
+    WHERE database = currentDatabase() AND replica_name = 'r2' AND type = 'GET_PART'
+        AND new_part_name NOT IN (
+            SELECT name FROM system.parts
+                WHERE database = currentDatabase() AND table = 'v0_r2' AND active);
 
 ALTER TABLE v0_r1 UPDATE v = 100 WHERE 1 SETTINGS mutations_sync = 0;
 SYSTEM SYNC REPLICA v0_r2 PULL;
