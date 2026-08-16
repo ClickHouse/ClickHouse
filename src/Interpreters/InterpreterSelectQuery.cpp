@@ -34,6 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -135,6 +136,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -180,6 +182,8 @@ namespace Setting
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool enable_sharding_aggregator;
+    extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -213,6 +217,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -875,7 +880,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
-            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
+            const auto & column_sizes = storage->getColumnSizes(
+                queried_columns, context->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+            if (!column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -1641,7 +1648,9 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
 /// The LIMIT/OFFSET expression value can be either UInt64 or Float64, negative or positive.
 static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
-    const auto [column, type] = evaluateConstantExpressionAsColumn(node, context);
+    const auto constant = evaluateConstantExpressionAsColumn(node, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(
@@ -2425,7 +2434,8 @@ static void executeMergeAggregatedImpl(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_packed_string_keys_in_aggregation]);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
@@ -3066,7 +3076,10 @@ static Aggregator::Params getAggregatorParams(
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge]};
+        settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_adaptive_aggregator],
+        settings[Setting::adaptive_aggregator_freeze_threshold]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
