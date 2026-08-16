@@ -272,11 +272,20 @@ def test_follows_config_reload(started_cluster):
     )
     assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "1\n"
 
+    # The `Cluster` database follows reloads, so the serialized definition must include the
+    # sharding key even while the named cluster has one shard. Replaying it before the reload
+    # must preserve INSERT behavior after the cluster grows to two shards.
+    create_query = node1.query("SHOW CREATE TABLE rel_proxy.t FORMAT TSVRaw").strip()
+    assert "Distributed('reloadable', 'rel_src', 't', rand())" in create_query
+    node1.query(create_query.replace("rel_proxy.t", "rel_recreated", 1))
+
     try:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_TWO_SHARDS)
         node1.query("SYSTEM RELOAD CONFIG")
 
         assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "3\n"
+        node1.query("INSERT INTO rel_recreated VALUES (10)")
+        node1.query("DROP TABLE rel_recreated")
         # The database is now multi-shard, so its proxy tables gain the implicit sharding key.
         create_query = node1.query(
             "SHOW CREATE TABLE rel_proxy.t FORMAT TSVRaw"

@@ -141,19 +141,16 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
         ast_storage->reset(ast_storage->settings);
 
-        /// A proxy over more than one shard carries an implicit `rand()` sharding key (see
-        /// `DatabaseRemote::fetchTable`). The key has to be serialized explicitly: otherwise the
-        /// emitted definition recreates a table that rejects a multi-shard `INSERT`
-        /// (`STORAGE_REQUIRES_PARAMETER`), while the live proxy accepts it.
-        const bool has_implicit_sharding_key = distributed && distributed->getCluster()->getShardsInfo().size() > 1;
-
         auto & engine_arguments = ast_storage->engine->arguments->children;
         engine_arguments = {
             make_intrusive<ASTLiteral>(cluster_name),
             make_intrusive<ASTLiteral>(remote_database),
             make_intrusive<ASTLiteral>(table_name)};
-        if (has_implicit_sharding_key)
-            engine_arguments.push_back(makeASTFunction("rand"));
+        /// A proxy over multiple shards carries an implicit `rand()` sharding key (see
+        /// `DatabaseRemote::fetchTable`). Always serialize it for `Cluster`: a named cluster
+        /// follows configuration reloads, so a definition emitted while it has one shard must
+        /// keep accepting INSERT after it grows to multiple shards.
+        engine_arguments.push_back(makeASTFunction("rand"));
     }
 
     /// Reuse the common serializer with `only_ordinary = false` so that column defaults, aliases and
