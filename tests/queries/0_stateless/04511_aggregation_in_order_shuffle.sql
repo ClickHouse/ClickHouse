@@ -5,6 +5,7 @@
 -- With parallel replicas the aggregation plan changes (memory-bound merging) and the shuffle is not applied,
 -- so pin the plain single-replica plan to keep the EXPLAIN PIPELINE check below meaningful.
 SET enable_parallel_replicas = 0;
+SET read_in_order_use_virtual_row = 0;
 
 -- The shuffle is disabled when `max_rows_to_group_by` is set (see 04514). The stateless-test profile sets a
 -- huge `max_rows_to_group_by` by default, which would disable the shuffle for the whole test, so reset it to 0.
