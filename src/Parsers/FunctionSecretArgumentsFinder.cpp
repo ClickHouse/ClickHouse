@@ -520,16 +520,14 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     if (!is_cluster_function && isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
-        if (maskAzureConnectionString(-1, true, 1))
-            return;
+        maskAzureConnectionString(-1, true, 1);
         findSecretNamedArgument("account_key", 1);
         return;
     }
     if (is_cluster_function && isNamedCollectionName(1))
     {
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
-        if (maskAzureConnectionString(-1, true, 2))
-            return;
+        maskAzureConnectionString(-1, true, 2);
         findSecretNamedArgument("account_key", 2);
         return;
     }
@@ -558,23 +556,43 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 
 bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named, size_t start)
 {
-    String url_arg;
-    std::string_view named_key = "connection_string";
     if (argument_is_named)
     {
-        url_arg_idx = findNamedArgument(&url_arg, "connection_string", start);
-        if (url_arg_idx == -1 || url_arg.empty())
+        for (size_t i = start; i < function->arguments->size(); ++i)
         {
-            named_key = "storage_account_url";
-            url_arg_idx = findNamedArgument(&url_arg, "storage_account_url", start);
+            const auto equals_func = function->arguments->at(i)->getFunction();
+            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+                continue;
+
+            String key;
+            if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true)
+                || (key != "connection_string" && key != "storage_account_url"))
+                continue;
+
+            String value;
+            if (!equals_func->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ false))
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                continue;
+            }
+
+            bool changed = false;
+            if (value.starts_with("http"))
+                changed = maskAzureSASSignature(value);
+            else
+                changed = maskConnectionStringKey(value, "AccountKey=") || maskConnectionStringKey(value, "SharedAccessSignature=");
+
+            if (changed)
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
         }
-        if (url_arg_idx == -1 || url_arg.empty())
-            return false;
+        return false;
     }
-    else
+
+    String url_arg;
+    if (!tryGetStringFromArgument(url_arg_idx, &url_arg, /* allow_identifier= */ false))
     {
-        if (!tryGetStringFromArgument(url_arg_idx, &url_arg))
-            return false;
+        markSecretArgument(url_arg_idx);
+        return false;
     }
 
     if (!url_arg.starts_with("http"))
@@ -601,14 +619,10 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
     }
     else if (maskAzureSASSignature(url_arg))
     {
-        /// A storage account url authenticates with the shared access signature in its query string:
-        /// when the url contains a '?', `processURL` takes everything after it as `sas_auth`. Only
-        /// the signature is secret, so the argument is replaced in place and the account, the
-        /// container and the remaining parameters stay visible. Unlike the connection string above
-        /// this is not a whole-argument replacement, so return false and let the caller go on to
-        /// mask a positional `account_key` as well.
+        /// Keep the account, container and non-secret parameters visible while hiding the signature.
+        /// Return false so the caller can also mask a positional `account_key`.
         result.replaced_arguments[static_cast<size_t>(url_arg_idx)]
-            = argument_is_named ? (String(named_key) + " = " + quoteString(url_arg)) : quoteString(url_arg);
+            = quoteString(url_arg);
     }
 
     return false;
