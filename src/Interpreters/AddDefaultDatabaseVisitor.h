@@ -79,6 +79,14 @@ public:
             visitChildren(*ast);
     }
 
+    /// Add the default database to table expressions without traversing scalar subquery aliases.
+    /// This is used after SQL UDF expansion, when query normalization may already have generated
+    /// aliases such as `_subquery_1` that must remain untouched.
+    void visitTableExpressions(IAST & ast) const
+    {
+        visitTableExpressionsImpl(ast);
+    }
+
     void visit(ASTSelectQuery & select) const
     {
         ASTPtr unused;
@@ -127,6 +135,29 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    void visitTableExpressionsImpl(IAST & ast) const
+    {
+        if (auto * select = ast.as<ASTSelectQuery>(); select && select->recursive_with)
+        {
+            for (const auto & child : select->with()->children)
+            {
+                if (const auto * with_element = typeid_cast<const ASTWithElement *>(child.get()))
+                    with_aliases.insert(with_element->name);
+            }
+        }
+
+        if (auto * table_expression = ast.as<ASTTableExpression>())
+        {
+            if (table_expression->database_and_table_name)
+                tryVisit<ASTTableIdentifier>(table_expression->database_and_table_name);
+            else if (table_expression->table_function)
+                visitTableFunction(*table_expression->table_function);
+        }
+
+        for (auto & child : ast.children)
+            visitTableExpressionsImpl(*child);
+    }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {

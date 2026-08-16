@@ -1894,12 +1894,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// SQL UDF expansion can introduce unqualified table names into persisted metadata. Resolve
-    /// them in the query's current database after expansion, without revisiting scalar aliases.
+    /// them in the query's current database without revisiting scalar aliases generated during
+    /// query normalization.
     AddDefaultDatabaseVisitor visitor(getContext(), current_database);
     if (create.select && create.isView())
-        visitor.visit(*create.select);
+        visitor.visitTableExpressions(*create.select);
     if (create.columns_list)
-        visitor.visit(*create.columns_list);
+        visitor.visitTableExpressions(*create.columns_list);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
