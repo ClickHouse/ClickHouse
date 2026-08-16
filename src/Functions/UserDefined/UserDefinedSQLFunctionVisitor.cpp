@@ -18,6 +18,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -206,6 +207,11 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     udf_in_replace_process.erase(it);
 
     function_body_to_update = expression_list->children[0];
+
+    /// SQL UDFs are expanded into queries which may be stored and run later with a different
+    /// current database. Qualify table names introduced by the expansion in the current context.
+    AddDefaultDatabaseVisitor visitor(context_, context_->getCurrentDatabase());
+    visitor.visit(function_body_to_update);
 
     auto function_alias = function.tryGetAlias();
 
