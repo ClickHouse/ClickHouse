@@ -114,6 +114,25 @@ void ProjectionIndexText::fillProjectionDescription(
     /// SummingMergeTree / lightweight-delete merges). This mirrors the normal-projection
     /// path in ProjectionsDescription.cpp (`_part_offset` → `_parent_part_offset` rename).
     std::erase_if(result.required_columns, [](const String & s) { return s == "_part_offset"; });
+
+    /// Report subcolumns (`data.a` of a JSON column) by their storage column (`data`). Everything
+    /// that consumes `required_columns` — the mutation slim-block builder, the packed-part
+    /// missing-column compensation in `MutateTask::calculateProjection`, merge column extraction —
+    /// resolves names against physical storage columns and cannot see subcolumns. Naming the
+    /// subcolumn there makes the mutation drop the column from its block, and the compensation
+    /// then either throws NO_SUCH_COLUMN_IN_TABLE or, worse, substitutes a default value and
+    /// silently rebuilds the index over empty input. `calculate()` re-derives the subcolumn from
+    /// the storage column via `Block::getSubcolumnByName`, so passing the parent is sufficient.
+    /// The normal-projection path does the same thing in ProjectionsDescription.cpp, which we
+    /// bypass because we fill `required_columns` ourselves.
+    for (auto & required_column : result.required_columns)
+        if (columns.hasSubcolumn(GetColumnsOptions::All, required_column))
+            required_column = columns.getColumnOrSubcolumn(GetColumnsOptions::All, required_column).getNameInStorage();
+
+    /// Two subcolumns of the same JSON column collapse to one storage column name.
+    ::sort(result.required_columns.begin(), result.required_columns.end());
+    result.required_columns.erase(
+        std::unique(result.required_columns.begin(), result.required_columns.end()), result.required_columns.end());
     StorageInMemoryMetadata metadata;
     metadata.partition_key = KeyDescription::buildEmptyKey();
 

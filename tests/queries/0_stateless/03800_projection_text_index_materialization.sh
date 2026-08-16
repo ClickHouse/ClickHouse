@@ -2,7 +2,8 @@
 # Tags: no-parallel-replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CLICKHOUSE_CLIENT_OPT="--allow_experimental_projection_text_index 1 ${CLICKHOUSE_CLIENT_OPT:-}"
+# The reference uses the pre-26.7 EXPLAIN layout; explain_query_plan_default now defaults to 'pretty'.
+CLICKHOUSE_CLIENT_OPT="--allow_experimental_projection_text_index 1 --explain_query_plan_default legacy ${CLICKHOUSE_CLIENT_OPT:-}"
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
