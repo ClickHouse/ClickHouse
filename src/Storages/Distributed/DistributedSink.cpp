@@ -625,13 +625,6 @@ void DistributedSink::writeSync(const Block & block)
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
             {
                 pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
-
-                /// Every local job builds an independent nested INSERT pipeline. For a non-parallel
-                /// quorum insert, starting two such pipelines concurrently into the same local
-                /// ReplicatedMergeTree table violates its single-in-flight-part contract. Wait for a
-                /// local job before scheduling the next one; remote jobs remain parallel.
-                if (job.is_local_job && isSequentialQuorumInsert(settings))
-                    pool->wait();
             }
     }
     catch (...)
@@ -687,6 +680,14 @@ void DistributedSink::onFinish()
 
                             job.executor->finish();
                         });
+
+                        /// `writeSync` only pushes blocks into the local nested pipelines; the
+                        /// quorum part is committed by `finish`. Therefore the local jobs must be
+                        /// completed sequentially here for a non-parallel quorum insert. Remote
+                        /// jobs remain parallel, while a local job that follows another local job
+                        /// sees its predecessor's quorum status node already removed.
+                        if (job.is_local_job && isSequentialQuorumInsert(context->getSettingsRef()))
+                            pool->wait();
                     }
                 }
             }
