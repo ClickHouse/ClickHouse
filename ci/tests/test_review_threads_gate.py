@@ -142,6 +142,9 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
+    assert 'review threads and another post-hook blocked' in (
+        repository_root / "ci/praktika/native_jobs.py"
+    ).read_text()
 
 
 def test_pipeline_limited_is_recorded_only_after_an_actual_review_thread_skip():
