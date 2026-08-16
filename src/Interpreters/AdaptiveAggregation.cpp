@@ -14,6 +14,7 @@ namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
+    extern const Event AdaptiveAggregationSealNormalizations;
     extern const Event AdaptiveAggregationBucketsRetired;
 }
 
@@ -319,8 +320,11 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 /// calls after it downcast every source to that class. Lazy replication is decided
                 /// per block, so one position can legitimately mix wrapped and dense columns.
                 if (!std::ranges::all_of(sources, [&](const auto & source) { return source->structureEquals(*sources.front()); }))
+                {
+                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealNormalizations);
                     for (auto & source : sources)
                         source = removeSpecialRepresentations(source);
+                }
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);
