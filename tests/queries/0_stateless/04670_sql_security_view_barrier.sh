@@ -85,7 +85,7 @@ done
 # pin every setting the shape depends on, because the test also runs with randomized settings. The
 # settings are pinned on the client and not with a SETTINGS clause inside the subquery, because changing
 # `enable_analyzer` in a subquery is rejected when the server default differs.
-explain_client="${CLICKHOUSE_CLIENT} --user \"$user\" --enable_parallel_replicas 0
+explain_client="${CLICKHOUSE_CLIENT} --user $user --enable_parallel_replicas 0
     --query_plan_merge_filters 1 --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0"
 
 echo "===== an outer predicate merges into a view that is not a barrier ====="
