@@ -2591,7 +2591,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
         result_data_column = ColumnNullable::create(std::move(result), std::move(null_map));
     else
         result_data_column = std::move(result);
-    return ColumnArray::create(result_data_column, result_offsets);
+    return ColumnArray::create(result_data_column, std::move(result_offsets));
 }
 
 /** A QBit stores each vector bit-transposed: tuple column `group * element_size + bit` is a FixedString bit plane
