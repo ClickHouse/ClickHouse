@@ -59,7 +59,7 @@ Cuando la ingestión continua está habilitada, ClickPipes ingesta datos continu
 
 De forma predeterminada, el S3 ClickPipe asume que los archivos se añaden a un bucket en orden lexicográfico y se basa en ese orden implícito para ingestar los archivos de forma secuencial. Esto significa que cualquier archivo nuevo **debe** ser lexicográficamente mayor que el último archivo ingestado. Por ejemplo, los archivos llamados `file1`, `file2` y `file3` se ingestarán secuencialmente, pero si se añade un nuevo `file 0` al bucket, se **ignorará** porque el nombre del archivo no es lexicográficamente mayor que el del último archivo ingestado.
 
-En este modo, el S3 ClickPipe realiza una carga inicial de **todos los archivos** de la ruta especificada y luego consulta periódicamente si hay archivos nuevos en un intervalo configurable (de forma predeterminada, 30 segundos). **No es posible** iniciar la ingestión desde un archivo específico o un momento concreto: ClickPipes siempre cargará todos los archivos de la ruta especificada.
+En este modo, el S3 ClickPipe realiza una carga inicial de **todos los archivos** de la ruta especificada y luego consulta periódicamente si hay archivos nuevos en un intervalo configurable (de forma predeterminada, 30 segundos). Para iniciar la ingestión continua después de un archivo específico, configure **Start after**. ClickPipes omitirá los archivos que sean lexicográficamente menores o iguales que el valor configurado y continuará ingestando archivos más recientes a partir de ese punto.
 
 <div id="continuous-ingestion-any-order">
   #### En cualquier orden
@@ -75,13 +75,13 @@ Es posible configurar un S3 ClickPipe para ingestar archivos que no tengan un or
   El modo no ordenado **solo** es compatible con Amazon S3 y **no** es compatible con buckets públicos ni con servicios compatibles con S3. Requiere configurar una cola de [Amazon SQS](https://aws.amazon.com/sqs/) conectada al bucket, opcionalmente con [Amazon EventBridge](https://aws.amazon.com/eventbridge/) como enrutador de eventos.
 </Note>
 
-En este modo, el S3 ClickPipe realiza una carga inicial de **todos los archivos** de la ruta seleccionada y luego escucha eventos `ObjectCreated:*` en la cola que coincidan con la ruta especificada. Cualquier mensaje de un archivo ya visto, de un archivo que no coincida con la ruta o de un evento de otro tipo se **ignorará**.
+En este modo, el S3 ClickPipe realiza una carga inicial de **todos los archivos** de la ruta seleccionada y luego escucha eventos `ObjectCreated:*` en la cola que coincidan con la ruta especificada. Cualquier mensaje de un archivo ya visto, de un archivo que no coincida con la ruta o de un evento de otro tipo se **ignorará**. Para ingerir solo archivos entregados a través de la cola, habilita **Omitir carga inicial**. Cuando está habilitado, ClickPipes omite el análisis inicial de los archivos existentes en la ruta seleccionada y procesa solo los archivos entregados a través de la cola de SQS.
 
 <Note>
   Configurar un prefijo/sufijo para los eventos es opcional. Si lo haces, asegúrate de que coincida con la ruta configurada para el ClickPipe. S3 no permite múltiples reglas de notificación superpuestas para los mismos tipos de eventos.
 </Note>
 
-Los archivos se ingieren cuando se alcanza el umbral configurado en `max insert bytes` o `max file count`, o después de un intervalo configurable (30 segundos de forma predeterminada). **No es posible** iniciar la ingestión desde un archivo específico o un momento determinado: ClickPipes siempre cargará todos los archivos de la ruta seleccionada. Si se configura una DLQ, los mensajes fallidos se volverán a encolar y se reprocesarán hasta el número de veces configurado en el parámetro `maxReceiveCount` de la DLQ.
+Los archivos se ingieren cuando se alcanza el umbral configurado en `max insert bytes` o `max file count`, o después de un intervalo configurable (30 segundos de forma predeterminada). Si se configura una DLQ, los mensajes fallidos se volverán a encolar y se reprocesarán hasta el número de veces configurado en el parámetro `maxReceiveCount` de la DLQ.
 
 <Tip>
   Recomendamos encarecidamente configurar una **Dead-Letter-Queue (DLQ)** para la cola de SQS, para facilitar la depuración y el reintento de mensajes fallidos.
@@ -207,7 +207,7 @@ Sigue [esta guía](/es/products/cloud/guides/data-sources/accessing-s3-data-secu
 
 Los ClickPipes de S3 usan dos rutas de red distintas para el descubrimiento de metadatos y la ingestión de datos: el servicio ClickPipes y el servicio ClickHouse Cloud, respectivamente. Si desea configurar una capa adicional de seguridad de red (por ejemplo, por motivos de cumplimiento normativo), el acceso de red **debe configurarse para ambas rutas**.
 
-* Para el **control de acceso basado en IP**, la política del bucket de S3 debe permitir las IP estáticas de la región del servicio ClickPipes indicadas [aquí](/es/integrations/clickpipes/home#list-of-static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
+* Para el **control de acceso basado en IP**, la política del bucket de S3 debe permitir las IP estáticas de la región del servicio ClickPipes indicadas [aquí](/es/integrations/clickpipes/networking/static-ips), así como las [IP estáticas](/es/products/cloud/guides/data-sources/cloud-endpoints-api) del servicio ClickHouse Cloud. Para obtener las IP estáticas de su región de ClickHouse Cloud, abra una terminal y ejecute:
 
   ```bash
   # Reemplace <your-region> por su región de ClickHouse Cloud
@@ -227,18 +227,20 @@ Los ClickPipes de S3 usan dos rutas de red distintas para el descubrimiento de m
 
 ClickPipes ofrece valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 
-| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                       |
-| ------------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                    |
-| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                          |
-| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                                     |
-| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.                 |
-| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo, en bytes, del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que se puede insertar en una tabla.                    |
-| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                                  |
-| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                        |
-| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela con select](/es/reference/settings/session-settings#parallel_distributed_insert_select).                         |
-| `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                   |
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                                    |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Max insert bytes`                   | 10GB                 | Número de bytes que se procesan en un único lote de inserción.                                                                                                                 |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                                       |
+| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings/max-threads#max_threads) para el procesamiento de archivos.                                      |
+| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings/max-insert#max_insert_threads) para el procesamiento de archivos.                   |
+| `Min insert block size bytes`        | 1GB                  | [Tamaño mínimo, en bytes, del bloque](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que se puede insertar en una tabla.                      |
+| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings/max-download#max_download_threads).                                                  |
+| `Object storage polling interval`    | 30s                  | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                                     |
+| `Start after`                        | None                 | Para la ingestión continua ordenada, omite los archivos lexicográficamente menores o iguales que el nombre de archivo o la ruta configurados.                                  |
+| `Skip initial load`                  | false                | Para la ingestión continua no ordenada, omite el análisis inicial de los archivos existentes y procesa únicamente las notificaciones de objetos de la cola de SQS configurada. |
+| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela con select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                             |
+| `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing).     |
+| `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                                |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 
