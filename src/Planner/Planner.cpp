@@ -633,11 +633,11 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const Settings & settings,
     bool aggregate_descriptions_remove_arguments = false,
     std::optional<UInt64> trivial_group_by_limit = {})
 {
     const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
@@ -716,13 +716,14 @@ void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const Settings & settings,
     std::optional<UInt64> trivial_group_by_limit)
 {
-    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
     auto aggregator_params = getAggregatorParams(
         planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        settings,
         /*aggregate_descriptions_remove_arguments=*/false,
         trivial_group_by_limit);
 
@@ -907,6 +908,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        settings,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -2481,7 +2483,7 @@ void Planner::buildPlanForQueryNode()
                     trivial_group_by_limit.reset();
             }
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, trivial_group_by_limit);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_settings, trivial_group_by_limit);
         }
 
         /** If we have aggregation, we can't execute any later-stage
