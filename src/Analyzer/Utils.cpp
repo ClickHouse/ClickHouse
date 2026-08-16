@@ -1546,7 +1546,7 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
 ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 {
     auto initial_source = column_node->getColumnSource();
-    if (!initial_source->as<TableNode>())
+    if (!initial_source->as<TableNode>() && !initial_source->as<TableFunctionNode>())
         return nullptr;
 
     while (column_node->hasExpression())
