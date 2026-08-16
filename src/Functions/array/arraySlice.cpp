@@ -244,12 +244,12 @@ private:
             {
                 /// Compute |offset| in the unsigned domain: -INT64_MIN does not fit in Int64. Offset 0 falls here too.
                 const UInt64 abs_offset = UInt64(0) - static_cast<UInt64>(*offset);
-                if (abs_offset == 0 || abs_offset > dimension)
+                if (abs_offset == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Offset {} of function {} is out of range for a QBit of dimension {}: "
                                     "the slice must select at least one element.",
                                     *offset, getName(), dimension);
-                start = dimension - static_cast<size_t>(abs_offset);
+                start = abs_offset > dimension ? 0 : dimension - static_cast<size_t>(abs_offset);
             }
         }
 
@@ -264,7 +264,17 @@ private:
         {
             if (*length >= 0)
             {
-                result_length = std::min(result_length, static_cast<size_t>(*length));
+                const size_t requested_length = static_cast<size_t>(*length);
+                const UInt64 abs_offset = offset && *offset < 0 ? UInt64(0) - static_cast<UInt64>(*offset) : 0;
+                if (abs_offset > dimension)
+                {
+                    /// `getSliceFromRight` clamps an oversized negative offset to the left edge, but preserves the
+                    /// original endpoint. A slice starting before the left edge must therefore lose the part before it.
+                    const UInt64 clipped_prefix = abs_offset - dimension;
+                    result_length = requested_length > clipped_prefix ? std::min(dimension, requested_length - clipped_prefix) : 0;
+                }
+                else
+                    result_length = std::min(result_length, requested_length);
             }
             else
             {

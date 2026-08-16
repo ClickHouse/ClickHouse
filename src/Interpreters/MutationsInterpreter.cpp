@@ -189,7 +189,7 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
+    query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
@@ -1617,13 +1617,35 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    /// Every column emitted by a non-readonly stage is written into the new part at its current
+    /// metadata type, so its statistics have to be recomputed rather than carried over from the
+    /// source part. `updated_columns` and `changed_columns` do not cover all emitters: MATERIALIZE
+    /// COLUMN, UPDATE's dependent MATERIALIZED columns and the MATERIALIZED recalculation caused
+    /// by CLEAR COLUMN all write a column without registering it there. Collect the names from
+    /// the stages themselves so that a newly added emitter cannot be missed here.
+    NameSet columns_written_by_stages;
+    for (const auto & stage : stages)
+    {
+        if (stage.is_readonly)
+            continue;
+
+        for (const auto & [column_name, _] : stage.column_to_updated)
+            columns_written_by_stages.insert(column_name);
+    }
+
     for (const auto & column : metadata_snapshot->getColumns())
     {
         if (column.statistics.empty())
             continue;
 
+        /// A cleared column is excluded from the new part and its statistics are removed by the
+        /// mutation. Registering it would recreate an empty statistics object for a column that
+        /// the new part does not contain.
+        bool written_by_stage = columns_written_by_stages.contains(column.name)
+            && !cleared_columns_with_dependencies.contains(column.name);
+
         if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
-            || patch_updated_columns.contains(column.name))
+            || patch_updated_columns.contains(column.name) || written_by_stage)
             materialized_statistics.insert(column.name);
     }
 

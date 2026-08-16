@@ -34,6 +34,7 @@ SELECT arraySlice(vec, 2, 3) AS s, toTypeName(s) FROM qbit ORDER BY id;
 SELECT arraySlice(vec, 1, 4) AS s, toTypeName(s) FROM qbit ORDER BY id;
 SELECT arraySlice(vec, 5) AS s, toTypeName(s) FROM qbit ORDER BY id;
 SELECT arraySlice(vec, -3), arraySlice(vec, 2, -2), arraySlice(vec, -6, 3) FROM qbit ORDER BY id;
+SELECT arraySlice(vec, -15, 10) FROM qbit ORDER BY id;
 SELECT arraySlice(vec, 5, 100) AS clamped, toTypeName(clamped) FROM qbit ORDER BY id;
 SELECT arraySlice(vec, 1) AS whole, toTypeName(whole) FROM qbit ORDER BY id;
 

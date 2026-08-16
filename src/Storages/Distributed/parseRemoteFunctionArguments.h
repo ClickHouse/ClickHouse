@@ -5,6 +5,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -19,6 +20,11 @@ struct ParsedRemoteFunctionArguments
     StorageID remote_table_id = StorageID::createEmpty();
     ASTPtr sharding_key;
     ASTPtr remote_table_function_ptr;
+
+    /// Changes from a SETTINGS clause among the arguments, e.g.
+    /// clusterAllReplicas('default', system.query_log, SETTINGS skip_unavailable_shards = 1).
+    /// They are applied to the `DistributedSettings` of the created `StorageDistributed`.
+    SettingsChanges settings_changes;
 };
 
 /// Parses the arguments shared by the `remote` family of table functions and the `Remote`/`RemoteSecure`
