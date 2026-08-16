@@ -287,3 +287,70 @@ ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_ac
         "unconditional read would record Skipped here and retroactively populate the cache, "
         "masking a regression where cache_hits > 0 only because of that after-the-fact insert"
     )
+
+
+def test_system_iceberg_tables_are_not_affected_by_metadata_cache(
+    started_cluster_iceberg_no_spark,
+):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/pull/89003: `system.iceberg_history`
+    used to report one table's snapshots for a different table, because the metadata cache was keyed
+    by the table path alone. `StorageSystemIcebergHistory` works around it by forcing
+    `use_iceberg_metadata_files_cache = 0`, so this test pins down both that the setting is still
+    honoured (no cache hits/misses are recorded while filling the system table) and that each table
+    gets its own snapshots even when two databases over the same catalog have the cache warm.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(field_id=1, name="string_col", field_type=StringType(), required=False),
+    )
+    tables = {}
+    for index, short_name in enumerate(["system_tables_a", "system_tables_b"], start=1):
+        table_name = f"{root_namespace}.{short_name}"
+        table = catalog.create_table(
+            identifier=table_name,
+            schema=schema,
+            location=f"s3://warehouse-rest/data/{root_namespace}/{short_name}",
+        )
+        # Different number of appends per table, so a cross-table mix-up shows up as a wrong
+        # snapshot count rather than only as a wrong snapshot id.
+        for _ in range(index):
+            table.append(pa.Table.from_pylist([{"string_col": short_name}]))
+        tables[short_name] = table_name
+
+    create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
+
+    # Warm the metadata cache for both tables, so the system table would be served from it if it
+    # ignored `use_iceberg_metadata_files_cache`.
+    for table_name in tables.values():
+        instance.query(f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}`")
+
+    query_id = f"iceberg-system-history-{uuid.uuid4()}"
+    history = instance.query(
+        f"SELECT table, count(), uniqExact(snapshot_id) FROM system.iceberg_history "
+        f"WHERE database = '{CATALOG_NAME}' AND table LIKE '{root_namespace}%' "
+        f"GROUP BY table ORDER BY table",
+        query_id=query_id,
+    )
+    assert history == (
+        f"{tables['system_tables_a']}\t1\t1\n" f"{tables['system_tables_b']}\t2\t2\n"
+    ), f"Unexpected system.iceberg_history contents: {history}"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert (
+        get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits") == 0
+        and get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses") == 0
+    ), "system.iceberg_history must not consult the metadata cache (use_iceberg_metadata_files_cache=0)"
+
+    # `system.iceberg_files` walks the same metadata; each table must see only its own data files.
+    files = instance.query(
+        f"SELECT table, count() FROM system.iceberg_files "
+        f"WHERE database = '{CATALOG_NAME}' AND table LIKE '{root_namespace}%' "
+        f"GROUP BY table ORDER BY table"
+    )
+    assert files == (
+        f"{tables['system_tables_a']}\t1\n" f"{tables['system_tables_b']}\t2\n"
+    ), f"Unexpected system.iceberg_files contents: {files}"
