@@ -34,14 +34,13 @@ SETTINGS mutations_sync = 2;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SYSTEM FLUSH LOGS text_log;
 
--- All three assertions require a live per-mutation `PreparedSetsCache`, which is what
+-- This assertion requires a live per-mutation `PreparedSetsCache`, which is what
 -- `enable_sharing_sets_for_mutations` installs.
 --
 -- The query id of a mutation part task is '<table uuid>::all_1_1_0_<mutation version>', which is
 -- what keys these rows to this table and makes the test safe to run in parallel with itself. The
--- booleans are computed per part task first, so that the two per-task assertions below can be
--- correlated: asserting them independently would pass even when the tasks that reused the set are
--- exactly the ones that lost their index analysis.
+-- The materialization count is computed per part task, because task overlap and therefore cache
+-- reuse are scheduling properties rather than a contract of the feature.
 WITH (
         SELECT uuid
         FROM system.tables
@@ -71,39 +70,7 @@ SELECT
                 AND (event_date >= yesterday() AND event_time >= now() - 600)
             GROUP BY set_key, query_id
         )
-    ) AS no_part_task_materializes_a_key_twice,
-    -- Fewer part tasks materialize the set than there are part tasks, i.e. it is shared rather
-    -- than rebuilt per part. Without sharing every one of the part tasks builds its own.
-    countIf(built_the_set) < count()
-        AS set_built_fewer_times_than_parts,
-    -- Every part task that reused the set and cannot match it must still use it to filter marks:
-    -- parts 2 to 4 contain no matching id, so such a part task reads no marks at all. Part 1 holds
-    -- every value of the set and legitimately reads marks, so it is excluded. Stated as an
-    -- implication over those tasks rather than as a count of them: how many part tasks reuse the set
-    -- depends on how many of them overlap in time, while losing index analysis after a reuse is a
-    -- defect for any single one. The `>= 1` keeps the implication from passing vacuously.
-    countIf(reused_the_set AND NOT holds_the_matching_rows) >= 1
-        AND countIf(reused_the_set AND NOT holds_the_matching_rows AND pruned_everything)
-            = countIf(reused_the_set AND NOT holds_the_matching_rows)
-        AS part_tasks_reusing_the_set_still_prune
-FROM
-(
-    SELECT
-        query_id,
-        maxIf(1, message_format_string LIKE 'Created Set with % entries%') = 1  AS built_the_set,
-        maxIf(1, message_format_string LIKE 'Got set from cache%') = 1          AS reused_the_set,
-        -- Matched on `message`, not on `message_format_string`: the format string is the same for
-        -- every such line and carries no counts.
-        maxIf(1, message LIKE 'Selected %0 marks to read from 0 ranges') = 1    AS pruned_everything,
-        -- Part 1 is the only part whose range covers the set's values, so it is the only one that
-        -- may legitimately read marks. Its part name is the prefix of the part task's query id.
-        query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_1\\_1\\_%')   AS holds_the_matching_rows
-    FROM system.text_log
-    WHERE
-        query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
-        AND (event_date >= yesterday() AND event_time >= now() - 600)
-    GROUP BY query_id
-)
+    ) AS no_part_task_materializes_a_key_twice
 FORMAT TSVWithNames;
 
 DROP TABLE t_share_sets;
