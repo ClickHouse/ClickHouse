@@ -106,6 +106,8 @@ set -euo pipefail
 # Advanced/testing:
 #   Set CONTINUE_ALL_PRS_PRS_FILE=<file> to read the PR list (lines of
 #   "<number>\t<title>") from a file instead of querying GitHub.
+#   Set CONTINUE_ALL_PRS_MIN_FREE_GB=<integer> to override the minimum free
+#   disk space maintained by worktree cleanup (default: 100).
 
 REPO="ClickHouse/ClickHouse"
 
@@ -141,6 +143,7 @@ SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-s
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 API_KEY_PROVIDED=0      # whether either custom-key option was supplied
+MIN_FREE_GB="${CONTINUE_ALL_PRS_MIN_FREE_GB:-100}"
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -186,6 +189,11 @@ if ! [[ "$WORKERS" =~ ^[0-9]+$ ]] || (( WORKERS < 1 )); then
     exit 1
 fi
 
+if ! [[ "$MIN_FREE_GB" =~ ^[0-9]+$ ]] || (( MIN_FREE_GB < 1 )); then
+    echo "${S}Error: CONTINUE_ALL_PRS_MIN_FREE_GB must be a positive integer${R}" >&2
+    exit 1
+fi
+
 case "$AGENT" in
     claude|codex) ;;
     *) echo "${S}Error: --agent must be claude or codex${R}" >&2; exit 1 ;;
@@ -193,6 +201,7 @@ esac
 
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
+WORKTREE_BASE="$(realpath -m "$WORKTREE_BASE")"
 
 # No mode flag given -> select all categories (the default behavior).
 if (( ! MODE_ANY )); then
@@ -576,6 +585,169 @@ ensure_worktree()
     fi
 }
 
+# Return the available space, in KiB, on the filesystem containing the main
+# repository. `df -P` keeps the available-space column stable across platforms.
+free_space_kib()
+{
+    df -Pk "$MAIN_REPO" | awk 'NR == 2 { print $4 }'
+}
+
+is_registered_worktree()
+{
+    local candidate="$1"
+    git -C "$MAIN_REPO" worktree list --porcelain \
+        | grep -qxF "worktree $candidate"
+}
+
+is_managed_worktree()
+{
+    local candidate="$1"
+    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]]
+}
+
+is_active_worker_worktree()
+{
+    local candidate="$1" i
+    for (( i = 0; i < WORKERS; ++i )); do
+        [[ "$candidate" == "${WORKTREE_BASE}-${i}" ]] && return 0
+    done
+    return 1
+}
+
+# Remove registered worktrees nested below a directory before deleting that
+# directory. Git otherwise leaves their administrative entries behind and can
+# refuse to remove the parent. Deepest paths go first.
+remove_registered_descendants()
+{
+    local parent="$1" candidate
+    local -a descendants=()
+
+    mapfile -t descendants < <(
+        git -C "$MAIN_REPO" worktree list --porcelain \
+            | sed -n 's/^worktree //p' \
+            | awk -v prefix="$parent/" 'index($0, prefix) == 1 { print length($0) "\t" $0 }' \
+            | sort -rn \
+            | cut -f2-
+    )
+    for candidate in "${descendants[@]}"; do
+        is_managed_worktree "$candidate" || {
+            echo "Refusing to remove unmanaged nested worktree: $candidate" >&2
+            return 1
+        }
+        git -C "$MAIN_REPO" worktree remove --force "$candidate"
+    done
+}
+
+# Prepare a reusable worker for a new PR. Root-level build directories remain
+# available for reuse; all other tracked, untracked and ignored changes go.
+prepare_worktree_for_task()
+{
+    local wt="$1"
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to clean an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    remove_registered_descendants "$wt"
+    git -C "$wt" checkout --detach -q
+    git -C "$wt" reset --hard -q HEAD
+    git -C "$wt" submodule foreach --quiet --recursive \
+        'git reset --hard -q HEAD && git clean -ffdx -e "/build*/"' >/dev/null
+    git -C "$wt" clean -ffdx -e '/build*/'
+}
+
+remove_managed_cache_dir()
+{
+    local wt="$1" candidate="$2" base
+    base="${candidate##*/}"
+
+    if ! is_registered_worktree "$wt" || ! is_managed_worktree "$wt" \
+        || [[ "$candidate" != "$wt/"* ]] \
+        || [[ "${candidate%/*}" != "$wt" ]] \
+        || { [[ "$base" != tmp ]] && [[ "$base" != build* ]]; }; then
+            echo "Refusing to remove unexpected cache directory: $candidate" >&2
+            return 1
+    fi
+
+    banner "Low disk space: removing $candidate"
+    remove_registered_descendants "$candidate"
+    rm -rf -- "$candidate"
+}
+
+# Run only while the worker pool is idle. First discard old `tmp` and `build*`
+# directories, then stale managed worktrees, until the requested reserve is
+# restored. Active worker roots are never removed wholesale.
+cleanup_worktrees_if_disk_low()
+{
+    (( DRY_RUN )) && return 0
+
+    local minimum_kib=$(( MIN_FREE_GB * 1024 * 1024 )) available wt candidate mtime
+    local -a worktrees=() cache_candidates=() stale_worktrees=()
+    local -A worktree_mtime=()
+    available=$(free_space_kib)
+    [[ "$available" =~ ^[0-9]+$ ]] || {
+        echo "${S}Error: could not determine available disk space${R}" >&2
+        return 1
+    }
+    (( available < minimum_kib )) || return 0
+
+    banner "Low disk space: $(( available / 1024 / 1024 )) GiB free; cleaning managed worktrees to restore ${MIN_FREE_GB} GiB"
+    mapfile -t worktrees < <(git -C "$MAIN_REPO" worktree list --porcelain | sed -n 's/^worktree //p')
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        [[ -d "$wt" ]] || continue
+        # Cache this before removing child directories, which changes the
+        # worktree root's mtime and would destroy the old-to-new ordering.
+        worktree_mtime["$wt"]=$(stat -c %Y "$wt")
+        while IFS= read -r -d '' candidate; do
+            mtime=$(stat -c %Y "$candidate")
+            cache_candidates+=("$mtime"$'\t'"$wt"$'\t'"$candidate")
+        done < <(find "$wt" -mindepth 1 -maxdepth 1 -type d \( -name tmp -o -name 'build*' \) -print0 2>/dev/null)
+    done
+
+    if (( ${#cache_candidates[@]} )); then
+        mapfile -t cache_candidates < <(printf '%s\n' "${cache_candidates[@]}" | sort -n)
+        for candidate in "${cache_candidates[@]}"; do
+            IFS=$'\t' read -r mtime wt candidate <<< "$candidate"
+            [[ -d "$candidate" ]] || continue
+            remove_managed_cache_dir "$wt" "$candidate"
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        is_active_worker_worktree "$wt" && continue
+        [[ -d "$wt" ]] || continue
+        mtime=${worktree_mtime["$wt"]:-$(stat -c %Y "$wt")}
+        stale_worktrees+=("$mtime"$'\t'"$wt")
+    done
+    if (( ${#stale_worktrees[@]} )); then
+        mapfile -t stale_worktrees < <(printf '%s\n' "${stale_worktrees[@]}" | sort -n)
+        for candidate in "${stale_worktrees[@]}"; do
+            wt=${candidate#*$'\t'}
+            # Removing a parent also unregisters its nested worktrees, which
+            # may still occur later in this snapshot.
+            is_registered_worktree "$wt" || continue
+            if ! is_managed_worktree "$wt" || is_active_worker_worktree "$wt"; then
+                echo "Refusing to remove unexpected worktree: $wt" >&2
+                return 1
+            fi
+            banner "Low disk space: removing stale worktree $wt"
+            remove_registered_descendants "$wt"
+            git -C "$MAIN_REPO" worktree remove --force "$wt"
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    echo "${S}Error: only $(( available / 1024 / 1024 )) GiB free after cleaning managed worktrees; ${MIN_FREE_GB} GiB required${R}" >&2
+    return 1
+}
+
 # ----------------------------------------------------------------------------
 # Work queue (shared file + flock). Workers pop the next PR atomically, so the
 # next free worker always gets the next PR -> even distribution.
@@ -863,6 +1035,16 @@ process_pr()
         status="DRY-RUN (not processed)"
         summary="(dry run)"
     else
+        log="$LOGDIR/pr-$number.log"
+        : > "$log"
+        if ! prepare_worktree_for_task "$wt" >> "$log" 2>&1; then
+            printf 'Worktree cleanup failed before starting PR #%s.\n' "$number" > "$log.last"
+            cat "$log.last" >> "$log"
+            ec=1
+        else
+            ec=0
+        fi
+
         # PR head before the work, so we can tell whether the worker actually
         # pushed anything (a clean agent exit does NOT imply progress: the
         # /continue-pr-auto skill exits 0 when it finds nothing to do, or when it
@@ -870,9 +1052,9 @@ process_pr()
         before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
             --jq '.headRefOid' 2>/dev/null || echo "")
 
-        log="$LOGDIR/pr-$number.log"
-        ec=0
-        run_continue_pr "$wt" "$number" "$log" || ec=$?
+        if (( ec == 0 )); then
+            run_continue_pr "$wt" "$number" "$log" || ec=$?
+        fi
 
         # Detach HEAD so the PR branch isn't held by this worktree, letting a
         # different worker check it out in a later round.
@@ -1085,6 +1267,7 @@ if [[ "$AGENT" == "codex" ]]; then
     fi
 fi
 banner "Effort:          ${EFFORT}"
+banner "Disk reserve:    ${MIN_FREE_GB} GiB (managed worktrees are cleaned below this)"
 (( CUSTOM_KEY )) && banner "API key:         custom (…${API_KEY: -4})"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
@@ -1101,6 +1284,7 @@ done
 
 # Create worktrees up front (unless dry-running).
 if (( ! DRY_RUN )); then
+    cleanup_worktrees_if_disk_low
     for (( i = 0; i < WORKERS; i++ )); do
         ensure_worktree "${WT[i]}"
     done
@@ -1116,6 +1300,7 @@ status_start
 
 ROUND=0
 while true; do
+    cleanup_worktrees_if_disk_low
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0
     na_reset
