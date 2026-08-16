@@ -1023,14 +1023,16 @@ void executeQueryWithParallelReplicas(
     std::vector<MergeChildTableSet> merge_child_table_sets;
     if (query_tree)
     {
-        /// Enumerating the sources of a view requires resolving its stored query, so do it only
-        /// when a lagging replica is actually excluded from reading.
+        /// Enumerating the sources of a view requires resolving its stored query. Besides the
+        /// stale-replica gate, it is required for `Merge` child-set snapshots: a non-inlined view
+        /// can hide a `Merge` leaf that the replicas re-plan only while executing the fragment.
         const auto & settings_ref = context->getSettingsRef();
         const bool exclude_stale_replicas = !settings_ref[Setting::fallback_to_stale_replicas_for_distributed_queries]
             && settings_ref[Setting::max_replica_delay_for_distributed_queries] > 0;
-        ReplicatedTablesToCheckCollector collector(context, /*enumerate_view_sources_=*/ exclude_stale_replicas);
+        const bool allow_merge_tables = settings_ref[Setting::parallel_replicas_allow_merge_tables];
+        ReplicatedTablesToCheckCollector collector(context, /*enumerate_view_sources_=*/ exclude_stale_replicas || allow_merge_tables);
         tables_to_check = collector.collect(query_tree);
-        uses_merge_tables = collector.hasMergeStorage() && settings_ref[Setting::parallel_replicas_allow_merge_tables];
+        uses_merge_tables = collector.hasMergeStorage() && allow_merge_tables;
         merge_child_table_sets = collector.mergeChildTableSets();
 
         /// Every replica plans the query it receives for itself and designates a table expression of it for
