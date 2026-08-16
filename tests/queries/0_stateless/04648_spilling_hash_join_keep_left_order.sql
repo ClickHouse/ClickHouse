@@ -24,6 +24,9 @@ INSERT INTO t_keep_order_payloads
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+-- Pin at the default: with the spilling-join deferral off nothing pins the join in memory, so
+-- the threshold below spills it and the left-side read order asserted here is lost.
+SET query_plan_read_in_order_through_spilling_join = 1;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1, query_plan_optimize_join_order_limit = 1;
 SET query_plan_join_swap_table = 0, join_algorithm = 'hash';
