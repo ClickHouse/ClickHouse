@@ -611,10 +611,10 @@ CLICKHOUSE_ANY_SPELLING_RE = re.compile(CLICKHOUSE_ANY_SPELLING)
 URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'`)\]}<>]*")
 
 # Release notes are a record of what was published and are not edited afterwards. Matches the
-# versioned files inside any `changelogs/` directory (`docs/changelogs/v25.9.2.1-stable.md`,
-# `docs/resources/changelogs/cloud/release-notes/25_10.mdx`) and leaves the landing and status
-# pages that live next to them enforced.
-CHANGELOG_RECORD_RE = re.compile(r"(^|/)changelogs/(.+/)?v?[0-9][^/]*$")
+# versioned files inside any `changelogs/` or `private-changelogs/` directory
+# (`docs/changelogs/v25.9.2.1-stable.md`, `docs/resources/changelogs/cloud/release-notes/25_10.mdx`)
+# and leaves the landing and status pages that live next to them enforced.
+CHANGELOG_RECORD_RE = re.compile(r"(^|/)(?:private-)?changelogs/(.+/)?v?[0-9][^/]*$")
 
 CLICKHOUSE_SPELLING_IGNORE_FILE = (
     "ci/jobs/scripts/check_style/clickhouse_spelling_ignore.txt"

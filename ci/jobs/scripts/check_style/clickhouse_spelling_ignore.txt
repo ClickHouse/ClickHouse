@@ -23,6 +23,12 @@ docs/resources/develop-contribute/contribute/style.mdx	Not `Clickhouse`
 docs/concepts/core-concepts/primary-indexes.mdx	{#how-does-the-sparse-primary-index-work-in-clickHouse}
 docs/concepts/core-concepts/query-parallelism.mdx	{#step-by-step-how-clickHouse-parallelizes-an-aggregation-query}
 
+# These private-only paths are checked after this public change is synchronized. Their source
+# files cannot be corrected in this repository; keep the exceptions narrow until the private
+# sources are updated independently.
+ci/jobs/scripts/cloud_utils/dataplane_api.py	Clickhouse is not available
+tests/integration/test_shared_merge_tree_lost_blobs_complex_columns/test.py	Clickhouse does not remove blobs
+
 # `ClickhouseClientOptions` / `ClickhouseOptions` are declared by our fork of the Azure SDK
 # (contrib/azure, blob_options.hpp); renaming them belongs to that repository.
 src/Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp	ClickhouseOptions
