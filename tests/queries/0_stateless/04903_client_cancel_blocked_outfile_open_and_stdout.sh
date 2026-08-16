@@ -54,6 +54,12 @@ then
     exit 0
 fi
 
+# The client is now blocked opening the reader-less FIFO, while the server keeps
+# producing the result. Give the server time to enqueue at least one block before
+# requesting the partial result; otherwise a fast cancellation can validly produce
+# an empty partial result and make this regression test timing-dependent.
+sleep 1
+
 kill -SIGINT "$CLIENT" 2>/dev/null
 
 for _ in {0..50}
