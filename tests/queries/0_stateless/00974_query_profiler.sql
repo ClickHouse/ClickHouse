@@ -49,8 +49,9 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
 
--- Use one CPU-bound thread here. Unlike the sleeping sub-test above, one thread produces enough
--- samples while keeping the `trace_log` load bounded when the flaky check runs many copies.
+-- Use one CPU-bound thread here. The longer scan ensures every architecture has enough time to
+-- deliver and symbolize samples, while the 10ms period keeps the `trace_log` load bounded when
+-- the flaky check runs many copies.
 SET max_threads = 1;
 
 -- `Timer::set` accepts periods no shorter than 1ms. A 10ms period makes the profiler's work
@@ -58,7 +59,7 @@ SET max_threads = 1;
 SET query_profiler_real_time_period_ns = 1e7;
 SET max_rows_to_read = 0;
 SET log_queries = 1;
-SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e8);
+SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SET query_profiler_real_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
@@ -103,7 +104,7 @@ WHERE symbol LIKE '%Source%';
 SET query_profiler_cpu_time_period_ns = 1e7;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
-SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e8);
+SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;

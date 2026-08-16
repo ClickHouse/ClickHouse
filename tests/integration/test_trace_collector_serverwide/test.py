@@ -8,7 +8,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/global_profiler.xml"])
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/global_profiler.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
