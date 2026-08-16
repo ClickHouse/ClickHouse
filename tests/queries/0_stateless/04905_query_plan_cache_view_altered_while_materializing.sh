@@ -42,7 +42,7 @@ done
 
 # Resolving `t` still succeeds, but `v` has no leaf to pin. The post-resolution validation must
 # notice the changed view metadata and fall back to normal planning with this new definition.
-$CLICKHOUSE_CLIENT --query "ALTER VIEW v MODIFY QUERY SELECT a + 100 AS x FROM t"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE v MODIFY QUERY SELECT a + 100 AS x FROM t"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_pause_after_validation"
 
