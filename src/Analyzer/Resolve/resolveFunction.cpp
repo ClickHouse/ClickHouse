@@ -1161,9 +1161,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// arguments and flattens/validates them again itself.
             /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
             /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for `Dynamic` and `Variant`, which
-            /// can hold a tuple value and therefore need the accurate set-key cast as well. Unwrap
-            /// the wrappers before identifying these types.
+            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
+            /// structure, which regular `IN` rejects before building the set, and for plain
+            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
+            /// member. Unwrap the wrappers before identifying these types.
             bool left_value_compared_as_single_key = false;
             if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
             {
@@ -1171,7 +1172,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
                 left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
                     && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || isDynamic(left_key_type) || isVariant(left_key_type));
+                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type));
             }
 
             if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
