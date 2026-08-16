@@ -255,14 +255,6 @@ inline String encodePathTypePrefix(std::string_view path, const DataTypePtr & ty
     return result;
 }
 
-inline String encodePathPrefix(std::string_view path)
-{
-    String result;
-    result.reserve(path.size() + 2);
-    appendEscapedComponent(result, path);
-    return result;
-}
-
 struct DecodedToken
 {
     std::string_view encoded_path;

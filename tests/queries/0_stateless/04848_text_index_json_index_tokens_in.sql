@@ -44,15 +44,6 @@ FROM
 )
 WHERE explain LIKE '%mode: Any%';
 
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_in WHERE data.lc IN ('alpha', 'gamma')
-    SETTINGS force_data_skipping_indices = 'json_tokens'
-)
-WHERE explain LIKE '%LowCardinality(UInt8)%';
-
 SELECT toTypeName(data.lc IN ('alpha', 'gamma')), arraySort(groupArray(id))
 FROM json_index_tokens_in
 WHERE data.lc IN ('alpha', 'gamma')

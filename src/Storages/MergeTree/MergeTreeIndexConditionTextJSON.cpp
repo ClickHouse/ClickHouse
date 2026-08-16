@@ -424,7 +424,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
     /// FixedString literals carry zero padding that participates in zero-pad-aware string
     /// comparison but not in the exact tokens the index stores ('a' and toFixedString('a', 3)
     /// compare equal, but their tokens differ), so the index cannot be used for them.
-    if (value_type && WhichDataType(removeNullable(value_type)).isFixedString())
+    if (value_type && WhichDataType(removeLowCardinalityAndNullable(value_type)).isFixedString())
         return false;
 
     DataTypePtr declared_type = json_path_values_configuration->json_type->tryGetSubcolumnType(json_info.path);

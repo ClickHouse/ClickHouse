@@ -82,11 +82,8 @@ void enumerateJSONValues(
 
     auto consume_shared = [&](std::string_view path, std::string_view value_data)
     {
-        if constexpr (requires { consumer.shouldConsumePath(path); })
-        {
-            if (!consumer.shouldConsumePath(path))
-                return;
-        }
+        if (!consumer.shouldConsumePath(path))
+            return;
 
         ReadBufferFromMemory buffer(value_data);
 
@@ -99,41 +96,38 @@ void enumerateJSONValues(
         const auto & cache = getSimpleDataTypesCache();
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
 
-        if constexpr (requires { consumer.consumeSharedScalar(path, binary_type_index, std::string_view{}); })
+        if (binary_type_index == BinaryTypeIndex::String)
         {
-            if (binary_type_index == BinaryTypeIndex::String)
-            {
-                ++buffer.position();
-                size_t size = 0;
-                readVarUInt(size, buffer);
-                if (size > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
-                if (size > buffer.available())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared String value of JSON");
-                consumer.consumeSharedScalar(path, binary_type_index, std::string_view(buffer.position(), size));
-                return;
-            }
-            if (binary_type_index == BinaryTypeIndex::Bool)
-            {
-                ++buffer.position();
-                UInt8 value = 0;
-                readBinary(value, buffer);
-                consumer.consumeSharedScalar(
-                    path,
-                    binary_type_index,
-                    value ? format_settings.bool_true_representation : format_settings.bool_false_representation);
-                return;
-            }
-            if (binary_type_index == BinaryTypeIndex::Int64)
-            {
-                ++buffer.position();
-                Int64 value = 0;
-                readBinary(value, buffer);
-                char text[max_int_width<Int64>];
-                const char * end = itoa(value, text);
-                consumer.consumeSharedScalar(path, binary_type_index, std::string_view(text, end - text));
-                return;
-            }
+            ++buffer.position();
+            size_t size = 0;
+            readVarUInt(size, buffer);
+            if (size > DEFAULT_MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+            if (size > buffer.available())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared String value of JSON");
+            consumer.consumeSharedScalar(path, binary_type_index, std::string_view(buffer.position(), size));
+            return;
+        }
+        if (binary_type_index == BinaryTypeIndex::Bool)
+        {
+            ++buffer.position();
+            UInt8 value = 0;
+            readBinary(value, buffer);
+            consumer.consumeSharedScalar(
+                path,
+                binary_type_index,
+                value ? format_settings.bool_true_representation : format_settings.bool_false_representation);
+            return;
+        }
+        if (binary_type_index == BinaryTypeIndex::Int64)
+        {
+            ++buffer.position();
+            Int64 value = 0;
+            readBinary(value, buffer);
+            char text[max_int_width<Int64>];
+            const char * end = itoa(value, text);
+            consumer.consumeSharedScalar(path, binary_type_index, std::string_view(text, end - text));
+            return;
         }
 
         /// Resolve the type name once per value: `IDataType::getName` builds a String.
@@ -173,11 +167,8 @@ void enumerateJSONValues(
 
     auto consume_path = [&](PathInfo & entry, size_t row)
     {
-        if constexpr (requires { consumer.shouldConsumePath(entry.path); })
-        {
-            if (!consumer.shouldConsumePath(entry.path))
-                return;
-        }
+        if (!consumer.shouldConsumePath(entry.path))
+            return;
 
         if ((entry.is_dynamic || entry.is_nullable) && entry.column->isNullAt(row))
         {

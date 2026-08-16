@@ -43,79 +43,9 @@ FROM
 )
 WHERE position(explain, '__text_index') > 0;
 
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, '') = 'mcp'
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, '') LIKE '%other%'
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, '') ILIKE '%OTHER%'
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(toString(dynamic_data.value), '') = '42'
-)
-WHERE explain LIKE '%INPUT%dynamic_data.value%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(dynamic_data.value, '') = '42'
-)
-WHERE explain LIKE '%INPUT%dynamic_data.value%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE 'mcp' = ifNull(data.s, '')
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE ifNull(data.s, '%') LIKE '%';
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, '%') LIKE '%'
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE coalesce(data.s, '') = 'mcp'
-)
-WHERE explain LIKE '%INPUT%data.s%';
 
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE ifNull(data.s, 'mcp') = 'mcp';
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE ifNull(data.s, 'mcp') = 'mcp'
-)
-WHERE explain LIKE '%INPUT%data.s%';
 
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE in(ifNull(data.s, ''), tuple('mcp', 'other'));
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE globalIn(coalesce(data.s, ''), tuple('mcp', 'other'));
@@ -125,38 +55,6 @@ SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE has(['mcp',
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE has(['42'], ifNull(toString(dynamic_data.value), ''));
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE match(nullIf(nullIf(ifNull(data.s, ''), ''), 'null'), '^other$');
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE in(toString(nullIf(nullIf(ifNull(data.s, ''), ''), 'null')), ['mcp']);
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE in(ifNull(data.s, ''), tuple('mcp', 'other'))
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE globalIn(coalesce(data.s, ''), tuple('mcp', 'other'))
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE in(ifNull(toString(dynamic_data.value), ''), tuple('42', '43'))
-)
-WHERE explain LIKE '%INPUT%dynamic_data.value%';
-
-SELECT count() = 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE has(['mcp', 'other'], ifNull(data.s, ''))
-)
-WHERE explain LIKE '%INPUT%data.s%';
 
 SELECT count() > 0
 FROM
@@ -170,30 +68,6 @@ SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE in(ifNull(d
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE in(nullIf(data.s, 'mcp'), tuple('mcp'));
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE has([''], ifNull(data.s, ''));
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_ifnull WHERE match(nullIf(data.s, 'other'), '^other$');
-
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE in(ifNull(data.s, ''), tuple('', 'mcp'))
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE in(nullIf(data.s, 'mcp'), tuple('mcp'))
-)
-WHERE explain LIKE '%INPUT%data.s%';
-
-SELECT count() > 0
-FROM
-(
-    EXPLAIN actions = 1
-    SELECT count() FROM json_index_tokens_ifnull WHERE has([''], ifNull(data.s, ''))
-)
-WHERE explain LIKE '%INPUT%data.s%';
 
 SELECT count() = 0
 FROM

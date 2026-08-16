@@ -779,7 +779,7 @@ private:
             return;
 
         /// A text-index virtual column cannot preserve NULL when the predicate is reused after filtering.
-        if (has_exact_search && preserve_result_type && isNullableOrLowCardinalityNullable(function_node.result_type))
+        if (preserve_result_type && isNullableOrLowCardinalityNullable(function_node.result_type))
             return;
 
         ASTPtr exact_predicate_ast;

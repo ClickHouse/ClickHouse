@@ -59,15 +59,9 @@ template <typename Consumer>
 class Extractor
 {
 public:
-    Extractor(size_t max_token_bytes_, Consumer & consumer_)
-        : max_token_bytes(max_token_bytes_)
-        , consumer(consumer_)
-    {
-    }
-
     Extractor(size_t max_token_bytes_, const PathMatcher & path_matcher_, Consumer & consumer_)
         : max_token_bytes(max_token_bytes_)
-        , path_matcher(&path_matcher_)
+        , path_matcher(path_matcher_)
         , consumer(consumer_)
     {
     }
@@ -205,8 +199,8 @@ public:
     }
 
 private:
-    bool shouldIndexPath(std::string_view path) const { return !path_matcher || path_matcher->shouldIndex(path); }
-    bool shouldVisitPath(std::string_view path) const { return !path_matcher || path_matcher->shouldVisit(path); }
+    bool shouldIndexPath(std::string_view path) const { return path_matcher.shouldIndex(path); }
+    bool shouldVisitPath(std::string_view path) const { return path_matcher.shouldVisit(path); }
 
     class PrefixedConsumer
     {
@@ -593,7 +587,7 @@ private:
     }
 
     size_t max_token_bytes;
-    const PathMatcher * path_matcher = nullptr;
+    const PathMatcher & path_matcher;
     std::array<char, 2048> scratch{};
     String serialization_prefix;
     String path_type_prefix;
