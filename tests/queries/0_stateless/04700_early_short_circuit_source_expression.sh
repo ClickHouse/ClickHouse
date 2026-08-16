@@ -38,7 +38,7 @@ fi
 
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
-    SELECT 1 OR notEmpty(encrypt('aes-128-ecb', 'x', concat('SE', 'CRET')))
+    SELECT 1 OR notEmpty(encrypt('aes-128-ecb', 'x', concat('SE', 'CRET012345678901')))
     SETTINGS enable_analyzer = 1,
              enable_function_early_short_circuit = 1,
              format_display_secrets_in_show_and_select = 0
