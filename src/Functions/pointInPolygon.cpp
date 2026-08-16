@@ -255,7 +255,8 @@ public:
     /// This is the position-independent fallback that `rejectsColumnGeometryKind` below actually
     /// consults (`GeoBbox.h`'s `extractSpatialPredicateNodeBbox` calls it for both column AND
     /// constant arguments, see `rejectsColumnGeometryKind`'s own comment); it is never queried
-    /// directly for the first (point) argument, since that override always answers `false` there.
+    /// for the first (point) argument, which that override answers on its own -- only `Point` is
+    /// accepted there.
     bool rejectsConstGeometryKind(std::string_view kind_name) const override
     {
         return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
@@ -266,10 +267,18 @@ public:
     /// argument position it must never fail bbox-pruning closed there. A constant point in that
     /// position also carries real pruning information -- see `treatsConstTupleAsPoint` below --
     /// so, unlike the polygon-component positions, this is not merely "harmless to skip".
+    /// `Point` is also the ONLY kind accepted there: every other named geometry kind (`Ring`/
+    /// `Polygon`/`MultiPolygon`/`LineString`/`MultiPoint`/`MultiLineString`) is an `Array`, which
+    /// `getReturnTypeImpl`'s `validate_tuple(0, ...)` below is guaranteed to reject with
+    /// `ILLEGAL_TYPE_OF_ARGUMENT`, so it must fail closed here exactly like the polygon-component
+    /// positions do. Deriving a bbox from such an argument instead would let pruning drop every
+    /// granule / row group and answer `0`, hiding an exception the query must surface -- and for a
+    /// `Geometry`/`Dynamic` constant the per-alternative overload that raises is only built once
+    /// the predicate is actually evaluated, so pruning everything away hides it completely.
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
     {
         if (arg_index == 0)
-            return false;
+            return kind_name != "Point";
         return rejectsConstGeometryKind(kind_name);
     }
 
