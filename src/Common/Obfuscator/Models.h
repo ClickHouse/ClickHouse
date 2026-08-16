@@ -465,10 +465,9 @@ public:
         {
             UInt32 src_datetime = src_data[i];
 
-            Int32 src_diff = src_datetime - src_prev_value;
-            Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
-
-            UInt32 new_datetime = res_prev_value + res_diff;
+            const Int64 src_diff = static_cast<Int64>(src_datetime) - src_prev_value;
+            const Int64 res_diff = transformSigned(src_diff, seed);
+            const Int64 new_datetime = static_cast<Int64>(res_prev_value) + res_diff;
 
             /// Keep the obfuscated time of day, but re-attach it to the source date as displayed in the
             /// column's timezone. Constructing the result from the source date plus the local wall-clock
