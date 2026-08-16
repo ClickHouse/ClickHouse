@@ -18,8 +18,7 @@ INSERT INTO inferred_nested_typed_skip_04839 VALUES
     (1, '{"arr":[{"forced":1,"skip":2,"keep":3},{"forced":4,"skip":5,"other":6}]}');
 
 -- The regression: without projecting the typed path and SKIP, `forced` would show as a dynamic type
--- (not the declared UInt64) and `skip` would still appear inside each inferred element instead of being discarded.
--- j.arr[1].forced alone resolves to NULL (unrelated pre-existing subcolumn gap); use JSONAllPathsWithTypes.
+-- (not UInt64) and `skip` would leak into each element; j.arr[1].forced alone is NULL (pre-existing gap), hence JSONAllPathsWithTypes.
 SELECT
     'typed and skipped paths inside inferred nested elements',
     JSONAllPathsWithTypes(j.arr[1]),

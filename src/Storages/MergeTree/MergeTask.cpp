@@ -55,7 +55,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -173,6 +172,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace MutationHelpers
+{
+/// Defined in MutateTask.cpp; reused here to merge JSON SHARED REGEXP provenance from patch parts
+/// and to attach the merged per-column provenance types to a private metadata snapshot.
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
+StorageMetadataPtr rebuildMetadataWithColumnTypes(
+    const StorageMetadataPtr & base_metadata, const NamesAndTypesList & columns_with_new_types);
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -747,19 +756,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 }
             }
 
-            for (size_t patch_index = 0; patch_index != global_ctx->future_part->patch_parts.size(); ++patch_index)
-            {
-                const auto & patch_part = global_ctx->future_part->patch_parts[patch_index];
-                String source_name = storage_column.name;
-                if (patch_conversions[patch_index]->isColumnRenamed(source_name))
-                    source_name = patch_conversions[patch_index]->getColumnOldName(source_name);
-
-                if (auto source_column = patch_part->tryGetColumn(source_name))
-                {
-                    provenance_saturated_on_input = provenance_saturated_on_input || hasSaturatedJSONSharedDataPathPolicy(*source_column->type);
-                    storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
-                }
-            }
+            storage_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
+                storage_column.type, storage_column.name, global_ctx->projection_patch_parts, provenance_saturated_on_input);
 
             if (!provenance_saturated_on_input && hasSaturatedJSONSharedDataPathPolicy(*storage_column.type))
                 LOG_WARNING(
@@ -779,32 +777,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Readers and merge transforms take their result types from the storage snapshot rather
     /// than from the new part metadata. Give this merge a private metadata copy carrying the
     /// accumulated per-part placement provenance, without changing the live table metadata.
-    std::shared_ptr<StorageInMemoryMetadata> merge_metadata;
-    std::optional<ColumnsDescription> merge_columns;
-    const auto & metadata_columns = global_ctx->metadata_snapshot->getColumns();
-    for (const auto & storage_column : global_ctx->storage_columns)
-    {
-        if (const auto * column = metadata_columns.tryGet(storage_column.name); column && !column->type->equals(*storage_column.type))
-        {
-            if (!merge_metadata)
-            {
-                merge_metadata = std::make_shared<StorageInMemoryMetadata>(*global_ctx->metadata_snapshot);
-                merge_columns.emplace(merge_metadata->getColumns());
-            }
-
-            merge_columns->modify(storage_column.name, [&](ColumnDescription & description)
-            {
-                description.type = storage_column.type;
-                if (!description.statistics.empty())
-                    description.statistics.data_type = storage_column.type;
-            });
-        }
-    }
-    if (merge_metadata)
-    {
-        merge_metadata->setColumns(std::move(*merge_columns));
+    if (auto merge_metadata = MutationHelpers::rebuildMetadataWithColumnTypes(global_ctx->metadata_snapshot, global_ctx->storage_columns);
+        merge_metadata != global_ctx->metadata_snapshot)
         global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, std::move(merge_metadata));
-    }
 
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.

@@ -1301,6 +1301,19 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
             && path_prefix == object->getSharedDataPathPrefix())
             return type;
 
+        const auto make_result = [&](std::unordered_map<String, DataTypePtr> result_typed_paths)
+        {
+            return std::make_shared<DataTypeObject>(
+                object->getSchemaFormat(),
+                std::move(result_typed_paths),
+                object->getPathsToSkip(),
+                object->getPathRegexpsToSkip(),
+                object->getMaxDynamicPaths(),
+                object->getMaxDynamicTypes(),
+                std::move(rules),
+                std::move(path_prefix));
+        };
+
         try
         {
             if (merge_rules)
@@ -1308,15 +1321,7 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
                 fiu_do_on(FailPoints::json_shared_regexp_force_combined_compile_failure,
                     throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Injected combined SHARED REGEXP compile failure"););
             }
-            return std::make_shared<DataTypeObject>(
-                object->getSchemaFormat(),
-                std::move(typed_paths),
-                object->getPathsToSkip(),
-                object->getPathRegexpsToSkip(),
-                object->getMaxDynamicPaths(),
-                object->getMaxDynamicTypes(),
-                std::move(rules),
-                std::move(path_prefix));
+            return make_result(std::move(typed_paths));
         }
         catch (const Exception & e)
         {
@@ -1327,15 +1332,7 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
                 throw;
 
             std::tie(rules, path_prefix) = makeJSONSharedDataPathProvenanceTop();
-            return std::make_shared<DataTypeObject>(
-                object->getSchemaFormat(),
-                apply_typed_path_policies(),
-                object->getPathsToSkip(),
-                object->getPathRegexpsToSkip(),
-                object->getMaxDynamicPaths(),
-                object->getMaxDynamicTypes(),
-                std::move(rules),
-                std::move(path_prefix));
+            return make_result(apply_typed_path_policies());
         }
     }
 

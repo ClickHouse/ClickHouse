@@ -3,8 +3,7 @@
 SET enable_json_type = 1;
 
 -- Each case wraps/unwraps a JSON column through a different expression shape (Nullable, Array,
--- Map key/value, Tuple), forcing the provenance fallback to resolve through that expression's own
--- referenced identifier and look through/into the resulting wrapper type on either side.
+-- Map key/value, Tuple) to exercise provenance fallback through each wrapper type.
 {% for case in [
     {
       "suffix": "",

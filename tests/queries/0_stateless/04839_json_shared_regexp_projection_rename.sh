@@ -10,8 +10,8 @@ set -e
 
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_json_type=1"
 
-# A projection rebuild after RENAME COLUMN must resolve each source part's provenance through its
-# own AlterConversions rename map, not the current logical name. RENAME COLUMN is a barrier mutation that always finishes before MATERIALIZE PROJECTION runs, so only a MERGE can reach still-pre-rename parts while the rename is pending; the failpoint below makes that race deterministic to test.
+# A projection rebuild after RENAME COLUMN must resolve each part's provenance through its own
+# rename map; the failpoint forces a MERGE to race the still-pending rename to test that path.
 disable_failpoint() {
     ${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null || true
 }
@@ -33,8 +33,8 @@ ${CLICKHOUSE_CLIENT} --query="
     INSERT INTO projection_rename_04839 VALUES (1, '{\"tag_a\":1,\"keep\":1}');
     INSERT INTO projection_rename_04839 VALUES (2, '{\"tag_b\":2,\"keep\":2}');
 
-    -- Retire the rule at the table level: the projection's seed type for the renamed column comes
-    -- from the table's *current* metadata, so if it still declared SHARED REGEXP the assertion below would pass trivially without exercising per-source-part resolution.
+    -- Retire the rule at the table level: the projection's seed type comes from the table's
+    -- *current* metadata, so a still-declared rule would make the assertion below pass trivially.
     ALTER TABLE projection_rename_04839 MODIFY COLUMN j JSON(max_dynamic_paths=5) SETTINGS mutations_sync = 1;
 
     SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
@@ -45,8 +45,8 @@ ${CLICKHOUSE_CLIENT} --query="
         SETTINGS mutations_sync = 0, alter_sync = 0;
 "
 
-# Control: both source parts must still be physically named 'j' while the failpoint holds, or this
-# test silently stops covering the race; a concurrent test clearing the global failpoint is the one benign way this can fail (skip, don't fail, same as the merge check below).
+# Control: both source parts must still be named 'j' while the failpoint holds, or this test
+# silently stops covering the race (skip, don't fail, same as the merge check below).
 still_prerename=$(${CLICKHOUSE_CLIENT} --query="
     SELECT countDistinct(name) FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 'projection_rename_04839' AND active AND column = 'j'")
@@ -55,8 +55,8 @@ if [ "$still_prerename" != "2" ]; then
     skip=1
 fi
 
-# The merge rebuilds the projection from the still-pre-rename source parts and must resolve
-# 'payload' back to 'j' through each part's own AlterConversions before probing it; optimize_throw_if_noop=1 so a silently skipped merge reads as a hard failure, not a false pass.
+# The merge rebuilds the projection from the still-pre-rename parts, resolving 'payload' back to
+# 'j' via each part's own AlterConversions; optimize_throw_if_noop=1 turns a skipped merge into a failure.
 if [ "$skip" = "0" ]; then
     if ! err=$(${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE projection_rename_04839 FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1); then
         case "$err" in

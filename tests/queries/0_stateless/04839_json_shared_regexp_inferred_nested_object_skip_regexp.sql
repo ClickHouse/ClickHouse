@@ -4,8 +4,8 @@ SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS inferred_nested_skip_regexp_04839;
 
--- getTypeOfNestedObjects used to hand inferred nested objects an empty path_regexps_to_skip, and
--- shouldSkipPath matched SKIP REGEXP against the bare local path (no root-relative reconstruction), so skip paths leaked into inferred array elements instead of being discarded.
+-- getTypeOfNestedObjects used to hand inferred nested objects an empty path_regexps_to_skip, so
+-- SKIP REGEXP paths leaked into inferred array elements instead of being discarded.
 CREATE TABLE inferred_nested_skip_regexp_04839
 (
     id UInt64,
