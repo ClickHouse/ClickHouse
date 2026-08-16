@@ -6,8 +6,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <IO/S3AuthSettings.h>
 #include <Common/Exception.h>
-#include <Poco/URI.h>
-
 namespace DB
 {
 
@@ -44,10 +42,11 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.bucket = url.bucket;
     gcs_settings.key_prefix = url.key;
     /// A non-default endpoint (e.g. the GCS emulator) is kept as a REST endpoint override.
-    /// The decision is made on the exact parsed host, not on a substring: a host such as
-    /// `storage.googleapis.com.evil.example` must stay an override, so the client talks to the same
-    /// host that the URL validation saw instead of silently falling back to the real default.
-    if (!isDefaultGCSHost(Poco::URI(url.endpoint).getHost()))
+    /// The decision is made on the exact parsed endpoint, not on a substring: a host such as
+    /// `storage.googleapis.com.evil.example`, `http://storage.googleapis.com`, or a custom port
+    /// must stay an override, so the client talks to the same endpoint that the URL validation saw
+    /// instead of silently falling back to the real default.
+    if (!isDefaultGCSEndpoint(url.endpoint))
         gcs_settings.endpoint_override = url.endpoint;
 
     /// A presigned URL carries its authentication in the query string (`GoogleAccessId` / `Signature`

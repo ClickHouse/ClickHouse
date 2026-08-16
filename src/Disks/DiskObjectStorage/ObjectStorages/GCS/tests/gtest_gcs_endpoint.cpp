@@ -41,6 +41,22 @@ TEST(GCSEndpoint, PathStyleDefaultHost)
     EXPECT_EQ(p.endpoint_override, "");
 }
 
+TEST(GCSEndpoint, CanonicalHostWithHttpIsKeptAsOverride)
+{
+    auto p = parse("http://storage.googleapis.com:4443/my-bucket/a/b");
+    EXPECT_EQ(p.bucket, "my-bucket");
+    EXPECT_EQ(p.key_prefix, "a/b/");
+    EXPECT_EQ(p.endpoint_override, "http://storage.googleapis.com:4443");
+}
+
+TEST(GCSEndpoint, CanonicalHostWithCustomPortIsKeptAsOverride)
+{
+    auto p = parse("https://storage.googleapis.com:4443/my-bucket/a/b");
+    EXPECT_EQ(p.bucket, "my-bucket");
+    EXPECT_EQ(p.key_prefix, "a/b/");
+    EXPECT_EQ(p.endpoint_override, "https://storage.googleapis.com:4443");
+}
+
 TEST(GCSEndpoint, BucketOnlyGetsEmptyPrefix)
 {
     auto p = parse("https://storage.googleapis.com/my-bucket");

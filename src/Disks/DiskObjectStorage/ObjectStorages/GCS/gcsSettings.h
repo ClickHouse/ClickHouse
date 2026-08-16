@@ -103,6 +103,10 @@ struct GCSObjectStorageSettings
 /// host merely containing that string (e.g. `storage.googleapis.com.evil.example`) does not match.
 bool isDefaultGCSHost(const String & host);
 
+/// Whether `endpoint` is the exact default GCS endpoint. A canonical host alone is not enough:
+/// callers can intentionally use `http` or a custom port for a proxy or an emulator.
+bool isDefaultGCSEndpoint(const String & endpoint);
+
 /// Split a GCS endpoint into bucket, key prefix and an optional REST endpoint override.
 /// Accepts `gs://bucket/prefix`, `https://storage.googleapis.com/bucket/prefix`, and
 /// `http(s)://host[:port]/bucket/prefix` (the last is treated as an emulator endpoint override).

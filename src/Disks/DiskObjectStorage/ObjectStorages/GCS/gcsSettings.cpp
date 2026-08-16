@@ -47,6 +47,14 @@ bool isDefaultGCSHost(const String & host)
     return host == DEFAULT_GCS_HOST || host.ends_with(default_suffix);
 }
 
+bool isDefaultGCSEndpoint(const String & endpoint)
+{
+    const Poco::URI uri(endpoint);
+    const auto scheme = Poco::toLower(uri.getScheme());
+    const auto port = uri.getPort();
+    return scheme == "https" && isDefaultGCSHost(uri.getHost()) && (port == 0 || port == 443);
+}
+
 void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_prefix, String & endpoint_override)
 {
     bucket.clear();
@@ -68,9 +76,9 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
         String path = uri.getPath();
 
         static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
-        if (!isDefaultGCSHost(host))
+        if (!isDefaultGCSEndpoint(endpoint))
         {
-            /// A non-default host means an emulator / private endpoint: keep it as an override.
+            /// A non-default endpoint means an emulator / private endpoint: keep it as an override.
             endpoint_override = uri.getScheme() + "://" + host;
             if (uri.getPort() != 0)
                 endpoint_override += ":" + std::to_string(uri.getPort());
