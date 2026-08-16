@@ -7,35 +7,35 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-16T14:59:37.897Z",
+          "updatedAt": "2026-08-16T18:24:34.265Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-16T14:59:38.036Z",
+          "updatedAt": "2026-08-16T18:24:34.537Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-16T14:59:38.163Z",
+          "updatedAt": "2026-08-16T18:24:34.758Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-16T14:59:38.325Z",
+          "updatedAt": "2026-08-16T18:24:34.979Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-16T14:59:38.487Z",
+          "updatedAt": "2026-08-16T18:24:35.199Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-16T14:59:38.637Z",
+          "updatedAt": "2026-08-16T18:24:35.432Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-16T14:59:38.801Z",
+          "updatedAt": "2026-08-16T18:24:35.661Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-16T14:59:38.955Z",
+          "updatedAt": "2026-08-16T18:24:35.880Z",
           "fileName": "docs.json",
           "postProcessHash": "056f16568bb1cb895535e54afba88cff7df57aaa36568b165162b7c0d19e258d"
         }
@@ -72285,47 +72285,47 @@
     },
     {
       "fileId": "4c69c5b6ed5813c7d3eea00ef50be4d4793df43c3c6c8c30346ff87025f594e6",
-      "versionId": "54d1bf55caf31276e2e6eff533bf8f799a16b6d8ca99daf2bccdfbc972870718",
+      "versionId": "38b6d264fffeb70ab8d011decfb88bfa3e7fed592e1b0c5dea55452254942245",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.830Z",
-          "fileName": "es/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "0a8595f558cd7367c08b13d264c147f9b1484bd690f2071bc2fe0b7a11e6d18b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.830Z",
-          "fileName": "ja/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "48adbe6436f1bdf36b116848ec6c055de80cfe6014170136f5c7423de4ad0205"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.830Z",
-          "fileName": "ko/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "2b4f36e0b1b5073de937a0ec4a3c1cbec49f52ad91507f3a194b37c71c7d4321"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.831Z",
-          "fileName": "pt-BR/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "3ecb6d0c4c410f1c4d9a704b520f47d36a719aecf61f7c5f8e710615a581b8d1"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.831Z",
-          "fileName": "ru/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "cd4bf1869fa6fc0743f128e74f202a53f4163da10b1f1eadfe477a9196057ddc"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.831Z",
+          "updatedAt": "2026-08-16T18:24:40.717Z",
           "fileName": "zh/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "7130526c0f7c91ff66409b84507ac1f57faf12a6bc19dc87bd72299c6959aa83"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.831Z",
-          "fileName": "ar/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "308bdb2c8fb68564783c979d7babe2db5f0e00a0855511461079929f2c8156b0"
+          "postProcessHash": "3b8e31ee059c36d215d71d42018ce3abbf07c13e0878471bc82d67d92e4ec0b5"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.831Z",
+          "updatedAt": "2026-08-16T18:24:40.718Z",
           "fileName": "fr/concepts/features/configuration/server-config/configuration-files.mdx",
-          "postProcessHash": "07790969197f47f273614e465f690f5c26c6cd61bf6db5ac04736ad2176d1eb5"
+          "postProcessHash": "a4efea9c13f450153b716d24529253672e74763058c20dbd43629ce7372456c5"
+        },
+        "ja": {
+          "updatedAt": "2026-08-16T18:24:40.718Z",
+          "fileName": "ja/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "c3f360a7305fd3e53c126127bc11997fcc2f1e1f6d38cb84a5e15b9b49d2bf0e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T18:24:40.719Z",
+          "fileName": "pt-BR/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "7ced96f50b7fc118e009c7a41b282370ae5db0ad3a3d14f90079198db5516698"
+        },
+        "ru": {
+          "updatedAt": "2026-08-16T18:24:40.720Z",
+          "fileName": "ru/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "5749989434fe559f494d326f729ab82d4ed5f9f9b2d4328c8e076a00e82c6f72"
+        },
+        "ko": {
+          "updatedAt": "2026-08-16T18:24:40.720Z",
+          "fileName": "ko/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "6d2f0bb77514b987882c6f298c73b75fc8eaf75de7e4500b54741282b4a02bbc"
+        },
+        "es": {
+          "updatedAt": "2026-08-16T18:24:40.721Z",
+          "fileName": "es/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "2a550c6e8eb68c1d36fc1c2da6d4fdb9e263f0d5ba82020ac72e61abe3197292"
+        },
+        "ar": {
+          "updatedAt": "2026-08-16T18:24:40.722Z",
+          "fileName": "ar/concepts/features/configuration/server-config/configuration-files.mdx",
+          "postProcessHash": "98a80f5912e08c1bff65cabbb47f02a7f9207245776279067fd306983b6cd78b"
         }
       },
       "fileName": "concepts/features/configuration/server-config/configuration-files.mdx",
