@@ -77,7 +77,7 @@ function install_binary()
         clickhouse-benchmark clickhouse-client clickhouse-compressor \
         clickhouse-disks clickhouse-extract-from-config clickhouse-format clickhouse-keeper \
         clickhouse-keeper-client clickhouse-keeper-converter clickhouse-local \
-        clickhouse-obfuscator clickhouse-server
+        clickhouse-obfuscator clickhouse-server clickhouse-chdig chdig
     do
         ln -sf "$binary" "/usr/bin/$name"
     done

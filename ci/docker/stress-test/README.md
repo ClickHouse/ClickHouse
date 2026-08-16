@@ -24,7 +24,7 @@ DONE
 Still alive
 2018-10-22 13:49:16,195 Stress is ok
 2018-10-22 13:49:16,195 Copying server log files
-$ ls $HOME/test_result
+$ ls $HOME/test_output
 clickhouse-server.err.log clickhouse-server.log.0.zst stderr.log stress_test_run_0.txt  stress_test_run_11.txt stress_test_run_13.txt
 stress_test_run_15.txt stress_test_run_2.txt stress_test_run_4.txt stress_test_run_6.txt stress_test_run_8.txt clickhouse-server.log
 perf_stress_run.txt stdout.log stress_test_run_10.txt stress_test_run_12.txt
