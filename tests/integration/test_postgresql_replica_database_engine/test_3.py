@@ -389,11 +389,6 @@ def test_toast_restore_with_defaulted_replica_identity_skips_table(started_clust
         '''CREATE TABLE "{}" (id integer PRIMARY KEY, other text)''',
     )
     pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL")
-    pg_manager.execute(
-        f"INSERT INTO {table} VALUES ('0', repeat('a', 30000), 'zero'), "
-        "('not-a-number', repeat('b', 30000), 'invalid')"
-    )
-    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -405,17 +400,19 @@ def test_toast_restore_with_defaulted_replica_identity_skips_table(started_clust
         table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
     )
 
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('0', repeat('a', 30000), 'zero')")
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
     check_tables_are_synchronized(
         instance,
-        other_table,
+        table,
         postgres_database=pg_manager.get_default_database(),
         order_by="id",
     )
 
-    # The id is sent normally but cannot be converted to the overridden
-    # ClickHouse type. `toast_value` is unchanged and must never be restored
-    # using the defaulted key `0`, which belongs to the other PostgreSQL row.
-    pg_manager.execute(f"UPDATE {table} SET other = 'must not replicate' WHERE id = 'not-a-number'")
+    # A live row whose replica identity cannot be converted must not be committed
+    # under the default key `0`. Otherwise a later update of the real `0` row
+    # could restore this row's unchanged TOAST value from the poisoned entry.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('not-a-number', repeat('b', 30000), 'invalid')")
     pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
 
     check_tables_are_synchronized(
@@ -425,6 +422,24 @@ def test_toast_restore_with_defaulted_replica_identity_skips_table(started_clust
         order_by="id",
     )
     assert instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
+
+    pg_manager.execute(f"UPDATE {table} SET other = 'must not replicate' WHERE id = '0'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'still updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(f"SELECT other FROM test_database.{other_table}") == "still updated\n"
+    assert (
+        instance.query(f"SELECT id, toast_value, other FROM test_database.{table}")
+        == "0\t" + "a" * 30000 + "\tzero\n"
+    )
 
     pg_manager.drop_materialized_db()
 

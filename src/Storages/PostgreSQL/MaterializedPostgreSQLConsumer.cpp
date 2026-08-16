@@ -1105,6 +1105,14 @@ void MaterializedPostgreSQLConsumer::syncTables()
         {
             try
             {
+                if (!buffer->rows_with_defaulted_key_values.empty())
+                {
+                    throw Exception(
+                        ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Cannot replicate table {} because replica identity column conversion failed",
+                        storage_data.storage->getStorageID().getNameForLogs());
+                }
+
                 preserveUnchangedToastValues(storage_data, *buffer);
             }
             catch (const Exception & e)
