@@ -238,10 +238,14 @@ protected:
     /// `on_statement`. Returns the parse error message when the query is malformed.
     std::optional<String> parseAIQueryStatements(const String & query, const std::function<void(const IAST &)> & on_statement);
 
-    /// The effective value of the `readonly` setting for the queries of this session, resolved
-    /// once and then remembered: 1 forbids everything but read-only queries, including every
-    /// setting change; 2 forbids the writes but allows changing settings.
+    /// The effective value of the `readonly` setting for the queries of this session: 1 forbids
+    /// everything but read-only queries, including every setting change; 2 forbids the writes but
+    /// allows changing settings.
     UInt64 aiSessionReadonly();
+
+    /// Whether the agent may mark its queries in the query log (which takes a `log_comment`
+    /// setting change the session has to accept).
+    bool aiQueryLogMarkerAllowed();
 
     /// The description of the restrictions of the session for the model (empty when there are
     /// none), so it does not attempt what the session rejects.
@@ -585,9 +589,10 @@ protected:
 #if USE_CLIENT_AI
     /// The AI agent behind the interactive `?` command
     std::unique_ptr<AIAgent> ai_agent;
-    /// The `readonly` value of the session (see `aiSessionReadonly`), resolved on demand because
-    /// it takes a query to the server. Forgotten when a `SET` can have changed it.
-    std::optional<UInt64> ai_session_readonly;
+    /// Set when a `SET profile` may have changed the session settings invisibly: the server applies
+    /// a profile without reporting it to the client, unlike the settings of the handshake and an
+    /// explicit `SET readonly`, so the agent can no longer prove what `readonly` is.
+    bool ai_session_settings_unknown = false;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage

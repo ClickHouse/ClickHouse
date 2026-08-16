@@ -195,7 +195,6 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int INCORRECT_DATA;
 }
 
 }
@@ -2981,12 +2980,14 @@ void ClientBase::processParsedSingleQuery(
                     || std::find(set_query->default_settings.begin(), set_query->default_settings.end(), name) != set_query->default_settings.end();
             };
 
-            /// What the session allows the AI agent to do may have just changed: `readonly`
-            /// explicitly, or through a profile, which the server applies but the client
-            /// deliberately does not reproduce in its context. Ask the server again when the agent
-            /// next needs the value, instead of modeling the change here.
-            if (changes_setting("readonly") || changes_setting("profile"))
-                ai_session_readonly.reset();
+            /// A profile is applied by the server and deliberately not reproduced in the client
+            /// context, so after it the client cannot prove what `readonly` is any more, and does
+            /// not attach a marker whose acceptance it cannot vouch for. An explicit `readonly`
+            /// update is modeled locally, which makes the capability known again.
+            if (changes_setting("profile"))
+                ai_session_settings_unknown = true;
+            else if (changes_setting("readonly"))
+                ai_session_settings_unknown = false;
 #endif
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -3903,7 +3904,7 @@ void ClientBase::initAIAgent()
     };
     hooks.check_query = [this](const String & query) { return checkAIQuery(query); };
     hooks.session_restrictions = [this] { return aiSessionRestrictions(); };
-    hooks.can_read_query_log = [this] { return aiSessionReadonly() != 1; };
+    hooks.can_read_query_log = [this] { return aiQueryLogMarkerAllowed(); };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -3980,12 +3981,6 @@ bool ClientBase::processAIChat(const String & text_)
     try
     {
         initAIAgent();
-
-        /// What the session allows the agent to do takes a query to the server to find out, so it
-        /// is resolved here, where a failure is reported like a failed initialization: this
-        /// function is called outside of the error handling of the interactive loop.
-        if (ai_agent)
-            aiSessionReadonly();
     }
     catch (...)
     {
@@ -4217,7 +4212,10 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
 
         /// Tag the query in the query log as one the agent ran on its own, so it is distinguishable
         /// from the queries the user typed themselves (the `read_query_log` tool filters those out).
-        client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
+        /// Skipped when the session may reject the tag: the query must not fail over a marker that
+        /// nothing depends on once `read_query_log` is unavailable anyway.
+        if (aiQueryLogMarkerAllowed())
+            client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
 
         /// Keep a session that is already read-only as is: `readonly = 2` must not be lowered, and
         /// the server rejects any change of `readonly` in read-only mode anyway. The effective
@@ -4391,29 +4389,25 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
 
 UInt64 ClientBase::aiSessionReadonly()
 {
-    if (ai_session_readonly)
-        return *ai_session_readonly;
-
-    /// The value in the client context is only half of the picture: it is sent with every query,
-    /// but the settings profile of the user can set `readonly` on the server side, which the
-    /// client does not see (profiles are deliberately not reproduced in the client context). So
-    /// the server is asked for the value it applies to this session, and the stricter of the two
-    /// values decides: `readonly = 1` is stricter than 2, which still allows setting changes.
+    /// The settings the server applies to the session - `readonly` from the settings profile of
+    /// the user in particular - are sent to the client in the handshake and applied to the client
+    /// context, so its value is the effective one and no query is needed to learn it. This
+    /// normally happens before every query; the agent can run before the first one.
     ///
-    /// The query is deliberately not marked as an agent query in the query log: the marker is a
-    /// `log_comment` setting change, and whether that change is possible at all is exactly what
-    /// is being resolved here.
-    const UInt64 client_readonly = client_context->getSettingsRef()[Setting::readonly];
-    if (!connection)
-        return client_readonly; /// There is nobody to ask yet, so nothing to remember either.
+    /// Two cases stay invisible to the client: a profile applied by a `SET profile` after the
+    /// handshake, and a user with `apply_settings_from_server = 0`, who asked for the settings of
+    /// the server not to reach the client. The agent then works with what it knows and the server
+    /// reports what it got wrong: a rejected setting change comes back as an explicit `READONLY`
+    /// error, which is passed to the model like any other query error.
+    applySettingsFromServerIfNeeded();
+    return client_context->getSettingsRef()[Setting::readonly];
+}
 
-    const Block result = fetchInternalQueryResult("SELECT toUInt64(getSetting('readonly'))", {}, /*from_ai_agent=*/ false);
-    if (result.rows() != 1 || result.columns() != 1)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "The server did not return the value of the `readonly` setting");
-    const UInt64 session_readonly = result.getByPosition(0).column->convertToFullColumnIfConst()->getUInt(0);
-
-    ai_session_readonly = (client_readonly == 1 || session_readonly == 1) ? 1 : std::max(client_readonly, session_readonly);
-    return *ai_session_readonly;
+bool ClientBase::aiQueryLogMarkerAllowed()
+{
+    /// The marker is a `log_comment` setting change, so it takes a session that allows changing
+    /// settings, and one whose `readonly` value the client can actually prove (see above).
+    return !ai_session_settings_unknown && aiSessionReadonly() != 1;
 }
 
 String ClientBase::aiSessionRestrictions()
@@ -4463,9 +4457,8 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// tool filters them out, like the in-memory recent-query context does. A session with
     /// `readonly = 1` allows no setting change at all, and the tag is not worth failing these
     /// queries for: the agent stays usable there, only without the marker (and without the
-    /// `read_query_log` tool). Resolving the value takes a query of its own, which is why it never
-    /// asks for the marker - so this cannot recurse.
-    if (from_ai_agent && aiSessionReadonly() != 1)
+    /// `read_query_log` tool, which needs it to tell the queries of the agent from the user's).
+    if (from_ai_agent && aiQueryLogMarkerAllowed())
     {
         if (!settings_to_send)
             settings_to_send.emplace();
