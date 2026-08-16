@@ -27,9 +27,14 @@ Define o tipo de senha que será configurado automaticamente em consultas como `
 Os valores aceitos são:
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **Padrão:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ Os valores aceitos são:
 </div>
 
 Perfil de configuração padrão. Os perfis de configuração ficam no arquivo especificado na configuração `user_config`.
+
+* **Padrão:** `default`
 
 **Exemplo**
 
@@ -52,6 +59,8 @@ Perfil de configuração padrão. Os perfis de configuração ficam no arquivo e
 </div>
 
 Tempo limite padrão da sessão, em segundos.
+
+* **Padrão:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
