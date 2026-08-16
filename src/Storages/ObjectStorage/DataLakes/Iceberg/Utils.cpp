@@ -1,5 +1,4 @@
 
-#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <memory>
@@ -67,6 +66,7 @@ namespace ProfileEvents
 
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Poco/URI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -522,30 +522,6 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-namespace
-{
-/// Classifies a URI scheme (or `IObjectStorageConfiguration::getTypeName()`) into the storage
-/// backend family it belongs to, so that locations from unrelated backends (e.g. Azure "wasb" vs.
-/// S3 "s3") are never treated as interchangeable, even if a bucket/container name happens to
-/// coincide. Mirrors `DataLake::parseStorageTypeFromString`'s equivalences (`file` -> Local,
-/// `s3a`/`gs`/`oss` -> S3, `abfss` -> Azure). Empty scheme means a schemeless absolute/relative
-/// path, as written natively by ClickHouse for the Local backend.
-std::string classifyLocationBackendFamily(std::string_view scheme)
-{
-    std::string lower(scheme);
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-    if (lower.empty() || lower == "local" || lower == "file")
-        return "local";
-    if (lower == "s3" || lower == "s3a" || lower == "s3n" || lower == "gs" || lower == "oss")
-        return "s3";
-    if (lower == "azure" || lower == "wasb" || lower == "wasbs" || lower == "abfs" || lower == "abfss" || lower == "adl")
-        return "azure";
-    if (lower == "hdfs" || lower == "webhdfs" || lower == "viewfs")
-        return "hdfs";
-    return lower;
-}
-}
-
 bool cachedLocationMatchesTableRoot(
     std::string_view cached_location, std::string_view table_namespace, std::string_view table_root, std::string_view table_backend_type)
 {
@@ -561,36 +537,29 @@ bool cachedLocationMatchesTableRoot(
     /// "container@account.blob.core.windows.net"), and the key path. A location with no scheme is
     /// an absolute/relative filesystem-style path, as written natively by ClickHouse for
     /// namespace-less backends (HDFS/Local).
-    std::string_view scheme;
-    std::string_view authority;
-    std::string_view path = cached_location;
-    if (auto scheme_pos = cached_location.find("://"); scheme_pos != std::string_view::npos)
-    {
-        scheme = cached_location.substr(0, scheme_pos);
-        auto rest = cached_location.substr(scheme_pos + 3);
-        if (auto slash_pos = rest.find('/'); slash_pos != std::string_view::npos)
-        {
-            authority = rest.substr(0, slash_pos);
-            path = rest.substr(slash_pos + 1);
-        }
-        else
-        {
-            authority = rest;
-            path = {};
-        }
-    }
+    const Poco::URI uri{std::string(cached_location)};
+    const std::string scheme = uri.getScheme();
+    const std::string authority = uri.getAuthority();
+    std::string_view path = uri.getPath();
 
     /// Reject cross-backend collisions outright: a stale `catalog_uuid_hint` must not accept
     /// another backend's cached `metadata.json` just because a bucket/container name or key path
     /// happens to coincide (e.g. a Local table's schemeless location must never accept an
     /// `s3://`/`hdfs://` location, and an S3 bucket must never accept a Azure `wasb://` location
-    /// merely because the leading authority component matches the bucket name). A schemeless
-    /// `cached_location` is exempted from this check: with `write_full_path_in_iceberg_metadata`
-    /// off (the default), ClickHouse itself writes a schemeless `location` regardless of backend,
-    /// so rejecting it here would defeat the UUID-hint fast path for the default configuration on
-    /// every non-Local backend.
-    if (!scheme.empty() && classifyLocationBackendFamily(scheme) != classifyLocationBackendFamily(table_backend_type))
-        return false;
+    /// merely because the leading authority component matches the bucket name). Scheme
+    /// equivalences (`file` -> Local, `s3a`/`gs`/`oss` -> S3, `wasb`/`abfss` -> Azure) come from
+    /// `DataLake::tryParseStorageTypeFromString`; a scheme it does not recognize names no known
+    /// backend and is rejected. A schemeless `cached_location` is exempted from this check: with
+    /// `write_full_path_in_iceberg_metadata` off (the default), ClickHouse itself writes a
+    /// schemeless `location` regardless of backend, so rejecting it here would defeat the
+    /// UUID-hint fast path for the default configuration on every non-Local backend.
+    if (!scheme.empty())
+    {
+        const auto location_backend = DataLake::tryParseStorageTypeFromString(scheme);
+        const auto table_backend = DataLake::tryParseStorageTypeFromString(std::string(table_backend_type));
+        if (!location_backend || !table_backend || *location_backend != *table_backend)
+            return false;
+    }
 
     while (path.starts_with('/'))
         path.remove_prefix(1);
@@ -633,13 +602,8 @@ std::string deriveTableNamespaceForLocationCheck(std::string_view configuration_
     if (!configuration_namespace.empty())
         return std::string(configuration_namespace);
 
-    if (auto scheme_pos = configuration_raw_uri.find("://"); scheme_pos != std::string_view::npos)
-    {
-        auto rest = configuration_raw_uri.substr(scheme_pos + 3);
-        auto slash_pos = rest.find('/');
-        return std::string(slash_pos == std::string_view::npos ? rest : rest.substr(0, slash_pos));
-    }
-    return {};
+    const Poco::URI uri{std::string(configuration_raw_uri)};
+    return uri.getAuthority();
 }
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

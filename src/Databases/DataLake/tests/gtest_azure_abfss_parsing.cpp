@@ -284,4 +284,31 @@ TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketForceA
     EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/warehouse-rest/data/testns/testtable/");
 }
 
+TEST_F(AzureAbfssParsingTest, TryParseStorageTypeFromStringHadoopSchemeAliases)
+{
+    /// Schemes written by Hadoop/Spark for backends ClickHouse already supports. They used to be
+    /// rejected as unsupported, which also made them unusable for deciding whether two locations
+    /// refer to the same backend family (see `cachedLocationMatchesTableRoot`).
+    EXPECT_EQ(tryParseStorageTypeFromString("wasb"), StorageType::Azure);
+    EXPECT_EQ(tryParseStorageTypeFromString("wasbs"), StorageType::Azure);
+    EXPECT_EQ(tryParseStorageTypeFromString("abfs"), StorageType::Azure);
+    EXPECT_EQ(tryParseStorageTypeFromString("adl"), StorageType::Azure);
+    EXPECT_EQ(tryParseStorageTypeFromString("s3n"), StorageType::S3);
+    EXPECT_EQ(tryParseStorageTypeFromString("hdfs"), StorageType::HDFS);
+    EXPECT_EQ(tryParseStorageTypeFromString("webhdfs"), StorageType::HDFS);
+    EXPECT_EQ(tryParseStorageTypeFromString("viewfs"), StorageType::HDFS);
+    EXPECT_EQ(tryParseStorageTypeFromString("HDFS://namenode:8020"), StorageType::HDFS);
+}
+
+TEST_F(AzureAbfssParsingTest, TryParseStorageTypeFromStringReturnsNulloptForUnknownScheme)
+{
+    EXPECT_FALSE(tryParseStorageTypeFromString("not_a_storage").has_value());
+    EXPECT_FALSE(tryParseStorageTypeFromString("").has_value());
+}
+
+TEST_F(AzureAbfssParsingTest, ParseStorageTypeFromStringStillThrowsForUnknownScheme)
+{
+    EXPECT_THROW(parseStorageTypeFromString("not_a_storage"), DB::Exception);
+}
+
 }

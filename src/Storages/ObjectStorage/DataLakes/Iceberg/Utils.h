@@ -143,8 +143,9 @@ std::string normalizeUuid(const std::string & uuid);
 /// `IObjectStorageConfiguration::getNamespace`), `table_root` (the storage engine's configured key
 /// path, e.g. from `getPathForRead().path`), and `table_backend_type` (e.g. from
 /// `IObjectStorageConfiguration::getTypeName`, used to reject cross-backend collisions such as an
-/// Azure `wasb://` location matching an S3 bucket of the same name; equivalences mirror
-/// `DataLake::parseStorageTypeFromString`: `file` -> local, `s3a`/`gs`/`oss` -> s3, `abfss` -> azure).
+/// Azure `wasb://` location matching an S3 bucket of the same name; scheme equivalences come from
+/// `DataLake::tryParseStorageTypeFromString`: `file` -> Local, `s3a`/`gs`/`oss` -> S3,
+/// `wasb`/`abfss` -> Azure, and a scheme it does not recognize is rejected).
 /// A schemeless `cached_location` -- as ClickHouse itself writes by default
 /// (`write_full_path_in_iceberg_metadata = 0`), regardless of backend -- carries no authority to
 /// validate, so it is only accepted when `table_namespace` is itself empty (nothing to validate

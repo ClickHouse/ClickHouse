@@ -309,4 +309,18 @@ TEST(IcebergMetadataCache, LocationMatchesFileGsOssSchemeEquivalents)
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("oss://bucket/ns/table", "bucket", "ns/table", "s3"));
 }
 
+TEST(IcebergMetadataCache, LocationDoesNotMatchUnknownScheme)
+{
+    // A scheme that names no known backend cannot be proven to belong to this table, so it is
+    // rejected (costing a cache miss) rather than accepted on a bare path match.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("gopher://bucket/ns/table", "bucket", "ns/table", "s3"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchWhenTableBackendIsUnknown)
+{
+    // Callers without table identity (e.g. the catalog-side helpers that pass an empty
+    // `TableStorageIdentity`) must not accept a scheme-bearing cached location.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table", ""));
+}
+
 #endif
