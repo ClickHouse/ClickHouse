@@ -24,6 +24,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -964,11 +965,17 @@ private:
     /// run costs one `classifySampleFast` (with its integer division), one bucket lookup and one bulk append;
     /// within the run each sample costs two comparisons (`scanSamplesInRange`) and a store. On randomly
     /// ordered timestamps runs degenerate to one sample and this matches the cost of the plain loop.
-    void NO_INLINE addSamplesToBucketsImpl(State * __restrict state,
+    /// Compiled for x86-64-v4 in addition to the default target ('CPU dispatch'): the run scan and the bulk
+    /// append of `Samples::addMany` are data-parallel loops that profit from the wider vectors, and
+    /// `addSamples` picks the v4 variant at runtime on CPUs with AVX-512.
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(void NO_INLINE),
+    addSamplesToBucketsImpl,
+    MULTITARGET_FUNCTION_BODY((State * __restrict state,
         const TimestampType * __restrict timestamps,
         const ValueType * __restrict values,
         size_t row_begin,
-        size_t row_end) const
+        size_t row_end) const /// NOLINT
     {
         size_t i = row_begin;
         while (i < row_end)
@@ -981,7 +988,8 @@ private:
             /// so the scan may return 0 - still consume one sample.
             i += std::max<size_t>(run, static_cast<size_t>(1));
         }
-    }
+    })
+    )
 
     /// The flagged (`-If` condition or NULL map) counterpart: flags break runs unpredictably, so samples are
     /// added one by one, but the bucket resolved for the previous sample is reused while timestamps stay in
@@ -1050,6 +1058,13 @@ private:
             return;
         }
 
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);
+            return;
+        }
+#endif
         addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end);
     }
 
