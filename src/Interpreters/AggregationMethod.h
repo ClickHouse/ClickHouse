@@ -287,7 +287,9 @@ struct AggregationMethodKeysFixed
         Mapped,
         has_nullable_keys,
         has_low_cardinality,
-        use_cache && consecutive_keys_optimization>;
+        use_cache && consecutive_keys_optimization,
+        false,
+        true>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;

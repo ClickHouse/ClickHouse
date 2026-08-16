@@ -440,12 +440,13 @@ template <
     bool has_nullable_keys_ = false,
     bool has_low_cardinality_ = false,
     bool use_cache = true,
-    bool need_offset = false>
+    bool need_offset = false,
+    bool enable_prepared_keys_256_ = false>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_>, Value, Mapped, use_cache, need_offset>
 {
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>;
+    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_>;
     using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
 
@@ -492,7 +493,7 @@ struct HashMethodKeysFixed
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
-        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 32)
+        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > (enable_prepared_keys_256_ ? 32 : 16))
             return false;
 
         for (auto size : key_sizes)
