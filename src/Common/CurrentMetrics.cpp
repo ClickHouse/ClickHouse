@@ -2,9 +2,10 @@
 
 
 // clang-format off
-/// The list of metrics lives in its own file so that `.gitattributes` can mark it `merge=union`.
+/// Available metrics. Add something here as you wish.
+/// If the metric is generic (i.e. not server specific)
+/// it should be also added to src/Coordination/KeeperConstant.cpp
 #include <Common/CurrentMetricsList.inc>
-
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

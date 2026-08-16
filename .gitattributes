@@ -16,6 +16,5 @@ tests/queries/0_stateless/*.reference -crlf
 # `src/Common/ErrorCodes.cpp` is deliberately absent: an error code is a value in the public
 # protocol, and a union merge there would silently keep two entries with the same number.
 src/Core/SettingsChangesHistory.cpp merge=union
-src/Common/ProfileEventsList.inc merge=union
 src/Common/CurrentMetricsList.inc merge=union
 src/Common/FailPointsList.inc merge=union

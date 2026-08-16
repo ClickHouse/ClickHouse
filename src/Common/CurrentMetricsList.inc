@@ -1,20 +1,3 @@
-// clang-format off
-/// Available metrics. Add something here as you wish.
-/// If the metric is generic (i.e. not server specific)
-/// it should be also added to src/Coordination/KeeperConstants.cpp
-///
-/// This list lives in its own file so that `.gitattributes` can mark it `merge=union`: when two
-/// pull requests each append an entry, Git keeps both instead of reporting a conflict. Nothing
-/// but the list belongs in this file, because a union merge resolves every overlap by keeping
-/// both sides - the right answer for a list of independent entries, and the wrong answer for
-/// ordinary code.
-///
-/// For this to work, every entry must be one self-contained line ending with a backslash, so
-/// that adding an entry only inserts lines and never edits an existing one. Adding the same
-/// name twice is then a redefinition and fails to compile, so a bad union merge cannot pass
-/// unnoticed. Note that spacing the entries apart would not help: Git reports a conflict
-/// whenever both sides insert different text at the same point, however much unchanged
-/// context surrounds it.
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(ASTFuzzerAccumulatedFragments, "Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.") \
@@ -337,6 +320,8 @@
     M(PartsCompact, "Compact parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(FiberStacks, "Number of currently allocated fiber stacks (fibers are used for asynchronous communication with remote replicas).") \
+    M(FiberStackBytes, "Sum size of currently allocated fiber stacks.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
@@ -580,5 +565,4 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
-    \
 

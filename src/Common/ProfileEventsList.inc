@@ -1,20 +1,3 @@
-// clang-format off
-/// Available events. Add something here as you wish.
-/// If the event is generic (i.e. not server specific)
-/// it should be also added to src/Coordination/KeeperConstants.cpp
-///
-/// This list lives in its own file so that `.gitattributes` can mark it `merge=union`: when two
-/// pull requests each append an entry, Git keeps both instead of reporting a conflict. Nothing
-/// but the list belongs in this file, because a union merge resolves every overlap by keeping
-/// both sides - the right answer for a list of independent entries, and the wrong answer for
-/// ordinary code.
-///
-/// For this to work, every entry must be one self-contained line ending with a backslash, so
-/// that adding an entry only inserts lines and never edits an existing one. Adding the same
-/// name twice is then a redefinition and fails to compile, so a bad union merge cannot pass
-/// unnoticed. Note that spacing the entries apart would not help: Git reports a conflict
-/// whenever both sides insert different text at the same point, however much unchanged
-/// context surrounds it.
 #define APPLY_FOR_BUILTIN_EVENTS(M) \
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.", ValueType::Number) \
     M(SelectQuery, "Same as Query, but only for SELECT queries.", ValueType::Number) \
@@ -85,6 +68,10 @@
     M(IOBufferAllocBytes, "Number of bytes allocated for IO buffers (for ReadBuffer/WriteBuffer).", ValueType::Bytes) \
     M(ArenaAllocChunks, "Number of chunks allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Number) \
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Bytes) \
+    M(FiberStackAllocs, "Number of stacks allocated for fibers (fibers are used for asynchronous communication with remote replicas).", ValueType::Number) \
+    M(FiberStackAllocBytes, "Number of bytes allocated for fiber stacks, including guard pages (guard pages are only used in debug and sanitizer builds).", ValueType::Bytes) \
+    M(FiberStackAllocNanoseconds, "Amount of time spent allocating fiber stacks. Nanoseconds are used because a single allocation is normally faster than a microsecond, unless the allocator or the kernel is contended.", ValueType::Nanoseconds) \
+    M(FiberStackFreeNanoseconds, "Amount of time spent deallocating fiber stacks.", ValueType::Nanoseconds) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \

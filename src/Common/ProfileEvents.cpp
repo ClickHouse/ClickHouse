@@ -17,7 +17,9 @@
 #include <random>
 
 // clang-format off
-/// The list of events lives in its own file so that `.gitattributes` can mark it `merge=union`.
+/// Available events. Add something here as you wish.
+/// If the event is generic (i.e. not server specific)
+/// it should be also added to src/Coordination/KeeperConstant.cpp
 #include <Common/ProfileEventsList.inc>
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
