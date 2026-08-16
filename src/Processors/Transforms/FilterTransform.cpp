@@ -66,15 +66,16 @@ std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
     return assert_cast<const ColumnConst &>(*node->column).getField();
 }
 
-bool containsType(const IDataType & type, bool (WhichDataType::* predicate)() const)
+template <typename Predicate>
+bool containsType(const IDataType & type, Predicate predicate)
 {
-    if ((WhichDataType(type).*predicate)())
+    if (predicate(type))
         return true;
 
     bool result = false;
     type.forEachChild([&](const IDataType & child)
     {
-        if (!result && (WhichDataType(child).*predicate)())
+        if (!result && containsType(child, predicate))
             result = true;
     });
 
@@ -83,52 +84,66 @@ bool containsType(const IDataType & type, bool (WhichDataType::* predicate)() co
 
 bool containsFloat(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isFloat);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isFloat();
+    });
 }
 
 bool containsColumnedAsDecimal(const DataTypePtr & type)
 {
-    if (isColumnedAsDecimal(*type))
-        return true;
-
-    bool result = false;
-    type->forEachChild([&](const IDataType & child)
+    return containsType(*type, [](const IDataType & nested_type)
     {
-        if (!result && isColumnedAsDecimal(child))
-            result = true;
+        return isColumnedAsDecimal(nested_type);
     });
-
-    return result;
 }
 
 bool containsString(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isString);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isString();
+    });
 }
 
 bool containsFixedString(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isFixedString);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isFixedString();
+    });
 }
 
 bool containsEnum(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isEnum);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isEnum();
+    });
 }
 
 bool containsVariant(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isVariant);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isVariant();
+    });
 }
 
 bool containsObject(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isObject);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isObject();
+    });
 }
 
 bool containsDateOrTime(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64);
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+    });
 }
 
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
