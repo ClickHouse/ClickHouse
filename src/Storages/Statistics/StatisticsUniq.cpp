@@ -44,7 +44,7 @@ void StatisticsUniq::build(const ColumnPtr & column)
         raw_column_ptr = column.get();
     }
 
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
+    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
 }
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)

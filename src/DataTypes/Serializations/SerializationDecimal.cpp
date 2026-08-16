@@ -3,6 +3,7 @@
 #include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
@@ -15,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -49,6 +51,21 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+}
+
+template <typename T>
+void SerializationDecimal<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// Hive `DECIMAL` supports precision up to 38 only, so wider decimals (`Decimal256` covers
+    /// precisions 39..76) could not be declared by any Hive schema and are rejected instead of
+    /// being written.
+    if (this->precision > DecimalUtils::max_precision<Decimal128>)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Decimal precision {} is not supported by the HiveText output format: the maximum precision of Hive DECIMAL is {}",
+            this->precision, DecimalUtils::max_precision<Decimal128>);
+
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
 }
 
 template <typename T>

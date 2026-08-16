@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Core/Defines.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 
 #include <unistd.h> /// for ::getpid
 
@@ -8,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -49,6 +53,42 @@ struct ScopedTempDir
         fs::remove_all(path, ec);
     }
 };
+
+void writeObject(const DB::ObjectStoragePtr & storage, const fs::path & path, const std::string & data, const DB::WriteSettings & write_settings)
+{
+    auto buffer = storage->writeObject(
+        DB::StoredObject(path.string()), DB::WriteMode::Rewrite, /*attributes=*/ {}, DB::DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    buffer->write(data.data(), data.size());
+    buffer->finalize();
+}
+
+DB::WriteSettings ifNoneMatchAll()
+{
+    DB::WriteSettings write_settings;
+    write_settings.object_storage_write_if_none_match = "*";
+    return write_settings;
+}
+
+DB::WriteSettings ifMatch(const std::string & etag)
+{
+    DB::WriteSettings write_settings;
+    write_settings.object_storage_write_if_match = etag;
+    return write_settings;
+}
+
+DB::SmallObjectDataWithMetadata readObject(const DB::ObjectStoragePtr & storage, const fs::path & path)
+{
+    return storage->readSmallObjectAndGetObjectMetadata(DB::StoredObject(path.string()), DB::ReadSettings{}, /*max_size_bytes=*/ 4096);
+}
+
+std::vector<std::string> listDirectory(const fs::path & directory)
+{
+    std::vector<std::string> names;
+    for (const auto & entry : fs::directory_iterator(directory))
+        names.push_back(entry.path().filename().string());
+    std::sort(names.begin(), names.end());
+    return names;
+}
 
 }
 
@@ -628,4 +668,230 @@ TEST(LocalObjectStorage, ListObjectsHandlesMissingAndNonDirectoryPaths)
         storage->listObjects(file_path.string(), children, /* max_keys */ 0);
         EXPECT_TRUE(children.empty());
     }
+}
+
+TEST(LocalObjectStorage, ConditionalWriteIfNoneMatchIsExclusive)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_if_none_match");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "v1.metadata.json";
+
+    writeObject(storage, path, "first", ifNoneMatchAll());
+    EXPECT_EQ(readObject(storage, path).data, "first");
+
+    EXPECT_THROW(writeObject(storage, path, "second", ifNoneMatchAll()), DB::Exception);
+    EXPECT_EQ(readObject(storage, path).data, "first") << "a failed If-None-Match write must not touch the object";
+
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"v1.metadata.json"})
+        << "the staging file of the failed write must be cleaned up";
+}
+
+TEST(LocalObjectStorage, ConditionalWriteIfMatchRejectsStaleEtag)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_if_match");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "version-hint.text";
+
+    writeObject(storage, path, "1", ifNoneMatchAll());
+
+    const auto etag_seen_by_a = readObject(storage, path).metadata.etag;
+    ASSERT_FALSE(etag_seen_by_a.empty()) << "an etag is required for the compare-and-swap to work at all";
+
+    writeObject(storage, path, "3", ifMatch(etag_seen_by_a));
+    ASSERT_EQ(readObject(storage, path).data, "3");
+
+    EXPECT_THROW(writeObject(storage, path, "2", ifMatch(etag_seen_by_a)), DB::Exception);
+    EXPECT_EQ(readObject(storage, path).data, "3") << "the hint must not go backwards";
+
+    writeObject(storage, path, "4", ifMatch(readObject(storage, path).metadata.etag));
+    EXPECT_EQ(readObject(storage, path).data, "4");
+
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"version-hint.text"});
+
+    EXPECT_THROW(writeObject(storage, root / "missing.text", "1", ifMatch(etag_seen_by_a)), DB::Exception);
+}
+
+/// The etag of this storage is `(mtime, inode, size)`, and none of the three
+/// distinguishes two versions of a path on its own: `rename` frees the replaced
+/// version's inode number for immediate reuse, equal-length payloads share the size,
+/// and a kernel that stamps inode times from the coarse per-tick clock gives every
+/// file written inside one tick the same mtime down to the nanosecond. If all three
+/// coincide, the etag of an older version compares equal to the current one and a
+/// writer holding that older etag silently overwrites a newer version.
+///
+/// What rules that out is a modification time that strictly increases with every
+/// published version. The clock hides a violation of that invariant whenever it
+/// happens to advance on its own, so this test removes the clock from the picture: it
+/// pushes the current version's mtime into the future and then publishes over it. The
+/// publication must still come out strictly later, which it can only do by stamping
+/// the mtime rather than by inheriting whatever the clock said.
+TEST(LocalObjectStorage, ConditionalWritePublishesStrictlyIncreasingMTime)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_monotonic_mtime");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "version-hint.text";
+
+    writeObject(storage, path, "1", ifNoneMatchAll());
+
+    /// Well past any tick of any clock, and past the runtime of this test.
+    std::error_code ec;
+    fs::last_write_time(path, fs::last_write_time(path) + std::chrono::hours(1), ec);
+    ASSERT_FALSE(ec) << "Failed to set the modification time: " << ec.message();
+
+    const auto mtime_before = fs::last_write_time(path);
+    const auto etag_before = readObject(storage, path).metadata.etag;
+    ASSERT_FALSE(etag_before.empty());
+
+    /// Same length as the payload it replaces, so `st_size` cannot tell them apart.
+    writeObject(storage, path, "2", ifMatch(etag_before));
+
+    EXPECT_GT(fs::last_write_time(path), mtime_before)
+        << "the published version must carry a modification time strictly later than the version it replaces, "
+           "otherwise its etag can repeat an earlier one and a stale writer passes the If-Match check";
+
+    const auto etag_after = readObject(storage, path).metadata.etag;
+    EXPECT_NE(etag_after, etag_before) << "two versions of an object must never share an etag";
+    EXPECT_EQ(readObject(storage, path).data, "2");
+
+    /// The stale etag must still be rejected, and the fresh one still accepted.
+    EXPECT_THROW(writeObject(storage, path, "3", ifMatch(etag_before)), DB::Exception);
+    EXPECT_EQ(readObject(storage, path).data, "2");
+    writeObject(storage, path, "4", ifMatch(etag_after));
+    EXPECT_EQ(readObject(storage, path).data, "4");
+
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"version-hint.text"});
+}
+
+/// Every etag this storage hands out has to be the same kind of token, because a
+/// caller feeds the etag it read straight back into `If-Match`. `getObjectMetadata`
+/// used to build a differently shaped one, which could then only ever compare unequal
+/// and turned a conditional write into an unconditional `PreconditionFailed`.
+TEST(LocalObjectStorage, EtagFromGetObjectMetadataSatisfiesIfMatch)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_etag_shape");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "v1.metadata.json";
+
+    writeObject(storage, path, "first", ifNoneMatchAll());
+
+    const auto etag = storage->getObjectMetadata(path.string(), /*with_tags=*/ false).etag;
+    ASSERT_FALSE(etag.empty());
+    EXPECT_EQ(etag, readObject(storage, path).metadata.etag) << "all etag producers of this storage must agree";
+
+    writeObject(storage, path, "second", ifMatch(etag));
+    EXPECT_EQ(readObject(storage, path).data, "second");
+}
+
+/// A key of this storage is either absolute inside `key_prefix` or relative to it, and
+/// every method has to resolve it the same way - otherwise a relative key names a
+/// different file depending on which method received it, and a write can land outside
+/// the configured root, next to the server's working directory. The conditional-write
+/// path, `tryGetObjectMetadata` and `readSmallObjectAndGetObjectMetadata` used to take
+/// the key verbatim, so this test drives all of them through a relative key.
+TEST(LocalObjectStorage, KeysAreResolvedRelativelyToKeyPrefixOnEveryPath)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_relative_key");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const fs::path key = "metadata/version-hint.text";
+
+    writeObject(storage, key, "1", ifNoneMatchAll());
+
+    ASSERT_TRUE(fs::exists(root / key)) << "a relative key must be published under the key prefix";
+    EXPECT_EQ(listDirectory(root / "metadata"), std::vector<std::string>{"version-hint.text"})
+        << "the staging file must be created next to the target, inside the key prefix";
+
+    /// Every metadata producer must report the same file and the same etag for the
+    /// relative key and for its absolute form.
+    const auto absolute_etag = storage->getObjectMetadata((root / key).string(), /*with_tags=*/ false).etag;
+    ASSERT_FALSE(absolute_etag.empty());
+
+    const auto small_read = readObject(storage, key);
+    EXPECT_EQ(small_read.data, "1");
+    EXPECT_EQ(small_read.metadata.etag, absolute_etag);
+
+    auto relative_metadata = storage->tryGetObjectMetadata(key.string(), /*with_tags=*/ false);
+    ASSERT_TRUE(relative_metadata.has_value());
+    EXPECT_EQ(relative_metadata->etag, absolute_etag);
+
+    /// And the etag read through the relative key satisfies `If-Match` on it.
+    writeObject(storage, key, "2", ifMatch(absolute_etag));
+    EXPECT_EQ(readObject(storage, key).data, "2");
+    EXPECT_EQ(listDirectory(root / "metadata"), std::vector<std::string>{"version-hint.text"});
+
+    /// A key that resolves outside the prefix stays rejected on the conditional path.
+    EXPECT_THROW(writeObject(storage, "../escape.text", "x", ifNoneMatchAll()), DB::Exception);
+    EXPECT_THROW(writeObject(storage, "../escape.text", "x", ifMatch(absolute_etag)), DB::Exception);
+    EXPECT_FALSE(fs::exists(root.parent_path() / "escape.text"));
+}
+
+TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_cas");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "metadata" / "counter.text";
+
+    writeObject(storage, path, "0", ifNoneMatchAll());
+
+    constexpr size_t num_threads = 8;
+    constexpr size_t increments_per_thread = 25;
+
+    std::atomic<size_t> successful_writes{0};
+    std::mutex writer_failure_mutex;
+    std::exception_ptr writer_failure;
+
+    auto writer_loop = [&]
+    {
+        for (size_t i = 0; i < increments_per_thread; ++i)
+        {
+            while (true)
+            {
+                auto current = readObject(storage, path);
+                const auto next_value = std::to_string(std::stoull(current.data) + 1);
+                try
+                {
+                    writeObject(storage, path, next_value, ifMatch(current.metadata.etag));
+                }
+                catch (const DB::Exception &)
+                {
+                    continue;
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(writer_failure_mutex);
+                    if (!writer_failure)
+                        writer_failure = std::current_exception();
+                    return;
+                }
+                successful_writes.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+        }
+    };
+
+    std::vector<std::thread> threads;
+    for (size_t t = 0; t < num_threads; ++t)
+        threads.emplace_back(writer_loop);
+    for (auto & thread : threads)
+        thread.join();
+
+    if (writer_failure)
+        std::rethrow_exception(writer_failure);
+
+    EXPECT_EQ(successful_writes.load(), num_threads * increments_per_thread);
+    EXPECT_EQ(readObject(storage, path).data, std::to_string(num_threads * increments_per_thread))
+        << "concurrent compare-and-swap writers lost an update";
+
+    EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"counter.text"});
 }

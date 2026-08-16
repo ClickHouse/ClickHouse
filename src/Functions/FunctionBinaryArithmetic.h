@@ -1618,7 +1618,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         /// The valid range for the result, expressed in the result's own units:
         ///   DateTime:   seconds in [0, 2^32-1], covering ~1970 to ~2106.
         ///   DateTime64: scaled values in [MIN_DATETIME64_TIMESTAMP * 10^scale, MAX_DATETIME64_TIMESTAMP * 10^scale],
-        ///               covering ~1900 to ~2299 (but narrower at scale 9 due to Int64 capacity).
+        ///               covering years 0000 to 9999 (but narrower at high scales due to Int64 capacity).
         Int64 result_min = 0;
         Int64 result_max = static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
         UInt32 result_scale = 0;
