@@ -20,7 +20,7 @@ This is the complete list of connections the connector opens. All of them origin
 | Your org's connector API endpoint | Outbound WebSocket, `/v1/commands/ws` | The troubleshooter's command channel, gated by support-session state |
 | Your org's enrollment endpoint | HTTPS (enrollment token or HMAC; no mTLS) | Token redemption and certificate signing (`/v1/pcm/cert/sign`) at install time |
 | Your ClickHouse instances | ClickHouse native protocol | Read-only queries as `pcm_scraper` and `pcm_troubleshooter`, plus the scraper's log-flush statement (see [grants](#clickhouse-grants)) |
-| The Kubernetes API server | HTTPS | Namespace-scoped reads, ServiceAccount token requests, and exact-name read and update of the connector's own mTLS Secret to persist renewed certificates |
+| The Kubernetes API server | HTTPS | Namespace-scoped reads and ServiceAccount token requests on both install targets; on Kubernetes installs only, exact-name read and update of the connector's own mTLS Secret to persist renewed certificates (on a VM the renewed certificate is written to the local TLS files instead) |
 | Your identity provider's JWKS endpoint | HTTPS | Operator token validation, only when the session gateway is enabled |
 
 Inbound, the connector exposes only local health and metrics ports plus the opt-in session gateway. Nothing else listens, and ClickHouse Cloud never connects into your environment: it can only answer the troubleshooter's outbound WebSocket.

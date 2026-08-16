@@ -32,7 +32,7 @@ For Linux VM (systemd) installs:
 - **Any systemd Linux host**, amd64 or arm64. Linux builds run in FIPS mode.
 - **Root access** for the installer and for `init`.
 - **Free ports** 8080, 8082, and 8084 (health) and 9090, 9092, and 9094 (metrics), plus 8443 when the support-session gateway is enabled.
-- **Admin access to a Kubernetes API server** for provisioning: a kubeconfig on the host, or `--server` and `--ca-data`, or the prompts. Access bundles are anchored to Kubernetes ServiceAccounts on both targets, so every provisioning run needs this; the only opt-out is `--skip-provision`, which skips ClickHouse user provisioning entirely.
+- **Admin access to a Kubernetes API server** for provisioning: a kubeconfig on the host, or `--server` and `--ca-data`, or the prompts. Access bundles are anchored to Kubernetes ServiceAccounts on both targets, so every provisioning run needs this; the only opt-out is `--skip-provision`, which is stage-only: it skips ClickHouse user provisioning, and on a VM also the unit enable and verification, so it does not produce a running connector by itself.
 
 ## Install and enroll {#install-and-enroll}
 
