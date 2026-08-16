@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_set>
 
 #include <Columns/ColumnConst.h>

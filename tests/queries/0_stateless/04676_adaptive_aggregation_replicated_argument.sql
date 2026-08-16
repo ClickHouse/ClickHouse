@@ -19,52 +19,71 @@ INSERT INTO t_adaptive_repl_right SELECT number FROM numbers(400000) WHERE intDi
 INSERT INTO t_adaptive_repl_right SELECT number FROM numbers(400000) WHERE intDiv(number, 2048) % 8 = 0;
 OPTIMIZE TABLE t_adaptive_repl_right FINAL;
 
--- Each aggregate is computed twice: once through the adaptive aggregator and once through the
+-- The staged batches are coalesced only while several of them are buffered together, so the two
+-- external-aggregation thresholds have to stay off: either one drains the backlog one batch at a
+-- time and the coalescing is skipped. A two-level conversion is incompatible with the frozen path,
+-- and the size hint can divert the table before the freeze. All four are randomized by the test
+-- runner, as is enable_lazy_columns_replication, which is what produces the mixed argument
+-- representations in the first place.
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
+SET group_by_two_level_threshold = 10000000;
+SET group_by_two_level_threshold_bytes = 500000000;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET enable_lazy_columns_replication = 1;
+SET max_threads = 4;
+SET max_block_size = 4096;
+SET max_rows_to_group_by = 0;
+SET query_plan_join_swap_table = 0;
+SET log_queries = 1;
+SET log_profile_events = 1;
+
+-- Each aggregate is computed twice, once through the adaptive aggregator and once through the
 -- baseline one, so the pair also checks the coalesced values and not only the absence of an abort.
--- enable_lazy_columns_replication is randomized by the test runner and is what produces the mix,
--- so every load-bearing setting is pinned per query.
 
 SELECT 'String';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.s) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+         log_comment = '04676_adaptive_seal';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.s) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
-SETTINGS enable_adaptive_aggregator = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+SETTINGS enable_adaptive_aggregator = 0;
 
 SELECT 'UInt128';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.u) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+         log_comment = '04676_adaptive_seal';
 SELECT sum(cityHash64(g, m)) FROM (
     SELECT l.g AS g, max(l.u) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
-SETTINGS enable_adaptive_aggregator = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+SETTINGS enable_adaptive_aggregator = 0;
 
 SELECT 'Nullable(UInt64)';
 SELECT sum(cityHash64(g, toString(m))) FROM (
     SELECT l.g AS g, max(l.nv) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+         log_comment = '04676_adaptive_seal';
 SELECT sum(cityHash64(g, toString(m))) FROM (
     SELECT l.g AS g, max(l.nv) AS m FROM t_adaptive_repl_left AS l
     JOIN t_adaptive_repl_right AS r ON l.k = r.k GROUP BY l.g)
-SETTINGS enable_adaptive_aggregator = 0,
-         enable_lazy_columns_replication = 1, max_threads = 4, max_block_size = 4096,
-         max_rows_to_group_by = 0, query_plan_join_swap_table = 0;
+SETTINGS enable_adaptive_aggregator = 0;
+
+-- The coalescing above is entered only once at least two staged batches are buffered together;
+-- a lone batch is published as it is, by an earlier return. The counter is incremented after that
+-- return, so a non-zero count is what distinguishes the three arms having exercised the
+-- coalescing from their having agreed on a value without ever reaching it.
+SYSTEM FLUSH LOGS query_log;
+SELECT 'sealed chunks', coalesce(sum(ProfileEvents['AdaptiveAggregationSealedChunks']), 0) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND event_date >= yesterday() AND event_time >= now() - 600
+    AND log_comment = '04676_adaptive_seal';
 
 DROP TABLE t_adaptive_repl_left;
 DROP TABLE t_adaptive_repl_right;
