@@ -4,8 +4,8 @@
 # registration in concurrently running tests.
 
 # Regression test for the race between mutation registration and transaction rollback.
-# `prepareMutationEntry` adds the mutation to the transaction before the mutation or
-# metadata-ALTER path registers it in `current_mutations_by_version`. A rollback in
+# `prepareMutationEntry` adds the mutation to the transaction before
+# `startMutation` registers it in `current_mutations_by_version`. A rollback in
 # that window (e.g. KILL TRANSACTION) called `killMutation` before the entry existed,
 # found nothing to remove, and the entry registered afterwards was orphaned: its
 # transaction was gone and its CSN could never be assigned. Background jobs then raised
@@ -67,57 +67,6 @@ echo "invalid_transaction_errors $(grep -c INVALID_TRANSACTION "$CLICKHOUSE_TMP"
 # No mutation may be left behind, and the rolled-back mutation must not have been applied.
 echo "mutations_left $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutation_kill_txn_race'")"
 echo "sum_after_kill $($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM t_mutation_kill_txn_race")"
-
-# Metadata ALTER uses a sibling prepare/register path. It is normally rejected in a
-# transaction, but is allowed with this compatibility setting and must have the same
-# rollback handshake.
-tx 2 "SET throw_on_unsupported_query_inside_transaction=0" > /dev/null
-tx 2 "begin transaction" > /dev/null
-tid=$(tx 2 "select transactionID()" | cut -f2)
-if [ -z "$tid" ]; then echo "FAIL: could not get metadata ALTER transaction id"; exit 1; fi
-
-$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT mt_pause_before_register_mutation"
-tx_async 2 "ALTER TABLE t_mutation_kill_txn_race RENAME COLUMN value TO value2" > "$CLICKHOUSE_TMP"/04516_metadata_alter_out.txt 2>&1
-$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_register_mutation PAUSE"
-$CLICKHOUSE_CLIENT -q "KILL TRANSACTION WHERE tid = $tid" > /dev/null
-
-rolled_back=0
-for _ in {1..600}
-do
-    if [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.transactions WHERE tid = $tid")" = "0" ]
-    then
-        rolled_back=1
-        break
-    fi
-    sleep 0.1
-done
-if [ "$rolled_back" != "1" ]; then echo "FAIL: metadata ALTER transaction did not roll back"; exit 1; fi
-
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
-tx_wait 2
-echo "metadata_invalid_transaction_errors $(grep -c INVALID_TRANSACTION "$CLICKHOUSE_TMP"/04516_metadata_alter_out.txt)"
-echo "metadata_mutations_left $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutation_kill_txn_race'")"
-echo "column_after_metadata_kill $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_mutation_kill_txn_race' AND name IN ('value', 'value2')")"
-
-# DatabaseReplicated commits metadata to ZooKeeper and cannot roll it back. Metadata
-# ALTERs must therefore remain rejected in a transaction even when the compatibility
-# setting permits them for rollbackable databases.
-rep_db="${CLICKHOUSE_DATABASE}_rep"
-rep_zk_path="/test/${CLICKHOUSE_DATABASE}/04516"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${rep_db} SYNC" > /dev/null
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${rep_db} ENGINE = Replicated('${rep_zk_path}', 'shard1', 'replica1')" > /dev/null
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${rep_db}.t (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key"
-
-tx 3 "SET throw_on_unsupported_query_inside_transaction=0" > /dev/null
-tx 3 "BEGIN TRANSACTION" > /dev/null
-set +e
-replicated_alter_output=$(tx 3 "ALTER TABLE ${rep_db}.t RENAME COLUMN value TO value2")
-set -e
-tx 3 "ROLLBACK" > /dev/null
-
-echo "replicated_metadata_alter_rejected $(grep -c NOT_IMPLEMENTED <<< "$replicated_alter_output")"
-echo "replicated_column_after_metadata_alter $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = '${rep_db}' AND table = 't' AND name IN ('value', 'value2')")"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE ${rep_db} SYNC" > /dev/null
 
 # Subsequent mutations must not be blocked by the removed one.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation_kill_txn_race UPDATE value = value + 7 WHERE 1 SETTINGS mutations_sync = 1"

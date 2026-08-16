@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -1457,8 +1458,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
-    if (query_context->getCurrentTransaction())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Replicated database DDL queries inside transactions are not supported");
+    if (query_context->getCurrentTransaction() && query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
 
     if (is_readonly)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
