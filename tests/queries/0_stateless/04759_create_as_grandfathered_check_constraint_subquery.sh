@@ -28,11 +28,12 @@ $CLICKHOUSE_LOCAL --path "$WORK_DIR" < /dev/null --query "
     INSERT INTO src VALUES (1);
 "
 
-sed -i "s/CHECK c0 > 0/CHECK c0 + (SELECT max(c1) FROM default.aux) > 0/" "$WORK_DIR"/store/*/*/src.sql
+sed -i "s/CHECK c0 > 0/CHECK c0 + (SELECT throwIf(max(c1) = 5) FROM default.aux) > 0/" "$WORK_DIR"/store/*/*/src.sql
 
 $CLICKHOUSE_LOCAL --path "$WORK_DIR" < /dev/null --query "
     -- The grandfathered table itself keeps loading and is readable.
     SELECT 'load-ok', count() FROM src;
+    INSERT INTO src VALUES (2); -- { serverError BAD_ARGUMENTS }
 
     -- But its forbidden constraint must not be copied into fresh metadata.
     CREATE TABLE dst AS src; -- { serverError BAD_ARGUMENTS }

@@ -756,15 +756,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
+    const ASTExpressionList * constraints,
+    const ColumnsDescription & columns,
+    ContextPtr local_context,
+    bool validate_expressions)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
-            auto clone = constraint->clone();
-            TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            if (validate_expressions)
+            {
+                auto clone = constraint->clone();
+                TreeRewriter(local_context).analyze(clone, column_names_and_types);
+            }
             constraints_data.push_back(constraint->clone());
         }
     return ConstraintsDescription{constraints_data};
@@ -852,7 +858,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (is_fresh_definition && create.columns_list->constraints)
             ConstraintsDescription::validateNoSubqueries(create.columns_list->constraints->children, getContext());
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        properties.constraints = getConstraintsDescription(
+            create.columns_list->constraints, properties.columns, getContext(), /* validate_expressions = */ is_fresh_definition);
     }
     else if (!create.as_table.empty())
     {
