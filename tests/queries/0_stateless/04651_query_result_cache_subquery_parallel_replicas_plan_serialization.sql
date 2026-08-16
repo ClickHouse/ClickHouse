@@ -46,6 +46,7 @@ SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' 
 -- ordinary subquery route must similarly not add non-serializable query-cache steps.
 SET enable_parallel_replicas = 0;
 SET make_distributed_plan = 1;
+SET max_rows_to_group_by = 0;
 SELECT sum(k) FROM (SELECT k FROM t_qrc_pr WHERE k < 10 SETTINGS use_query_cache = 1);
 
 DROP TABLE t_qrc_pr;
