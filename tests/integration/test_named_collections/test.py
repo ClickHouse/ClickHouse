@@ -1303,3 +1303,107 @@ def test_startup_still_fails_for_unrelated_metadata_error(node_with_database_col
         user="root",
     )
     node.start_clickhouse()
+
+
+def test_startup_still_fails_for_non_669_error_from_skippable_engine(
+    node_with_database_collections,
+):
+    node = node_with_database_collections
+
+    # An engine that IS skippable failing with an error that is NOT a missing collection: only the
+    # error code decides here, so this is the arm the code check answers for.
+    write_database_metadata(
+        node,
+        "db_extra_badargs",
+        "ATTACH DATABASE db_extra_badargs\n"
+        "ENGINE = S3('http://localhost:11111/test/', 'key', 'secret', 'extra')",
+    )
+
+    node.stop_clickhouse()
+    node.start_clickhouse(expected_to_fail=True)
+    assert node.contains_in_log("Caught exception while loading metadata: Code: 42")
+    assert not node.contains_in_log("Skipping database db_extra_badargs")
+
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/lib/clickhouse/metadata/db_extra_badargs.sql"],
+        user="root",
+    )
+    node.start_clickhouse()
+
+
+@pytest.mark.parametrize(
+    "db_name,engine",
+    [
+        ("db_extra_s3", "S3(db_collection_absent)"),
+        ("db_extra_remote", "Remote(db_collection_absent)"),
+        ("db_extra_remote_secure", "RemoteSecure(db_collection_absent)"),
+        ("db_extra_mysql", "MySQL(db_collection_absent)"),
+        ("db_extra_postgres", "PostgreSQL(db_collection_absent)"),
+    ],
+)
+def test_startup_skips_each_skippable_engine(
+    node_with_database_collections, db_name, engine
+):
+    node = node_with_database_collections
+
+    # The collection is never defined anywhere, so every engine name in the skip list gets its own
+    # arm. None of these reach a connection attempt: the collection lookup precedes it.
+    write_database_metadata(
+        node, db_name, f"ATTACH DATABASE {db_name}\nENGINE = {engine}"
+    )
+
+    node.restart_clickhouse()
+
+    assert "1" == node.query("SELECT 1").strip()
+    assert "0" == node.query(
+        f"SELECT count() FROM system.databases WHERE name = '{db_name}'"
+    ).strip()
+    assert node.contains_in_log(f"Skipping database {db_name}")
+    assert "1" == node.exec_in_container(
+        ["bash", "-c", f"test -f /var/lib/clickhouse/metadata/{db_name}.sql && echo 1 || echo 0"]
+    ).strip()
+
+
+def test_startup_still_fails_when_default_database_misses_its_collection(
+    node_with_database_collections,
+):
+    node = node_with_database_collections
+
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cp /var/lib/clickhouse/metadata/default.sql /var/lib/clickhouse/metadata/default.sql.orig",
+        ],
+        user="root",
+    )
+    # A SQL-created collection would survive hiding the config file and make the server boot.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/lib/clickhouse/named_collections/*.sql"],
+        user="root",
+        nothrow=True,
+    )
+    try:
+        write_database_metadata(
+            node, "default", "ATTACH DATABASE default\nENGINE = S3(db_collection_s3)"
+        )
+        hide_database_collections(node)
+
+        node.start_clickhouse(expected_to_fail=True)
+        # Two assertions: with the default-database check removed, `default` would be skipped and
+        # startup would still fail one line later on the "default database must exist" assertion,
+        # so "the server does not start" alone does not tell the two builds apart.
+        assert node.contains_in_log("Caught exception while loading metadata: Code: 669")
+        assert not node.contains_in_log("Skipping database default")
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "mv /var/lib/clickhouse/metadata/default.sql.orig /var/lib/clickhouse/metadata/default.sql",
+            ],
+            user="root",
+        )
+        restore_database_collections(node)
+        node.start_clickhouse()

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: needs the S3 database engine, which requires ENABLE_LIBRARIES
+
+# clickhouse-local keeps refusing to start: the startup tolerance is server-only.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
