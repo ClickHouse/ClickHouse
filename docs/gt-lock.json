@@ -7,37 +7,37 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-15T16:51:17.629Z",
+          "updatedAt": "2026-08-16T14:59:37.897Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-15T16:51:17.850Z",
+          "updatedAt": "2026-08-16T14:59:38.036Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-15T16:51:18.040Z",
+          "updatedAt": "2026-08-16T14:59:38.163Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-15T16:51:18.233Z",
+          "updatedAt": "2026-08-16T14:59:38.325Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-15T16:51:18.433Z",
+          "updatedAt": "2026-08-16T14:59:38.487Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-15T16:51:18.633Z",
+          "updatedAt": "2026-08-16T14:59:38.637Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-15T16:51:18.812Z",
+          "updatedAt": "2026-08-16T14:59:38.801Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-15T16:51:19.026Z",
+          "updatedAt": "2026-08-16T14:59:38.955Z",
           "fileName": "docs.json",
-          "postProcessHash": "08f86263d38049f519fb9dde8d6c017533d62c26bf8c2092b595e0ba09e2a66e"
+          "postProcessHash": "056f16568bb1cb895535e54afba88cff7df57aaa36568b165162b7c0d19e258d"
         }
       },
       "fileName": "docs.json",
@@ -36333,47 +36333,47 @@
     },
     {
       "fileId": "9e0f7f5e6f8e1eda4ae3d15755118a5f81d40f78e638ac89ce08a3d591a316c9",
-      "versionId": "7c6d8ae2115665705274cb7d04fd63db7fce1a7a9f908e8242febec418f697da",
+      "versionId": "09d9da9d96f9f81bced54f2b1397bcd4722d3af050a96240fd4cd39e15454552",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.493Z",
-          "fileName": "es/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "99a56d906da79b92085fb5310bb17ba1a16f416aebbe33fce6d605e44d870b2b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.493Z",
-          "fileName": "ja/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "4af9eef7dbc11cd2d57d37803b2f482f43640c3401f9a86d2266c3ff56c33636"
+        "zh": {
+          "updatedAt": "2026-08-16T14:59:42.593Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "590e663f75b536da143fe84455092c25f7ce8bb2421f1542b86341a2aca929e6"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.493Z",
+          "updatedAt": "2026-08-16T14:59:42.594Z",
           "fileName": "ko/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "5be25f44e7559a54b5d5cabadbb021eaaf714fd0a35398787fc3ce0d54691dcb"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.493Z",
-          "fileName": "pt-BR/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "70e23a6cf5525e4f90be8ec4b36015c1dc511eaf17902e674c96a16717ae3ec7"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.494Z",
-          "fileName": "ru/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "ccccd805861eeb22530258663a48c9819625d9ea87d61dc20ada255a01674f8d"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.494Z",
-          "fileName": "zh/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "a2bf013c0e3fcbed0a41f392846581d8bfaf4c48631bdcd3a8aab4535e88d79d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.494Z",
-          "fileName": "ar/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "530fe1a5c21706d92009a077e5c11f25378e7bd8a7db9ae420eeb057b4a7b7fb"
+          "postProcessHash": "1c2c606c141f6c486447afcd81d066800813a53c4871acf401fc5f8141cee0e0"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.494Z",
+          "updatedAt": "2026-08-16T14:59:42.596Z",
           "fileName": "fr/guides/use-cases/data-warehousing/index.mdx",
-          "postProcessHash": "cb862f12508f97eb01c9c275fa41133b990a062d6bd4e0e3ec5105726788812a"
+          "postProcessHash": "d5c402b5e2bfc16841db608550992237fc8486ce1393a6b8827c8983bac72503"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T14:59:42.598Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "dcc5fc6489ad19354961633815028e1ffd26dd5d84f698a94c1adb7877930976"
+        },
+        "ja": {
+          "updatedAt": "2026-08-16T14:59:42.601Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "3bf1b9d4a051b154bb21ad022329409d060ceee41315fa43d510759b439989b0"
+        },
+        "es": {
+          "updatedAt": "2026-08-16T14:59:42.602Z",
+          "fileName": "es/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "18e2519b9384f40719535bcfc5d149772d3d86898b7496c9e71917c89820e42e"
+        },
+        "ru": {
+          "updatedAt": "2026-08-16T14:59:42.603Z",
+          "fileName": "ru/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "e510427c3065332b0484445fbf91700f2283eecbf9cd04654df46897ab5ddf4a"
+        },
+        "ar": {
+          "updatedAt": "2026-08-16T14:59:42.603Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/index.mdx",
+          "postProcessHash": "88cbb8a4efb39bfd512c3b2b807021a07f3dd9ec8e13040276538bd82737bfad"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/index.mdx",
@@ -36621,47 +36621,47 @@
     },
     {
       "fileId": "401c97cd792d972ea1e7f8fcfaf5307e884650b110fc27d74a0afd1641e897bc",
-      "versionId": "59316f117501547e262b7626823210f1d7a702af4dccecebfd02a25abe8831a5",
+      "versionId": "28d4230b420a0af34d8e94becbac59f77779a73522f51c7207087ca55aa2418e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.499Z",
-          "fileName": "es/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "c379d22aa677cdfe840a0878cf7688ff9ef646a2becf4d8341822d3881ea8a65"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.499Z",
-          "fileName": "ja/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "4c213a12f4a11aeef8a9e5cdb6c1a42da7969e265f4d67a0e0eb4ec1c45e92ca"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.499Z",
-          "fileName": "ko/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "b50b7c74beb8020ee0e2774093c1526ed5f68017e572e99fcf6cb567626fbd51"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.499Z",
-          "fileName": "pt-BR/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "50396ea2e968d43a1a10e8894631334f781565a20bf37e0b42e399b1e43d78d8"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.500Z",
+          "updatedAt": "2026-08-16T14:59:42.595Z",
           "fileName": "ru/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "61f248b989ab0f02053b86dc36380e639e44fb5f53338b86752bdc3f2a387be9"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.500Z",
-          "fileName": "zh/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "a1b057272c86cfb1f7aa57a70c879626b937f0528566aae2b003dceaa84e484a"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.500Z",
-          "fileName": "ar/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "00385160505e7d04926f85eaf4df91eede3930ce711a25df4c63c6530457f023"
+          "postProcessHash": "bdc0b1cec717d7c44577377671032078362b44e6089bb86ed24dd4683ec2d4c7"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.500Z",
+          "updatedAt": "2026-08-16T14:59:42.595Z",
           "fileName": "fr/guides/use-cases/data-warehousing/support-matrix.mdx",
-          "postProcessHash": "d9687e8448527dad2cc7d6f17252013356c78f7ed3c80f5a3e39c5aec66c7253"
+          "postProcessHash": "fef99a06b9a5d1a716a64782cae08b1208390249cbda1139d85013ef2fe0b16b"
+        },
+        "ja": {
+          "updatedAt": "2026-08-16T14:59:42.597Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "17500d19a0ac46f4ab9b3cace877da42f4cdce7d105944381c4e4a71ae15bbb7"
+        },
+        "es": {
+          "updatedAt": "2026-08-16T14:59:42.598Z",
+          "fileName": "es/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "e4136b4400620fab07263a6ca9f6b26adbc476f24071fd7f78b21c386bd3cb3a"
+        },
+        "ar": {
+          "updatedAt": "2026-08-16T14:59:42.599Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "27f189f1e9a771e86d563a942bb9e8011ec476acc34ced47672bc046a58bc107"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T14:59:42.600Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "a47f269b45f44a333c41be853875dac5352f02690d02d6b34ce8ed5f2befb7a1"
+        },
+        "zh": {
+          "updatedAt": "2026-08-16T14:59:42.604Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "e96429b3992d377981289c383fcfc12b3902b877a6bb828ddec7de41e566eb01"
+        },
+        "ko": {
+          "updatedAt": "2026-08-16T14:59:42.604Z",
+          "fileName": "ko/guides/use-cases/data-warehousing/support-matrix.mdx",
+          "postProcessHash": "93c62ca8051723eee1b77295384d4dcb369a8a385cfa78d1e6532e6870b8bb22"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/support-matrix.mdx",
@@ -77517,47 +77517,47 @@
     },
     {
       "fileId": "85c1b60d77f22d2fd2ff0b49f00d560e351dbaf4366eb5ef42723fc5fdfc271d",
-      "versionId": "05983847955d4bec288f1c1f7c8932c7ab47b7b44d6569174c0f342f0bf1d478",
+      "versionId": "dddb262400bb53742a8f204cb90f28a67732cd742807eb0ab82a42db347008d3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.962Z",
-          "fileName": "es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "5394f8987b11f8112b26145ac52cd2351cf1058d94a1ccd884a54059ae8df7fa"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.962Z",
-          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "61079b8fdc8cb498e0c9977d3d76779261e7656c00427e1d0617f616cfd60a56"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.962Z",
-          "fileName": "ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "3a49063f02244bf6395b25ca6287fca1651d3c4938dc1617ac78f4d6a13322c7"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.962Z",
-          "fileName": "pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "3dc45669c8e161b2abc23f8d0a2861b54ae9299b0908c49b7a7329fff23b525d"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:07.962Z",
+          "updatedAt": "2026-08-16T14:59:42.588Z",
           "fileName": "ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "f0b3598bb8a8a90b9f286bbf8d30ad594ac2d1a5ced06268fc6f4a1683dd771e"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.963Z",
-          "fileName": "zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "47c2278e6dbba71aedee7e46f042faf0fcaaec668a16b6e9b8f0d7d40141796d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.963Z",
-          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "72ae7297bdb5092896bc9f1e08b86cab9a4b534c9a9e36f1eed3cc91894e7ae8"
+          "postProcessHash": "1103cc1cee6eea89dfeffa6c8db66f9337e11a9c6b0b413edc07debef35bc533"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.963Z",
+          "updatedAt": "2026-08-16T14:59:42.591Z",
           "fileName": "fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
-          "postProcessHash": "5d9d7526325ace7f3376adbfdbee2b9fc9968fed6a052377f333c949da73d9aa"
+          "postProcessHash": "2eef3132e1d20cdea1977e1c6ced7cafe6f44e43d0d1e8f7c54ed6b058adba74"
+        },
+        "es": {
+          "updatedAt": "2026-08-16T14:59:42.591Z",
+          "fileName": "es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "ae863b43e1e3e94c7529f8742cdf8092f59553b7ff3e05053d210f1a17098f42"
+        },
+        "zh": {
+          "updatedAt": "2026-08-16T14:59:42.592Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "8d0760355c8c73baf7e66bd33afb63d06066b6bac478336fc585bba6cb791851"
+        },
+        "ko": {
+          "updatedAt": "2026-08-16T14:59:42.593Z",
+          "fileName": "ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "72fc7b5bb69ad696176eefae1ecea664aa03c36051185c11b0ac7bf69991da21"
+        },
+        "ar": {
+          "updatedAt": "2026-08-16T14:59:42.595Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "a1374e976438f6718c9a6b2089ba84f5674b81eeaf205b3a7b273908cd5d4374"
+        },
+        "ja": {
+          "updatedAt": "2026-08-16T14:59:42.600Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "622f5f06936f0170e78cdea0b85d81b10574d47cfbd00629a3c05052a55f0713"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T14:59:42.602Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
+          "postProcessHash": "1623bb99abfb42db88a6130d160df3117b37a00d07b2ec9d2633c2672a667a2d"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/getting-started/connecting-catalogs.mdx",
@@ -77709,47 +77709,47 @@
     },
     {
       "fileId": "c86dddc2844ee860d144bd6dfeb80788a3b2695321e20a4a968d21610c051527",
-      "versionId": "d012faea01b639a5589d5f50583480191c3a769e5a8065c6dd1e290282c3b128",
+      "versionId": "2932e244e33bd052c6ecd44fd8f4bec7e498de0a9b2ae664f71a45b50df7a7b3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
-          "fileName": "es/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "142f29582dc7107a39188b32982ede86ba909186472453a18ef0b96a45bd80b6"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
+          "updatedAt": "2026-08-16T14:59:42.585Z",
           "fileName": "ja/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "00c3f2adb0cccb88fef200495786a38c3c4f5cf94f2cdf2df909fade31ce2dea"
+          "postProcessHash": "ab782e5de77c2764440406ee7185b94b2593b08a85054ac11da9993327ea3f47"
         },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
-          "fileName": "ko/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "da8b015b0ba23b9fe8991ed89a752759767fabaa380d14d2431bcd60bd5f9c57"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
-          "fileName": "pt-BR/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "8fe68b64a0f765212fb51af6b3f88ee4e53949253427b159725123c605709faf"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
-          "fileName": "ru/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "53b9cc2f915b0b37d51044068c5cf7e9eccf8d8533face7ac28db0126c0e7387"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
-          "fileName": "zh/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "dba42475fcc5ed727a1d8ba97c59b64b025d7f496b2a55fd0b0797dd42109bfe"
+        "es": {
+          "updatedAt": "2026-08-16T14:59:42.586Z",
+          "fileName": "es/guides/use-cases/data-warehousing/reference/index.mdx",
+          "postProcessHash": "3ac9c556680456da6681768789b8a1747c793898adc2cc70d565dec614941554"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
+          "updatedAt": "2026-08-16T14:59:42.587Z",
           "fileName": "ar/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "5bff59e4a46e78d3ec3e156c26a04d29f65535bee3091756d514ded3b800cb3f"
+          "postProcessHash": "6c270b17e006b7e7dd82ac18e5c537ac179be9cf7048ce688b30869ef9b40d91"
+        },
+        "ru": {
+          "updatedAt": "2026-08-16T14:59:42.587Z",
+          "fileName": "ru/guides/use-cases/data-warehousing/reference/index.mdx",
+          "postProcessHash": "bcce394b5cd2e8329aaebae9552abc2cd1dd22a0b965dfa1fcc258e0ffa1018a"
+        },
+        "ko": {
+          "updatedAt": "2026-08-16T14:59:42.588Z",
+          "fileName": "ko/guides/use-cases/data-warehousing/reference/index.mdx",
+          "postProcessHash": "a4d73ca5b59e12dbc82b3f4b980dae90908b17cad1ddb6bb23dc067472b67686"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T14:59:42.589Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/reference/index.mdx",
+          "postProcessHash": "5e9c10b497aebbef5ce0d597a2a77a69edf44c2f17b4ff430f3b9df4ae342d93"
+        },
+        "zh": {
+          "updatedAt": "2026-08-16T14:59:42.590Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/reference/index.mdx",
+          "postProcessHash": "e6ebbc21434ed506d0036c7363d146406524c6ec9b54f84043d05a1ec51ce55d"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.967Z",
+          "updatedAt": "2026-08-16T14:59:42.594Z",
           "fileName": "fr/guides/use-cases/data-warehousing/reference/index.mdx",
-          "postProcessHash": "43948b6a9870da3267f3f4ae67a7eca6b1af3687818e95b57afaf20fa4db0d58"
+          "postProcessHash": "0a50ba060acc6a829cf24dd4a1085cdbf1ffe9a6ca94b6f49b681e9b66dd311a"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/reference/index.mdx",
@@ -135977,6 +135977,54 @@
         }
       },
       "fileName": "reference/system-tables/s3_queue_metadata.mdx",
+      "staged": false
+    },
+    {
+      "fileId": "93c45184df0eb7fdd452f8d84e7b250c055b3af7d7dff5d4122461e1633007ba",
+      "versionId": "fc33d8718f17d9aec16e4fbfc3c97ae75754c5b62486435e25be29c311863438",
+      "translations": {
+        "ru": {
+          "updatedAt": "2026-08-16T14:59:42.591Z",
+          "fileName": "ru/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "f05ef1623b1576a67451c334a9611b0e9223c0cf6d13b3e7938949a3a8b2a916"
+        },
+        "ko": {
+          "updatedAt": "2026-08-16T14:59:42.596Z",
+          "fileName": "ko/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "1d976880c1477f2f8bc431180798099bb23ee6c86f0f1350cf902b265860b6d5"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-16T14:59:42.600Z",
+          "fileName": "pt-BR/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "077c4501fbec2e3400237da47dfb6113be23e0e805629ccf1900bbd4ae5ccbb9"
+        },
+        "es": {
+          "updatedAt": "2026-08-16T14:59:42.601Z",
+          "fileName": "es/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "f2db8cd9b3b7c3eacd741350300da1b5e1753b2203b306b858d704309df93818"
+        },
+        "ja": {
+          "updatedAt": "2026-08-16T14:59:42.603Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "dee94a40261d8a99c98a22bfff18dab2f36318f79eefbb9c06f45ee8097ee268"
+        },
+        "zh": {
+          "updatedAt": "2026-08-16T14:59:42.605Z",
+          "fileName": "zh/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "a2f0b728979e92b2a5a7e2484aac9f3de5e23d49f56a836b42bd22d1f0f544c6"
+        },
+        "ar": {
+          "updatedAt": "2026-08-16T14:59:42.605Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "6ad40153e0fe40407d3b48559146301a14cdc76cc42e274f75b86f31a0dc62e7"
+        },
+        "fr": {
+          "updatedAt": "2026-08-16T14:59:42.605Z",
+          "fileName": "fr/guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+          "postProcessHash": "b096be2e5f4e547bdc0867194df084d2b4479db889a7b91c3dcdd2f667c6072d"
+        }
+      },
+      "fileName": "guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
       "staged": false
     }
   ]
