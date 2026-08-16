@@ -2626,7 +2626,7 @@ static bool tryPrepareSetColumnsForIndex(
         if (key_is_nullable && source_null_map)
         {
             auto null_map = ColumnUInt8::create();
-            null_map->getData() = cast_failure_null_map;
+            null_map->getData().assign(cast_failure_null_map);
             auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
             nullable_set_column->applyNullMap(*source_null_map);
             set_column = std::move(nullable_set_column);
