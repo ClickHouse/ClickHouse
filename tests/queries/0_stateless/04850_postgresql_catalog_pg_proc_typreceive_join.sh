@@ -2,10 +2,9 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Requires postgresql-client
 
-# A PostgreSQL client that probes for binary I/O support of a type does not only compare
-# `pg_type.typreceive` against zero - it resolves the receive function through `pg_proc`. Every
-# receive-function OID the emulated `pg_type` advertises must therefore have a `pg_proc` row, or
-# such a client drops every emulated type; and no `pg_proc` receive row may be an orphan either.
+# The PostgreSQL wire server does not decode binary input for bound parameters or `COPY`, so the
+# emulated catalog must not advertise binary receive functions. Clients use `typreceive != 0` to
+# choose a binary-input path, which must remain unavailable until it is implemented end-to-end.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,22 +26,7 @@ function run_psql()
         --no-align --tuples-only --quiet -c "$1"
 }
 
-echo "--- the receive function of a representative type of every kind resolves through pg_proc"
-run_psql "
-    SELECT t.typname, t.typtype, t.typcategory, p.proname
-    FROM pg_type AS t
-    JOIN pg_proc AS p ON p.oid = t.typreceive
-    WHERE t.typname IN ('bool', 'int4', 'text', 'numeric', 'timestamptz', '_int4', 'int8range', 'int8multirange', 'mood')
-    ORDER BY t.typname"
-
-echo "--- no type advertises a receive function that pg_proc does not resolve"
-run_psql "
-    SELECT count()
-    FROM pg_type AS t
-    LEFT JOIN pg_proc AS p ON p.oid = t.typreceive
-    WHERE t.typreceive != 0 AND p.oid = 0"
-
-echo "--- and every type advertises one: none is left at zero"
-run_psql "SELECT count() FROM pg_type WHERE typreceive = 0"
+echo "--- no type advertises unsupported binary input"
+run_psql "SELECT count() FROM pg_type WHERE typreceive != 0"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${PG_USER};"
