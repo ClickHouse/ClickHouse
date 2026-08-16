@@ -3090,28 +3090,6 @@ TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaReconstructionOverflow)
         constructCodecPayload<Float32>(vectors, 2), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 8);
 }
 
-TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaExceptionLane)
-{
-    /// The encoder writes a zero delta lane for every exception, so a non-zero lane at position
-    /// one would otherwise advance the accumulator and corrupt the value that follows it.
-    std::vector<UInt8> vectors = {
-        0x02,                         // mode = DECIMAL_DELTA
-        0x20,                         // alpha = 0
-        0x02,                         // bits = 2
-        0x00,                         // adjustment_bits = 0
-        0x00, 0x00, 0x00, 0x00,       // first_q = 0
-        0x01, 0x00                    // exception_count = 1
-    };
-    vectors.resize(vectors.size() + 256, 0x00);
-    vectors[15] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
-    vectors.insert(vectors.end(), {
-        0x01, 0x00,                   // exception position = 1
-        0x00, 0x00, 0x50, 0x40        // raw exception value = 3.25f
-    });
-    verifyDecompressExpectedException(
-        constructCodecPayload<Float32>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane", 12);
-}
-
 TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
 {
     const std::vector<UInt8> vectors = {

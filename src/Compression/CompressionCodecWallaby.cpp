@@ -2018,9 +2018,11 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 src += adjustment_bytes;
 
                 /// `DECIMAL_DELTA` cannot replay its chain until the exception positions are
-                /// known: each exception has a zero lane and leaves the accumulator unchanged.
-                /// Load and validate the exception list before reconstructing the decimal lanes,
-                /// then patch the raw values after the ordinary values have been emitted.
+                /// known. Quantization exceptions have a zero lane and leave the accumulator
+                /// unchanged, while adjustment-cap exceptions retain their lane so the chain
+                /// continues through the quantized value. Load and validate the exception list
+                /// before reconstructing the decimal lanes, then patch the raw values after the
+                /// ordinary values have been emitted.
                 require(exception_count * (sizeof(UInt16) + sizeof(T)));
                 for (UInt32 i = 0; i < exception_count; ++i)
                 {
@@ -2074,8 +2076,6 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     SignedType accumulator = base;
                     for (UInt32 i = 0; i < count; ++i)
                     {
-                        if (is_exception[i] && unpacked[i] != 0)
-                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane");
                         if (i > 0)
                         {
                             const SignedType delta = std::bit_cast<SignedType>(zigzagDecode(unpacked[i]));
