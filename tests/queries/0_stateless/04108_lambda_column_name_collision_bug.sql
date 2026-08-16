@@ -95,6 +95,10 @@ SELECT v FROM t3 PREWHERE arrayExists(v -> tuple(t3.v != 0, v = 7).2, [toNullabl
 SELECT 'nullable argument, nested lambda: PREWHERE';
 SELECT v FROM t3 PREWHERE arrayExists(y -> arrayExists(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))]), [1]) ORDER BY v;
 
+-- A nested lambda planned beside the collision must not change how the outer binding resolves.
+SELECT 'nullable argument, outer binder with a nested lambda: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(v -> (t3.v != 0) AND (v = 7) AND arrayExists(x -> plus(x, 2) > 0, [toUInt8(0)]), [toNullable(toUInt64(7))]) ORDER BY v;
+
 -- An unread argument must not be captured: a retained INPUT would change the capture arity.
 SELECT 'unread first argument: PREWHERE';
 SELECT v FROM t3 PREWHERE arrayExists((a, b) -> b = 7, [1], [toNullable(toUInt64(7))]) ORDER BY v;

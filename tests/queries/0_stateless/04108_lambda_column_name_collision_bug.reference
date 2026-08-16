@@ -52,6 +52,9 @@ nullable argument, tuple body: PREWHERE
 nullable argument, nested lambda: PREWHERE
 10
 20
+nullable argument, outer binder with a nested lambda: PREWHERE
+10
+20
 unread first argument: PREWHERE
 10
 20
