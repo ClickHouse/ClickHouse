@@ -205,32 +205,33 @@ avro::GenericDatum convertToAvro(const Field & field, const DataTypePtr & type)
 /// manifest entry's `partition` Avro record.
 void writePartitionRecord(
     avro::GenericRecord & partition_record,
-    const std::vector<String> & partition_columns,
+    const Poco::JSON::Array::Ptr & partition_spec_fields,
     const std::vector<Field> & partition_values,
     const DataTypes & partition_types)
 {
-    for (size_t i = 0; i < partition_columns.size(); ++i)
+    for (size_t i = 0; i < partition_spec_fields->size(); ++i)
     {
+        const auto field_name = partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_name);
         const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
         const bool is_nullable_partition = partition_types[i]->isNullable();
 
         if (!is_nullable_partition && is_null_value)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Got NULL partition value for non-nullable partition column {}", partition_columns[i]);
+                ErrorCodes::BAD_ARGUMENTS, "Got NULL partition value for non-nullable partition field {}", field_name);
 
         if (!is_nullable_partition)
         {
-            partition_record.field(partition_columns[i]) = convertToAvro(partition_values[i], partition_types[i]);
+            partition_record.field(field_name) = convertToAvro(partition_values[i], partition_types[i]);
             continue;
         }
 
         /// Nullable partition columns are Avro `["null", T]` unions: NULL is branch 0, a value is branch 1.
         size_t field_index = 0;
-        if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+        if (!partition_record.schema()->nameIndex(field_name, field_index))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Partition field {} not found in manifest schema",
-                partition_columns[i]);
+                field_name);
 
         const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
 
@@ -244,7 +245,7 @@ void writePartitionRecord(
             union_field.selectBranch(1);
             union_field.datum() = convertToAvro(partition_values[i], partition_types[i]);
         }
-        partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
+        partition_record.field(field_name) = avro::GenericDatum(union_schema, union_field);
     }
 }
 
@@ -407,16 +408,17 @@ static void extendSchemaForPartitions(
     }
 
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
-    for (size_t i = 0; i < partition_columns.size(); ++i)
+    for (size_t i = 0; i < partition_spec_fields->size(); ++i)
     {
+        const auto spec_field = partition_spec_fields->getObject(static_cast<UInt32>(i));
         Int32 field_id = spec_has_all_ids
-            ? partition_spec_fields->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_field_id)
+            ? spec_field->getValue<Int32>(Iceberg::f_field_id)
             : static_cast<Int32>(1000 + i);
 
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, field_id);
-        field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+        field->set(Iceberg::f_name, spec_field->getValue<String>(Iceberg::f_name));
+        field->set(Iceberg::f_type, getAvroType(partition_types.at(i)));
         partition_fields->add(field);
     }
 
@@ -522,7 +524,8 @@ void generateManifestFile(
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
-    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec->getArray(Iceberg::f_fields));
+    auto partition_spec_fields = partition_spec->getArray(Iceberg::f_fields);
+    extendSchemaForPartitions(schema_representation, partition_columns, partition_types, partition_spec_fields);
     auto schema = avro::compileJsonSchemaFromString(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
@@ -655,7 +658,7 @@ void generateManifestFile(
         }
 
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
-        writePartitionRecord(partition_record, partition_columns, partition_values, partition_types);
+        writePartitionRecord(partition_record, partition_spec_fields, partition_values, partition_types);
 
         writer.write(manifest_datum);
     }
