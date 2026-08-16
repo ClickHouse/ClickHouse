@@ -64,11 +64,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int QUERY_WAS_CANCELLED;
+}
+
+ReadInterruptedException::ReadInterruptedException(std::exception_ptr original_exception_)
+    : Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The HTTP read was interrupted by cancellation")
+    , original_exception(std::move(original_exception_))
+{
 }
 
 namespace FailPoints
 {
     extern const char http_read_buffer_pause_before_metadata_fallback[];
+    extern const char storage_url_pause_before_retry_attempt[];
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -333,6 +341,16 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
         String error_message;
 
+        /// `waitBeforeRetry` cannot protect the interval after it returns and before this attempt
+        /// starts. Do not issue another request after cancellation in that interval.
+        if (attempt > 1)
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
+            CurrentThread::checkIfNotCancelled();
+            if (isReadCancelled())
+                throw ReadInterruptedException(exception);
+        }
+
         try
         {
             callable();
@@ -402,7 +420,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// with, which it must not discard.
             CurrentThread::checkIfNotCancelled();
             if (isReadCancelled())
-                cancellation->markReadInterrupted();
+                throw ReadInterruptedException(exception);
 
             std::rethrow_exception(exception);
         }
@@ -442,8 +460,6 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 /// StorageURLSource::generate.
                 /// Do not leave this loop silently: the callers rely on getting either their data or an
                 /// exception, and treat a normal return as a success.
-                cancellation->markReadInterrupted();
-
                 if (!mute_logging)
                     LOG_DEBUG(log,
                               "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "
@@ -452,7 +468,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                               attempt, read_settings.http_settings.max_tries,
                               error_message);
 
-                std::rethrow_exception(exception);
+                throw ReadInterruptedException(exception);
             }
         }
     }

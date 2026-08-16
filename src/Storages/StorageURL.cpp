@@ -583,19 +583,11 @@ Chunk StorageURLSource::generate()
                 break;
             }
         }
-        catch (...)
+        catch (const ReadInterruptedException &)
         {
             /// A window for the tests which arrange a cancellation upgrade - see below - to land
             /// between the throw and the checks here.
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_handling_interrupted_read_error);
-
-            /// Handle only the interruption of the read itself: the error of a request which was
-            /// abandoned because of the cancellation, see Cancellation::markReadInterrupted. An
-            /// error the cancellation has nothing to do with - for example, a parse error of the
-            /// data that had already been downloaded when it arrived - fails the query the same way
-            /// it would with no cancellation at all.
-            if (!cancellation->isReadInterrupted())
-                throw;
 
             /// The reason delivered to the source may understate a kill: the executor polls
             /// QueryStatus::checkTimeLimitSoft, which returns false for a killed query, and cancels
@@ -643,6 +635,12 @@ Chunk StorageURLSource::generate()
             if (reader)
                 reader->cancel();
             break;
+        }
+        catch (...)
+        {
+            /// A cancellation in one ParallelReadBuffer worker must not suppress an unrelated
+            /// parse or decompression error from another worker.
+            throw;
         }
 
         if (pulled)
@@ -807,8 +805,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         {
             if (cancellation->isCancelledSoftly())
             {
-                cancellation->markReadInterrupted();
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
+                throw ReadInterruptedException();
             }
 
             return true;
@@ -880,8 +877,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             /// makes it the error the read is interrupted with.
             if (cancellation && cancellation->isCancelled())
             {
-                cancellation->markReadInterrupted();
-                throw;
+                throw ReadInterruptedException(std::current_exception());
             }
 
             if (first_exception_message.empty())

@@ -31,6 +31,17 @@
 namespace DB
 {
 
+/// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
+/// This marker belongs to the request, not to every reader sharing its Cancellation.
+class ReadInterruptedException final : public Exception
+{
+public:
+    explicit ReadInterruptedException(std::exception_ptr original_exception_ = nullptr);
+
+private:
+    std::exception_ptr original_exception;
+};
+
 class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
     friend class BuilderRWBufferFromHTTP;
@@ -101,33 +112,11 @@ public:
             return cancelled_softly;
         }
 
-        /// Remembers that the error being reported to the owner of this flag is the interruption
-        /// of the cancelled read: because of the cancellation, the code below stopped retrying a
-        /// failed request or stopped choosing the URI to read from, and the error it has at hand
-        /// is reported in place of the data. The owner tells such errors apart from the failures
-        /// the cancellation has nothing to do with - for example, a parse error of the data that
-        /// had already been downloaded when the cancellation arrived - which must fail the query
-        /// even when the cancellation is soft, see StorageURLSource::generate.
-        void markReadInterrupted() noexcept
-        {
-            std::lock_guard lock(mutex);
-            read_interrupted = true;
-        }
-
-        /// Whether an error reported after the cancellation is the interruption of the read, see
-        /// markReadInterrupted.
-        bool isReadInterrupted()
-        {
-            std::lock_guard lock(mutex);
-            return read_interrupted;
-        }
-
     private:
         std::mutex mutex;
         std::condition_variable changed;
         bool cancelled = false;
         bool cancelled_softly = false;
-        bool read_interrupted = false;
     };
 
     using CancellationPtr = std::shared_ptr<Cancellation>;
