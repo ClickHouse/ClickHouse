@@ -2708,6 +2708,12 @@ struct Transformer
                             const Int64 seconds = value / scale_multiplier;
                             if constexpr (std::is_same_v<ToType, DataTypeTime>)
                                 is_valid_input = seconds >= -MAX_TIME_TIMESTAMP && seconds <= MAX_TIME_TIMESTAMP;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate>)
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL)
+                                    && seconds % DATE_SECONDS_PER_DAY == 0;
+                            else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                                is_valid_input = seconds >= static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM) * DATE_SECONDS_PER_DAY
+                                    && seconds <= MAX_DATE32_TIMESTAMP && seconds % DATE_SECONDS_PER_DAY == 0;
                             else
                                 is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
                         }

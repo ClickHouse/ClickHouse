@@ -2283,6 +2283,22 @@ struct ConvertImpl
                 arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeDate>)
+        {
+            using DateTransform = TransformTime64<ToDateImpl<date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTransform(from_scale));
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            using DateTransform = TransformTime64<ToDate32Impl>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTransform(from_scale));
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime64>)
         {
             using ToFieldType = typename ToDataType::FieldType;
@@ -2484,18 +2500,34 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
+            const auto can_convert_exactly = [&](const auto & value)
+            {
+                if (col_from->getScale() <= col_to->getScale())
+                    return true;
+
+                const auto divisor = DecimalUtils::scaleMultiplier<Time64::NativeType>(col_from->getScale() - col_to->getScale());
+                return value.value % divisor == 0;
+            };
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
                     ToFieldType result;
-                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    if (can_convert_exactly(vec_from[i]) && tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                         vec_to[i] = result;
                     else
                     {
                         vec_to[i] = static_cast<ToFieldType>(0);
                         (*vec_null_map_to)[i] = true;
                     }
+                }
+                else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                {
+                    ToFieldType result;
+                    if (!can_convert_exactly(vec_from[i]) || !tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
+                    vec_to[i] = result;
                 }
                 else
                 {
