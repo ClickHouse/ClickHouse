@@ -23,19 +23,13 @@ CREATE TABLE dist_nc_unknown (n UInt64)
 CREATE TABLE dist_nc_unknown_single (n UInt64)
     ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist)); -- { serverError BAD_ARGUMENTS }
 
--- Naming the database explicitly makes the target well defined without resolving the collection, so it
--- is accepted (and the literal override is persisted as is).
+-- A database override no longer permits an unresolvable named collection: validation must resolve the
+-- collection to make the persistent target safe to use.
 CREATE TABLE dist_nc_unknown_with_database (n UInt64)
-    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, database = 'bind_db', table = 'bind_src'));
-SHOW CREATE TABLE dist_nc_unknown_with_database;
+    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, database = 'bind_db', table = 'bind_src')); -- { serverError BAD_ARGUMENTS }
 -- A `db = ...` override names the same key.
 CREATE TABLE dist_nc_unknown_with_db (n UInt64)
-    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, db = 'bind_db', table = 'bind_src'));
-SHOW CREATE TABLE dist_nc_unknown_with_db;
--- Loading such a definition back from the metadata does not re-check anything.
-DETACH TABLE dist_nc_unknown_with_database;
-ATTACH TABLE dist_nc_unknown_with_database;
-SHOW CREATE TABLE dist_nc_unknown_with_database;
+    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, db = 'bind_db', table = 'bind_src')); -- { serverError BAD_ARGUMENTS }
 
 -- A single identifier that names a configured cluster is not the named-collection form: the target is
 -- then the fixed `system.one` placeholder, which does not depend on the current database.
@@ -57,6 +51,4 @@ SELECT sum(n) FROM dist_nc_local;
 
 DROP TABLE dist_nc_local;
 DROP TABLE bind_src;
-DROP TABLE dist_nc_unknown_with_db;
-DROP TABLE dist_nc_unknown_with_database;
 DROP NAMED COLLECTION nc_04837_local;
