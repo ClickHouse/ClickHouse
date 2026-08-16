@@ -675,6 +675,32 @@ static void splitAndModifyMutationCommands(
             }
         }
 
+        /// The column list belongs to the part, so a column recorded in it must carry a type that
+        /// matches the granules of every index on the part that reads it. An index the part already
+        /// holds files for keeps its granules by hardlink, so a column it reads must stay absent.
+        if (!extra_columns_for_indices.empty())
+        {
+            NameSet indices_being_dropped;
+            for (const auto & command : commands)
+                if (command.type == MutationCommand::Type::DROP_INDEX)
+                    indices_being_dropped.insert(command.column_name);
+
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                if (indices_being_dropped.contains(index.name))
+                    continue;
+                if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+                    continue;
+
+                for (const auto & column : index.expression->getRequiredColumns())
+                {
+                    auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                    if (column_in_storage)
+                        extra_columns_for_indices.erase(*column_in_storage);
+                }
+            }
+        }
+
         for (const auto & column_name : extra_columns_for_indices)
         {
             if (mutated_columns.contains(column_name))

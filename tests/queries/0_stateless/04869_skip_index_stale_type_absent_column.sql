@@ -227,6 +227,40 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rematerialize
 SELECT count() FROM t_rematerialize_absent WHERE c = 150;
 SELECT count() FROM t_rematerialize_absent WHERE c = 150 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 28. a second index over the same absent column keeps the column absent';
+-- The column list is a property of the part, so every index on the part reads whatever type is
+-- recorded there. idx_old keeps its granules by hardlink across the MATERIALIZE INDEX of idx_new, so
+-- recording c would hand idx_old a matching type for granules built under the old one. Both indices
+-- stay refused: 26 is the shape where recording is safe, this is the shape where it is not.
+DROP TABLE IF EXISTS t_two_indices_absent;
+CREATE TABLE t_two_indices_absent (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
+    INDEX idx_old c TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_two_indices_absent SELECT number, '2000-01-01 00:00:00', toString(number * 3) FROM numbers(64);
+ALTER TABLE t_two_indices_absent MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active AND column = 'c';
+SELECT sum(secondary_indices_uncompressed_bytes) > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active;
+ALTER TABLE t_two_indices_absent MODIFY COLUMN c Nullable(UInt64);
+KILL MUTATION WHERE table = 't_two_indices_absent' AND database = currentDatabase() FORMAT Null;
+SYSTEM STOP MERGES t_two_indices_absent;
+-- Pre-condition: idx_old refuses, because c is absent and its granules are stale (case 11).
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150) WHERE explain ILIKE '%Granules: 1/16%';
+SYSTEM START MERGES t_two_indices_absent;
+ALTER TABLE t_two_indices_absent ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_two_indices_absent MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_two_indices_absent;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active AND column = 'c';
+-- ignore_data_skipping_indices is what isolates the two indices from each other.
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_two_indices_absent WHERE c = 150
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_two_indices_absent WHERE c = 150;
+SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_new';
+SELECT count() FROM t_two_indices_absent WHERE c = 150 SETTINGS ignore_data_skipping_indices = 'idx_old';
+
 DROP TABLE t_absent_col;
 DROP TABLE t_pre_add_index;
 DROP TABLE t_materialized_index;
@@ -238,3 +272,4 @@ DROP TABLE t_keep_qbit_sub;
 DROP TABLE t_materialize_absent;
 DROP TABLE t_materialize_absent_sub;
 DROP TABLE t_rematerialize_absent;
+DROP TABLE t_two_indices_absent;
