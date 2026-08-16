@@ -12,7 +12,11 @@ This page covers day-2 operation of the ClickHouse Connector on both install tar
 
 ### Kubernetes {#upgrades-kubernetes}
 
-Day-2 Kubernetes operations use the `helm` CLI on your workstation; only `init` carries a built-in Helm client, so install `helm` before your first upgrade. Upgrade the release from the public chart repository, reusing the values overlay that `init` staged:
+<Note>
+Day-2 Kubernetes operations use the `helm` CLI on your workstation. Only `init` carries a built-in Helm client, so install `helm` before your first upgrade.
+</Note>
+
+Upgrade the release from the public chart repository, reusing the values overlay that `init` staged:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -76,8 +80,30 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
 
 ## Credential rotation {#credential-rotation}
 
-- **API (HMAC) credentials**: request a fresh enrollment token from your ClickHouse account team, then re-run your original `init` command with `--enroll` and `--force`, keeping every target-specific flag from the first install (`--target-namespace`, `--values`, and any `--chart`, `--chart-repo`, or `--chart-version` mirror flags on Kubernetes), because `--force` restages the kept configuration. On a default install that is `clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --force` from the workstation, or `sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force` on the VM host. For unattended rotation where SQL provisioning needs a password, stdin carries both secrets in order, the token on the first line and the password on the second (the token read consumes exactly one line): `printf '%s\n' "$ENROLLMENT_TOKEN" "$CH_ADMIN_PASSWORD" | clicklink clctl init --enroll <endpoint> --force --ch-admin-password-stdin ...`.
-- **ClickHouse users**: re-provision the connector's read-only users per instance. On Kubernetes, from your workstation:
+### API (HMAC) credentials {#rotate-api-credentials}
+
+Request a fresh enrollment token from your ClickHouse account team, then re-run your original `init` command with `--enroll` and `--force`. Keep every target-specific flag from the first install (`--target-namespace`, `--values`, and any `--chart`, `--chart-repo`, or `--chart-version` mirror flags), because `--force` restages the kept configuration. On a default install:
+
+```bash
+# Kubernetes, from your workstation
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --force
+
+# Linux VM, on the host
+sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force
+```
+
+<Note>
+For unattended rotation where SQL provisioning needs a password, stdin carries both secrets in order: the token on the first line, the password on the second. The token read consumes exactly one line.
+
+```bash
+printf '%s\n' "$ENROLLMENT_TOKEN" "$CH_ADMIN_PASSWORD" | \
+  clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force --ch-admin-password-stdin
+```
+</Note>
+
+### ClickHouse users {#rotate-clickhouse-users}
+
+Re-provision the connector's read-only users per instance. On Kubernetes, from your workstation:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -100,7 +126,9 @@ sudo clicklink clctl troubleshoot access provision --provider local \
 
 For operator-managed instances, add `--ch-user-via cr` and the pod-selection flags to either form; see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli).
 
-- **Client certificate**: renewal is automatic (see [certificates](#certificates)). To supersede an unexpired certificate immediately, re-run `init` with `--force`.
+### Client certificate {#rotate-client-certificate}
+
+Renewal is automatic (see [certificates](#certificates)). To supersede an unexpired certificate immediately, re-run `init` with `--force`.
 
 ## Re-runs and recovery {#re-runs-and-recovery}
 

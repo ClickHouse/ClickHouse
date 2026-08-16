@@ -14,7 +14,13 @@ The connector has one configuration surface per install target.
 
 <Tabs>
 <Tab title="Kubernetes">
-`clicklink clctl init` stages a values overlay named `clicklink-values.yaml` in the working directory and deploys the `clicklink-connector` chart with it. The overlay is the durable record of your deployment: re-running `init` keeps it unless you pass `--force`, so your edits survive re-runs and recovery. Day-2 changes use the `helm` CLI on your workstation (only `init` itself carries a built-in Helm client, so install `helm` for the commands on this page and in [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations)). Edit the overlay, then apply it:
+`clicklink clctl init` stages a values overlay named `clicklink-values.yaml` in the working directory and deploys the `clicklink-connector` chart with it. The overlay is the durable record of your deployment: re-running `init` keeps it unless you pass `--force`, so your edits survive re-runs and recovery.
+
+<Note>
+Day-2 commands on this page and in [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations) use the `helm` CLI. Only `init` carries a built-in Helm client.
+</Note>
+
+Edit the overlay, then apply it:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -26,7 +32,16 @@ helm upgrade clicklink-connector clicklink-connector \
   -f clicklink-values.yaml
 ```
 
-The block reapplies your edited values at the chart version already installed, so a configuration change never doubles as an unplanned upgrade; moving to a new version is a deliberate step covered in [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations). On a mirrored install that uses a chart repository, swap `--repo` for your mirror. An install from a direct chart reference (`oci://`, a URL, or a local archive or directory, see [private mirrors](#private-mirrors)) has no repository to resolve against: rerun `helm upgrade clicklink-connector <same-chart-reference> --version "${CHART_VERSION}" -n "${CONNECTOR_NAMESPACE}" -f clicklink-values.yaml` with the reference you installed from.
+The block reapplies your edited values at the chart version already installed, so a configuration change never doubles as an unplanned upgrade; moving to a new version is a deliberate step covered in [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations). On a mirrored install that uses a chart repository, swap `--repo` for your mirror.
+
+An install from a direct chart reference (`oci://`, a URL, or a local archive or directory, see [private mirrors](#private-mirrors)) has no repository to resolve against. Rerun the upgrade with the reference you installed from:
+
+```bash
+helm upgrade clicklink-connector <same-chart-reference> \
+  --version "${CHART_VERSION}" \
+  -n "${CONNECTOR_NAMESPACE}" \
+  -f clicklink-values.yaml
+```
 </Tab>
 <Tab title="Linux VM">
 `clicklink clctl init` writes `/etc/clicklink/config.yaml`. Re-running `init` keeps an existing config unless you pass `--force`, so the file is safe to edit by hand. After editing, restart the daemons and verify:

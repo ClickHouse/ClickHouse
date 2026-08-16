@@ -15,7 +15,7 @@ This page takes you from an enrollment token to a healthy, verified connector. T
 For every install:
 
 - **Your connector endpoint and enrollment token**, provided by ClickHouse during onboarding (see Step 1).
-- **Egress on port 443** to `https://<subdomain>.<connector-domain>` and `https://<subdomain>.enroll.<connector-domain>`, plus `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time. This applies to the standard enrollment path; when any of these are unreachable, every artifact and step has an out-of-band alternative, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs).
+- **Egress on port 443** to `https://<subdomain>.<connector-domain>` and `https://<subdomain>.enroll.<connector-domain>`, plus `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time. When any of these are unreachable, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs).
 - **A reachable ClickHouse native listener** from where the connector runs: secure (9440) or plaintext (9000), auto-detected on Kubernetes.
 - **ClickHouse admin access for provisioning**: a passwordless `default` user, a password (prompted, or supplied with `--ch-admin-password-stdin`), or an operator-managed instance, where provisioning switches to CR injection and needs no password.
 - **cosign** wherever you download release artifacts, to verify signatures.
@@ -32,7 +32,11 @@ For Linux VM (systemd) installs:
 - **Any systemd Linux host**, amd64 or arm64. Linux builds run in FIPS mode.
 - **Root access** for the installer and for `init`.
 - **Free ports** 8080, 8082, and 8084 (health) and 9090, 9092, and 9094 (metrics), plus 8443 when the support-session gateway is enabled.
-- **Admin access to a Kubernetes API server** for provisioning: a kubeconfig on the host, or `--server` and `--ca-data`, or the prompts. Access bundles are anchored to Kubernetes ServiceAccounts on both targets, so every provisioning run needs this; the only opt-out is `--skip-provision`, which is stage-only: it skips ClickHouse user provisioning, and on a VM also the unit enable and verification, so it does not produce a running connector by itself.
+- **Admin access to a Kubernetes API server** for provisioning, supplied by a kubeconfig on the host, by `--server` and `--ca-data`, or at the prompts. Access bundles are anchored to Kubernetes ServiceAccounts on both targets.
+
+<Note>
+`--skip-provision` is the only way around the Kubernetes requirement, and it is stage-only: it skips ClickHouse user provisioning and, on a VM, the unit enable and verification, so it does not produce a running connector by itself.
+</Note>
 
 ## Install and enroll {#install-and-enroll}
 
