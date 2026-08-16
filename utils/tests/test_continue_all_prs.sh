@@ -43,6 +43,19 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
 grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
 
+# Load and exercise the sandbox-config helper directly. The mounted config
+# must not retain credentials embedded in remotes or URL-rewrite rules.
+source <(sed -n '/^prepare_triage_sandbox_config()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+triage_repo="$scratch/triage-repository"
+git init -q "$triage_repo"
+git -C "$triage_repo" remote add origin 'https://user:SECRET_TOKEN@example.com/ClickHouse/ClickHouse.git'
+git -C "$triage_repo" remote set-url --push origin 'https://user:SECRET_TOKEN@example.com/ClickHouse/ClickHouse.git'
+git -C "$triage_repo" config url.'https://user:SECRET_TOKEN@example.com/'.insteadOf 'https://example.com/'
+triage_config=$(REPO='ClickHouse/ClickHouse' prepare_triage_sandbox_config "$triage_repo" "$scratch/triage-git-config")
+[[ "$(git config --file "$triage_config" --get remote.origin.url)" == 'https://github.com/ClickHouse/ClickHouse.git' ]]
+! git config --file "$triage_config" --get-regexp '^remote\..*\.(url|pushurl)$' | grep -v '^remote\.origin\.url '
+! git config --file "$triage_config" --get-regexp '^url\..*\.(insteadof|pushinsteadof)$'
+
 PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=30 \
     CODEX_TEST_READY="$scratch/login-ready" "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key \
         --timeout 60 --once --skip-submodules --no-status --worktree-base "$worktree_base" --color never \

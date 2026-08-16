@@ -835,7 +835,7 @@ discard_untrusted_triage_changes()
 
 prepare_triage_sandbox_config()
 {
-    local wt="$1" config key
+    local wt="$1" config source_config key
 
     config="${2:-$wt/tmp/continue-all-prs/triage-git-config}"
 
@@ -844,7 +844,8 @@ prepare_triage_sandbox_config()
     # Bubblewrap namespace. Besides credential helpers, remove all HTTPS
     # extra headers and include files, which can carry authentication tokens.
     mkdir -p "${config%/*}" || return 1
-    cp "$(git -C "$wt" rev-parse --git-path config)" "$config" || return 1
+    source_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
+    cp "$source_config" "$config" || return 1
     git config --file "$config" --unset-all credential.helper 2>/dev/null || true
     while IFS= read -r key; do
         git config --file "$config" --unset-all "$key" || return 1
@@ -852,6 +853,17 @@ prepare_triage_sandbox_config()
     while IFS= read -r key; do
         git config --file "$config" --unset-all "$key" || return 1
     done < <(git config --file "$config" --name-only --get-regexp '^(include|includeif\..*)\.path$' || true)
+    # Remote URLs and URL rewrites can embed credentials too. Triage fetches
+    # pull-request heads by explicit public URL, and only needs `origin` for
+    # the public base repository, so discard every inherited remote endpoint
+    # and URL rewrite before restoring that one auth-free fetch URL.
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^remote\..*\.(url|pushurl)$' || true)
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' || true)
+    git config --file "$config" remote.origin.url "https://github.com/${REPO}.git" || return 1
     printf '%s\n' "$config"
 }
 
@@ -867,7 +879,7 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home last_message
-    local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_codex_home triage_home
+    local phase active_model active_wt system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_wt triage_sandbox_config triage_agent_home triage_codex_home triage_home triage_current_head
     local -a codex_env active_codex_env
     local u_i u_o u_ci u_co u_cost triage_cost coding_cost
     local -a model_args triage_git_args triage_sandbox_args
@@ -1103,7 +1115,10 @@ ${system_prompt}"
         if [[ "$phase" == "triage" ]] && grep -qE "^${HANDOFF_MARKER}[[:space:]]*$" "$log.last"; then
             handoff=$(cat "$log.last")
             if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
-                recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                if [[ "$triage_current_head" != "$triage_start_head" ]]; then
+                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                fi
             else
                 discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
             fi
@@ -1124,19 +1139,21 @@ ${system_prompt}"
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
             if [[ "$phase" != "triage" ]] || triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
                 if [[ "$phase" == "triage" ]]; then
+                    triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                    # An unchanged triage worktree did not perform the only
+                    # update triage is allowed to make. It is safe, but there
+                    # is nothing to recreate or push.
+                    [[ "$triage_current_head" != "$triage_start_head" ]] || break
                     recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
                     if [[ "$triage_pushable" != "1" ]]; then
-                        if [[ "$triage_start_head" != "$(git -C "$triage_wt" rev-parse HEAD)" ]]; then
-                            handoff=$(cat "$log.last")
-                            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
-                            rm -rf "$triage_codex_home"
-                            phase="coding"
-                            triage_sandbox_args=()
-                            phase_iter=0
-                            sid=""
-                            continue
-                        fi
-                        break
+                        handoff=$(cat "$log.last")
+                        echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
+                        rm -rf "$triage_codex_home"
+                        phase="coding"
+                        triage_sandbox_args=()
+                        phase_iter=0
+                        sid=""
+                        continue
                     fi
                 fi
                 if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
@@ -1170,7 +1187,10 @@ ${system_prompt}"
             if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
                 handoff=$(cat "$log.last")
                 if triage_state_is_safe "$triage_wt" "$triage_start_head" "$triage_base_head"; then
-                    recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                    triage_current_head=$(git -C "$triage_wt" rev-parse HEAD) || return 1
+                    if [[ "$triage_current_head" != "$triage_start_head" ]]; then
+                        recreate_validated_triage_merge "$wt" "$triage_start_head" "$triage_base_head" || return 1
+                    fi
                 else
                     discard_untrusted_triage_changes "$triage_wt" "$triage_start_head" "$log"
                 fi
