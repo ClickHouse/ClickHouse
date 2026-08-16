@@ -35,43 +35,9 @@ SELECT 'prewhere sqp=1', count() FROM rp_dist PREWHERE x > 1 SETTINGS serialize_
 
 SELECT 'distinct sqp=1', y FROM rp_dist GROUP BY y ORDER BY y SETTINGS serialize_query_plan = 1;
 
--- Every arm above asserts values the text-shipping path produces too, so none of them would notice
--- a read that stopped being shipped as a plan. The executing node logs this message only where it
--- built a runnable plan out of a received one, so its presence means that node, not the initiator,
--- ran a deserialized plan.
-SELECT 'route sqp=1', count() FROM rp_dist
-SETTINGS serialize_query_plan = 1, optimize_trivial_count_query = 0, log_comment = '04908_route_sqp1';
-SELECT 'route sqp=0', count() FROM rp_dist
-SETTINGS serialize_query_plan = 0, optimize_trivial_count_query = 0, log_comment = '04908_route_sqp0';
-SYSTEM FLUSH LOGS query_log, text_log;
--- The executing node runs against its own default database, so its rows are reached through the
--- initiator's row, which does carry this database.
-SELECT 'route shipped as plan', count() > 0 FROM system.text_log
-WHERE event_date >= yesterday() AND logger_name = 'TCPHandler' AND message = 'Received query plan'
-  AND query_id IN
-  (
-      SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND NOT is_initial_query AND initial_query_id IN
-      (
-          SELECT query_id FROM system.query_log
-          WHERE current_database = currentDatabase() AND log_comment = '04908_route_sqp1'
-            AND type = 'QueryFinish' AND is_initial_query
-      )
-  )
-SETTINGS max_rows_to_read = 0;
-SELECT 'route shipped as text', count() > 0 FROM system.text_log
-WHERE event_date >= yesterday() AND logger_name = 'TCPHandler' AND message = 'Received query plan'
-  AND query_id IN
-  (
-      SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND NOT is_initial_query AND initial_query_id IN
-      (
-          SELECT query_id FROM system.query_log
-          WHERE current_database = currentDatabase() AND log_comment = '04908_route_sqp0'
-            AND type = 'QueryFinish' AND is_initial_query
-      )
-  )
-SETTINGS max_rows_to_read = 0;
+-- Whether these reads really were shipped as a serialized plan, rather than silently falling back
+-- to query text, is asserted in 04909_row_policy_serialized_plan_route.sh: it needs a retry loop
+-- around the executing node's log row, which this file cannot express.
 
 -- A policy on the Distributed table itself cannot be pushed into a remote read: still refused.
 DROP ROW POLICY IF EXISTS rp_dist_policy ON rp_dist;
