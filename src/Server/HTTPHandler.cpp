@@ -609,12 +609,16 @@ void HTTPHandler::processQuery(
         /// Compare the resolved `CompressionMethod`, not the raw strings: `chooseCompressionMethod`
         /// treats `gzip`/`gz`, `zstd`/`zst`, `lzma`/`xz`, `brotli`/`br` etc. as aliases, so
         /// `/hits.CSV.gz?compression=gzip` must not be rejected as a conflict.
-        if (!current_compression.empty()
-            && chooseCompressionMethod({}, current_compression) != chooseCompressionMethod({}, path_info.compression))
+        const CompressionMethod request_compression_method = chooseCompressionMethod(path_info.filename_for_disposition, current_compression);
+        const CompressionMethod path_compression_method = chooseCompressionMethod({}, path_info.compression);
+        if (!current_compression.empty() && request_compression_method != path_compression_method)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Conflicting compression: '{}' in URL path vs '{}' in `compression` setting.",
                 path_info.compression, current_compression);
-        if (current_compression.empty())
+        /// Resolve `compression = 'auto'` against the path extension before storing it in the
+        /// context. The response writer does not otherwise have a filename to use as autodetection
+        /// context, so leaving `auto` there would produce an uncompressed response for `/t.CSV.gz`.
+        if (current_compression.empty() || Poco::icompare(current_compression, "auto") == 0)
             path_derived_changes.setSetting("compression", path_info.compression);
     }
     /// Apply format from path (if no explicit `format`/`output_format` override exists).
@@ -898,14 +902,13 @@ void HTTPHandler::processQuery(
         /// X-ClickHouse-Format) that other tests assert on.
         ///
         /// Skip the pre-check when the user supplied an explicit query: either via the `query` URL
-        /// parameter (`raw_query`) or via a `POST`/`PUT` body. In those cases the path table is at
+        /// parameter (`raw_query`) or via a body. In those cases the path table is at
         /// most a filename hint for `Content-Disposition`, or the source for
         /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
         /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
         /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
-        bool request_has_body = (request.getMethod() == HTTPRequest::HTTP_POST
-                                 || request.getMethod() == HTTPRequest::HTTP_PUT)
-                              && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
+        bool request_has_body = feeds_request_body_to_query
+            && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
         bool table_name_is_simple = !path_info.table.contains('.');
         if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)

@@ -123,6 +123,10 @@
 ===== compression setting =====
 -- compression=gz on /?query (decompressed):
 1
+-- compression=auto agrees with the path .gz suffix (decompressed):
+1,"one"
+2,"two"
+3,"three"
 ===== Content-Disposition: attachment for binary/compressed =====
 -- /hits.Native (binary):
 Content-Disposition: attachment; filename="hits.Native"
@@ -140,6 +144,8 @@ Content-Disposition: attachment; filename="result.TabSeparated.gz"
 -- /hits.csv?query=SELECT+a+(no FROM, format from path)
 1
 2
+3
+-- GET body query does not pre-check the path table:
 3
 ===== compose: path-table + URL filters + order =====
 -- /hits?filter=a>1&order=-a

@@ -14,6 +14,7 @@ DB="${CLICKHOUSE_DATABASE}"
 # names do not collide across parallel or flaky-check runs.
 HITS_GZ="${CLICKHOUSE_TMP}/04245_hits.csv.gz"
 COMPRESS_GZ="${CLICKHOUSE_TMP}/04245_compress.gz"
+AUTO_GZ="${CLICKHOUSE_TMP}/04245_auto.gz"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.hits (a UInt32, b String) ENGINE=Memory"
@@ -128,6 +129,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DB}.inserted"
 echo "===== compression setting ====="
 echo "-- compression=gz on /?query (decompressed):"
 http_get -o "${COMPRESS_GZ}" "${BASE_URL}/?query=SELECT+1&compression=gz" && gzip -dc "${COMPRESS_GZ}"
+echo "-- compression=auto agrees with the path .gz suffix (decompressed):"
+http_get -o "${AUTO_GZ}" "${BASE_URL}/${DB}/hits.CSV.gz?compression=auto" && gzip -dc "${AUTO_GZ}"
 
 echo "===== Content-Disposition: attachment for binary/compressed ====="
 echo "-- /hits.Native (binary):"
@@ -145,6 +148,8 @@ echo "-- /hits?query=SELECT+a+(no FROM)"
 http_get "${BASE_URL}/${DB}/hits?query=SELECT+a"
 echo "-- /hits.csv?query=SELECT+a+(no FROM, format from path)"
 http_get "${BASE_URL}/${DB}/hits.CSV?query=SELECT+a"
+echo "-- GET body query does not pre-check the path table:"
+http_get -X GET --data-binary "SELECT count() FROM ${DB}.hits" "${BASE_URL}/${DB}/not_a_table"
 
 echo "===== compose: path-table + URL filters + order ====="
 echo "-- /hits?filter=a>1&order=-a"
@@ -180,4 +185,4 @@ http_get "${BASE_URL}/api/v1?query=SELECT+1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"
 
-rm -f "${HITS_GZ}" "${COMPRESS_GZ}"
+rm -f "${HITS_GZ}" "${COMPRESS_GZ}" "${AUTO_GZ}"
