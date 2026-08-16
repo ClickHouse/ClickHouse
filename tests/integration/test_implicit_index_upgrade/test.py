@@ -248,3 +248,49 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
     node.query("DROP TABLE test_alter_replay SYNC;")
     node2.query("DROP TABLE test_alter_replay SYNC;")
     node.restart_with_original_version()
+
+
+def test_implicit_index_upgrade_disable_auto_minmax(started_cluster):
+    """A setting change must clean old implicit-index text from Keeper metadata.
+
+    A 25.10 replica serialized implicit minmax indexes. After upgrading, disabling the
+    corresponding setting removes them locally; a new replica with that setting disabled must
+    still be able to join.
+    """
+    node = started_cluster.instances["node"]
+    node2 = started_cluster.instances["node2"]
+
+    node.query("DROP TABLE IF EXISTS test_disable_auto_minmax SYNC;")
+    node2.query("DROP TABLE IF EXISTS test_disable_auto_minmax SYNC;")
+    node.query(
+        """
+        CREATE TABLE test_disable_auto_minmax (key UInt64, value Int32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_disable_auto_minmax', 'r1')
+        ORDER BY key
+        SETTINGS add_minmax_index_for_numeric_columns = 1;
+        """
+    )
+    assert "auto_minmax_index_value" in node.query(
+        "SELECT name FROM system.data_skipping_indices WHERE table = 'test_disable_auto_minmax';"
+    )
+
+    node.restart_with_latest_version()
+    wait_for_active_replica(node, "test_disable_auto_minmax")
+    node.query(
+        "ALTER TABLE test_disable_auto_minmax "
+        "MODIFY SETTING add_minmax_index_for_numeric_columns = 0;"
+    )
+
+    node2.query(
+        """
+        CREATE TABLE test_disable_auto_minmax (key UInt64, value Int32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_disable_auto_minmax', 'r2')
+        ORDER BY key
+        SETTINGS add_minmax_index_for_numeric_columns = 0;
+        """
+    )
+    wait_for_active_replica(node2, "test_disable_auto_minmax")
+
+    node.query("DROP TABLE test_disable_auto_minmax SYNC;")
+    node2.query("DROP TABLE test_disable_auto_minmax SYNC;")
+    node.restart_with_original_version()
