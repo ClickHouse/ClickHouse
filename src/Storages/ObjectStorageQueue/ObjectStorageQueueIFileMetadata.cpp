@@ -155,6 +155,9 @@ time_t ObjectStorageQueueIFileMetadata::FileStatus::processingByAnotherProcessor
 
 bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(const String & observer, time_t ttl_sec) const
 {
+    if (!isProcessingByAnotherProcessor())
+        return false;
+
     const time_t since = processingByAnotherProcessorSince(observer);
     if (!since)
         return true;

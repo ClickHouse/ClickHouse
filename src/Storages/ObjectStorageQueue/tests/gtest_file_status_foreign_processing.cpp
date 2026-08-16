@@ -138,6 +138,38 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingCacheDeadlineIsPerTable)
     expectForeignProcessingCacheDeadlineIsPerTable<FileStatus>();
 }
 
+/// The pre-Keeper state gate must keep a locally owned `Processing` state terminal.
+/// A foreign state without an observation for the asking table, on the other hand,
+/// must be retried so that the table can check whether the foreign node was released.
+template <typename FS>
+void expectOnlyForeignProcessingIsRetryable()
+{
+    if constexpr (requires(FS & status, const String & observer)
+    {
+        status.onProcessing();
+        status.onProcessingByAnotherProcessor(observer);
+        status.shouldRetryProcessing(observer, time_t{});
+    })
+    {
+        auto file_status = std::make_shared<FS>("data/file.csv");
+        const String observing_table = "default.observing_table";
+        const String other_table = "default.other_table";
+
+        file_status->onProcessing();
+        ASSERT_FALSE(file_status->shouldRetryProcessing(observing_table, time_t{}));
+
+        file_status->onProcessingByAnotherProcessor(observing_table);
+        ASSERT_TRUE(file_status->shouldRetryProcessing(other_table, 3600));
+    }
+    else
+        FAIL() << "FileStatus does not distinguish local and foreign processing states";
+}
+
+TEST(ObjectStorageQueueFileStatus, OnlyForeignProcessingIsRetryable)
+{
+    expectOnlyForeignProcessingIsRetryable<FileStatus>();
+}
+
 namespace
 {
 
