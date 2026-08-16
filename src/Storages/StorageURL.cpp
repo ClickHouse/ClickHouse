@@ -410,6 +410,13 @@ StorageURLSource::StorageURLSource(
     {
         std::vector<String> current_uri_options;
         std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
+        auto stop_if_query_cancelled = [&]
+        {
+            /// QueryStatus is marked before its cancellation is delivered to the processors, so
+            /// check it as well as the source-local cancellation before starting new I/O.
+            CurrentThread::checkIfNotCancelled();
+            return cancellation->isCancelled();
+        };
         do
         {
             current_uri_options = (*uri_iterator)();
@@ -440,7 +447,7 @@ StorageURLSource::StorageURLSource(
             /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
             /// arrived after choosing the buffer start that request.
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
-            if (cancellation->isCancelled())
+            if (stop_if_query_cancelled())
                 return false;
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
@@ -452,7 +459,7 @@ StorageURLSource::StorageURLSource(
         /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
         /// the cancellation converge here: after a soft one the query succeeds with what it has
         /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
-        if (cancellation->isCancelled())
+        if (stop_if_query_cancelled())
             return false;
 
         curr_uri = uri_and_buf.first;
@@ -465,7 +472,7 @@ StorageURLSource::StorageURLSource(
         /// request has failed with a network error, the probe of the modification time has nothing
         /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
         /// that has arrived in between must prevent the same way the check above prevents the first one.
-        if (cancellation->isCancelled())
+        if (stop_if_query_cancelled())
             return false;
 
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
@@ -493,7 +500,7 @@ StorageURLSource::StorageURLSource(
             /// `getInput` may construct a `ParallelReadBuffer`, whose workers start range GETs
             /// immediately. Do not construct it after a cancellation.
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_input_format_initialization);
-            if (cancellation->isCancelled())
+            if (stop_if_query_cancelled())
                 return false;
 
             // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
@@ -565,6 +572,7 @@ Chunk StorageURLSource::generate()
             /// make - a failover probe, or the HEAD request for the file metadata whose absence is not
             /// an error - so a cancellation which interrupted one of them can come out of initialize
             /// as a normal completion. Do not pull a chunk no one needs.
+            CurrentThread::checkIfNotCancelled();
             if (isCancelled())
             {
                 reader->cancel();
@@ -576,6 +584,7 @@ Chunk StorageURLSource::generate()
             /// `pull` may complete after the source was cancelled. Do not return this chunk:
             /// `ISource::prepare` pushes the result before it notices cancellation.
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_after_pull);
+            CurrentThread::checkIfNotCancelled();
             if (isCancelled())
             {
                 reader->cancel();
