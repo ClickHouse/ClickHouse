@@ -69,6 +69,8 @@ namespace Setting
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
@@ -129,6 +131,12 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             return true;
     }
+}
+
+bool isSequentialQuorumInsert(const Settings & settings)
+{
+    return !settings[Setting::insert_quorum_parallel]
+        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
 }
 
 }
@@ -615,7 +623,16 @@ void DistributedSink::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+            {
                 pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+
+                /// Every local job builds an independent nested INSERT pipeline. For a non-parallel
+                /// quorum insert, starting two such pipelines concurrently into the same local
+                /// ReplicatedMergeTree table violates its single-in-flight-part contract. Wait for a
+                /// local job before scheduling the next one; remote jobs remain parallel.
+                if (job.is_local_job && isSequentialQuorumInsert(settings))
+                    pool->wait();
+            }
     }
     catch (...)
     {
