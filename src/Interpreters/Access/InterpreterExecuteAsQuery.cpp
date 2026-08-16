@@ -58,6 +58,11 @@ namespace
             context->getAuthenticationGrants(),
             context->getAuthenticationValidUntil());
 
+        /// `setUser` replaces the current database with the target user's default database, but
+        /// the wrapped statement belongs to the caller's query and must keep its database scope.
+        if (!database.empty() && database != new_context->getCurrentDatabase())
+            new_context->setCurrentDatabase(database);
+
         /// We need to update the client info to make currentUser() return `target_user_name`.
         new_context->setCurrentUserName(target_user_name);
         new_context->setInitialUserName(target_user_name);
