@@ -168,7 +168,7 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         if (array_arguments)
         {
