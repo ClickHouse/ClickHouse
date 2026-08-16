@@ -2303,7 +2303,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
+    auto full_data_path = pathFromString(getContext()->getPath()) / pathFromString(data_path);
 
     if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
     {
@@ -2317,7 +2317,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = pathFromString(getContext()->getPath()) / "trash" / pathFromString(data_path) / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());

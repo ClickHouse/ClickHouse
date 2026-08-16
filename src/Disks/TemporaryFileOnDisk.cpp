@@ -50,7 +50,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
 
 String TemporaryFileOnDisk::getAbsolutePath() const
 {
-    return pathToGenericString(std::filesystem::path(disk->getPath()) / relative_path);
+    return pathToGenericString(pathFromString(disk->getPath()) / pathFromString(relative_path));
 }
 
 TemporaryFileOnDisk::~TemporaryFileOnDisk()

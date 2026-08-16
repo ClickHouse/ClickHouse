@@ -300,7 +300,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     std::string result = pathToGenericString(
         include_connection_info
         ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path);
+        : pathFromString(configuration.getNamespace()) / pathFromString(path));
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -409,7 +409,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 for (const auto & path : paths.value())
                 {
-                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
+                    const auto relative_path = pathToGenericString(fs::relative(pathFromString(path), pathFromString(configuration->getNamespace())));
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
                     if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
@@ -488,7 +488,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(pathToGenericString(fs::path(configuration->getNamespace()) / key));
+                paths.push_back(pathToGenericString(pathFromString(configuration->getNamespace()) / pathFromString(key)));
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -571,7 +571,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto reading_path = configuration->getPathForRead().path;
 
             if (!full_path.starts_with(reading_path))
-                full_path = pathToGenericString(fs::path(reading_path) / object_info->getPath());
+                full_path = pathToGenericString(pathFromString(reading_path) / pathFromString(object_info->getPath()));
 
             auto object_metadata = object_info->getObjectMetadata();
 

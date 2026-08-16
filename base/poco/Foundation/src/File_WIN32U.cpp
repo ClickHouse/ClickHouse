@@ -172,7 +172,7 @@ bool FileImpl::isLinkImpl() const
 	DWORD attr = GetFileAttributesW(_upath.c_str());
 	if (attr == INVALID_FILE_ATTRIBUTES)
 		handleLastErrorImpl(_path);
-	return (attr & FILE_ATTRIBUTE_DIRECTORY) == 0 && (attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+	return (attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 
 
@@ -262,7 +262,7 @@ void FileImpl::setSizeImpl(FileSizeImpl size)
 	FileHandle fh(_path, _upath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING);
 	LARGE_INTEGER li;
 	li.QuadPart = size;
-	if (SetFilePointer(fh.get(), li.LowPart, &li.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+	if (SetFilePointerEx(fh.get(), li, nullptr, FILE_BEGIN) == 0)
 		handleLastErrorImpl(_path);
 	if (SetEndOfFile(fh.get()) == 0)
 		handleLastErrorImpl(_path);

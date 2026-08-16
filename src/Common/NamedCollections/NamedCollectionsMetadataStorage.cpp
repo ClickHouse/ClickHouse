@@ -83,12 +83,12 @@ public:
 class NamedCollectionsMetadataStorage::LocalStorage : public INamedCollectionsStorage, protected WithContext
 {
 protected:
-    std::string root_path;
+    fs::path root_path;
 
 public:
     LocalStorage(ContextPtr context_, const std::string & path_)
         : WithContext(context_)
-        , root_path(path_)
+        , root_path(pathFromString(path_))
     {
         if (fs::exists(root_path))
             cleanup();
@@ -116,7 +116,7 @@ public:
                 LOG_WARNING(
                     getLogger("LocalStorage"),
                     "Unexpected file {} in named collections directory",
-                    current_path.filename().string());
+                    pathToString(current_path.filename()));
             }
         }
         return elements;
@@ -142,7 +142,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
@@ -154,7 +154,7 @@ public:
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+        WriteBufferFromFile out(pathToString(tmp_path), write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(write_data, out);
 
         out.next();
@@ -186,13 +186,13 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    fs::path getPath(const std::string & file_name) const
     {
-        const auto file_name_as_path = fs::path(file_name);
+        const auto file_name_as_path = pathFromString(file_name);
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
-        return pathToGenericString(fs::path(root_path) / file_name_as_path);
+        return root_path / file_name_as_path;
     }
 
 private:
@@ -208,7 +208,7 @@ private:
                 files_to_remove.push_back(pathToGenericString(current_path));
         }
         for (const auto & file : files_to_remove)
-            fs::remove(file);
+            fs::remove(pathFromString(file));
     }
 };
 
