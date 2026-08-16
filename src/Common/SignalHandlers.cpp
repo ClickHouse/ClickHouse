@@ -439,9 +439,12 @@ void SignalListener::run()
 
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
-    char buf[signal_pipe_buf_size];
+    /// Do not read past one signal ID. In particular, `StopThread` is only a request
+    /// to stop this listener: a handled signal written after it must remain in the
+    /// pipe for a listener started later.
+    char buf[sizeof(int)];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
-    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], sizeof(buf), buf);
 
     while (!in.eof())
     {
