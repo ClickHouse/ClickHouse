@@ -33,12 +33,19 @@ INSERT INTO volume_reducing_function_push_down VALUES
 -- ----------------------------------------------------------------------------
 
 -- This is the shape from https://github.com/ClickHouse/ClickHouse/issues/82378: the filter needs
--- `s` to evaluate its condition, but nothing above needs it, so `lengthUTF8(s)` is computed before
--- the filter and `s` is not copied by it.
-SELECT 'plan: filter reading the argument — pushdown applied';
+-- `s` to evaluate its condition, but nothing above needs it, so `length(s)` is computed before the
+-- filter and `s` is not copied by it. `lengthUTF8` is deliberately excluded here because it scans
+-- every input string, which can be slower than copying the strings surviving a selective filter.
+SELECT 'plan: filter reading the argument — cheap function pushed';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
-    SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
+    SELECT length(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
+SELECT 'plan: filter reading the argument — lengthUTF8 not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') = 0
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE like(s, 'x%')
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
 
 SELECT 'plan: filter — no pushdown when disabled';
@@ -170,14 +177,14 @@ SELECT
 (
     SELECT countIf(explain LIKE '%s String%')
     FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
-        SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
-        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_remove_unused_columns = 0)
+        SELECT length(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
+        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0)
 ) <
 (
     SELECT countIf(explain LIKE '%s String%')
     FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
-        SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
-        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_remove_unused_columns = 0)
+        SELECT length(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
+        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0)
 );
 
 -- ----------------------------------------------------------------------------

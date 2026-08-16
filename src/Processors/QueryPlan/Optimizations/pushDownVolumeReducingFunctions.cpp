@@ -1,6 +1,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -42,6 +43,18 @@ bool isSupportedArgumentType(const String & function_name, const DataTypePtr & t
         return isStringOrFixedString(type);
 
     return false;
+}
+
+/// A `Filter` evaluates the pushed function for every input row, whereas the original plan
+/// evaluates it only for rows which pass. Restrict this path to operations whose cost does not
+/// depend on the payload size. `lengthUTF8` scans every byte, and `empty` / `notEmpty` scan a
+/// `FixedString` to find a non-zero byte, so a selective predicate that also reads the argument
+/// can make either rewrite slower.
+bool isCheapToEvaluateBeforeFilter(const IFunctionBase & function, const DataTypePtr & type)
+{
+    const auto & function_name = function.getName();
+    return function_name == "length"
+        || ((function_name == "empty" || function_name == "notEmpty") && typeid_cast<const DataTypeString *>(type.get()));
 }
 
 /// Follow a chain of renames back to the column it started from.
@@ -493,6 +506,23 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         /// the wide column from rows that survive the filter.
         if (child_filter && !child_filter_inputs.contains(name_below))
             continue;
+
+        /// The filter-specific rewrite changes the number of rows on which the function is
+        /// evaluated. Do not use it for functions that scan the payload: saving copies of the
+        /// surviving strings cannot in general repay scanning every input string.
+        if (child_filter)
+        {
+            bool all_functions_are_cheap = true;
+            for (const auto * function : functions)
+                if (!isCheapToEvaluateBeforeFilter(*function->function_base, argument->result_type))
+                {
+                    all_functions_are_cheap = false;
+                    break;
+                }
+
+            if (!all_functions_are_cheap)
+                continue;
+        }
 
         /// Do not compute a scalar before a filter if its predicate already computes the same
         /// scalar from the same argument. The filter is kept intact by this rewrite, so pushing

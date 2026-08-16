@@ -1,4 +1,6 @@
-plan: filter reading the argument — pushdown applied
+plan: filter reading the argument — cheap function pushed
+1
+plan: filter reading the argument — lengthUTF8 not pushed
 1
 plan: filter — no pushdown when disabled
 0
