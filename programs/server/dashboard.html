@@ -928,7 +928,7 @@ function insertChart(i) {
     chart.addEventListener('mouseenter', e => { edit_buttons.style.display = 'block'; });
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
-    charts.appendChild(chart);
+    charts.insertBefore(chart, charts.children[i] || null);
     return {chart: chart, textarea: query_editor_textarea};
 }
 
@@ -1196,14 +1196,28 @@ function metricsEditorApplyChanges() {
     }
     queries.unshift(...new_charts);
     hideMetricsEditor();
-    regenerate();
+
+    /// Insert and draw only the new charts; the existing ones are not reloaded.
+    new_charts.forEach(q => findParamsInQuery(q.query, params));
+    buildParams();
+    plots.unshift(...new_charts.map(() => null));
+    for (let i = 0; i < new_charts.length; i++) {
+        insertChart(i);
+    }
+    resize();
     refreshCustomized(true);
     saveState();
-    drawAll();
-    const chart_divs = charts.querySelectorAll('.chart');
-    if (chart_divs[0]) {
-        chart_divs[0].scrollIntoView();
+
+    const url_params = getParamsForURL();
+    const chartsArray = charts.getElementsByClassName('chart');
+    for (let i = 0; i < new_charts.length; i++) {
+        draw(i, chartsArray[i], url_params, queries[i].query).catch((e) => {
+            if (e.name != 'AbortError') {
+                showError(e.message);
+            }
+        });
     }
+    chartsArray[0].scrollIntoView();
 }
 
 document.getElementById('add-metrics').addEventListener('click', e => {
