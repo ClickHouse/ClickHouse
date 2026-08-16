@@ -2,6 +2,7 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <bit>
 #include <Columns/ColumnFixedString.h>
@@ -13,6 +14,11 @@
 namespace DB
 {
 using Sizes = std::vector<size_t>;
+}
+
+namespace ProfileEvents
+{
+    extern const Event AggregationPrecomputedFixedKeyHashes;
 }
 
 namespace DB::ColumnsHashing
@@ -623,6 +629,7 @@ struct HashMethodKeysFixed
         precomputed_hashes.resize(rows);
         for (size_t i = 0; i < rows; ++i)
             precomputed_hashes[i] = data.hash(prepared_keys[i]);
+        ProfileEvents::increment(ProfileEvents::AggregationPrecomputedFixedKeyHashes, rows);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const

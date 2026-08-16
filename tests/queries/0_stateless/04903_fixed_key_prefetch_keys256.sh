@@ -15,8 +15,20 @@ query="
     ORDER BY k
     SETTINGS enable_software_prefetch_in_aggregation = 1"
 
-# The trace message is emitted by the selected aggregation method, unlike the
-# `EXPLAIN` key list, which reflects only the `GROUP BY` expression.
-$CLICKHOUSE_CLIENT --send_logs_level=trace -q "$query" 2>&1 \
-    | grep -oE 'Aggregation method: [a-z_0-9]+' | sort -u
+prefetch_query="
+    SELECT count()
+    FROM
+    (
+        SELECT toUInt256(number) AS k
+        FROM numbers(100000)
+    )
+    GROUP BY k
+    FORMAT Null
+    SETTINGS enable_software_prefetch_in_aggregation = 1"
+
+# This event is incremented only after `HashMethodKeysFixed` computes hashes
+# from its batch-packed `prepared_keys`, so it proves the `UInt256` path added
+# by this change rather than merely the pre-existing `keys256` method choice.
+$CLICKHOUSE_CLIENT --profile-events-delay-ms=-1 --print-profile-events -q "$prefetch_query" 2>&1 \
+    | grep -qE 'AggregationPrecomputedFixedKeyHashes: [1-9][0-9]*' && echo 1
 $CLICKHOUSE_CLIENT -q "$query"
