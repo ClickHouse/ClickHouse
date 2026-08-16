@@ -14,6 +14,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
@@ -44,6 +45,21 @@ static NameToIndexMap fillNamesPositions(const Names & names)
     }
 
     return names_positions;
+}
+
+/// Whether the condition reads only `__text_index_*` virtual columns, which the text-index reader
+/// fills from posting lists. A mixed condition (a virtual column plus a physical column) does not
+/// qualify: it still pays the I/O of its physical columns.
+static bool isTextIndexVirtualColumnsCondition(const NameSet & condition_table_columns)
+{
+    if (condition_table_columns.empty())
+        return false;
+
+    for (const auto & column : condition_table_columns)
+        if (!isTextIndexVirtualColumn(column))
+            return false;
+
+    return true;
 }
 
 /// Find minimal position of any of the column in primary key.
@@ -521,9 +537,20 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             else if (rejected_rows <= 0)
                 /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
                 cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+            else if (isTextIndexVirtualColumnsCondition(cond.table_columns))
+                /// Text-index virtual columns (`__text_index_*`) are filled by the index reader from posting
+                /// lists that are read for granule pruning anyway; evaluating them is a bitmap lookup per row,
+                /// with no column I/O. Their columns_size is 0 (they are not physical columns), so without this
+                /// branch they would take the selectivity fallback below and its row-count score would lose to
+                /// any byte-per-rejected-row score of a physical predicate. Their real marginal cost is ~0:
+                /// schedule them first.
+                cond.cost_with_selectivity = 0;
             else if (cond.columns_size == 0)
                 /// Compact parts don't track per-column compressed sizes: fall back to pure selectivity,
                 /// otherwise every condition collapses to cost 0 and keeps its original position.
+                /// This is also the deliberately pessimistic path for the other zero-size cases (table virtual
+                /// columns, columns not yet materialized after ALTER, subcolumns without size info): their
+                /// evaluation cost is unknown, so they must not be scheduled first.
                 cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
             else
                 cond.cost_with_selectivity = static_cast<double>(cond.columns_size) / rejected_rows;

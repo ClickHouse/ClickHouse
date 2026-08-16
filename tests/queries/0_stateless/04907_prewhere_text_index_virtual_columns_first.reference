@@ -1,0 +1,5 @@
+-- correctness: no row has both tokens
+0
+0
+-- reordering must not schedule the raw predicate before the index virtual columns
+1
