@@ -799,6 +799,43 @@ static void applyJSONSharedDataPathPoliciesForMutation(
     }
 }
 
+/// Not static: also called from MergeTask.cpp to apply merged JSON provenance types.
+StorageMetadataPtr rebuildMetadataWithColumnTypes(
+    const StorageMetadataPtr & base_metadata, const NamesAndTypesList & columns_with_new_types);
+
+StorageMetadataPtr rebuildMetadataWithColumnTypes(
+    const StorageMetadataPtr & base_metadata, const NamesAndTypesList & columns_with_new_types)
+{
+    std::shared_ptr<StorageInMemoryMetadata> new_metadata;
+    std::optional<ColumnsDescription> new_columns;
+    const auto & metadata_columns = base_metadata->getColumns();
+    for (const auto & column : columns_with_new_types)
+    {
+        const auto * existing = metadata_columns.tryGet(column.name);
+        if (!existing || existing->type->equals(*column.type))
+            continue;
+
+        if (!new_metadata)
+        {
+            new_metadata = std::make_shared<StorageInMemoryMetadata>(*base_metadata);
+            new_columns.emplace(new_metadata->getColumns());
+        }
+
+        new_columns->modify(column.name, [&](ColumnDescription & description)
+        {
+            description.type = column.type;
+            if (!description.statistics.empty())
+                description.statistics.data_type = column.type;
+        });
+    }
+
+    if (!new_metadata)
+        return base_metadata;
+
+    new_metadata->setColumns(std::move(*new_columns));
+    return new_metadata;
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -4102,34 +4139,12 @@ bool MutateTask::prepare()
     ctx->mutation_metadata_snapshot = ctx->metadata_snapshot;
     if (!(*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
     {
-        std::shared_ptr<StorageInMemoryMetadata> mutation_metadata;
-        std::optional<ColumnsDescription> mutation_columns;
+        NamesAndTypesList columns_with_provenance;
         for (const auto & storage_column : ctx->metadata_snapshot->getColumns().getAllPhysical())
-        {
-            DataTypePtr type_with_provenance = MutationHelpers::computeJSONProvenanceType(
-                storage_column.type, storage_column.name, ctx->source_part, patch_parts, alter_conversions, ctx->log);
+            columns_with_provenance.emplace_back(storage_column.name, MutationHelpers::computeJSONProvenanceType(
+                storage_column.type, storage_column.name, ctx->source_part, patch_parts, alter_conversions, ctx->log));
 
-            if (!type_with_provenance->equals(*storage_column.type))
-            {
-                if (!mutation_metadata)
-                {
-                    mutation_metadata = std::make_shared<StorageInMemoryMetadata>(*ctx->metadata_snapshot);
-                    mutation_columns.emplace(mutation_metadata->getColumns());
-                }
-
-                mutation_columns->modify(storage_column.name, [&](ColumnDescription & description)
-                {
-                    description.type = type_with_provenance;
-                    if (!description.statistics.empty())
-                        description.statistics.data_type = type_with_provenance;
-                });
-            }
-        }
-        if (mutation_metadata)
-        {
-            mutation_metadata->setColumns(std::move(*mutation_columns));
-            ctx->mutation_metadata_snapshot = std::move(mutation_metadata);
-        }
+        ctx->mutation_metadata_snapshot = MutationHelpers::rebuildMetadataWithColumnTypes(ctx->metadata_snapshot, columns_with_provenance);
     }
 
     if (!ctx->for_interpreter.empty())

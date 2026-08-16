@@ -466,7 +466,6 @@ private:
     UnorderedSetWithMemoryTracking<String, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> force_shared_data_paths;
 
     bool shouldForceSharedData(std::string_view path);
-    void copySharedDataPathMatcher(IColumn & to) const;
 };
 
 /// Rebinds every nested `ColumnObject` policy from the corresponding `DataTypeObject`. Used when a

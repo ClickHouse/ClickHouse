@@ -5,7 +5,7 @@ SET enable_json_type = 1;
 DROP TABLE IF EXISTS shared_stats_topk_04839;
 
 -- Statistics used to truncate shared_data_paths_statistics at MAX_SHARED_DATA_STATISTICS_SIZE
--- (10000) by first-encounter order, not frequency, so a late-arriving hot path could never be tracked. Reproduce with 10000 once-seen paths plus one path appearing 5000 times, after the map is full.
+-- (10000) by first-encounter order, not frequency; a late-arriving hot path could never be tracked.
 CREATE TABLE shared_stats_topk_04839
 (
     id UInt64,

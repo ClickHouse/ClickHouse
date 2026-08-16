@@ -1133,6 +1133,31 @@ DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
 /// below can still find the right physical column either way.
 /// Like IAST::collectIdentifierNames, but skips if()/multiIf() conditions and masks lambda formal
 /// parameters (matching RequiredSourceColumnsVisitor), so a bound name can't shadow a real column.
+static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names);
+
+/// Convenience overload for callers that don't need masking carried in from an outer scope.
+static IdentifierNameSet collectValueCarryingIdentifierNames(const IAST & node)
+{
+    IdentifierNameSet names;
+    std::unordered_set<String> masked_names;
+    collectValueCarryingIdentifierNames(node, names, masked_names);
+    return names;
+}
+
+/// If args[0] is `lambda((p1, ..., pn) -> body)` with n == args.size() - 1 params (the shape shared
+/// by arrayFold and the array-mapping higher-order functions), returns the params tuple and body.
+static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(const ASTs & args)
+{
+    const auto * lambda_arg = args[0]->as<ASTFunction>();
+    if (!lambda_arg || lambda_arg->name != "lambda" || !lambda_arg->arguments || lambda_arg->arguments->children.size() != 2)
+        return {nullptr, nullptr};
+    const auto * params_tuple = lambda_arg->arguments->children[0]->as<ASTFunction>();
+    if (!params_tuple || params_tuple->name != "tuple" || !params_tuple->arguments
+        || params_tuple->arguments->children.size() != args.size() - 1)
+        return {nullptr, nullptr};
+    return {params_tuple, lambda_arg->arguments->children[1].get()};
+}
+
 static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
 {
     if (const auto * identifier = node.as<ASTIdentifier>())
@@ -1201,19 +1226,12 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
         }
         if (function->name == "arrayFold" && args.size() >= 3)
         {
-            const auto * lambda_arg = args[0]->as<ASTFunction>();
-            const auto * lambda_params_tuple = (lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
-                && lambda_arg->arguments->children.size() == 2)
-                ? lambda_arg->arguments->children[0]->as<ASTFunction>()
-                : nullptr;
             /// arrayFold's params[0] is the accumulator, with no array of its own; seed can itself
             /// become the result (e.g. an empty array), so unlike the arrays it's always a donor.
-            if (lambda_params_tuple && lambda_params_tuple->name == "tuple" && lambda_params_tuple->arguments
-                && lambda_params_tuple->arguments->children.size() == args.size() - 1)
+            auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+            if (lambda_params_tuple)
             {
-                IdentifierNameSet body_names;
-                std::unordered_set<String> no_masking;
-                collectValueCarryingIdentifierNames(*lambda_arg->arguments->children[1], body_names, no_masking);
+                IdentifierNameSet body_names = collectValueCarryingIdentifierNames(*lambda_body);
 
                 const auto & params = lambda_params_tuple->arguments->children;
                 for (size_t i = 1; i < params.size(); ++i)
@@ -1230,17 +1248,10 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
         /// referenced in the body feed the output, not every array argument unconditionally.
         if (!args.empty() && !predicate_only_higher_order_functions.contains(function->name))
         {
-            const auto * lambda_arg = args[0]->as<ASTFunction>();
-            const auto * lambda_params_tuple = (lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
-                && lambda_arg->arguments->children.size() == 2)
-                ? lambda_arg->arguments->children[0]->as<ASTFunction>()
-                : nullptr;
-            if (lambda_params_tuple && lambda_params_tuple->name == "tuple" && lambda_params_tuple->arguments
-                && lambda_params_tuple->arguments->children.size() == args.size() - 1)
+            auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+            if (lambda_params_tuple)
             {
-                IdentifierNameSet body_names;
-                std::unordered_set<String> no_masking;
-                collectValueCarryingIdentifierNames(*lambda_arg->arguments->children[1], body_names, no_masking);
+                IdentifierNameSet body_names = collectValueCarryingIdentifierNames(*lambda_body);
 
                 const auto & params = lambda_params_tuple->arguments->children;
                 for (size_t i = 0; i != params.size(); ++i)
@@ -1303,9 +1314,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
     {
         ProjectionOutputProvenance provenance;
 
-        IdentifierNameSet names;
-        std::unordered_set<String> masked_names;
-        collectValueCarryingIdentifierNames(*child, names, masked_names);
+        IdentifierNameSet names = collectValueCarryingIdentifierNames(*child);
         provenance.flat_candidates.assign(names.begin(), names.end());
 
         if (const auto * function = unwrapTransparentProjectionExpression(*child)->as<ASTFunction>(); function && function->arguments)
@@ -1316,9 +1325,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                 provenance.is_array_zip = (function->name == "arrayZip");
                 for (const auto & arg : args)
                 {
-                    IdentifierNameSet element_names;
-                    std::unordered_set<String> element_masked;
-                    collectValueCarryingIdentifierNames(*arg, element_names, element_masked);
+                    IdentifierNameSet element_names = collectValueCarryingIdentifierNames(*arg);
                     provenance.tuple_element_candidates.emplace_back(element_names.begin(), element_names.end());
                 }
             }
@@ -1327,9 +1334,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                 provenance.is_map = true;
                 for (size_t i = 0; i < args.size(); ++i)
                 {
-                    IdentifierNameSet pair_names;
-                    std::unordered_set<String> pair_masked;
-                    collectValueCarryingIdentifierNames(*args[i], pair_names, pair_masked);
+                    IdentifierNameSet pair_names = collectValueCarryingIdentifierNames(*args[i]);
                     auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
                     target.insert(target.end(), pair_names.begin(), pair_names.end());
                 }

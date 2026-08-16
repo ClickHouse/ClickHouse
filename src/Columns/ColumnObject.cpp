@@ -146,7 +146,6 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)
         sorted_dynamic_paths.emplace(path);
-
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -234,21 +233,16 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
     for (const auto & [path, column] : dynamic_paths)
         empty_dynamic_paths[path] = column->cloneEmpty();
 
-    auto result = ColumnObject::create(
+    return ColumnObject::create(
         std::move(empty_typed_paths),
         std::move(empty_dynamic_paths),
         shared_data->cloneEmpty(),
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
-    copySharedDataPathMatcher(*result);
-    return result;
-}
-
-void ColumnObject::copySharedDataPathMatcher(IColumn & to) const
-{
-    assert_cast<ColumnObject &>(to).setSharedDataPathMatcher(shared_data_path_matcher, shared_data_path_prefix);
+        statistics,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t size) const
@@ -263,16 +257,16 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
     for (const auto & [path, column] : dynamic_paths)
         resized_dynamic_paths[path] = column->cloneResized(size);
 
-    auto result = ColumnObject::create(
+    return ColumnObject::create(
         std::move(resized_typed_paths),
         std::move(resized_dynamic_paths),
         shared_data->cloneResized(size),
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
-    copySharedDataPathMatcher(*result);
-    return result;
+        statistics,
+        shared_data_path_matcher,
+        shared_data_path_prefix);
 }
 
 Field ColumnObject::operator[](size_t n) const
