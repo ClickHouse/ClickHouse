@@ -141,7 +141,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
     bool scattered = false;
-    if (!pre_distinct && !skip_stream_merging)
+    if (!pre_distinct && (!skip_stream_merging || limit_hint != 0 || has_order_sensitive_post_distinct_limit))
     {
         /// The streams may also be made disjoint on the spot: repartitioning them by the hash of the
         /// DISTINCT columns routes equal key values into the same stream, which is all the deduplication
