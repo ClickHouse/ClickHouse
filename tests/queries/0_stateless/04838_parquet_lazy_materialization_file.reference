@@ -56,6 +56,8 @@ Lazily read columns: s, arr
 0
 999	val_999
 998	val_998
+-- a FIFO stays on the single-pass plan
+0
 -- the File engine takes the lazy path as well
 1
 999	engine_999	[]
@@ -118,6 +120,8 @@ data_2.parquet	0	1000	val_1000
 0
 999	val_999
 998	val_998
+-- a FIFO stays on the single-pass plan
+0
 -- the File engine takes the lazy path as well
 0
 999	engine_999	[]

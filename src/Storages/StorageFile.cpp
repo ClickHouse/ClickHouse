@@ -2190,6 +2190,19 @@ bool ReadFromFile::canUseLazyMaterialization() const
     if (!storage->file_renamer.isEmpty())
         return false;
 
+    /// The lazy pass reopens every path and uses the physical row positions from the main pass.
+    /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
+    /// that the second read sees the same data.
+    for (const auto & path : storage->paths)
+    {
+        struct stat file_stat{};
+        if (0 != stat(path.c_str(), &file_stat))
+            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", path);
+
+        if (!S_ISREG(file_stat.st_mode))
+            return false;
+    }
+
     /// The lazy pass rereads the surviving rows by their physical positions, which needs random
     /// access to the raw file; a compression wrapper reads only sequentially.
     for (const auto & path : storage->paths)

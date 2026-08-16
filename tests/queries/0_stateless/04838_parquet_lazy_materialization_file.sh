@@ -51,6 +51,9 @@ mkdir -p "$DATA_DIR"
     zip -0 -q archive.zip data_1.parquet
 )
 
+FIFO_PATH="${DATA_DIR}/data.parquet.fifo"
+mkfifo "$FIFO_PATH"
+
 TABLE_FN="file('${DATA_DIR}/data_{1,2,3}.parquet', Parquet)"
 
 QUERIES="
@@ -83,6 +86,8 @@ SELECT k, s FROM file('${DATA_DIR}/data.csv', CSVWithNames) ORDER BY k DESC LIMI
 SELECT '-- an archive entry stays on the single-pass plan';
 SELECT countIf(explain LIKE '%LazilyReadFromFile%') FROM (EXPLAIN SELECT s FROM file('${DATA_DIR}/archive.zip :: data_1.parquet', Parquet) ORDER BY k LIMIT 3);
 SELECT k, s FROM file('${DATA_DIR}/archive.zip :: data_1.parquet', Parquet) ORDER BY k DESC LIMIT 2;
+SELECT '-- a FIFO stays on the single-pass plan';
+SELECT countIf(explain LIKE '%LazilyReadFromFile%') FROM (EXPLAIN SELECT s FROM file('${FIFO_PATH}', Parquet, 'k UInt64, s String') ORDER BY k LIMIT 3);
 SELECT '-- the File engine takes the lazy path as well';
 CREATE TABLE t_lazy_mat_file (k UInt64, f UInt64, s String, arr Array(UInt64)) ENGINE = File(Parquet);
 INSERT INTO t_lazy_mat_file SELECT number, number % 17, concat('engine_', toString(number)), range(number % 3) FROM numbers(1000);
