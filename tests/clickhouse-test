@@ -77,10 +77,11 @@ def write_text_atomic(path: Path, text: str) -> None:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
-# `stop_testing` because a server death was observed. Distinct from the generic
-# failure code 1 so the job side can populate the synthetic "Server died" leaf
-# without fragile log-line matching. Kept in sync with
-# `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
+# `stop_testing` and no more specific cause was claimed - an observed server death
+# or a generic catastrophic abort; a failed liveness probe uses
+# `HUNG_CHECK_EXIT_CODE` instead. Distinct from the generic failure code 1 so the
+# job side can populate the synthetic "Server died" leaf without fragile log-line
+# matching. Kept in sync with `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
 # Exit code returned when the run stopped *gracefully* because the global time

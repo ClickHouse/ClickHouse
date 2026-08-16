@@ -27,7 +27,6 @@ import os
 import subprocess
 import sys
 import threading
-import time
 import types
 from pathlib import Path
 
@@ -572,16 +571,29 @@ def test_parent_still_consumes_a_cause_seen_inside_the_loop():
 # --- Claiming before collecting -----------------------------------------------
 
 
-def _drive_abort_site_with_a_competitor(reason, competitor_code):
+def _drive_abort_site_with_a_competitor(
+    reason, competitor_code, start_competitor=True, handshake_timeout=30.0
+):
     """Drive an abort site with a real stacktrace-collection window.
 
-    The competitor claims its own cause partway into the collection, which is the
-    only shape where the two claims genuinely compete. First-writer-wins keeps the
-    detected cause only because the site claims before it collects.
+    The competitor claims its own cause from inside the collection window, which
+    is the only shape where the two claims genuinely compete. First-writer-wins
+    keeps the detected cause only because the site claims before it collects.
+
+    The interleaving is a two-way event handshake, not a pair of sleeps: the
+    window opens, the competitor claims inside it, and only then does the window
+    close. Sleeps would make the mutation-detection direction probabilistic - a
+    competitor thread not scheduled within the window lets a claim that was moved
+    below the collection win anyway, and the arm passes on the defect. Every wait
+    is bounded so a stuck thread fails loudly instead of hanging a CI job.
+
+    `start_competitor=False` leaves the second handshake unsatisfiable, which is
+    how `test_the_competitor_handshake_is_not_vacuous` drives this helper's own
+    failure mode.
     """
     carrier = multiprocessing.Value("i", 0)
-    collect_seconds = 4.0
-    competitor_delay = 1.0
+    collection_started = threading.Event()
+    competitor_claimed = threading.Event()
 
     class FakeCase:
         def __init__(self, suite, case, args, is_concurrent):
@@ -595,22 +607,27 @@ def _drive_abort_site_with_a_competitor(reason, competitor_code):
         def process_result(self, result, messages):
             return result
 
-    collected = []
-
     def fake_collect(*a, **k):
-        time.sleep(collect_seconds)
-        collected.append(True)
+        collection_started.set()
+        if not competitor_claimed.wait(timeout=handshake_timeout):
+            raise RuntimeError(
+                "handshake missed: the competitor did not claim inside the"
+                f" collection window within {handshake_timeout}s"
+            )
 
     def competitor():
-        time.sleep(competitor_delay)
+        if not collection_started.wait(timeout=handshake_timeout):
+            return
         _runner.try_claim_stop_cause(carrier, competitor_code)
+        competitor_claimed.set()
 
     saved = (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase)
     _runner.print_c_stacktraces = fake_collect
     _runner.stop_tests = lambda: None
     _runner.TestCase = FakeCase
-    thread = threading.Thread(target=competitor, daemon=True)
-    thread.start()
+    thread = threading.Thread(target=competitor, daemon=True) if start_competitor else None
+    if thread:
+        thread.start()
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             _runner.run_tests_array(
@@ -635,8 +652,10 @@ def _drive_abort_site_with_a_competitor(reason, competitor_code):
         pass
     finally:
         (_runner.print_c_stacktraces, _runner.stop_tests, _runner.TestCase) = saved
-        thread.join(timeout=collect_seconds + 5)
-    assert collected, "the collection window did not run, so nothing competed"
+        if thread:
+            thread.join(timeout=handshake_timeout + 5)
+    assert collection_started.is_set(), "the collection window did not open"
+    assert competitor_claimed.is_set(), "the competitor's claim was not inside it"
     return carrier.value
 
 
@@ -650,6 +669,22 @@ def test_death_claims_its_cause_before_collecting_stacktraces():
         )
         == STOP_TESTING_EXIT_CODE
     )
+
+
+def test_the_competitor_handshake_is_not_vacuous():
+    """The handshake above is only an oracle if an unmet one fails loudly. With no
+    competitor thread the driver must raise, not pass and not hang."""
+    try:
+        _drive_abort_site_with_a_competitor(
+            FailureReason.SERVER_DIED,
+            HUNG_CHECK_EXIT_CODE,
+            start_competitor=False,
+            handshake_timeout=1.0,
+        )
+    except RuntimeError as e:
+        assert "the competitor did not claim" in str(e), e
+    else:
+        raise AssertionError("the driver accepted a window nothing competed in")
 
 
 def test_liveness_claims_its_cause_before_collecting_stacktraces():
