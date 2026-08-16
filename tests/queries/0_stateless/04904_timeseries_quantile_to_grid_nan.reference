@@ -1,0 +1,6 @@
+-- a NaN sample is skipped: the median of [1, NaN, 2] is the median of [1, 2]
+[1,1.5]
+[1,1.5]
+-- a window with only NaN samples yields NaN, a window without samples stays NULL
+[nan,nan,NULL]
+[nan,nan,NULL]

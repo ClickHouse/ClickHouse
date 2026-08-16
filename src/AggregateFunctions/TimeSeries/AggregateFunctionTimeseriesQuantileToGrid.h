@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 
+#include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
@@ -22,6 +23,12 @@ std::optional<ValueType> computeTimeseriesQuantile(VectorWithMemoryTracking<Valu
 {
     if (values.empty())
         return std::nullopt;
+
+    /// NaNs are not compatible with comparison sorting, so they are skipped like QuantileExactBase::add does;
+    /// a window whose samples are all NaN still yields NaN rather than no value.
+    std::erase_if(values, [](ValueType value) { return isNaN(value); });
+    if (values.empty())
+        return static_cast<ValueType>(std::numeric_limits<Float64>::quiet_NaN());
 
     const size_t n = values.size();
     if (n == 1)
