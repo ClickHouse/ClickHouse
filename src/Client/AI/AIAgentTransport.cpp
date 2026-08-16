@@ -78,8 +78,9 @@ void renderToolResultValue(const ai::JsonValue & value, WriteBufferFromOwnString
 
 }
 
-AIServerFunctionTransport::AIServerFunctionTransport(ScalarQueryExecutor executor_)
+AIServerFunctionTransport::AIServerFunctionTransport(ScalarQueryExecutor executor_, const AIConfiguration & config_)
     : executor(std::move(executor_))
+    , config(config_)
 {
 }
 
@@ -326,13 +327,32 @@ AIAgentStep AIServerFunctionTransport::step(const String & system_prompt, const 
 {
     try
     {
+        /// `aiGenerate` receives the transcript as a SQL literal, which is subject to the
+        /// server's parser limit before the function is evaluated. Keep this comfortably below
+        /// the default `max_query_size`, preserving the most recent context where tool results
+        /// and the current question live.
+        static constexpr size_t max_conversation_bytes = 64 * 1024;
+        String conversation = renderConversation(messages);
+        if (conversation.size() > max_conversation_bytes)
+        {
+            conversation = "[Earlier conversation omitted to fit the server-side AI request limit.]\n\n"
+                + conversation.substr(conversation.size() - max_conversation_bytes);
+        }
+
+        String parameters = "map('system_prompt', " + quoteString(renderSystemPrompt(system_prompt, tools));
+        if (!config.model.empty())
+            parameters += ", 'model', " + quoteString(config.model);
+        parameters += ", 'max_tokens', " + quoteString(std::to_string(config.max_tokens));
+        if (config.temperature)
+            parameters += ", 'temperature', " + quoteString(std::to_string(*config.temperature));
+        parameters += ')';
+
         /// The prompt and the system message are inlined as escaped SQL string literals rather than
         /// passed as `{name:String}` query parameters: a String query parameter is read with
         /// escaped-text deserialization, which stops at the first newline, and both values are
         /// multi-line. `quoteString` escapes newlines and quotes so the literal round-trips exactly.
         String response = executor(
-            "SELECT aiGenerate(" + quoteString(renderConversation(messages))
-                + ", map('system_prompt', " + quoteString(renderSystemPrompt(system_prompt, tools)) + "))",
+            "SELECT aiGenerate(" + quoteString(conversation) + ", " + parameters + ')',
             {});
 
         if (response.empty())

@@ -69,7 +69,7 @@ private:
 class AIServerFunctionTransport : public IAIAgentTransport
 {
 public:
-    explicit AIServerFunctionTransport(ScalarQueryExecutor executor_);
+    AIServerFunctionTransport(ScalarQueryExecutor executor_, const AIConfiguration & config_);
 
     /// Whether the connected server has the `aiGenerate` function together with default
     /// credentials for it (a non-empty `ai_function_text_default_credentials` setting).
@@ -92,6 +92,7 @@ public:
 
 private:
     ScalarQueryExecutor executor;
+    AIConfiguration config;
     size_t call_id_counter = 1;
 };
 

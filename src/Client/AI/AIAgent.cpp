@@ -13,6 +13,23 @@ namespace DB
 namespace
 {
 
+String escapeRecentQueryContext(const String & text)
+{
+    String escaped;
+    escaped.reserve(text.size());
+    for (char c : text)
+    {
+        switch (c)
+        {
+            case '&': escaped += "&amp;"; break;
+            case '<': escaped += "&lt;"; break;
+            case '>': escaped += "&gt;"; break;
+            default: escaped += c; break;
+        }
+    }
+    return escaped;
+}
+
 /// A compact rendering of the tool call arguments for the terminal. The queries of the
 /// run tools are not shown here: they are echoed in full by the query display itself.
 String summarizeArguments(const ai::ToolCall & call)
@@ -147,7 +164,7 @@ void AIAgent::chat(const String & user_text)
         String recent = query_context->format(last_seen_seqno, /*skip_ai_initiated=*/ true);
         last_seen_seqno = query_context->latestSeqno();
         if (!recent.empty())
-            full_text = fmt::format("<recent_queries>\n{}\n\n{}</recent_queries>\n\n", AIPrompts::RECENT_QUERIES_HEADER, recent);
+            full_text = fmt::format("<recent_queries>\n{}\n\n{}</recent_queries>\n\n", AIPrompts::RECENT_QUERIES_HEADER, escapeRecentQueryContext(recent));
     }
     full_text += user_text;
 

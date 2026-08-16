@@ -2981,13 +2981,10 @@ void ClientBase::processParsedSingleQuery(
             };
 
             /// A profile is applied by the server and deliberately not reproduced in the client
-            /// context, so after it the client cannot prove what `readonly` is any more, and does
-            /// not attach a marker whose acceptance it cannot vouch for. An explicit `readonly`
-            /// update is modeled locally, which makes the capability known again.
+            /// context, so after it the client can no longer prove what `readonly` is, and must not
+            /// promise that the marker of its queries was accepted.
             if (changes_setting("profile"))
-                ai_session_settings_unknown = true;
-            else if (changes_setting("readonly"))
-                ai_session_settings_unknown = false;
+                ai_query_log_access_permanently_disabled = true;
 #endif
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -3928,7 +3925,7 @@ void ClientBase::initAIAgent()
         /// No client-side AI provider: fall back to the `aiGenerate` function configured
         /// on the server we are connected to (or in clickhouse-local). This adds nothing
         /// the user could not do with a plain `SELECT aiGenerate(...)` query.
-        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar);
+        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar, ai_config);
     }
 
     if (!transport)
@@ -4405,9 +4402,16 @@ UInt64 ClientBase::aiSessionReadonly()
 
 bool ClientBase::aiQueryLogMarkerAllowed()
 {
-    /// The marker is a `log_comment` setting change, so it takes a session that allows changing
-    /// settings, and one whose `readonly` value the client can actually prove (see above).
-    return !ai_session_settings_unknown && aiSessionReadonly() != 1;
+    /// The marker is a `log_comment` setting change, so it takes a session that accepts changing
+    /// settings. Once the agent has run in a session that did not, its unmarked rows cannot be
+    /// told apart from the history of the user any more, so the capability does not come back
+    /// when the session starts accepting the marker again.
+    if (ai_query_log_access_permanently_disabled || aiSessionReadonly() == 1)
+    {
+        ai_query_log_access_permanently_disabled = true;
+        return false;
+    }
+    return true;
 }
 
 String ClientBase::aiSessionRestrictions()

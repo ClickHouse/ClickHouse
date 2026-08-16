@@ -589,10 +589,12 @@ protected:
 #if USE_CLIENT_AI
     /// The AI agent behind the interactive `?` command
     std::unique_ptr<AIAgent> ai_agent;
-    /// Set when a `SET profile` may have changed the session settings invisibly: the server applies
-    /// a profile without reporting it to the client, unlike the settings of the handshake and an
-    /// explicit `SET readonly`, so the agent can no longer prove what `readonly` is.
-    bool ai_session_settings_unknown = false;
+    /// Set when an agent query may have been logged without its marker. It is deliberately
+    /// sticky for the session, because those old rows cannot be separated from user history.
+    /// A `SET profile` sets it too: the server applies a profile without reporting it to the
+    /// client, unlike the settings of the handshake, so the value of `readonly` - and with it the
+    /// promise that the marker was accepted - cannot be proven any more.
+    bool ai_query_log_access_permanently_disabled = false;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
     /// Whether the user has acknowledged AI provider usage

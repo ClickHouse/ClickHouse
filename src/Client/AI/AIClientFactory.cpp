@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 
 #include <cstdlib>
+#include <limits>
 
 namespace DB
 {
@@ -98,7 +99,11 @@ AIConfiguration AIClientFactory::loadConfiguration(const Poco::Util::AbstractCon
         ai_config.temperature = config.getDouble("ai.temperature");
 
     if (config.has("ai.max_tokens"))
+    {
         ai_config.max_tokens = config.getUInt64("ai.max_tokens");
+        if (ai_config.max_tokens == 0 || ai_config.max_tokens > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `ai.max_tokens` setting must be between 1 and {}", std::numeric_limits<int>::max());
+    }
 
     if (config.has("ai.max_steps"))
         ai_config.max_steps = config.getUInt64("ai.max_steps");
