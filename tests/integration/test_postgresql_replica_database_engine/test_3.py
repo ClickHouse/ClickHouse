@@ -482,7 +482,7 @@ def test_toast_restore_missing_source_row_skips_only_affected_table(started_clus
     # below retains `toast_value`, so restoration cannot find the row in the
     # nested ClickHouse table and must skip only this table.
     nested_table = instance.query(
-        f"SELECT concat('default.`', toString(uuid), '_nested`') "
+        f"SELECT concat('test_database.`', toString(uuid), '_nested`') "
         f"FROM system.tables WHERE database = 'test_database' AND name = '{table}'"
     ).strip()
     instance.query(
