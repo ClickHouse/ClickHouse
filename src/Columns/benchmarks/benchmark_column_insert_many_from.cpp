@@ -1,7 +1,9 @@
 #include <cstddef>
 #include <random>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -112,6 +114,11 @@ static void reserveRepeatedArray(IColumn & dst, const IColumn & src, size_t leng
     }
 }
 
+static NO_INLINE void insertManyFromNotNullable(ColumnNullable & dst, const IColumn & src, size_t position, size_t length)
+{
+    dst.insertManyFromNotNullable(src, position, length);
+}
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
@@ -173,6 +180,26 @@ static void BM_insertManyFromRepeatedlyArray(benchmark::State & state)
     }
 }
 
+template <const std::string & str_type>
+static void BM_insertManyFromNotNullable(benchmark::State & state)
+{
+    auto nullable_type = DataTypeFactory::instance().get(str_type);
+    auto src = mockColumn(removeNullable(nullable_type), ROWS);
+    const size_t length = state.range(0);
+
+    for ([[maybe_unused]] auto _ : state)
+    {
+        state.PauseTiming();
+        auto dst = nullable_type->createColumn();
+        dst->reserve(length);
+        state.ResumeTiming();
+
+        auto & dst_nullable = assert_cast<ColumnNullable &>(*dst);
+        insertManyFromNotNullable(dst_nullable, *src, src->size() / 2, length);
+        benchmark::DoNotOptimize(dst);
+    }
+}
+
 static const String type_int64 = "Int64";
 static const String type_nullable_int64 = "Nullable(Int64)";
 static const String type_string = "String";
@@ -213,3 +240,10 @@ REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_string);
 REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_low_cardinality_string);
 
 #undef REGISTER_ARRAY_REPEATED_BENCHMARKS
+
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_int64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_decimal)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
