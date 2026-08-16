@@ -266,11 +266,35 @@ void copySecretMasksByPosition(
     const QueryTreeNodePtr & source_node,
     std::map<IQueryTreeNode::Hash, size_t> & projection_mask_map)
 {
+    const auto mask_source_subtree = [&projection_mask_map](const auto & self, const QueryTreeNodePtr & node) -> void
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            const auto hash = constant->getTreeHash();
+            const auto mask = projection_mask_map.insert({hash, projection_mask_map.size() + 1}).first->second;
+            constant->setMaskId(mask);
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                self(self, child);
+    };
+
     while (resolved_node->getNodeType() != source_node->getNodeType())
     {
         const auto * resolved_constant = resolved_node->as<ConstantNode>();
         if (!resolved_constant || !resolved_constant->hasSourceExpression())
             return;
+
+        if (resolved_constant->isMasked())
+        {
+            /// A folded masked constant can keep a non-constant source expression. Once it is
+            /// unwrapped to align the node types, all constants in that source expression must
+            /// stay hidden as well.
+            mask_source_subtree(mask_source_subtree, source_node);
+            return;
+        }
+
         resolved_node = resolved_constant->getSourceExpression();
     }
 

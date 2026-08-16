@@ -38,16 +38,16 @@ fi
 
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
-    SELECT 1 OR notEmpty(concat('SEKRIT_KEY_12345', encrypt('aes-128-ecb', 'x', 'SEKRIT_KEY_12345')))
+    SELECT 1 OR notEmpty(encrypt('aes-128-ecb', 'x', concat('SE', 'CRET')))
     SETTINGS enable_analyzer = 1,
              enable_function_early_short_circuit = 1,
              format_display_secrets_in_show_and_select = 0
 ")
 
-# The same literal is visible in the projection name, in a folded concat result, and as concat
-# input, while its use as the encryption key is hidden.
+# A folded secret constant must also hide the literals in its stored source expression.
 if grep -qF '[HIDDEN' <<< "$secret_output" \
-    && [[ $(grep -oF 'SEKRIT_KEY_12345' <<< "$secret_output" | wc -l) -eq 3 ]]; then
+    && ! grep -qF 'SE' <<< "$secret_output" \
+    && ! grep -qF 'CRET' <<< "$secret_output"; then
     echo "secret_mask_ok"
 else
     echo "secret_mask_failed"
