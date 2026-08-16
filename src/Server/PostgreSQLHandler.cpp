@@ -1028,7 +1028,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     return message;
 }
 
-bool PostgreSQLHandler::processCopyQuery(const String & query)
+PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const String & query)
 {
     copy_protocol_error = false;
     ParserCopyQuery parser_copy;
@@ -1064,7 +1064,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "0A000",
                 "PostgreSQL binary COPY format is not supported; use the text or CSV format"),
             true);
-        return true;
+        return CopyQueryResult::ErrorHandled;
     }
 
     /// A `COPY` we cannot faithfully serve is rejected here rather than silently mis-served. This covers a
@@ -1083,7 +1083,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 fmt::format("PostgreSQL COPY with {} is not supported",
                             copy_query_parsed->as<ASTCopyQuery>()->unsupported_option)),
             true);
-        return true;
+        return CopyQueryResult::ErrorHandled;
     }
 
     /* The Postgres protocol for a copy query is different from simple queries such as SELECT.
@@ -1221,7 +1221,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 if (!copy_in_stream.canResynchronize())
                     throw;
                 discardRemainingCopyInFrames(copy_in_stream.pendingFrameBytes());
-                return true;
+                return CopyQueryResult::ErrorHandled;
             }
 
             /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
@@ -1388,7 +1388,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                     PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "22P04",
                     fmt::format("COPY FROM STDIN failed: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false))),
                 true);
-            return true;
+            return CopyQueryResult::ErrorHandled;
         }
 
         /// The executor is created only after the payload is staged and parsed in full: creating it
@@ -1422,7 +1422,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         /// clients show and scripts check.
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, rows_count), true);
-        return true;
+        return CopyQueryResult::Success;
     }
 
     /* In the case of a COPY TO request, the server calculates the number of columns and then sends it to the client in CopyOutResponse.
@@ -1559,10 +1559,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             PostgreSQLProtocol::Messaging::CommandComplete(
                 PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY, rows_count),
             true);
-        return true;
+        return CopyQueryResult::Success;
     }
 
-    return false;
+    return CopyQueryResult::NotCopy;
 }
 
 void PostgreSQLHandler::discardRemainingCopyInFrames(size_t pending_frame_bytes)
@@ -1671,8 +1671,11 @@ void PostgreSQLHandler::processQuery()
             if (processDeallocate(sql_query))
                 continue;
 
-            if (processCopyQuery(sql_query))
+            const auto copy_result = processCopyQuery(sql_query);
+            if (copy_result == CopyQueryResult::Success)
                 continue;
+            if (copy_result == CopyQueryResult::ErrorHandled)
+                break;
 
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(currentQueryId());
@@ -1735,9 +1738,15 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
     });
     SCOPE_EXIT({ query_context->setProgressCallback(prev_callback); });
 
-    // Execute query with PostgreSQLWire output format
+    auto set_result_details = [](const QueryResultDetails & details)
+    {
+        if (details.format && *details.format != "PostgreSQLWire")
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "PostgreSQL protocol does not support custom output formats");
+    };
+
+    // Execute query with PostgreSQLWire output format.
     auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
-    executeQuery(std::move(read_buf), *out, query_context, {});
+    executeQuery(std::move(read_buf), *out, query_context, set_result_details);
 
     // Determine affected rows based on command type
     return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)

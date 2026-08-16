@@ -405,6 +405,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     std::optional<String> delimiter_value;
     std::optional<String> null_value;
     bool header_requested = false;
+    bool stray_literal = false;
     String unknown_option;
     /// Whether the string literal about to be consumed carries PostgreSQL's escape-string syntax
     /// (`E'...'`, e.g. `DELIMITER E'\t'`). The `E` and the literal arrive as two tokens.
@@ -492,6 +493,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 delimiter_value = value;
             else if (pending == PendingOption::Null)
                 null_value = value;
+            else
+                stray_literal = true;
             pending = PendingOption::None;
             pending_value_is_escape_string = false;
             ++pos;
@@ -511,6 +514,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     }
     else if (!unknown_option.empty())
         node->unsupported_option = fmt::format("the \"{}\" option", unknown_option);
+    else if (pending == PendingOption::Delimiter || pending == PendingOption::Null || pending_value_is_escape_string || stray_literal)
+        node->unsupported_option = "an option with a missing or unexpected value";
     else
     {
         const bool is_csv = node->format == ASTCopyQuery::Formats::CSV;

@@ -470,8 +470,48 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT JSONEachRow", io.StringIO())
         conn.rollback()
 
+        # A missing option value and a stray literal must not silently select the default delimiter or
+        # null marker. Both forms are malformed PostgreSQL COPY syntax and stay in-band errors.
+        for copy_query in [
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (DELIMITER)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (NULL)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (FORMAT csv, 'unexpected')",
+        ]:
+            with pytest.raises(py_psql.Error, match="missing or unexpected value"):
+                cur = conn.cursor()
+                cur.copy_expert(copy_query, io.StringIO())
+            conn.rollback()
+
         # The connection is still usable after the rejections.
         cur = conn.cursor()
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
+def test_simple_query_stops_after_copy_error_and_rejects_custom_format(started_cluster):
+    # An in-band COPY error terminates its simple-query packet: later statements must not run. Explicit
+    # ClickHouse output formats are likewise rejected before they can place non-PostgreSQL bytes on the
+    # wire, and both errors leave the connection usable for the next query.
+    node.query("DROP TABLE IF EXISTS test_copy_error_stops_packet SYNC")
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        with pytest.raises(py_psql.Error, match="binary COPY format is not supported"):
+            cur.execute(
+                "COPY (SELECT 1) TO STDOUT WITH FORMAT binary; "
+                "CREATE TABLE test_copy_error_stops_packet (x UInt8) ENGINE = Memory"
+            )
+        conn.rollback()
+        assert node.query("EXISTS TABLE test_copy_error_stops_packet") == "0\n"
+
+        with pytest.raises(py_psql.Error, match="does not support custom output formats"):
+            cur.execute("SELECT 1 FORMAT JSONEachRow")
+        conn.rollback()
+
         cur.execute("SELECT 42")
         assert cur.fetchone() == (42,)
     finally:

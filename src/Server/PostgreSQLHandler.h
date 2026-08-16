@@ -109,7 +109,13 @@ private:
     bool processPrepareStatement(const String & query);
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
-    bool processCopyQuery(const String & query);
+    enum class CopyQueryResult : uint8_t
+    {
+        NotCopy,
+        Success,
+        ErrorHandled,
+    };
+    CopyQueryResult processCopyQuery(const String & query);
     bool copy_protocol_error = false;
 
     /// After an error has been reported in the middle of `COPY ... FROM STDIN`, consumes and discards
