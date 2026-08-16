@@ -39,7 +39,7 @@ run "EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${query}"
 
 # The collector must follow every referenced CTE dependency, rather than only
 # the references that sort after the initially referenced CTE name.
-chained_query="WITH third AS (SELECT a FROM v), second AS (SELECT a FROM third), first AS (SELECT a FROM second) SELECT a FROM first"
+chained_query="WITH first AS (SELECT a FROM v), second AS (SELECT a FROM first), third AS (SELECT a FROM second) SELECT a FROM third"
 run "Chained SELECT" "${chained_query}"
 run "Chained EXPLAIN SYNTAX" "EXPLAIN SYNTAX ${chained_query}"
 run "Chained EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${chained_query}"
