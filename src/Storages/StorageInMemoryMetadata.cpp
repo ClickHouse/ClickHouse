@@ -975,7 +975,11 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
                     throw;
             }
             if (valid_index)
+            {
+                if (lookup_indices.has(index.name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add implicit index {} because a lookup index uses this reserved index name", index.name);
                 secondary_indices.push_back(std::move(index));
+            }
         }
 
     }
@@ -1011,6 +1015,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
         MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+
+        if (lookup_indices.has(index.name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add implicit index {} because a lookup index uses this reserved index name", index.name);
 
         secondary_indices.push_back(std::move(index));
     };

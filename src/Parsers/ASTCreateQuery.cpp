@@ -97,8 +97,8 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     };
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
-    readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTIndexDeclaration>("lookup_indices", lookup_indices);
+    readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
 

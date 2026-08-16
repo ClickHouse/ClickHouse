@@ -394,6 +394,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             require(sample_by, "sample_by");
             break;
         case ASTAlterCommand::ADD_INDEX:
+        case ASTAlterCommand::ADD_LOOKUP_INDEX:
             require(index_decl, "index_decl");
             /// The parser produces either `FIRST` or `AFTER <index>`, never both. `formatImpl` prints
             /// only `FIRST`, but `AlterCommand::apply` lets `after_index_name` override the `first`
@@ -401,10 +402,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             /// inserting after another index. Reject the parser-impossible combination.
             if (first && index)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "`ADD INDEX` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
+                    "`ADD INDEX`/`ADD LOOKUP INDEX` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
             break;
         case ASTAlterCommand::DROP_INDEX:
         case ASTAlterCommand::MATERIALIZE_INDEX:
+        case ASTAlterCommand::DROP_LOOKUP_INDEX:
             require(index, "index");
             break;
         case ASTAlterCommand::ADD_STATISTICS:
