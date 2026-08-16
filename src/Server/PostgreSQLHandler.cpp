@@ -1236,7 +1236,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
                         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
                         fmt::format("COPY FROM STDIN aborted by the client: {}", copy_in_stream.abortReason())),
                     true);
-                return true;
+                return CopyQueryResult::ErrorHandled;
             }
             throw;
         }
