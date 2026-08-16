@@ -265,14 +265,21 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
     return {};
 }
 
-void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<WindowViewFollowup> & followups)
+void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<WindowViewFollowup> & followups, bool is_exchange = false)
 {
     for (const auto & followup : followups)
     {
-        if (!removed_window_views.contains(followup.table_name))
+        const bool table_name_is_removed = removed_window_views.contains(followup.table_name);
+        const bool rename_to_is_removed = is_exchange && followup.rename_to && removed_window_views.contains(*followup.rename_to);
+        if (!table_name_is_removed && !rename_to_is_removed)
             continue;
 
-        if (followup.rename_to)
+        if (rename_to_is_removed)
+        {
+            removed_window_views.erase(*followup.rename_to);
+            removed_window_views.insert(followup.table_name);
+        }
+        else if (followup.rename_to)
         {
             removed_window_views.erase(followup.table_name);
             removed_window_views.insert(*followup.rename_to);
@@ -286,7 +293,29 @@ void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<
 
 String formatRenameOrExchangeWithoutRemovedWindowViews(const std::vector<WindowViewFollowup> & followups, const NameSet & removed_window_views, bool is_exchange)
 {
-    String query = is_exchange ? "EXCHANGE TABLES " : "RENAME TABLE ";
+    if (is_exchange)
+    {
+        String query = "RENAME TABLE ";
+        bool first = true;
+        for (const auto & followup : followups)
+        {
+            chassert(followup.rename_to);
+            const bool table_name_is_removed = removed_window_views.contains(followup.table_name);
+            const bool rename_to_is_removed = removed_window_views.contains(*followup.rename_to);
+            if (!table_name_is_removed && !rename_to_is_removed)
+                continue;
+
+            if (!first)
+                query += ", ";
+            first = false;
+            query += table_name_is_removed ? *followup.rename_to : followup.table_name;
+            query += " TO ";
+            query += table_name_is_removed ? followup.table_name : *followup.rename_to;
+        }
+        return query;
+    }
+
+    String query = "RENAME TABLE ";
     bool first = true;
     for (const auto & followup : followups)
     {
@@ -300,7 +329,7 @@ String formatRenameOrExchangeWithoutRemovedWindowViews(const std::vector<WindowV
         if (followup.if_exists)
             query += "IF EXISTS ";
         query += followup.table_name;
-        query += is_exchange ? " AND " : " TO ";
+        query += " TO ";
         query += *followup.rename_to;
     }
     return query;
@@ -1026,24 +1055,26 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     }
 
     const auto followups = getWindowViewFollowups(tokens);
-    const bool has_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
+    const bool is_exchange = !tokens.empty() && isKeyword(tokens[0], "EXCHANGE");
+    const bool has_removed_window_view = std::any_of(followups.begin(), followups.end(), [this, is_exchange](const auto & followup)
     {
-        return removed_window_views.contains(followup.table_name);
+        return removed_window_views.contains(followup.table_name)
+            || (is_exchange && followup.rename_to && removed_window_views.contains(*followup.rename_to));
     });
     if (has_removed_window_view)
     {
         const bool is_rename = isKeyword(tokens[0], "RENAME");
-        const bool is_exchange = isKeyword(tokens[0], "EXCHANGE");
-        const bool has_non_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
+        const bool has_non_removed_window_view = std::any_of(followups.begin(), followups.end(), [this, is_exchange](const auto & followup)
         {
-            return !removed_window_views.contains(followup.table_name);
+            return !removed_window_views.contains(followup.table_name)
+                || (is_exchange && followup.rename_to && !removed_window_views.contains(*followup.rename_to));
         });
         const String rewritten_query = (is_rename || is_exchange) && has_non_removed_window_view
             ? formatRenameOrExchangeWithoutRemovedWindowViews(followups, removed_window_views, is_exchange)
             : String{};
         if (!dry_run)
         {
-            updateRemovedWindowViews(removed_window_views, followups);
+            updateRemovedWindowViews(removed_window_views, followups, is_exchange);
             persistRemovedWindowViews(zookeeper, entry_num);
         }
         if ((!is_rename && !is_exchange) || !has_non_removed_window_view)
@@ -1167,7 +1198,7 @@ void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr &
         else if (const auto create_or_replace_name = getCreateOrReplaceName(tokens))
             removed_window_views.erase(*create_or_replace_name);
         else
-            updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens));
+            updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens), !tokens.empty() && isKeyword(tokens[0], "EXCHANGE"));
     }
 
     persistRemovedWindowViews(zookeeper);
