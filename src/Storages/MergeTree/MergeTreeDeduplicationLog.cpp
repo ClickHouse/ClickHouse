@@ -866,7 +866,17 @@ bool MergeTreeDeduplicationLog::writeHistoryDiscardMarker()
 {
     try
     {
-        auto out = disk->writeFile(getCompactionMarkerPath(logs_dir), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        const auto marker_path = getCompactionMarkerPath(logs_dir);
+
+        /// The marker is a fence, not a payload that needs refreshing. In particular,
+        /// when a rollback has already armed it, do not reopen it in Rewrite mode:
+        /// Rewrite truncates before the replacement record is durable, so a later write
+        /// or sync failure would remove the only fence that prevents the next restart
+        /// from replaying diverged history.
+        if (disk->existsFile(marker_path) && disk->getFileSize(marker_path) != 0)
+            return true;
+
+        auto out = disk->writeFile(marker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         /// The marker's one record is a no-op on every server version, so a server
         /// from before the marker existed replays this file as an ordinary, harmless
         /// log: a DROP (carrying the rollback part-name marker, which such a server
