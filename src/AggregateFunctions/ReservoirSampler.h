@@ -219,7 +219,7 @@ private:
         {
             /// Access `items` through the logical limb order because its physical order depends on host byte order.
             cpp_int result;
-            for (size_t i = std::size(value.items); i-- > 0;)
+            for (unsigned i = static_cast<unsigned>(std::size(value.items)); i-- > 0;)
                 result = (result << 64) | value.items[NativeType::_impl::little(i)];
 
             if (value < NativeType{})
@@ -242,7 +242,7 @@ private:
                 value += boost::multiprecision::cpp_int(1) << (sizeof(NativeType) * 8);
 
             NativeType result{};
-            for (size_t i = 0; i < std::size(result.items); ++i)
+            for (unsigned i = 0; i < std::size(result.items); ++i)
             {
                 result.items[NativeType::_impl::little(i)] = (value & std::numeric_limits<UInt64>::max()).convert_to<UInt64>();
                 value >>= 64;
