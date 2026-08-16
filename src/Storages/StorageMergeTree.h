@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -204,7 +205,8 @@ private:
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
             PreformattedMessage & out_disable_reason,
-            bool optimize_skip_merged_partitions = false);
+            bool optimize_skip_merged_partitions = false,
+            const std::function<void()> & on_merge_selected = {});
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 

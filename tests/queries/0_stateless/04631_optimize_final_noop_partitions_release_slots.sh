@@ -4,13 +4,11 @@
 #   which would pause projection merges of other tests running at the same time.
 # - no-fasttest: relies on failpoints, which are not available in the fast test build.
 
-# OPTIMIZE TABLE ... FINAL reserves merge slots in the background merge/mutate executor before
-# assigning the per-partition merges, and releases them as the partition tasks drain. This test
-# covers the case where there are more partition candidates than reserved slots and almost all of
-# them turn out to be no-ops (already merged + `optimize_skip_merged_partitions`), with only one
-# real merge among them: once the no-op partitions resolve, the reservation must promptly drop to
-# the number of merges actually running (here: 1), instead of keeping `background_pool_size` slots
-# charged in `BackgroundMergesAndMutationsPoolTask` for the lifetime of the real merge.
+# OPTIMIZE TABLE ... FINAL reserves a background merge/mutate executor slot only after selecting a
+# real merge. This test covers a set of partitions that are already merged with
+# `optimize_skip_merged_partitions`, plus one partition with a real merge: no-op selections must
+# not leave extra capacity charged in `BackgroundMergesAndMutationsPoolTask` while the real merge
+# is in flight.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,8 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 pool_size=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'background_pool_size'")
 
-# More partition candidates than worker threads, so the reservation is capped below the number of
-# partitions and the completed no-op tasks above that cap are the ones that must trigger releases.
+# More partition candidates than worker threads, so the test also exercises a large batch of
+# no-op selections while the one real merge remains paused.
 num_partitions=$((pool_size + 2))
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_optimize_noop_release SYNC"
@@ -60,16 +58,13 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT merge_task_projection_stage_
 $CLICKHOUSE_CLIENT --receive_timeout 900 --query "OPTIMIZE TABLE t_optimize_noop_release FINAL SETTINGS optimize_skip_merged_partitions = 1" &
 optimize_pid=$!
 
-# Wait for the real merge to appear, then for the reservation to drop to the merges that are really
-# running. The paused merge never completes on its own, so if completed no-op partitions failed to
-# release their slots, the metric would stay at the initial reservation (up to `background_pool_size`)
-# forever and this loop would time out.
+# Wait for the real merge to appear and verify that only actually running merges are charged. The
+# paused merge never completes on its own, so a no-op partition that retained a slot would keep the
+# metric above the number of active merges and this loop would time out.
 #
 # `BackgroundMergesAndMutationsPoolTask` is server-global, so unrelated background merges (e.g. of
 # system tables) are charged to it as well. Comparing it against the total number of merges in flight
-# - instead of requiring the bare value 1 - makes the check independent of that noise: with the slots
-# released, everything charged to the metric is a merge that is actually running, while the bug under
-# test keeps the whole reservation charged on top of the single running merge.
+# - instead of requiring the bare value 1 - makes the check independent of that noise.
 released=no
 for _ in {1..300}; do
     state=$($CLICKHOUSE_CLIENT --query "
