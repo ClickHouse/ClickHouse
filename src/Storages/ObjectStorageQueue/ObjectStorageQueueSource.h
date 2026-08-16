@@ -59,7 +59,8 @@ public:
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
-            const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_);
+            const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_,
+            std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers_);
 
         bool isFinished();
 
@@ -104,13 +105,13 @@ public:
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
-        const String foreign_processing_observer;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
         /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.
         /// A reference to the storage member (like `shutdown_called`): the setting is changeable
         /// by `ALTER TABLE ... MODIFY SETTING`, and a new value applies from the next use.
         const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec;
+        const std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;

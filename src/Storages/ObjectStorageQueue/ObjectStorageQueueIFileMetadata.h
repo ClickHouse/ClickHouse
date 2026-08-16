@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <algorithm>
+#include <memory>
 #include <unordered_map>
 
 namespace DB
@@ -20,6 +22,23 @@ class ZooKeeperWithFaultInjection;
 class ObjectStorageQueueIFileMetadata
 {
 public:
+    /// Per-table foreign-node observations. This must stay outside `FileStatus`: file
+    /// statuses are held in a byte-accounted cache and their weight cannot grow after
+    /// insertion. The registry is bounded by the table's metadata-cache entry limit.
+    class ForeignProcessingObservers
+    {
+    public:
+        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(std::max<size_t>(max_entries_, 1)) {}
+
+        void set(const String & path, time_t since);
+        time_t get(const String & path) const;
+
+    private:
+        const size_t max_entries;
+        mutable std::mutex mutex;
+        std::unordered_map<String, time_t> observations;
+    };
+
     struct FileStatus
     {
         explicit FileStatus(const std::string & path_) : path(path_) {}
@@ -42,17 +61,17 @@ public:
         void updateState(State state_);
         /// The `processing` node in keeper is held by another processor
         /// (another server, or another table on this server).
-        void onProcessingByAnotherProcessor(const String & observer);
+        void onProcessingByAnotherProcessor(ForeignProcessingObservers & observers);
         /// The file was committed by another processor: replace the data of a previous
         /// local attempt with the terminal state discovered in keeper.
         void onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_);
         /// Whether the `Processing` state is only a cached observation of a foreign node.
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
         /// When the foreign `processing` node was observed; zero if the state is not foreign.
-        time_t processingByAnotherProcessorSince(const String & observer) const;
+        time_t processingByAnotherProcessorSince(const ForeignProcessingObservers & observers) const;
         /// Whether a file in `Processing` state may be attempted again: only if the state is a
         /// cached observation of a foreign node and the observation is older than `ttl_sec`.
-        bool shouldRetryProcessing(const String & observer, time_t ttl_sec) const;
+        bool shouldRetryProcessing(const ForeignProcessingObservers & observers, time_t ttl_sec) const;
 
         std::string getException() const;
 
@@ -70,11 +89,6 @@ public:
         /// When the `processing` node of another processor was observed the last time.
         /// Zero means that the state, if it is `Processing`, belongs to this processor.
         std::atomic<time_t> processing_by_another_processor_since = 0;
-        /// The observation timestamp is per table, because tables sharing a `keeper_path`
-        /// can have different cache TTLs.
-        mutable std::mutex foreign_processing_observers_mutex;
-        std::unordered_map<String, time_t> foreign_processing_observers;
-
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
@@ -139,7 +153,7 @@ public:
         LoggerPtr log_,
         /// Zero (the default) means to always check keeper.
         time_t foreign_processing_node_cache_ttl_sec_ = 0,
-        String foreign_processing_observer_ = {});
+        std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers_ = {});
 
     virtual ~ObjectStorageQueueIFileMetadata();
 
@@ -272,7 +286,7 @@ protected:
     const bool use_persistent_processing_nodes;
     /// How long an observation of a `processing` node of another processor is trusted.
     const time_t foreign_processing_node_cache_ttl_sec;
-    const String foreign_processing_observer;
+    const std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers;
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;

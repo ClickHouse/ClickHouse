@@ -111,23 +111,23 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
 template <typename FS>
 void expectForeignProcessingCacheDeadlineIsPerTable()
 {
-    if constexpr (requires(FS & status, const String & observer)
+    if constexpr (requires(FS & status, ObjectStorageQueueIFileMetadata::ForeignProcessingObservers & observers)
     {
-        status.onProcessingByAnotherProcessor(observer);
-        status.shouldRetryProcessing(observer, time_t{});
-        status.processingByAnotherProcessorSince(observer);
+        status.onProcessingByAnotherProcessor(observers);
+        status.shouldRetryProcessing(observers, time_t{});
+        status.processingByAnotherProcessorSince(observers);
     })
     {
         auto file_status = std::make_shared<FS>("data/file.csv");
-        const String first_table = "default.first_table";
-        const String second_table = "default.second_table";
+        ObjectStorageQueueIFileMetadata::ForeignProcessingObservers first_observers(1);
+        ObjectStorageQueueIFileMetadata::ForeignProcessingObservers second_observers(1);
 
-        file_status->onProcessingByAnotherProcessor(first_table);
+        file_status->onProcessingByAnotherProcessor(first_observers);
 
-        ASSERT_FALSE(file_status->shouldRetryProcessing(first_table, 3600));
-        ASSERT_TRUE(file_status->shouldRetryProcessing(second_table, 3600));
-        ASSERT_NE(file_status->processingByAnotherProcessorSince(first_table), 0);
-        ASSERT_EQ(file_status->processingByAnotherProcessorSince(second_table), 0);
+        ASSERT_FALSE(file_status->shouldRetryProcessing(first_observers, 3600));
+        ASSERT_TRUE(file_status->shouldRetryProcessing(second_observers, 3600));
+        ASSERT_NE(file_status->processingByAnotherProcessorSince(first_observers), 0);
+        ASSERT_EQ(file_status->processingByAnotherProcessorSince(second_observers), 0);
     }
     else
         FAIL() << "FileStatus does not keep foreign processing observations per table";
@@ -144,22 +144,22 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingCacheDeadlineIsPerTable)
 template <typename FS>
 void expectOnlyForeignProcessingIsRetryable()
 {
-    if constexpr (requires(FS & status, const String & observer)
+    if constexpr (requires(FS & status, ObjectStorageQueueIFileMetadata::ForeignProcessingObservers & observers)
     {
         status.onProcessing();
-        status.onProcessingByAnotherProcessor(observer);
-        status.shouldRetryProcessing(observer, time_t{});
+        status.onProcessingByAnotherProcessor(observers);
+        status.shouldRetryProcessing(observers, time_t{});
     })
     {
         auto file_status = std::make_shared<FS>("data/file.csv");
-        const String observing_table = "default.observing_table";
-        const String other_table = "default.other_table";
+        ObjectStorageQueueIFileMetadata::ForeignProcessingObservers observing_observers(1);
+        ObjectStorageQueueIFileMetadata::ForeignProcessingObservers other_observers(1);
 
         file_status->onProcessing();
-        ASSERT_FALSE(file_status->shouldRetryProcessing(observing_table, time_t{}));
+        ASSERT_FALSE(file_status->shouldRetryProcessing(observing_observers, time_t{}));
 
-        file_status->onProcessingByAnotherProcessor(observing_table);
-        ASSERT_TRUE(file_status->shouldRetryProcessing(other_table, 3600));
+        file_status->onProcessingByAnotherProcessor(observing_observers);
+        ASSERT_TRUE(file_status->shouldRetryProcessing(other_observers, 3600));
     }
     else
         FAIL() << "FileStatus does not distinguish local and foreign processing states";

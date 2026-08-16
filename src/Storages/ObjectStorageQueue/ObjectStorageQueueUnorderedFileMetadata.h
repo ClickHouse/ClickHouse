@@ -22,7 +22,7 @@ public:
         LoggerPtr log_,
         /// Zero (the default) means to always check keeper.
         time_t foreign_processing_node_cache_ttl_sec_ = 0,
-        String foreign_processing_observer_ = {});
+        std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers_ = {});
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
 

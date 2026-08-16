@@ -137,7 +137,7 @@ public:
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
         time_t foreign_processing_node_cache_ttl_sec = 0,
-        String foreign_processing_observer = {});
+        std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers = {});
 
     /// Register table in keeper metadata.
     /// active = false:

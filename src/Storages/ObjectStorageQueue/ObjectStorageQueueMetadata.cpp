@@ -231,7 +231,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     const std::string & path,
     ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
     time_t foreign_processing_node_cache_ttl_sec,
-    String foreign_processing_observer)
+    std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -257,7 +257,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 filename_parser.get(),
                 log,
                 foreign_processing_node_cache_ttl_sec,
-                std::move(foreign_processing_observer));
+                std::move(foreign_processing_observers));
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
@@ -269,7 +269,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 zookeeper_name,
                 log,
                 foreign_processing_node_cache_ttl_sec,
-                std::move(foreign_processing_observer));
+                std::move(foreign_processing_observers));
     }
 }
 

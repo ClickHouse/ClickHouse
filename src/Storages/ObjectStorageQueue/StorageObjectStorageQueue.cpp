@@ -311,6 +311,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , foreign_processing_node_cache_ttl_seconds((*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds])
+    , foreign_processing_observers(std::make_shared<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers>(
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
@@ -1773,7 +1775,8 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
         shutdown_called,
-        foreign_processing_node_cache_ttl_seconds);
+        foreign_processing_node_cache_ttl_seconds,
+        foreign_processing_observers);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
@@ -1940,7 +1943,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
     auto file_metadata = files_metadata->getFileMetadata(
-        path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load(), getStorageID().getNameForLogs());
+        path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load(), foreign_processing_observers);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 

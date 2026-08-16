@@ -161,6 +161,7 @@ private:
     /// Atomic: can be changed by `ALTER TABLE ... MODIFY SETTING`, and the file iterators
     /// read it through a reference, so a new value applies without recreating them.
     std::atomic<time_t> foreign_processing_node_cache_ttl_seconds;
+    const std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers;
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
