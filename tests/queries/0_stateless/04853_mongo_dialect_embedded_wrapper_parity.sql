@@ -12,6 +12,7 @@ CREATE TABLE wrapper_parity (id Int64, events Array(JSON)) ENGINE = MergeTree OR
 
 SET allow_experimental_mongo_dialect = 1;
 SET mutations_sync = 1;
+SET session_timezone = 'UTC';
 SET dialect='mongo';
 
 db.wrapper_parity.insertOne({"id": 1, "events": [{"name": "start", "when": {"$date": {"$numberLong": "0"}}}]});
