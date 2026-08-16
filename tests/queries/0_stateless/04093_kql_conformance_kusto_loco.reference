@@ -74,7 +74,7 @@ ababab
 -- DateTimeTests::MakeDateTime_InvalidMonth_ReturnsDefaultDateTime --
 1900-01-01 00:00:00.0000000
 -- DateTimeTests::DateTimeBin --
-1970-05-11 00:00:00.000000000
+1970-05-11 00:00:00.0000000
 -- DateTimeTests::DateTimeToLocal --
 -- DateTimeTests::ToDateTime --
 2024-01-15 12:35:35.0000000
