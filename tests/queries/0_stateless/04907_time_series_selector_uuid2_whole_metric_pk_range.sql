@@ -23,7 +23,7 @@ FROM
     SELECT arrayStringConcat(groupArray(explain), '\n') AS plan
     FROM
     (
-        EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_uuid2_range, 'foo', 0, 1000)
+        EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_uuid2_range, 'foo', 0, 1000)
     )
 );
 

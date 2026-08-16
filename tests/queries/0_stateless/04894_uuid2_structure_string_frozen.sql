@@ -5,6 +5,7 @@
 DROP VIEW IF EXISTS uuid2_frozen_v1;
 DROP VIEW IF EXISTS uuid2_frozen_v2;
 DROP VIEW IF EXISTS uuid2_frozen_generate;
+DROP VIEW IF EXISTS uuid2_frozen_values;
 DROP VIEW IF EXISTS uuid2_frozen_format_data;
 DROP VIEW IF EXISTS uuid2_frozen_format_expression;
 DROP TABLE IF EXISTS uuid2_frozen_as;
@@ -34,6 +35,12 @@ CREATE VIEW uuid2_frozen_generate AS SELECT * FROM generateRandom('id UUID');
 SET uuid_type_version = 1;
 SELECT 'generateRandom', toTypeName(id) FROM uuid2_frozen_generate LIMIT 1;
 
+-- `values` persists its first argument as a structure string as well.
+SET uuid_type_version = 2;
+CREATE VIEW uuid2_frozen_values AS SELECT * FROM values('id UUID', (toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')));
+SET uuid_type_version = 1;
+SELECT 'values', toTypeName(id) FROM uuid2_frozen_values;
+
 -- The two-argument overload of `format` has no structure argument: its last string is data, even when it looks
 -- like a columns list. In contrast, the three-argument overload must fold and freeze an expression-built schema.
 SET uuid_type_version = 2;
@@ -50,6 +57,7 @@ SELECT 'plain literal', 'id UUID' AS s;
 DROP VIEW uuid2_frozen_v1;
 DROP VIEW uuid2_frozen_v2;
 DROP VIEW uuid2_frozen_generate;
+DROP VIEW uuid2_frozen_values;
 DROP VIEW uuid2_frozen_format_data;
 DROP VIEW uuid2_frozen_format_expression;
 DROP TABLE uuid2_frozen_as;
