@@ -101,7 +101,8 @@ def test_mergetree_on_gcs_disk(started_cluster):
         "  metadata_type = local,"
         f"  endpoint = '{disk_endpoint}',"
         "  no_sign_request = true"
-        ")"
+        ")",
+        settings={"use_native_gcs": 1},
     )
 
     node.query("INSERT INTO gcs_mt SELECT number, toString(number) FROM numbers(1000)")
@@ -207,7 +208,8 @@ def test_forbidden_header_rejected(started_cluster):
         f"  endpoint = '{gcs_url('forbid_headers_disk/')}',"
         "  no_sign_request = true,"
         "  header = 'X-ClickHouse-Native-GCS-Forbidden: 1'"
-        ")"
+        ")",
+        settings={"use_native_gcs": 1},
     )
     assert "forbidden in configuration file" in err
 
