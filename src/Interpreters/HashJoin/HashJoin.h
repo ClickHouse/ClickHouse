@@ -12,6 +12,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -27,6 +28,8 @@ namespace DB
 class TableJoin;
 class ExpressionActions;
 using Sizes = std::vector<size_t>;
+
+class MatchedRowsStats;
 
 namespace JoinStuff
 {
@@ -190,10 +193,17 @@ public:
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 
-    /// Number of keys in all built JOIN maps.
+    /// Number of unique keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
+    /// Number of right-side rows ingested into the build.
+    size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
+    /// Peak bytes the build occupied
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    StepAnalysisReport getAnalysisReport() const override;
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     bool alwaysReturnsEmptySet() const final;
 
@@ -241,6 +251,8 @@ public:
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
+    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
@@ -248,6 +260,10 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
+        M(keys32)                              \
+        M(keys64)                              \
+        M(keys128)                             \
+        M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
@@ -551,6 +567,8 @@ private:
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
 
     std::vector<Sizes> key_sizes;
@@ -580,6 +598,9 @@ private:
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
 
+    /// Peak of bytes observed in the hash table during the build phase
+    size_t peak_build_bytes = 0;
+
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
 
@@ -602,6 +623,8 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
+
+    JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
 
@@ -628,6 +651,8 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void reinitUsedFlags();
+
+    bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
 };

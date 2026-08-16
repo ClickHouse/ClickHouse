@@ -39,8 +39,11 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
+    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -71,6 +74,13 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(azure_inject_forbidden_response) \
+    ONCE(azure_inject_forbidden_response_once) \
+    REGULAR(azure_inject_auth_failure_on_request) \
+    ONCE(azure_inject_auth_failure_on_request_once) \
+    REGULAR(azure_inject_poco_timeout) \
+    ONCE(azure_inject_poco_timeout_once) \
+    REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -143,6 +153,17 @@ static struct InitFiu
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(framing_finalize_throw) \
+    ONCE(framing_throw_after_writing_packet) \
+    ONCE(framing_throw_during_payload_reset) \
+    ONCE(framing_throw_before_totals_boundary) \
+    ONCE(framing_throw_before_extremes_boundary) \
+    ONCE(framing_pump_logs_throw) \
+    ONCE(framing_exception_packet_throw) \
+    ONCE(framing_throw_after_final_progress) \
+    ONCE(write_buffer_valid_utf8_finalize_throw) \
+    ONCE(http_output_finalize_throw) \
+    ONCE(http_push_delayed_results_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
@@ -163,12 +184,15 @@ static struct InitFiu
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
+    PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \
+    REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
@@ -179,6 +203,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
@@ -199,6 +224,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
@@ -214,8 +240,11 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
+    PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
     PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
     PAUSEABLE(merge_tree_background_task_marked_for_deletion) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
@@ -258,6 +287,10 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
+    PAUSEABLE(atomic_populate_pause_before_source_guard) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
@@ -273,6 +306,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    PAUSEABLE(keeper_changelog_read_plan_resolved) \
+    PAUSEABLE(keeper_changelog_removed_from_disk_set) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
     REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
