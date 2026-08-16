@@ -172,14 +172,14 @@ constexpr UInt64 sqlite_busy_retry_timeout_ms = 10000;
 /// `max_execution_time` stops the wait. Some of them run without a query - `ATTACH TABLE ... ENGINE =
 /// SQLite(...)` reaches `fetchSQLiteTableStructure` while the server is starting up and loading table
 /// metadata - and there is nothing to cancel such a wait, so it is bounded by a deadline instead of
-/// blocking startup for as long as an external writer holds an exclusive lock. Either way the retry
-/// then surfaces the underlying SQLITE_BUSY error to the caller.
+/// blocking startup for as long as an external writer holds an exclusive lock. A cancelled query throws its
+/// original cancellation exception; a wait without a query surfaces the underlying SQLITE_BUSY error once
+/// its deadline expires.
 inline bool keepWaitingForSQLiteLock(const Stopwatch & watch)
 {
     if (CurrentThread::isInitialized() && !CurrentThread::getQueryId().empty())
     {
-        if (CurrentThread::get().isQueryCanceled())
-            return false;
+        CurrentThread::checkIfNotCancelled();
     }
     else if (watch.elapsedMilliseconds() >= sqlite_busy_retry_timeout_ms)
         return false;
