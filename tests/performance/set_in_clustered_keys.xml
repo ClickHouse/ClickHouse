@@ -4,11 +4,11 @@
     </settings>
 
     <!--
-        Benchmarks the consecutive-row reuse in `Set::executeImplCase`: for set methods with
-        expensive key calculation (`has_cheap_key_calculation == false`) whose key columns are
-        non-nullable fixed-width (tuples flattened element-wise), each row's raw bytes are compared
-        with the previous row's and the previous result is reused on equality, skipping the
-        hash+probe (SipHash128 of the 24-byte `Tuple(UInt64, UUID)` key here).
+        Benchmarks the consecutive-keys optimization in `Set::executeImplCase` (the same
+        `ColumnsHashing` machinery aggregation uses): for runs of equal consecutive rows the
+        previous row's result is reused without probing the hash table, and for `SetMethodHashed`
+        even without calculating the SipHash128 of the key (the raw key bytes are compared with
+        the last processed row instead, see `FixedSizeKeySlices`).
 
         `t_in_clustered` stores 2000 distinct `(k, u)` pairs in runs of 20000 equal consecutive
         rows (the table is sorted by `(k, u)`, and `u` is a function of `k`), so almost every row
@@ -30,7 +30,7 @@
         INSERT INTO t_in_clustered
         SELECT
             intDiv(number, 20000) AS k,
-            reinterpretAsUUID(sipHash128(intDiv(number, 20000))) AS u,
+            reinterpretAsUUID(sipHash128(k)) AS u,
             number AS v
         FROM numbers_mt(40000000)
     </fill_query>
@@ -40,7 +40,7 @@
         INSERT INTO t_in_unclustered
         SELECT
             number % 2000 AS k,
-            reinterpretAsUUID(sipHash128(number % 2000)) AS u,
+            reinterpretAsUUID(sipHash128(k)) AS u,
             number AS v
         FROM numbers_mt(40000000)
     </fill_query>
@@ -51,17 +51,16 @@
 
         The subquery returning a single `Tuple(UInt64, UUID)` column keeps the left-hand tuple as
         one `ColumnTuple` key (`in` decomposes it only when the set has multiple key types), so
-        `SetVariants::chooseMethod` picks `SetMethodHashed` — the expensive method the shortcut
-        targets.
+        `SetVariants::chooseMethod` picks `SetMethodHashed`, which skips the SipHash128 via the
+        raw-key-bytes comparison with the last processed row.
     -->
     <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT (k, u) FROM t_in_clustered)</query>
     <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT (k, u) FROM t_in_unclustered)</query>
 
     <!--
         The two-column subquery decomposes the left-hand tuple into two fixed-width key columns,
-        so `chooseMethod` picks `keys256` (`SetMethodKeysFixed`), which has cheap key calculation
-        and the `HashMethodBase` last-element cache: the shortcut is disabled and these queries
-        must stay neutral.
+        so `chooseMethod` picks `keys256` (`SetMethodKeysFixed`), which already had the
+        consecutive-keys cache: these queries must stay neutral.
     -->
     <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_clustered)</query>
     <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_unclustered)</query>
