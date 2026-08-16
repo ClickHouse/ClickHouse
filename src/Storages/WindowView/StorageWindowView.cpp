@@ -1015,8 +1015,8 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+        UInt32 w_end = addTimeStrictly(w_start, IntervalKind::Kind::KIND, hop_num_units, *time_zone);\
+        return addTimeStrictly(w_end, IntervalKind::Kind::KIND, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND_ADD_TIME(Second)
         CASE_WINDOW_KIND_ADD_TIME(Minute)
@@ -1029,8 +1029,8 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), hop_num_units, *time_zone);\
-        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_end), -window_num_units, *time_zone);\
+        UInt32 w_end = addTimeStrictly(w_start, IntervalKind::Kind::KIND, hop_num_units, *time_zone);\
+        return addTimeStrictly(w_end, IntervalKind::Kind::KIND, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND_ADD_DATE(Week)
         CASE_WINDOW_KIND_ADD_DATE(Month)
@@ -1053,7 +1053,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     case IntervalKind::Kind::KIND: \
     { \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_start, slide_num_units, *time_zone); \
+        return addTimeStrictly(w_start, IntervalKind::Kind::KIND, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND_ADD_TIME(Second)
         CASE_WINDOW_KIND_ADD_TIME(Minute)
@@ -1064,7 +1064,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     case IntervalKind::Kind::KIND: \
     { \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), slide_num_units, *time_zone); \
+        return addTimeStrictly(w_start, IntervalKind::Kind::KIND, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND_ADD_DATE(Week)
         CASE_WINDOW_KIND_ADD_DATE(Month)
