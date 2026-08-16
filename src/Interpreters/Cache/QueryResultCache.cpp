@@ -328,7 +328,9 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                if (set_clause->changes.empty())
+                if (set_clause->changes.empty()
+                    && set_clause->default_settings.empty()
+                    && set_clause->query_parameters.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
