@@ -76,6 +76,9 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
+    if (settings.enable_adaptive_short_circuit_lazy_execution)
+        return ExpressionActions::create(actions_dag.clone(), settings, project_inputs);
+
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
     std::unordered_map<const Node *, const Node *> copy_map;

@@ -152,7 +152,13 @@ public:
         bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
-        , additional_filter_expression(additional_filter_expression_)
+        /// The adaptive implementation is stateful. `AddedColumns` is local to one join
+        /// execution, so give it a separate action instance instead of sharing the join's
+        /// expression prototype with other probe streams.
+        , additional_filter_expression(
+            additional_filter_expression_ && additional_filter_expression_->getSettings().enable_adaptive_short_circuit_lazy_execution
+                ? additional_filter_expression_->clone()
+                : std::move(additional_filter_expression_))
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
