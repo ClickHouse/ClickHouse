@@ -1735,19 +1735,26 @@ void StorageWindowView::writeIntoWindowView(
     if (!window_view.is_proctime)
     {
         UInt32 block_max_timestamp = 0;
-        if (window_view.is_watermark_bounded || window_view.allowed_lateness)
-        {
-            const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
-            const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
-            for (const auto & timestamp : timestamp_data)
-                block_max_timestamp = std::max(timestamp, block_max_timestamp);
-        }
+        const auto & timestamp_column = *block.getByName(window_view.timestamp_column_name).column;
+        const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(timestamp_column).getData();
+        for (const auto & timestamp : timestamp_data)
+            block_max_timestamp = std::max(timestamp, block_max_timestamp);
 
         if (block_max_timestamp)
         {
-            /// Validate the actual timestamp as well as the interval definition. A bounded
-            /// watermark and allowed lateness can be representable at the epoch but wrap when
-            /// they are applied close to the limits of `DateTime32`.
+            /// `ToStartOfTransform` can produce a bucket start below the input timestamp before
+            /// the interval addition wraps. Verify the final bound against the live timestamp,
+            /// not merely against that bucket start.
+            const UInt32 window_upper_bound = window_view.getWindowUpperBound(block_max_timestamp);
+            if (window_upper_bound <= block_max_timestamp)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Time overflow in the window view: upper bound {} does not follow timestamp {}",
+                    window_upper_bound,
+                    block_max_timestamp);
+
+            /// A bounded watermark and allowed lateness can be representable at the epoch but
+            /// wrap when they are applied close to the limits of `DateTime32`.
             if (window_view.is_watermark_bounded)
                 addTimeStrictly(
                     block_max_timestamp, window_view.watermark_kind, window_view.watermark_num_units, *window_view.time_zone);
