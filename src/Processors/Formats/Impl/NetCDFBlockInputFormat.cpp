@@ -353,8 +353,8 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             column.num_elements *= header.dimensions[layout.axis_dimensions[axis_id]].length;
 
         /// A variable can declare the value that marks the data that is missing. A `char`
-        /// attribute holds one or more character sentinels, while a `char` variable is exposed as
-        /// strings after its trailing padding has been removed.
+        /// attribute holds one or more character sentinels, except for a `char` variable exposed
+        /// as strings: its attribute is one string sentinel after its trailing padding is removed.
         if (settings.netcdf.fill_value_as_null)
         {
             for (std::string_view attribute_name : {"_FillValue", "missing_value"})
@@ -363,9 +363,19 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
                 if (attribute && attribute->type == variable.type && attribute->num_elements != 0
                     && attribute->data.size() == attribute->num_elements * netCDFTypeSize(variable.type))
                 {
-                    for (size_t value_index = 0; value_index < attribute->num_elements; ++value_index)
-                        column.null_values.emplace_back(
-                            attribute->data.data() + value_index * netCDFTypeSize(variable.type), netCDFTypeSize(variable.type));
+                    if (column.has_string_length_dimension)
+                    {
+                        size_t length = attribute->data.size();
+                        while (length != 0 && attribute->data[length - 1] == '\0')
+                            --length;
+                        column.null_values.emplace_back(attribute->data.data(), length);
+                    }
+                    else
+                    {
+                        for (size_t value_index = 0; value_index < attribute->num_elements; ++value_index)
+                            column.null_values.emplace_back(
+                                attribute->data.data() + value_index * netCDFTypeSize(variable.type), netCDFTypeSize(variable.type));
+                    }
                     column.type = makeNullable(column.type);
                 }
             }
