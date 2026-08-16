@@ -661,10 +661,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// This is the resolution point every path funnels through -- the top-level native resolution as well as
         /// a combinator's nested function reconstructed from a declared AggregateFunction(f, Variant(...)) state
         /// type -- so the wrapper is applied consistently and the state layouts always match.
-        /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior for the queries of
-        /// a user who depends on it. It can only affect how new values are aggregated, not the meaning of an
-        /// already written state: the state representation is the same in both modes, so it is deliberately not
-        /// consulted when there is no query context (a background operation, or a table loaded at startup).
+        /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior for a user who
+        /// depends on it. Query callers provide the query settings and background callers provide their storage
+        /// settings. It can only affect how new values are aggregated, not the meaning of an already written
+        /// state: the state representation is the same in both modes.
         /// The one state that replays raw values into a nested function -- the distinct-key history of the
         /// -Distinct combinator -- keeps that rule by resolving its nested function with the skipping disabled
         /// and filtering the new rows in front of the history instead (see above and the combinator branch).
@@ -833,8 +833,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             /// type would not have produced itself.
             if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function && combinator_name != "SimpleState")
             {
-                const Settings * query_settings = query_context ? &query_context->getSettingsRef() : nullptr;
-                if (!query_settings || (*query_settings)[Setting::aggregate_functions_skip_variant_nulls])
+                if (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
                     combined_function = std::make_shared<AggregateFunctionVariantNull>(combined_function, argument_types, parameters);
             }
         }
