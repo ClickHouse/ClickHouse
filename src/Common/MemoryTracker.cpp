@@ -267,7 +267,12 @@ static void incrementAllocationWithoutCheck(Int64 size) noexcept
     }
 }
 
-AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
+AllocationTrace MemoryTracker::allocImpl(
+    Int64 size,
+    bool enforce_memory_limit,
+    MemoryTracker * query_tracker,
+    double _sample_probability,
+    bool enable_profiler)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -296,7 +301,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         if (auto * loaded_next = parent.load(std::memory_order_acquire))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
 
         return AllocationTrace(_sample_probability);
@@ -464,7 +469,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
         try
         {
-            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
         catch (...)
         {
@@ -473,7 +478,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
     }
 
-    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit);
+    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit, enable_profiler);
     return allocation_trace;
 }
 
@@ -510,11 +515,16 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
     return accounted_size;
 }
 
-void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept
+void MemoryTracker::commitAllocation(
+    Int64 size,
+    Int64 will_be,
+    bool memory_limit_exceeded_ignored,
+    bool enforce_memory_limit,
+    bool enable_profiler) noexcept
 {
     const auto current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
     bool allocation_traced = false;
-    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    if (enable_profiler && unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
         DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {

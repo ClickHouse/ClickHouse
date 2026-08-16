@@ -150,7 +150,7 @@ private:
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
-    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit, bool enable_profiler) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -164,7 +164,12 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace allocImpl(
+        Int64 size,
+        bool enforce_memory_limit,
+        MemoryTracker * query_tracker = nullptr,
+        double _sample_probability = -1.0,
+        bool enable_profiler = true);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 

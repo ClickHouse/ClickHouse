@@ -168,7 +168,12 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
     {
         /// The returned trace is intentionally dropped: no actual allocation backs
         /// this reservation, so it must not be reported to the allocation profiler.
-        std::ignore = total_memory_tracker.allocImpl(size, /*enforce_memory_limit=*/ true, process_tracker);
+        std::ignore = total_memory_tracker.allocImpl(
+            size,
+            /*enforce_memory_limit=*/ true,
+            process_tracker,
+            /*_sample_probability=*/ -1.0,
+            /*enable_profiler=*/ false);
     }
     catch (...)
     {
