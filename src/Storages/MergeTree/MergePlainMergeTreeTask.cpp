@@ -183,7 +183,7 @@ void MergePlainMergeTreeTask::prepare()
                 mutations_snapshot,
                 merge_mutate_entry->time_of_merge,
                 /*output_on_remote_disk=*/ true,
-                CompactionStatistics::getDiskWriteBufferMemory(output_disk, merge_mutate_entry->merge_context->getWriteSettings()),
+                {CompactionStatistics::getDiskWriteBufferMemory(output_disk, merge_mutate_entry->merge_context->getWriteSettings())},
                 deduplicate,
                 cleanup));
     }

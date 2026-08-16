@@ -400,7 +400,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     memory_reservation = MergeMemoryReservation::reserve(
         CompactionStatistics::estimateNeededMemoryForMerge(
             *future_merged_part, metadata_snapshot, task_context, *merge_data_settings, mutations_snapshot, entry.create_time,
-            output_disk->isRemote(), CompactionStatistics::getDiskWriteBufferMemory(output_disk, task_context->getWriteSettings()),
+            output_disk->isRemote(), {CompactionStatistics::getDiskWriteBufferMemory(output_disk, task_context->getWriteSettings())},
             entry.deduplicate, entry.cleanup));
 
     /// Account TTL merge

@@ -43,14 +43,14 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
   * (columns_substreams.txt), so that dynamic substreams of JSON / Dynamic columns are counted correctly
   * instead of being collapsed to a single stream by the default serialization.
   * Multipart object storage (S3 / Azure) write buffers are large and double-buffered, so they are
-  * accounted separately, controlled by remote_write_buffer_memory:
-  *   - a value with a positive ceiling is the known per-stream sizing of the destination disk (see
+  * accounted separately, controlled by remote_write_buffer_memories:
+  *   - a non-empty set contains the known per-stream sizing of possible destination disks (see
   *     getDiskWriteBufferMemory - background writes take their sizes from the disk configuration,
   *     not from the query/session settings);
-  *   - a value with a zero ceiling means the destination disk is known and has no multipart upload
+  *   - a zero ceiling in that set means a destination disk has no multipart upload
   *     buffers (a local disk, or a remote disk such as HDFS whose writer uses a normal buffer), so the
   *     local per-stream estimate applies even when output_on_remote_disk is true;
-  *   - nullopt means the destination disk is not chosen yet, so if output_on_remote_disk is true the
+  *   - an empty set means the destination disk is not chosen yet, so if output_on_remote_disk is true the
   *     worst case over the S3 / Azure upload settings of the context is used as a
   *     pre-disk-selection guess.
   * Since upload buffers only ever hold data that has already flown through them, their contribution is
@@ -90,7 +90,7 @@ UInt64 estimateNeededMemoryForMerge(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     time_t time_of_merge,
     bool output_on_remote_disk,
-    std::optional<DiskWriteBufferMemory> remote_write_buffer_memory = std::nullopt,
+    const std::vector<DiskWriteBufferMemory> & remote_write_buffer_memories = {},
     bool deduplicate = false,
     bool cleanup = false);
 

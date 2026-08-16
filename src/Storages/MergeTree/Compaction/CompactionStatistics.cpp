@@ -947,7 +947,7 @@ UInt64 estimateNeededMemoryForMerge(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     time_t time_of_merge,
     bool output_on_remote_disk,
-    std::optional<DiskWriteBufferMemory> remote_write_buffer_memory,
+    const std::vector<DiskWriteBufferMemory> & remote_write_buffer_memories,
     bool deduplicate,
     bool cleanup)
 {
@@ -992,7 +992,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// uploads are in flight - unbounded when that setting is zero, in which case the ceiling is
     /// MultipartUploadMemory::UNLIMITED and only the data-volume bound below constrains the estimate.
     ///
-    /// Prefer the actual destination disk's sizing (remote_write_buffer_memory from
+    /// Prefer the actual destination disk's sizing (remote_write_buffer_memories from
     /// getDiskWriteBufferMemory) when the caller knows the disk: a background merge's
     /// object-storage writer takes its multipart sizes from the disk's own request settings and ignores the
     /// query/session settings (see S3ObjectStorage::writeObject), so a disk config that raises the multipart
@@ -1021,8 +1021,11 @@ UInt64 estimateNeededMemoryForMerge(
     UInt64 remote_write_buffer_size = 0;
     std::optional<MultipartUploadMemory> guessed_s3_write_buffer_memory;
     std::optional<MultipartUploadMemory> guessed_azure_write_buffer_memory;
-    if (remote_write_buffer_memory.has_value())
-        remote_write_buffer_size = remote_write_buffer_memory->memory.ceiling;
+    if (!remote_write_buffer_memories.empty())
+    {
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+            remote_write_buffer_size = std::max(remote_write_buffer_size, remote_write_buffer_memory.memory.ceiling);
+    }
     else if (output_on_remote_disk)
     {
         /// Model both back ends exactly as their writers do (getMultipartUploadMemory over the same
@@ -1280,9 +1283,17 @@ UInt64 estimateNeededMemoryForMerge(
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
 
-    if (remote_write_buffer_memory.has_value())
-        remote_write_buffer_size = getMultipartUploadMemoryCeilingForWrittenBytes(
-            remote_write_buffer_memory->memory, sum_input_bytes_uncompressed);
+    if (!remote_write_buffer_memories.empty())
+    {
+        remote_write_buffer_size = 0;
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+        {
+            remote_write_buffer_size = std::max(
+                remote_write_buffer_size,
+                getMultipartUploadMemoryCeilingForWrittenBytes(
+                    remote_write_buffer_memory.memory, sum_input_bytes_uncompressed));
+        }
+    }
     else if (guessed_s3_write_buffer_memory.has_value())
         remote_write_buffer_size = std::max<UInt64>(
             {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
@@ -1908,7 +1919,7 @@ UInt64 estimateNeededMemoryForMerge(
                     /*mutations_snapshot=*/ nullptr,
                     time_of_merge,
                     output_on_remote_disk,
-                    remote_write_buffer_memory);
+                    remote_write_buffer_memories);
             }
             else
             {

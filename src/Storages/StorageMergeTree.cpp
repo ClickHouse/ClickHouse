@@ -1852,7 +1852,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             }
 
             bool output_may_be_on_remote_disk = false;
-            std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
+            std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memories;
             for (const auto & disk : candidate_destination_disks)
             {
                 /// A read-only disk can never be the merge's destination: the disk-space reservation below
@@ -1865,9 +1865,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     continue;
                 output_may_be_on_remote_disk = true;
                 const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
-                if (!admission_write_buffer_memory)
-                    admission_write_buffer_memory.emplace();
-                admission_write_buffer_memory->memory.ceiling = std::max(admission_write_buffer_memory->memory.ceiling, disk_write_buffer_memory.memory.ceiling);
+                admission_write_buffer_memories.push_back(disk_write_buffer_memory);
             }
 
             /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
@@ -1900,7 +1898,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
                 *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-                output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, merge_with_cleanup);
+                output_may_be_on_remote_disk, admission_write_buffer_memories, deduplicate, merge_with_cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1950,7 +1948,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 memory_reservation = MergeMemoryReservation::reserve(
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-                        actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings),
+                        actual_output_on_remote_disk,
+                        {CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings)},
                         deduplicate, merge_with_cleanup));
             }
 
