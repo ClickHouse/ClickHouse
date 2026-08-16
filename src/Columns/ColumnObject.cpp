@@ -516,8 +516,9 @@ bool ColumnObject::shouldForceSharedData(std::string_view path)
         force_shared = shared_data_path_matcher->matches(root_relative_path);
     }
 
-    /// Memoize only matches: non-matching paths become dynamic paths or overflow to shared data anyway.
-    if (force_shared)
+    /// Memoize only matches (non-matching paths become dynamic paths or overflow anyway) and only up
+    /// to a bounded size, since a broad rule can match most paths of a high-cardinality document once.
+    if (force_shared && force_shared_data_paths.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
         force_shared_data_paths.emplace(path);
     return force_shared;
 }
