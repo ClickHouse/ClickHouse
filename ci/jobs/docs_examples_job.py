@@ -67,11 +67,17 @@ class Server:
     def start(self):
         kill_leftover_server_processes()
         print("Starting ClickHouse server")
+        server_env = {
+            name: value
+            for name, value in os.environ.items()
+            if name not in {"OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
+        }
         self.process = subprocess.Popen(
             [f"{TEMP_DIR}/clickhouse-server", "--config-file=./config.xml"],
             cwd=SERVER_DIR,
             stdout=open(self.log_file, "w"),
             stderr=subprocess.STDOUT,
+            env=server_env,
         )
         for _ in range(60):
             if self.process.poll() is not None:
@@ -172,8 +178,8 @@ def main():
             # here and the interpolated paths cannot be reinterpreted.
             # `--global-objects`: the server above is started for this job alone, so the examples
             # that create users, roles or databases can run without disturbing anything.
-            # `--external-calls`: the server has no model-provider credentials configured, so the
-            # `ai*` examples cannot reach any external service; running them keeps their
+            # `--external-calls`: the server is started without model-provider credentials, so
+            # the `ai*` examples cannot reach any external service; running them keeps their
             # known-failures entries validated.
             with open(RUNNER_LOG, "w", encoding="utf-8") as log:
                 code = subprocess.run(
