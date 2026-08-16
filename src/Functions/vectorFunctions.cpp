@@ -2665,7 +2665,11 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            ""}};
+            R"(
+┌─L2DistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                         0.004942022755037076 │
+└──────────────────────────────────────────────────────────────────────────────┘
+            )"}};
     FunctionDocumentation::Category category_transposed_quantized = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l2_distance_transposed_quantized
         = {description_l2_distance_transposed_quantized,
@@ -2704,7 +2708,11 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            ""}};
+            R"(
+┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.000027192636379513857 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+            )"}};
     FunctionDocumentation documentation_cosine_distance_transposed_quantized
         = {description_cosine_distance_transposed_quantized,
            syntax_cosine_distance_transposed_quantized,
@@ -2742,7 +2750,11 @@ CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 )",
-            ""}};
+            R"(
+┌─dotProductTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.25834959745407104 │
+└──────────────────────────────────────────────────────────────────────────────┘
+            )"}};
     FunctionDocumentation documentation_dot_product_transposed_quantized
         = {description_dot_product_transposed_quantized,
            syntax_dot_product_transposed_quantized,
