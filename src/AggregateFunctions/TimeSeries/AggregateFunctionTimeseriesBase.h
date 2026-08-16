@@ -751,7 +751,7 @@ private:
             return NO_BUCKET;
 
         const Int64 leading_buckets = static_cast<Int64>(buckets_per_first_window);
-        Int64 bucket_index;
+        Int64 bucket_index = 0;
         if (window_remainder == 0)
         {
             bucket_index = unclamped_grid_index + leading_buckets - 1;
