@@ -3,7 +3,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 11-12 and 22-29 of the series started in 04165_skip_index_stale_type_after_alter: parts
+-- Cases 11-12 and 22-30 of the series started in 04165_skip_index_stale_type_after_alter: parts
 -- carrying index files for a column (or a subcolumn parent) they hold no bytes of. One test exceeded
 -- the flaky-check runtime limit under sanitizers, so the series is split, keeping the original case
 -- numbering.
@@ -270,7 +270,8 @@ SELECT '-- 29. a sibling index whose granules this mutation rebuilds does not ke
 -- idx_new needs, or the index it just wrote is unusable. The UPDATE and the MATERIALIZE INDEX are
 -- one ALTER, which is the command set the pipeline also sees when two queued mutation entries are
 -- squashed. idx_old reads e as well as c, and updating e is what rebuilds it; c's own TTL is removed
--- first so nothing re-expires c and the two effects stay separate.
+-- first so nothing re-expires c and the two effects stay separate. An index rebuilt through a column
+-- the mutation writes without naming it is case 30.
 DROP TABLE IF EXISTS t_sibling_rebuilt;
 CREATE TABLE t_sibling_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND, e UInt64,
     INDEX idx_old (c, e) TYPE set(100) GRANULARITY 1)
@@ -302,6 +303,46 @@ SELECT count() FROM t_sibling_rebuilt WHERE c = '150' SETTINGS use_skip_indexes 
 SELECT count() FROM t_sibling_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 30. a sibling index rebuilt through a TTL target it reads does not keep the column absent';
+-- Case 29 rebuilds idx_old through a column the UPDATE names. Here the UPDATE names only d, and the
+-- index is rebuilt through g, whose own TTL reads d: expiring a column is writing it, so g is
+-- rewritten and every index over it with it. g's TTL is 100 years out, so g is rewritten with its
+-- values intact rather than expired. c carries no TTL by then, so nothing writes c for its own sake
+-- and the recording is what the indices depend on.
+DROP TABLE IF EXISTS t_sibling_ttl_rebuilt;
+CREATE TABLE t_sibling_ttl_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
+    g String TTL d + INTERVAL 100 YEAR, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_ttl_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
+ALTER TABLE t_sibling_ttl_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'c';
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'g';
+ALTER TABLE t_sibling_ttl_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_ttl_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_ttl_rebuilt UPDATE d = toDateTime('2100-01-01 00:00:00') WHERE 1, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_ttl_rebuilt;
+-- Both commands share one mutation id, so the pipeline saw them as one command set. Two ids would
+-- mean two separate mutations and the case would silently stop covering the shape.
+SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_ttl_rebuilt' AND command LIKE '%idx_new%';
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'c';
+-- g keeps its values, so idx_old was rebuilt from data rather than emptied.
+SELECT count() = 64 FROM t_sibling_ttl_rebuilt WHERE g != '';
+-- Both indices hold files: a materialization that silently did nothing cannot pass.
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt';
+-- Both were built from current data, so both must prune, and no row holds '150' after the expiry:
+-- 0/16 for each, where 16/16 would be the refusal this case must not see.
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '150';
+SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '150' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '';
+SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_absent_col;
 DROP TABLE t_pre_add_index;
 DROP TABLE t_materialized_index;
@@ -315,3 +356,4 @@ DROP TABLE t_materialize_absent_sub;
 DROP TABLE t_rematerialize_absent;
 DROP TABLE t_two_indices_absent;
 DROP TABLE t_sibling_rebuilt;
+DROP TABLE t_sibling_ttl_rebuilt;

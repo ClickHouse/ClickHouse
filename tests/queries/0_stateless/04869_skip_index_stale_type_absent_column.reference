@@ -84,3 +84,16 @@
 0
 64
 64
+-- 30. a sibling index rebuilt through a TTL target it reads does not keep the column absent
+1
+1
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
