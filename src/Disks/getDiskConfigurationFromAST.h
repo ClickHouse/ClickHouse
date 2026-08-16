@@ -84,9 +84,10 @@ void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & confi
 /// Resolve the native GCS backend after `include`, `from_env`, and `from_zk` are processed. This enforces the
 /// experimental feature gate on the actual backend, then re-applies GCS credential restrictions after `include`
 /// so it cannot inject a `gcs` backend with `service_account_key_file` (a server-side file read),
-/// server-managed credential fields, or authentication headers past the pre-resolution AST checks. The former
-/// checks are unconditional; the ADC and header checks follow `s3_allow_server_credentials_in_user_queries`
-/// and throw `ACCESS_DENIED` (fail-closed) when restricted.
+/// server-managed credential fields, or authentication headers past the pre-resolution AST checks. Credential
+/// fields and included headers are always rejected: a session-only credential opt-in cannot be persisted for
+/// included values. The ADC check follows `s3_allow_server_credentials_in_user_queries` and throws
+/// `ACCESS_DENIED` (fail-closed) when restricted.
 void validateResolvedGCSDiskCredentials(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context,

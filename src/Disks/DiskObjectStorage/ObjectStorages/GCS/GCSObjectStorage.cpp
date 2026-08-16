@@ -53,9 +53,8 @@ namespace
         /// cache key wherever an etag is expected) and `readObject` can pin ranged re-reads to it
         /// with `IfGenerationMatch` to detect concurrent overwrites (`s3_validate_etag_on_read`).
         result.etag = std::to_string(md.generation());
-        result.attributes.emplace();
         for (const auto & [key, value] : md.metadata())
-            result.attributes->emplace(key, value);
+            result.attributes.emplace(key, value);
         return result;
     }
 

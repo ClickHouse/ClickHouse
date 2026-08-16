@@ -23,7 +23,13 @@ cluster = ClickHouseCluster(__file__)
 def started_cluster():
     try:
         cluster.add_instance(
-            "node", main_configs=["configs/forbid_headers.xml"], with_gcs=True
+            "node",
+            main_configs=[
+                "configs/forbid_headers.xml",
+                "configs/dynamic_gcs_disk_include.xml",
+                "configs/dynamic_gcs_disk_include_source.xml",
+            ],
+            with_gcs=True,
         )
         cluster.start()
 
@@ -108,6 +114,34 @@ def test_mergetree_on_gcs_disk(started_cluster):
     assert node.query("SELECT sum(a) FROM gcs_mt").strip() == str(sum(range(2000)))
 
     node.query("DROP TABLE gcs_mt SYNC")
+
+
+def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_in(started_cluster):
+    """An included request header has no durable opt-in marker in table metadata.
+
+    Reject it during creation even when the session permits server credentials; otherwise the table can be
+    created but becomes unloadable after restart under the default restricted profile.
+    """
+    node = started_cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS gcs_include_header SYNC")
+    error = node.query_and_get_error(
+        "CREATE TABLE gcs_include_header (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_include_header_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('include-header/')}',"
+        "  access_token = 'user-token',"
+        "  include = 'gcs_included_header'"
+        ")",
+        settings={
+            "dynamic_disk_allow_include": 1,
+            "use_native_gcs": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+    assert "ACCESS_DENIED" in error and "header" in error, error
 
 
 def test_schema_inference_cache(started_cluster):

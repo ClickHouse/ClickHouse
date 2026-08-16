@@ -581,6 +581,8 @@ void validateResolvedGCSDiskCredentials(
     /// checks (which only see the keys present in the AST itself). A `system`-database disk is server-internal,
     /// exempt like the pre-resolution GCS checks. An included credential-less GCS backend would use Application
     /// Default Credentials, so it also needs the same opt-in-gated restriction as the initial AST check.
+    /// Included headers are different: the session-only opt-in has no durable representation in table metadata,
+    /// so accepting one would let a table become unloadable after restart under the default restriction.
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
     /// object storage per child, so an `include` can hide a GCS child behind a non-GCS root.
     std::vector<String> prefixes{""};
@@ -639,9 +641,6 @@ void validateResolvedGCSDiskCredentials(
                 "server-managed auth material. Provide the credentials as literal values in the SQL definition, "
                 "or configure the disk in the server configuration instead.");
 
-        if (!context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
-            continue;
-
         Poco::Util::AbstractConfiguration::Keys backend_keys;
         config.keys(prefix.empty() ? "" : prefix.substr(0, prefix.size() - 1), backend_keys);
         const bool has_included_header = std::any_of(backend_keys.begin(), backend_keys.end(), [](const String & name)
@@ -653,8 +652,12 @@ void validateResolvedGCSDiskCredentials(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic native GCS disk created from user SQL may not take `header` or `access_header` from "
                 "an included configuration, which could contain server-managed authentication material. Provide "
-                "the header as a literal value in the SQL definition, or enable "
-                "`s3_allow_server_credentials_in_user_queries`");
+                "the header as a literal value in the SQL definition. This remains disallowed even when "
+                "`s3_allow_server_credentials_in_user_queries` is enabled, because an opt-in represented only "
+                "by the creating session cannot be persisted for an included header.");
+
+        if (!context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
+            continue;
 
         /// `no_sign_request` is anonymous and therefore safe regardless of its provenance. An explicit native
         /// credential is safe only on the root and only when the literal SQL AST vouched for every selected
