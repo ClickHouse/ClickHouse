@@ -1,0 +1,44 @@
+---
+description: '임시 테이블 생성 문서'
+keywords: ['임시 테이블', 'DDL']
+sidebarTitle: 'TEMPORARY TABLE'
+slug: /sql-reference/statements/create/table/temporary-table
+title: 'CREATE TEMPORARY TABLE'
+doc_type: 'reference'
+---
+
+<div id="temporary-table-support">
+  ## 임시 테이블 지원
+</div>
+
+<Note>
+  임시 테이블은 복제되지 않습니다. 따라서 임시 테이블에 삽입된 데이터를 다른 레플리카에서 사용할 수 있다고 보장할 수 없습니다. 임시 테이블은 단일 세션 중에 소규모 외부 데이터셋을 쿼리하거나 조인할 때 주로 유용합니다.
+</Note>
+
+ClickHouse는 다음과 같은 특성을 가진 임시 테이블을 지원합니다.
+
+* 연결이 끊어진 경우를 포함해 세션이 종료되면 임시 테이블은 사라집니다.
+* 엔진을 지정하지 않으면 임시 테이블은 Memory 테이블 엔진을 사용합니다. Replicated 및 `KeeperMap` 엔진을 제외한 모든 테이블 엔진을 사용할 수 있습니다.
+* 임시 테이블에는 DB를 지정할 수 없습니다. 데이터베이스 외부에 생성됩니다.
+* 모든 클러스터 서버에서 분산 DDL 쿼리(`ON CLUSTER` 사용)로 임시 테이블을 생성할 수 없습니다. 이 테이블은 현재 세션에만 존재합니다.
+* 임시 테이블이 다른 테이블과 동일한 이름이고 쿼리에서 DB를 지정하지 않은 채 테이블 이름을 지정하면 임시 테이블이 사용됩니다.
+* 분산 쿼리 처리 시 쿼리에 사용되는 Memory 엔진 임시 테이블은 원격 서버로 전달됩니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+임시 테이블을 생성하려면 다음 구문을 사용하십시오:
+
+```sql
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) [ENGINE = engine]
+```
+
+대부분의 경우 임시 테이블은 수동으로 생성되지 않습니다. 쿼리에 외부 데이터를 사용하거나 분산 `(GLOBAL) IN`을 사용할 때 생성됩니다. 자세한 내용은 해당 섹션을 참조하십시오.
+
+임시 테이블 대신 [ENGINE = Memory](/ko/reference/engines/table-engines/special/memory)를 사용하는 테이블을 사용할 수 있습니다.

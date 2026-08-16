@@ -242,7 +242,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
         /// while the table it depends on is dropped, since DROP DATABASE skips same-database
         /// dependency checks), leaving orphaned tables that prevent server restart.
-        if (!secondary_query && !is_refreshable_view && !is_drop_or_detach_database
+        if (!secondary_query && !internal && !is_refreshable_view && !is_drop_or_detach_database
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
@@ -295,7 +295,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, QueryFlags{ .internal = internal }, std::move(ddl_guard));
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)

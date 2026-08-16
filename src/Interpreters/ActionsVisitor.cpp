@@ -62,6 +62,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
@@ -134,9 +135,9 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
         auto tuple_column = ColumnTuple::create(std::move(element_columns));
@@ -153,9 +154,9 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
         DataTypePtr nested_type;
@@ -181,7 +182,8 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
     /// For non tuple/array functions, we fall back to the generic path
     ASTPtr func_ast = func;
-    return evaluateConstantExpressionAsColumn(func_ast, context);
+    const auto value = evaluateConstantExpressionAsColumn(func_ast, context);
+    return {value.getColumn(), value.getType()};
 }
 
 
@@ -197,7 +199,9 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    auto [right_arg_column, right_arg_type] = evaluateConstantExpressionAsColumn(right_arg, context);
+    const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
+    const auto & right_arg_column = right_value.getColumn();
+    const auto & right_arg_type = right_value.getType();
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],

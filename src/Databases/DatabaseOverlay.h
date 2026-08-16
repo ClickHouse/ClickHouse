@@ -260,6 +260,7 @@ public:
     /// report a denial (`SHOW CREATE DATABASE`, `BACKUP DATABASE`). The message names only the
     /// facade, never a source, so a denied user learns nothing about which sources are hidden.
     void checkSourceDatabaseNamesVisible(const ContextPtr & context) const;
+    void checkTableNameLength(const String & table_name) const override;
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

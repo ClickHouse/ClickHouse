@@ -1327,5 +1327,16 @@ GRANT SELECT ON db_a.* TO some_user;
         .related = {"Atomic"}});
 }
 
+void DatabaseOverlay::checkTableNameLength(const String & table_name) const
+{
+    /// The limit belongs to the member createTable writes to, which owns the metadata file.
+    for (const auto & db : resolveDatabases())
+    {
+        if (db->isReadOnly())
+            continue;
+        db->checkTableNameLength(table_name);
+        return;
+    }
+}
 
 }
