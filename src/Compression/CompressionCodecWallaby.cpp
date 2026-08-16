@@ -1970,6 +1970,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
     while (produced < values_count)
     {
         const UInt32 count = std::min<UInt32>(WALLABY_VECTOR_VALUES, values_count - produced);
+        std::fill_n(is_exception.begin(), count, false);
         require(1);
         const UInt8 mode_byte = static_cast<UInt8>(*src++);
         if (mode_byte > static_cast<UInt8>(VectorMode::Raw))

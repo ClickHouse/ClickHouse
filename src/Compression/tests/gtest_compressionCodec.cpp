@@ -3068,7 +3068,7 @@ TEST_F(WallabyTest, DecompressMalformedInputDecimalForReconstructionOverflow)
         0x00, 0x00                    // exception_count = 0
     };
     vectors.resize(vectors.size() + 128, 0x00);
-    vectors[11] = 0x01; // first packed offset = 1
+    vectors[10] = 0x01; // first packed offset = 1
     verifyDecompressExpectedException(
         constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 4);
 }
@@ -3085,7 +3085,7 @@ TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaReconstructionOverflow)
         0x00, 0x00                    // exception_count = 0
     };
     vectors.resize(vectors.size() + 256, 0x00);
-    vectors[15] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
+    vectors[14] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
     verifyDecompressExpectedException(
         constructCodecPayload<Float32>(vectors, 2), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 8);
 }
@@ -3193,6 +3193,17 @@ TEST_F(WallabyTest, CompressesSparsePeriodicExceptionsAsDecimal)
         values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
 
     EXPECT_LT(wallabyCompressedSize(values), 1000u);
+}
+
+TEST_F(WallabyTest, ReusesExceptionPositionsAcrossDecimalVectors)
+{
+    /// Exception positions are local to each 1024-value vector. Reusing the same positions in
+    /// a second vector must round-trip instead of being rejected as duplicate exceptions.
+    std::vector<Float64> values(2048);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 2000u);
 }
 
 TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
