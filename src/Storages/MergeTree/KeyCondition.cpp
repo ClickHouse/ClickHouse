@@ -354,11 +354,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// ClickHouse `match` patterns must not contain NUL bytes.
-                /// Do not attempt to optimize such patterns.
-                if (expression.contains('\0'))
-                    return false;
-
                 auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
 
                 /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
