@@ -234,6 +234,10 @@ def check_functional_test_cases(files):
     return " ".join(errors)
 
 
+# A `SELECT` star projection can include optional `DISTINCT` / `ALL` and a table alias.
+# It still materializes the server-side path column in the shell.
+STAR_PROJECTION_RE = r"\bselect\s+(?:(?:distinct|all)\s+)?(?:[A-Za-z_]\w*\.)?\*"
+
 # A query that pulls a server-side filesystem path out of a system table into the shell.
 # Single quotes are allowed inside the window so that a derived expression such as
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
@@ -241,15 +245,15 @@ def check_functional_test_cases(files):
 FETCHES_SERVER_PATH_RE = re.compile(
     r"(?i)(?:\b(?:path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
-    r"|\bselect\s+\*[^\"`|;]{0,300}?\bfrom\s+system\."
+    rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\."
     r"(?:parts|detached_parts|projection_parts|tables|disks)\b)"
 )
-# The server data root fetched as `SELECT value` or `SELECT *` from
+# The server data root fetched as `SELECT value` or a star projection from
 # `system.server_settings` where `name = 'path'`. The `value` token (or `*`) is required
 # so that queries that merely inspect the setting without materializing the path (e.g.
 # `SELECT count()`) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
-    r"(?i)(?:\bvalue\b|\bselect\s+\*)[^\"`|;]{0,100}?\bfrom\s+system\.server_settings\b"
+    rf"(?i)(?:\bvalue\b|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.server_settings\b"
     r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b)"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,

@@ -169,6 +169,24 @@ def test_select_star_from_system_parts_is_flagged(tmp_path):
     )
 
 
+def test_decorated_or_qualified_star_from_system_parts_is_flagged(tmp_path):
+    # `DISTINCT *` and an aliased `p.*` also include the `path` column.
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT * FROM system.parts'
+        " WHERE table = 't' AND active\")\n"
+        'path=$(printf "%s" "$row" | cut -f22)\n'
+        'rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT p.* FROM system.parts AS p'
+        " WHERE table = 't' AND active\")\n"
+        'path=$(printf "%s" "$row" | cut -f22)\n'
+        'rm -f "$path/data.bin"\n',
+    )
+
+
 def test_mutation_after_negation_is_flagged(tmp_path):
     # `!` is a shell command introducer, commonly used when a failure is expected.
     assert _run(tmp_path, FETCH_PART_PATH + '! rm -f "$path/data.bin"\n')
@@ -190,6 +208,13 @@ def test_server_root_fetch_is_flagged(tmp_path):
     assert _run(
         tmp_path,
         'row=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.server_settings'
+        " WHERE name = 'path'\")\n"
+        'root=$(printf "%s" "$row" | cut -f2)\n'
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT * FROM system.server_settings'
         " WHERE name = 'path'\")\n"
         'root=$(printf "%s" "$row" | cut -f2)\n'
         'rm -f "$root/flags/force_drop_table"\n',
