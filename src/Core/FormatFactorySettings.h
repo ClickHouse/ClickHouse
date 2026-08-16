@@ -254,7 +254,7 @@ The time zone name for ORC row reader, the default ORC row reader's time zone is
 Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC files.
 )", 0) \
     DECLARE(Bool, input_format_vortex_filter_push_down, true, R"(
-When reading Vortex files, push WHERE conditions on top-level integer, floating-point, and string/binary columns down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics; other predicates are evaluated by ClickHouse after the scan.
+When reading Vortex files, push translatable parts of WHERE conditions on top-level integer, floating-point, and string/binary columns down into the scan, which may reduce the rows decoded. ClickHouse reapplies the full filter after the scan. Whole segments are not yet pruned by statistics.
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
@@ -596,6 +596,9 @@ When enabled, dots in JSON keys will be escaped during parsing.
 )", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
+)", 0) \
+    DECLARE(UInt64, input_format_json_max_object_size, 512 * 1024 * 1024, R"(
+Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
 )", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
 When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
@@ -1209,6 +1212,9 @@ Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_wide_integer_as_decimal, false, R"(
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
 )", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
