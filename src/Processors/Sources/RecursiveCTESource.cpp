@@ -381,9 +381,17 @@ ParallelReplicasEngagement mayEngageParallelReplicasForView(const StorageView & 
         nodes_to_scan.pop_back();
 
         if (const auto * query_node = node->as<QueryNode>())
-            engagement.merge(mayEngageParallelReplicas(node, query_node->getContext()));
+        {
+            const auto & query_context = query_node->getContext();
+            if (query_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+                engagement.merge(mayEngageParallelReplicas(node, query_context));
+        }
         else if (const auto * union_node = node->as<UnionNode>())
-            engagement.merge(mayEngageParallelReplicas(node, union_node->getContext()));
+        {
+            const auto & union_context = union_node->getContext();
+            if (union_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+                engagement.merge(mayEngageParallelReplicas(node, union_context));
+        }
 
         for (auto & child : node->getChildren())
             if (child)
