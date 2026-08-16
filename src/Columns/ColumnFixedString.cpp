@@ -22,6 +22,7 @@
 #    include <llvm/IR/Module.h>
 #endif
 
+#include <bit>
 
 namespace DB
 {
@@ -315,6 +316,15 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
+static inline UInt64 blsr(UInt64 mask)
+{
+#ifdef __BMI__
+    return _blsr_u64(mask);
+#else
+    return mask & (mask - 1);
+#endif
+}
+
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = size();
@@ -352,15 +362,27 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             while (mask)
             {
-                size_t index = std::countr_zero(mask);
-                res->chars.resize(res_chars_size + n);
-                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
-                res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                const size_t index = std::countr_zero(mask);
+                const UInt64 shifted_mask = mask >> index;
+
+                if ((shifted_mask & 2) == 0)
+                {
+                    res->chars.resize(res_chars_size + n);
+                    memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
+                    res_chars_size += n;
+                    mask = blsr(mask);
+                    continue;
+                }
+
+                const size_t run_length = std::countr_one(shifted_mask);
+                res->chars.resize(res_chars_size + run_length * n);
+                memcpy(res->chars.data() + res_chars_size, data_pos + index * n, run_length * n);
+                res_chars_size += run_length * n;
+
+                if (run_length == 64)
+                    mask = 0;
+                else
+                    mask &= ~(((UInt64{1} << run_length) - 1) << index);
             }
         }
         data_pos += chars_per_simd_elements;
@@ -418,14 +440,25 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
         {
             while (mask)
             {
-                size_t index = std::countr_zero(mask);
-                memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
-                res_chars_size += n;
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                const size_t index = std::countr_zero(mask);
+                const UInt64 shifted_mask = mask >> index;
+
+                if ((shifted_mask & 2) == 0)
+                {
+                    memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
+                    res_chars_size += n;
+                    mask = blsr(mask);
+                    continue;
+                }
+
+                const size_t run_length = std::countr_one(shifted_mask);
+                memmove(res_data_pos + res_chars_size, data_pos + index * n, run_length * n);
+                res_chars_size += run_length * n;
+
+                if (run_length == 64)
+                    mask = 0;
+                else
+                    mask &= ~(((UInt64{1} << run_length) - 1) << index);
             }
         }
         data_pos += chars_per_simd_elements;
