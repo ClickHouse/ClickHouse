@@ -112,8 +112,6 @@ void normalizeLegacyToTimeInAlterKeyDefinitions(ASTAlterQuery & alter)
         auto * command = child->as<ASTAlterCommand>();
         if (command->type == ASTAlterCommand::MODIFY_ORDER_BY)
             replaceLegacyToTimeInAlterExpression(command->order_by);
-        else if (command->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
-            replaceLegacyToTimeInAlterExpression(command->sample_by);
         else if (command->type == ASTAlterCommand::MODIFY_TTL)
             replaceLegacyToTimeInAlterExpression(command->ttl);
     }
