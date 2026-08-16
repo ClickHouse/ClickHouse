@@ -60,7 +60,10 @@ String transformQueryForExternalDatabase(
   * INCORRECT_QUERY when strict mode is enabled and the outer query has a filter on the source; otherwise it does
   * nothing (the filter is applied locally, as usual).
   */
-void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context);
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+    const SelectQueryInfo & query_info,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context);
 
 /** Recursively normalize `node` so that it re-serializes into SQL the external database can parse. Used for
   * user-provided `(SELECT ...)` subqueries that are formatted from the raw AST and therefore bypass the

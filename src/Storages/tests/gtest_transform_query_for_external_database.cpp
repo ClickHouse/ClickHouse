@@ -450,6 +450,30 @@ TEST(TransformQueryForExternalDatabase, Strict)
     EXPECT_THROW(check(state, 1, {"column"}, "SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'", ""), Exception);
 }
 
+TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyzer)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", true);
+
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(
+        parser,
+        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num WHERE table2.num = 1",
+        1000,
+        1000,
+        1000000);
+    SelectQueryInfo query_info;
+    SelectQueryOptions select_options;
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
+    query_info.query = ast;
+
+    /// An outer filter that belongs only to a joined source is not a filter on the query-backed external source.
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+
+    state.context->setSetting("external_table_strict_query", false);
+}
+
 TEST(TransformQueryForExternalDatabase, Null)
 {
     const State & state = State::instance();

@@ -202,7 +202,8 @@ public:
             /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
-            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+                query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context);
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }

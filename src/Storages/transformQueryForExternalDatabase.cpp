@@ -833,7 +833,10 @@ String transformQueryForExternalDatabase(
         local_only_columns);
 }
 
-void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+    const SelectQueryInfo & query_info,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
@@ -853,6 +856,13 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
     else if (query_info.query)
     {
         clone_query = query_info.query->clone();
+
+        /// The old analyzer leaves the complete outer query in `query`. Prune predicates belonging to other
+        /// joined sources exactly as `transformQueryForExternalDatabase` does before checking whether a filter
+        /// remains for this source. A filter on a different table is evaluated outside this source and must not
+        /// make a query-backed external table fail under `external_table_strict_query`.
+        auto & where = clone_query->as<ASTSelectQuery &>().refWhere();
+        removeUnknownSubexpressionsFromWhere(where, available_columns);
     }
     else
         return;
