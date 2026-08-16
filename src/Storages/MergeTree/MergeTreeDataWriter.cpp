@@ -1172,6 +1172,28 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                     collectValueCarryingIdentifierNames(*args[i], names, masked_names);
             return;
         }
+        /// These lambdas only select/order/count/split the array's own elements; unlike arrayMap,
+        /// their return value never becomes part of the output, so skip them (like if()'s condition).
+        static const std::unordered_set<String> array_predicate_only_functions = {
+            "arrayFilter", "arrayExists", "arrayAll", "arrayCount",
+            "arrayFirst", "arrayFirstOrNull", "arrayLast", "arrayLastOrNull",
+            "arrayFirstIndex", "arrayLastIndex",
+            "arrayFill", "arrayReverseFill",
+            "arraySort", "arrayReverseSort", "arrayPartialSort", "arrayPartialReverseSort",
+            "arraySplit", "arrayReverseSplit",
+            "arrayCompact",
+            "arrayTopK", "arrayBottomK",
+        };
+        if (!args.empty() && array_predicate_only_functions.contains(function->name))
+        {
+            const auto * lambda_arg = args[0]->as<ASTFunction>();
+            if (lambda_arg && lambda_arg->name == "lambda")
+            {
+                for (size_t i = 1; i < args.size(); ++i)
+                    collectValueCarryingIdentifierNames(*args[i], names, masked_names);
+                return;
+            }
+        }
     }
 
     for (const auto & child : node.children)
