@@ -194,7 +194,7 @@ void SetOrJoinSink::onFinish()
         backup_promoted = true;
 
         state_update_started = true;
-        table.restoreFromFile(fs::path(backup_path) / backup_file_name);
+        table.restoreFromFile(fs::path(backup_path) / backup_file_name, getContext());
     }
 
     table.finishInsert();
@@ -398,9 +398,8 @@ void StorageSetOrJoinBase::restore()
 }
 
 
-void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
+void StorageSetOrJoinBase::restoreFromFile(const String & file_path, ContextPtr context)
 {
-    ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
@@ -409,14 +408,14 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
     {
         info.update(block);
-        insertBlock(block, ctx);
+        insertBlock(block, context);
     }
 
     finishInsert();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
+        file_path, info.rows, ReadableSize(info.bytes), getSize(context));
 }
 
 void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Block &)> & callback) const

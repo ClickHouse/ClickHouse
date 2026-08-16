@@ -60,7 +60,7 @@ protected:
     virtual void rebuildFromBackups() = 0;
 
 private:
-    void restoreFromFile(const String & file_path);
+    void restoreFromFile(const String & file_path, ContextPtr context = nullptr);
 
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
