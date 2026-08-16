@@ -550,6 +550,14 @@ The size in bytes of the memory arena for keys in ClickHouse Keeper.
 
 Index of the last committed log in ClickHouse Keeper.
 
+### KeeperLastLeaderElectionTime {#keeperlastleaderelectiontime}
+
+Duration in milliseconds of the most recent locally observed no-leader window that ended when this ClickHouse Keeper instance became leader. Leadership transfers that do not expose a sampled no-leader state are not recorded. `0` if this instance is not the active leader or has no recorded completed window.
+
+### KeeperLastLeaderUnavailableTime {#keeperlastleaderunavailabletime}
+
+Duration in milliseconds of the most recent locally observed no-leader window completed by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed no-leader window.
+
 ### KeeperLastLogIdx {#keeperlastlogidx}
 
 Index of the last log stored in ClickHouse Keeper.
