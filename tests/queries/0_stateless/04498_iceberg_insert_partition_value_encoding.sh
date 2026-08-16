@@ -13,11 +13,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}_partition_encoding"
-TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+TABLE_PATH_BASE="${USER_FILES_PATH}/${TABLE}"
 
-trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
+trap 'rm -rf "${TABLE_PATH_BASE}"* 2>/dev/null' EXIT
 
 echo "--- UInt32 partition (Avro int) ---"
+TABLE_PATH="${TABLE_PATH_BASE}_uint32/"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (a UInt32, b String)
@@ -31,6 +32,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
 rm -rf "${TABLE_PATH}"
 
 echo "--- DateTime64 partition (Avro long from Decimal64 ticks) ---"
+TABLE_PATH="${TABLE_PATH_BASE}_datetime64/"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (t DateTime64(6, 'UTC'), v String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
@@ -45,6 +47,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
 rm -rf "${TABLE_PATH}"
 
 echo "--- Bucket partition (Avro int from Field::UInt64) ---"
+TABLE_PATH="${TABLE_PATH_BASE}_bucket/"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (id Int64, v String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
@@ -55,6 +58,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, v FROM ${TABLE} ORDER BY id FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
 
 echo "--- Float32 partition (Avro float from Field::Float64) ---"
+TABLE_PATH="${TABLE_PATH_BASE}_float32/"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (f Float32, v String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
