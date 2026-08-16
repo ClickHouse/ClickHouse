@@ -943,11 +943,12 @@ void addDistinctStep(QueryPlan & query_plan,
 
     SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
-    /// The final DISTINCT may be followed by a limit or offset that selects rows according to its
-    /// input order. `limit_hint` covers the usual positive integer LIMIT case, but negative and
-    /// fractional limits and offsets are applied only after the full result is read. Do not let
+    /// The final DISTINCT may be followed by a limit, offset, or LIMIT BY that selects rows according
+    /// to its input order. `limit_hint` covers the usual positive integer LIMIT case, but negative
+    /// and fractional limits and offsets are applied only after the full result is read. Do not let
     /// parallel DISTINCT reorder their input either.
-    const bool has_order_sensitive_post_distinct_limit = !pre_distinct && (query_node.hasLimit() || query_node.hasOffset());
+    const bool has_order_sensitive_post_distinct_limit
+        = !pre_distinct && (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy());
 
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
