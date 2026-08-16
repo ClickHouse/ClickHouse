@@ -98,11 +98,10 @@ public:
 
     static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// Same rationale as the immutable-`VariantInfo` overload above: bypass `assumeMutable`
-        /// to allow shared inputs. `std::move(variant_column_)` does not reduce ownership
-        /// count when the caller keeps its reference.
+        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
+        /// must be deep-unshared here rather than borrowed.
         return create(
-            const_cast<IColumn *>(variant_column_.get())->getPtr(),
+            IColumn::mutate(variant_column_),
             variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
