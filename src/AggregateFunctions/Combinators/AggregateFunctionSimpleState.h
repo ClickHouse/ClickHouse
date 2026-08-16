@@ -36,7 +36,9 @@ public:
         // Need to make a new function with promoted argument types because SimpleAggregates requires arg_type = return_type.
         AggregateFunctionProperties properties;
         auto function = AggregateFunctionFactory::instance().get(
-            nested_->getName(), NullsAction::EMPTY, {storage_type_out}, nested_->getParameters(), properties);
+            nested_->getName(), NullsAction::EMPTY, {storage_type_out}, nested_->getParameters(), properties,
+            AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true,
+            /*from_declared_simple_aggregate_function=*/ true);
 
         // Need to make a clone because it'll be customized.
         auto storage_type_arg = DataTypeFactory::instance().get(nested_->getResultType()->getName());

@@ -19,3 +19,22 @@ OPTIMIZE TABLE variant_simple_aggregate_function_null_compatibility FINAL;
 SELECT v FROM variant_simple_aggregate_function_null_compatibility FINAL;
 
 DROP TABLE variant_simple_aggregate_function_null_compatibility;
+
+CREATE TABLE variant_simple_aggregate_function_null_compatibility
+(
+    k UInt8,
+    v SimpleAggregateFunction(any, Variant(UInt64, String))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY k;
+
+-- The -SimpleState producer must use the same historical behavior as the declared type it creates.
+-- Otherwise a newly inserted state could skip the leading NULL while a later table merge preserves it.
+INSERT INTO variant_simple_aggregate_function_null_compatibility
+SELECT 1, anySimpleState(v)
+FROM values('v Variant(UInt64, String)', NULL, 1::UInt64);
+
+OPTIMIZE TABLE variant_simple_aggregate_function_null_compatibility FINAL;
+SELECT v FROM variant_simple_aggregate_function_null_compatibility FINAL;
+
+DROP TABLE variant_simple_aggregate_function_null_compatibility;
