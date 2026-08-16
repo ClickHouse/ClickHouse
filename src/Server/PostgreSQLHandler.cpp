@@ -1615,52 +1615,22 @@ void PostgreSQLHandler::discardRemainingCopyInFrames(size_t pending_frame_bytes)
 
 void PostgreSQLHandler::processQuery()
 {
+    /// A malformed or truncated frontend frame leaves the transport stream desynchronized. Read the
+    /// complete frame before entering the recoverable query-error path, so deserialization errors close
+    /// the connection instead of emitting `ReadyForQuery` on a corrupt stream.
+    std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
+        message_transport->receive<PostgreSQLProtocol::Messaging::Query>();
+
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::Query>();
-
         if (isEmptyQuery(query->query))
         {
             message_transport->send(PostgreSQLProtocol::Messaging::EmptyQueryResponse());
             return;
         }
 
-        bool transaction_control_cond = isTransactionControlQuery(query->query); // clients wrap statements in BEGIN/COMMIT/ROLLBACK etc.
-        if (transaction_control_cond)
-        {
-            message_transport->send(
-                PostgreSQLProtocol::Messaging::CommandComplete(
-                    PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query->query), 0));
-            return;
-        }
-
-        /// Accept driver-specific session-management commands (e.g. `RESET ALL`, `UNLISTEN *`, the
-        /// JDBC handshake's `SET application_name` / `SET extra_float_digits`) as no-ops instead of
-        /// failing them with a syntax error.
-        if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
-        {
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
-            return;
-        }
-
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-
-        if (processPrepareStatement(query->query))
-            return;
-
-        if (processDeallocate(query->query))
-            return;
-
-        if (processCopyQuery(query->query))
-            return;
-
-        auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
-
-        if (processExecute(query->query, query_context))
-            return;
 
         auto parse_res = splitMultipartQuery(
             query->query,
@@ -1675,6 +1645,41 @@ void PostgreSQLHandler::processQuery()
 
         for (auto & sql_query : queries)
         {
+            /// PostgreSQL simple-query messages may contain several statements. Apply the same
+            /// PostgreSQL-specific dispatch to each fragment as to a one-statement message.
+            if (isTransactionControlQuery(sql_query))
+            {
+                message_transport->send(
+                    PostgreSQLProtocol::Messaging::CommandComplete(
+                        PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query), 0),
+                    true);
+                continue;
+            }
+
+            /// Accept driver-specific session-management commands (e.g. `RESET ALL`, `UNLISTEN *`, the
+            /// JDBC handshake's `SET application_name` / `SET extra_float_digits`) as no-ops instead of
+            /// failing them with a syntax error.
+            if (auto noop_command_tag = classifyNoOpDriverCommand(sql_query))
+            {
+                message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
+                continue;
+            }
+
+            if (processPrepareStatement(sql_query))
+                continue;
+
+            if (processDeallocate(sql_query))
+                continue;
+
+            if (processCopyQuery(sql_query))
+                continue;
+
+            auto query_context = session->makeQueryContext();
+            query_context->setCurrentQueryId(currentQueryId());
+
+            if (processExecute(sql_query, query_context))
+                continue;
+
             /// Refresh the emulated catalog against each actual statement rather than the outer message text:
             /// a semicolon-separated `CREATE TABLE t ...; SELECT oid FROM pg_class ...` must see `t` in the
             /// catalog when the second statement runs (a single refresh before the split would happen before
@@ -1858,10 +1863,12 @@ void PostgreSQLHandler::processBindQuery()
 
 void PostgreSQLHandler::processDescribeQuery()
 {
+    /// A malformed or truncated frame must close the session: `dropMessage` may not have consumed all
+    /// of its payload, so treating that exception as an extended-query error would desynchronize the stream.
+    message_transport->dropMessage();
+
     try
     {
-        message_transport->dropMessage();
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Describe is not supported in the PostgreSQL wire protocol");
     }
     catch (const Exception & e)

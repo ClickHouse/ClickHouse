@@ -928,6 +928,40 @@ def test_simple_query_error_does_not_close_connection(started_cluster):
         sock.close()
 
 
+def test_simple_query_multistatement_keeps_postgresql_dispatch(started_cluster):
+    """Each statement in a simple-query message must retain PostgreSQL-specific handling."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    try:
+        query = b"BEGIN; PREPARE multi_statement AS SELECT 20260816; EXECUTE multi_statement; COMMIT\x00"
+        sock.sendall(b"Q" + struct.pack("!i", 4 + len(query)) + query)
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260816" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+
+@pytest.mark.parametrize(
+    "message_type, body",
+    [
+        (b"Q", b"SELECT 1"),
+        (b"D", b"S"),
+    ],
+)
+def test_malformed_frontend_frame_closes_connection(started_cluster, message_type, body):
+    """A partial frontend frame cannot be recovered because its unread payload desynchronizes the stream."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    try:
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body) + 1) + body)
+        sock.shutdown(socket.SHUT_WR)
+        assert sock.recv(1) == b""
+    finally:
+        sock.close()
+
+
 def test_flush_error_discards_extended_query_cycle(started_cluster):
     """An unsupported `Flush` rejects the entire extended-query cycle through `Sync`."""
     node = cluster.instances["node"]
