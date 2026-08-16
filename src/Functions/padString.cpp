@@ -227,9 +227,9 @@ namespace
         void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
-            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
-                                && isAllASCII(chars.data(), chars.size());
-            bool is_actually_utf8 = is_utf8 && !all_ascii;
+            bool is_actually_utf8 = is_utf8
+                && !(isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                    && isAllASCII(chars.data(), chars.size()));
 
             if (!is_actually_utf8)
             {
