@@ -273,6 +273,7 @@ public:
     void setAllowTierSettings(UInt32 value);
     UInt32 getAllowTierSettings() const;
     bool getAllowExperimentalTierSettings() const;
+    bool getAllowPrivatePreviewTierSettings() const;
     bool getAllowBetaTierSettings() const;
 
 private:
@@ -308,6 +309,7 @@ private:
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
+    std::atomic_bool allow_private_preview_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
