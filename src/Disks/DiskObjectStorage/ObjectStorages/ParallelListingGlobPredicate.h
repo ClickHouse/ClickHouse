@@ -15,10 +15,10 @@ namespace DB
 /// wildcard "**".
 bool globSelectorSpansPathComponents(const std::string & glob_path);
 
-/// Returns true when `glob_path` contains a recursive wildcard: a `**` path component immediately
-/// followed by '/'. This mirrors `makeRegexpPatternFromGlobs`: `**` adjacent to other characters, a
-/// run of three or more stars, and a final `**` component keep the ordinary single-component wildcard
-/// semantics and can be pruned by `makeShouldDescendPredicate`.
+/// Returns true when `glob_path` contains `**`. Legacy glob patterns use `**` forms such as
+/// `path/**.parquet` and `key=**.parquet` for recursive matching. The parallel delimiter walk can only
+/// safely prune globs whose wildcards are confined to individual path components, so callers keep every
+/// `**` form on the serial iterator.
 bool globPathHasRecursiveWildcard(const std::string & glob_path);
 
 /// Builds the predicate used by the parallel listing walk (`ObjectStorageParallelListingIterator`) to
@@ -35,7 +35,7 @@ bool globPathHasRecursiveWildcard(const std::string & glob_path);
 /// The predicate is intentionally conservative: it returns `true` whenever it cannot be sure a
 /// directory is irrelevant (e.g. a '{...}' selector that spans a '/'), because the per-file regexp
 /// `FullMatch` in `nextUnlocked` still guarantees that only truly matching keys are emitted.
-/// `glob_path` must not contain the recursive wildcard "**".
+/// `glob_path` must not contain `**`.
 std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicate(const std::string & glob_path);
 
 /// Chooses the prefix the parallel delimiter walk of `glob_path` starts from, or `std::nullopt` when it

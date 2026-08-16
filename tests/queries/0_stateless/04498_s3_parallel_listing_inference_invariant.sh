@@ -6,13 +6,14 @@
 #
 # `s3_list_object_parallelism` must stay a *pure performance knob*: enabling it may only change how fast
 # globbed S3 paths are listed, never the query result. The parallel listing iterator emits keys in
-# scheduler (non-deterministic) order rather than S3's lexicographic order, and two call sites take the
+# scheduler (non-deterministic) order rather than S3's lexicographic order, and three call sites take the
 # *first* listed file as meaningful:
 #   * hive-partitioning detection          -> StorageObjectStorage::getPathSample
+#   * cluster hive-partitioning detection  -> StorageObjectStorageCluster::getPathSample
 #   * `format = 'auto'` / schema inference  -> StorageObjectStorage::createReadBufferIterator
 # Both are therefore forced onto the serial (lexicographic) iterator. 04339 already proves that the *set
 # of listed paths* is parallelism-independent; this test proves that the *inferred output* is too, which
-# is what those two call sites actually depend on. If a later refactor routes either site back through
+# is what those call sites actually depend on. If a later refactor routes any site back through
 # the parallel iterator, the DESCRIBE below stops being identical for parallelism 1 vs 8 and this fails.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -43,6 +44,7 @@ for k in a b c d e f g h; do
     $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/hive/${k}=1/data.csv', 'test', 'testtest', 'CSV', 'x UInt64') SELECT 1 SETTINGS s3_truncate_on_insert=1;"
 done
 compare "hive" "s3('${base}/hive/*/data.csv', 'test', 'testtest')" "use_hive_partitioning=1, "
+compare "hive cluster" "s3Cluster('test_cluster_one_shard_three_replicas_localhost', '${base}/hive/*/data.csv', 'test', 'testtest')" "use_hive_partitioning=1, "
 
 # --- Schema inference (createReadBufferIterator). Each subdirectory holds a CSV with a different number
 # --- of columns, so the inferred schema is whichever file is read first; parallel listing would make it

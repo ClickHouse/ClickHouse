@@ -882,17 +882,19 @@ TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
     EXPECT_TRUE(should_descend("root/a/b/very/deep/"));
 }
 
-TEST(ObjectStorageParallelListing, DetectsOnlyRecursiveGlobstarSegments)
+TEST(ObjectStorageParallelListing, DetectsAllLegacyRecursiveGlobstarForms)
 {
-    /// `makeRegexpPatternFromGlobs` gives cross-directory semantics only to a `**/` path segment.
-    /// Other adjacent-star forms remain component-local and must keep the parallel delimiter walk.
+    /// Legacy object-storage globs use forms such as `**.parquet` and `key=**.parquet` recursively.
+    /// The per-component descend predicate cannot represent that cross-directory behavior, so all `**`
+    /// forms must stay on the serial iterator.
     EXPECT_TRUE(globPathHasRecursiveWildcard("**/data.csv"));
     EXPECT_TRUE(globPathHasRecursiveWildcard("root/**/data.csv"));
     EXPECT_TRUE(globPathHasRecursiveWildcard("root/**/"));
-
-    EXPECT_FALSE(globPathHasRecursiveWildcard("root/foo**bar/data.csv"));
-    EXPECT_FALSE(globPathHasRecursiveWildcard("root/**"));
-    EXPECT_FALSE(globPathHasRecursiveWildcard("root/***/data.csv"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/**.parquet"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/key=**.parquet"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/foo**bar/data.csv"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/**"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/***/data.csv"));
     EXPECT_FALSE(globPathHasRecursiveWildcard("root/*/data.csv"));
 }
 

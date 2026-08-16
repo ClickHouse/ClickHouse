@@ -44,15 +44,7 @@ bool globSelectorSpansPathComponents(const std::string & glob_path)
 
 bool globPathHasRecursiveWildcard(const std::string & glob_path)
 {
-    for (size_t pos = 0; pos + 2 < glob_path.size(); ++pos)
-    {
-        if (glob_path[pos] == '*'
-            && glob_path[pos + 1] == '*'
-            && glob_path[pos + 2] == '/'
-            && (pos == 0 || glob_path[pos - 1] == '/'))
-            return true;
-    }
-    return false;
+    return glob_path.find("**") != std::string::npos;
 }
 
 std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)

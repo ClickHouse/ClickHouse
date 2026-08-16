@@ -1684,7 +1684,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
 
         /// List the matching files in parallel by walking the "directory" tree (the common prefixes
         /// formed by the '/' delimiter), unless disabled or the path cannot be pruned per directory
-        /// level and would degrade to one request per directory: the recursive wildcard "**" and
+        /// level and would degrade to one request per directory: legacy recursive wildcard `**` forms and
         /// '{...}' selectors spanning '/' (e.g. `root/{a/b,c/d}/*.csv`) both match across '/'.
         /// Endpoints that accept a delimited listing only from a '/'-aligned prefix (S3 Express /
         /// directory buckets) keep the parallel walk by starting it one '/' boundary earlier; see
