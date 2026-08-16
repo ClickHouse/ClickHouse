@@ -5265,12 +5265,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
     auto storage_limits = query_info.storage_limits;
-    if ((result.read_type == ReadType::InOrder || result.read_type == ReadType::InReverseOrder) && storage_limits)
+    if (reader_settings.read_in_order && storage_limits)
     {
-        /// The read type is set during range analysis and is the authoritative indication that
-        /// this pipeline uses ordered reading. It can remain set after the query-info order
-        /// request has been consumed by a projection rewrite. `storage_limits` may have been
-        /// prepared before that decision, so remove row limits just as
+        /// The reader setting is the authoritative indication that this pipeline uses ordered
+        /// reading. Projection rewrites can replace the cached range analysis after an
+        /// in-order request, so its `read_type` may no longer describe the reader that was
+        /// created. `storage_limits` may have been prepared before that decision, so remove
+        /// row limits just as
         /// `MergeTreeDataSelectExecutor::getRowLimits` does for an ordered read. Keep byte,
         /// speed, and time limits intact.
         auto in_order_storage_limits = std::make_shared<StorageLimitsList>(*storage_limits);
