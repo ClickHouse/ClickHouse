@@ -121,13 +121,21 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    const bool has_user_credentials = !nats_credential_file.empty() || !nats_credentials.empty();
+
+    /// libnats sends all configured authentication methods in the `CONNECT` frame.
+    /// Do not combine user credentials with the server-global basic authentication fallback,
+    /// because inline credentials can be used with a query-supplied destination.
+    const String global_username = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.user", "");
+    const String global_password = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.password", "");
+    const String global_token = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.token", "");
 
     configuration
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
            .servers = parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_server_list]), ','),
-           .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
-           .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
-           .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
+           .username = nats_username.empty() ? global_username : nats_username,
+           .password = nats_password.empty() ? global_password : nats_password,
+           .token = nats_token.empty() ? global_token : nats_token,
            .credential_file = nats_credential_file,
            .credentials = nats_credentials,
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
