@@ -124,6 +124,10 @@ struct ParallelReplicasEngagement
     /// Via the planner's own storage-level rule (`canUseTableForParallelReplicas`): a local
     /// `MergeTree`-family table (possibly behind a view), subject to the row-count estimate.
     bool local_merge_tree = false;
+    /// Number of local `MergeTree` reads that can occur in this plan fragment.
+    /// The planner applies the min-rows estimate only when its candidate plan has
+    /// exactly one `ReadFromMergeTree` step.
+    size_t local_merge_tree_read_count = 0;
     /// Via a `ClusterProxy`-served storage (`Distributed` and its wrappers): no row-count
     /// estimate applies, the parallel-replica settings are honoured as-is.
     bool remote = false;
@@ -133,6 +137,7 @@ struct ParallelReplicasEngagement
     void merge(const ParallelReplicasEngagement & other)
     {
         local_merge_tree |= other.local_merge_tree;
+        local_merge_tree_read_count += other.local_merge_tree_read_count;
         remote |= other.remote;
     }
 };
@@ -629,11 +634,23 @@ ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, cons
             if (storage)
                 engagement.merge(mayEngageParallelReplicasForRemoteStorage(*storage, scope_context));
 
-            if (canUseTableForParallelReplicas(*table_node, scope_context))
-                engagement.local_merge_tree = true;
-
+            ParallelReplicasEngagement view_engagement;
             if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
-                engagement.merge(mayEngageParallelReplicasForView(*view, table_node->getStorageSnapshot(), scope_context));
+                view_engagement = mayEngageParallelReplicasForView(*view, table_node->getStorageSnapshot(), scope_context);
+
+            if (canUseTableForParallelReplicas(*table_node, scope_context))
+            {
+                engagement.local_merge_tree = true;
+                /// When the planner uses the outer view as the candidate read, its inner
+                /// query has parallel replicas disabled and contributes no read here. If
+                /// the inner query can engage them instead, it already supplies the
+                /// precise count (including a `UNION ALL` with multiple reads), so do not
+                /// count the same view twice.
+                if (!view_engagement.local_merge_tree_read_count)
+                    ++engagement.local_merge_tree_read_count;
+            }
+
+            engagement.merge(view_engagement);
         }
         else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
         {
@@ -1292,16 +1309,20 @@ public:
             /// The estimate needs per-step index analysis that cannot run ahead of
             /// planning, so when it *could* still disable parallel replicas — the
             /// threshold is set, the mode is the task-based one (the only one the
-            /// estimate applies to), and every table this context could engage them for
-            /// is a local `MergeTree` (a `ClusterProxy`-served read never runs the
-            /// estimate) — do not throw preemptively; fall through to the disable below,
-            /// mirroring the planner's own silent disable. For a step the estimate would
-            /// have let through this keeps parallel replicas off — the same documented
-            /// under-throw trade-off as elsewhere in this file: the read stays correct.
+            /// estimate applies to), and the candidate has exactly one local `MergeTree`
+            /// read (a `ClusterProxy`-served read never runs the estimate) — do not throw
+            /// preemptively; fall through to the disable below, mirroring the planner's
+            /// own silent disable. The exact-one check matters: multi-read shapes such as
+            /// a join of two local `MergeTree` tables or a view over `UNION ALL` skip the
+            /// estimate in `PlannerJoinTree` and must still fail closed in forcing mode.
+            /// For a step the estimate would have let through this keeps parallel replicas
+            /// off — the same documented under-throw trade-off as elsewhere in this file:
+            /// the read stays correct.
             const bool row_estimate_may_disable_parallel_replicas
                 = ctx->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
                 && ctx->canUseTaskBasedParallelReplicas()
-                && !engagement.remote;
+                && !engagement.remote
+                && engagement.local_merge_tree_read_count == 1;
 
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
                 && engagement.any()

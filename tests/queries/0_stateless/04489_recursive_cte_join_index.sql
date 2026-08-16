@@ -1558,6 +1558,25 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
     parallel_replicas_min_number_of_rows_per_replica = 1000000;
 
+-- The min-rows estimate is deliberately skipped when a candidate plan has more
+-- than one `ReadFromMergeTree` step. Therefore a recursive branch joining two
+-- local `MergeTree` tables must still reject forced parallel replicas rather
+-- than silently downgrading to a plain read.
+WITH RECURSIVE minrows_multi_read_pr AS
+(
+    SELECT toUInt64(1) AS n
+  UNION ALL
+    SELECT e.to_id
+    FROM edges_minrows AS e
+    INNER JOIN edges_minrows AS e2 ON e.to_id = e2.from_id
+    INNER JOIN minrows_multi_read_pr AS t ON e.from_id = t.n
+    WHERE t.n < 10
+)
+SELECT sum(n) FROM minrows_multi_read_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 1000000; -- { serverError SUPPORT_IS_DISABLED }
+
 -- Conversely, the row-count estimate never runs for a read served through `ClusterProxy`
 -- (a `Distributed` table), so for a remote-eligible recursive step the threshold cannot
 -- disable parallel replicas later and the forcing mode must still fail closed, even with
