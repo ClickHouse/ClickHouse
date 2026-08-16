@@ -27,6 +27,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -63,6 +64,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -84,6 +86,36 @@ namespace ErrorCodes
 
 namespace
 {
+
+void replaceLegacyToTimeInAlterExpression(IAST * ast)
+{
+    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
+        function->name = "toTimeWithFixedDate";
+
+    for (const auto & child : ast->children)
+        replaceLegacyToTimeInAlterExpression(child.get());
+
+    /// TTL GROUP BY keys are not `children` of their `ASTTTLElement`.
+    if (auto * ttl_element = ast->as<ASTTTLElement>())
+    {
+        for (const auto & group_by_key : ttl_element->group_by_key)
+            replaceLegacyToTimeInAlterExpression(group_by_key.get());
+        for (const auto & group_by_assignment : ttl_element->group_by_assignments)
+            replaceLegacyToTimeInAlterExpression(group_by_assignment.get());
+    }
+}
+
+void normalizeLegacyToTimeInAlterKeyDefinitions(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command = child->as<ASTAlterCommand>();
+        if (command->type == ASTAlterCommand::MODIFY_ORDER_BY)
+            replaceLegacyToTimeInAlterExpression(command->order_by);
+        else if (command->type == ASTAlterCommand::MODIFY_TTL)
+            replaceLegacyToTimeInAlterExpression(command->ttl);
+    }
+}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -386,7 +418,12 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    auto & alter = query_ptr->as<ASTAlterQuery &>();
+
+    if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
+        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        normalizeLegacyToTimeInAlterKeyDefinitions(alter);
+
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
