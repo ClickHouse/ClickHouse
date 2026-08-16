@@ -51,6 +51,9 @@ SELECT '# Special values in tiny parts';
 TRUNCATE TABLE wallaby64; INSERT INTO wallaby64 VALUES (0, 3.14);
 INSERT INTO wallaby64 VALUES (1, nan), (2, inf), (3, -inf), (4, -0.), (5, 1.5e-300);
 SELECT i, f FROM wallaby64 ORDER BY i;
+TRUNCATE TABLE wallaby32; INSERT INTO wallaby32 VALUES (0, 3.14);
+INSERT INTO wallaby32 VALUES (1, nan), (2, inf), (3, -inf), (4, -0.), (5, 1.5e-30);
+SELECT i, f FROM wallaby32 ORDER BY i;
 
 SELECT '# Compression is effective on a decimal time series';
 DROP TABLE IF EXISTS size_base;

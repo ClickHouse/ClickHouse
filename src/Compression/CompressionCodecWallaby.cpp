@@ -1953,6 +1953,9 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked{};
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustment_lanes{};
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments{};
+    std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions{};
+    std::array<T, WALLABY_VECTOR_VALUES> exception_values{};
+    std::array<bool, WALLABY_VECTOR_VALUES> is_exception{};
 
     /// Every mode streams its values straight into the destination through unaligned stores:
     /// no mode ever reads the output back, so no intermediate vector buffer is needed and each
@@ -2014,6 +2017,24 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 }
                 src += adjustment_bytes;
 
+                /// `DECIMAL_DELTA` cannot replay its chain until the exception positions are
+                /// known: each exception has a zero lane and leaves the accumulator unchanged.
+                /// Load and validate the exception list before reconstructing the decimal lanes,
+                /// then patch the raw values after the ordinary values have been emitted.
+                require(exception_count * (sizeof(UInt16) + sizeof(T)));
+                for (UInt32 i = 0; i < exception_count; ++i)
+                {
+                    const UInt16 position = unalignedLoadLittleEndian<UInt16>(src);
+                    src += sizeof(UInt16);
+                    const T raw = unalignedLoadLittleEndian<T>(src);
+                    src += sizeof(T);
+                    if (position >= count || is_exception[position])
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt exception position");
+                    exception_positions[i] = position;
+                    exception_values[i] = raw;
+                    is_exception[position] = true;
+                }
+
                 const bool negative_scale = alpha < 0;
                 const Float64 scale = WALLABY_POW10[negative_scale ? -alpha : alpha];
                 const auto reconstruct = [scale, negative_scale](SignedType q) ALWAYS_INLINE
@@ -2048,9 +2069,13 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 else
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, T{0});
+                    if (unpacked[0] != 0)
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane");
                     SignedType accumulator = base;
                     for (UInt32 i = 0; i < count; ++i)
                     {
+                        if (is_exception[i] && unpacked[i] != 0)
+                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal delta lane");
                         if (i > 0)
                         {
                             const SignedType delta = std::bit_cast<SignedType>(zigzagDecode(unpacked[i]));
@@ -2061,17 +2086,8 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     }
                 }
 
-                require(exception_count * (sizeof(UInt16) + sizeof(T)));
                 for (UInt32 i = 0; i < exception_count; ++i)
-                {
-                    const UInt16 position = unalignedLoadLittleEndian<UInt16>(src);
-                    src += sizeof(UInt16);
-                    const T raw = unalignedLoadLittleEndian<T>(src);
-                    src += sizeof(T);
-                    if (position >= count)
-                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt exception position");
-                    emit(position, raw);
-                }
+                    emit(exception_positions[i], exception_values[i]);
                 break;
             }
             case VectorMode::Xor:
