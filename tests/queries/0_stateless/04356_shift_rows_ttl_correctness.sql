@@ -187,7 +187,9 @@ CREATE TABLE t_ttl_no_read (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORD
     TTL d + INTERVAL 300 DAY
     SETTINGS min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0;
 INSERT INTO t_ttl_no_read SELECT number, now('UTC') FROM numbers(1000);
-ALTER TABLE t_ttl_no_read MODIFY TTL d + INTERVAL 400 DAY;
+ALTER TABLE t_ttl_no_read MODIFY TTL d + INTERVAL 400 DAY SETTINGS materialize_ttl_after_modify = 0;
+-- The direct command uses the same metadata-only fast path as `MODIFY TTL`.
+ALTER TABLE t_ttl_no_read MATERIALIZE TTL;
 SELECT count() FROM t_ttl_no_read;
 SYSTEM FLUSH LOGS part_log;
 SELECT read_rows FROM system.part_log

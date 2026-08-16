@@ -82,10 +82,17 @@ TTLTransform::TTLTransform(
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
-        algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
+    {
+        auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], /*old_ttl_expression_fingerprint_*/ "",
-            /*old_ttl_timezone_fingerprint_*/ "", current_time_, force_));
+            /*old_ttl_timezone_fingerprint_*/ "", current_time_, force_);
+
+        /// The rows-TTL bounds are collected before ROWS WHERE TTL removes rows from the block.
+        /// Once this rule can run, they no longer necessarily describe the rows written to the part.
+        rows_ttl_provenance_invalidated |= algorithm->isMinTTLExpired();
+        algorithms.emplace_back(std::move(algorithm));
+    }
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
     {
@@ -228,7 +235,8 @@ void TTLTransform::finalize()
     if (rows_ttl_provenance_invalidated)
     {
         /// Do not let a later metadata-only MATERIALIZE TTL shift bounds computed before rows were
-        /// removed by GROUP BY TTL. The next materialization must rescan the part instead.
+        /// removed by a sibling ROWS WHERE or GROUP BY TTL. The next materialization must rescan
+        /// the part instead.
         data_part->ttl_infos.table_ttl_expression.clear();
         data_part->ttl_infos.table_ttl_timezone.clear();
         data_part->ttl_infos.has_unknown_rows_ttl_provenance = true;

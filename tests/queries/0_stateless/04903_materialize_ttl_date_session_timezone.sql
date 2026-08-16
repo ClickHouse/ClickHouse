@@ -6,6 +6,10 @@
 SET alter_sync = 2;
 SET session_timezone = 'Asia/Kolkata';
 
+-- This test needs the server's zone and `Asia/Kolkata` to have distinct effective offsets at the
+-- date below; otherwise the metadata-only and rewrite paths happen to produce the same bound.
+SELECT timezoneOffset(toDateTime('2100-01-01 00:00:00', serverTimeZone())) != timezoneOffset(toDateTime('2100-01-01 00:00:00', 'Asia/Kolkata'));
+
 DROP TABLE IF EXISTS t_ttl_date_timezone_fast;
 DROP TABLE IF EXISTS t_ttl_date_timezone_rewrite;
 
