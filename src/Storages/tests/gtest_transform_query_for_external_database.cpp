@@ -758,6 +758,27 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
         IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
 }
 
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentForSQLite)
+{
+    const State & state = State::instance();
+
+    /// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers. A query
+    /// table argument is sent to SQLite as is, so reject non-finite literals instead of emitting
+    /// invalid remote SQL. This also covers nested literals in an `IN` tuple.
+    EXPECT_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE field = inf)",
+        IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite), Exception);
+    EXPECT_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE field IN (inf, 1.5))",
+        IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite), Exception);
+
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE field = 1.5)",
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite),
+        R"(SELECT field FROM test."table" WHERE field = 1.5)");
+}
+
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
 {
     const State & state = State::instance();

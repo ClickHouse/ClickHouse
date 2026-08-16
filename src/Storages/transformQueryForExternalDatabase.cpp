@@ -994,6 +994,13 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {
+        /// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers rather
+        /// than numeric literals. Query-backed external sources are sent to SQLite as is, so
+        /// reject these values instead of generating SQL that SQLite cannot execute.
+        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasNonFiniteFloatingPointValue(literal->value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a non-finite floating-point literal for SQLite. Rewrite the query passed to the external database without it");
+
         /// The literal carrier of a row value (the parser folds `(1, 'x')` into a single
         /// `ASTLiteral` holding a `Tuple` field) is subject to the same restriction as the
         /// `tuple` function above: outside a row-value position its parenthesized text form
