@@ -168,7 +168,7 @@ bool canReplaceColumnWithConstantAfterFilter(
     return true;
 }
 
-std::optional<ConstantColumnPosition> tryGetConstantColumnPositionAfterFilter(
+std::vector<ConstantColumnPosition> getConstantColumnPositionsAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
     const ActionsDAG & dag,
@@ -181,25 +181,22 @@ std::optional<ConstantColumnPosition> tryGetConstantColumnPositionAfterFilter(
     if (!tryGetConstantField(constant_node))
         return {};
 
-    std::optional<size_t> position;
-
-    for (const auto * output : dag.getOutputs())
+    std::vector<ConstantColumnPosition> positions;
+    const auto & outputs = dag.getOutputs();
+    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
     {
-        if (unwrapAlias(output) != unwrapped_column_node)
+        if (unwrapAlias(outputs[output_position]) != unwrapped_column_node)
             continue;
 
-        position = transformed_header.findPositionByName(output->result_name);
-        if (position)
-            break;
+        /// `ActionsDAG::updateHeader` puts `getOutputs()` at the beginning of the header in
+        /// exactly this order. Do not find the position by name: different outputs can have
+        /// identical names while representing different expressions.
+        const auto & result_column = transformed_header.getByPosition(output_position);
+        if (canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
+            positions.push_back(output_position);
     }
-    if (!position)
-        return {};
 
-    const auto & result_column = transformed_header.getByPosition(*position);
-    if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
-        return {};
-
-    return position;
+    return positions;
 }
 
 std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
@@ -233,14 +230,17 @@ std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(
         if (function_name != "equals" || node->children.size() != 2)
             continue;
 
-        std::optional<ConstantColumnPosition> constant_column;
+        std::vector<ConstantColumnPosition> constant_columns;
         if (tryGetConstantField(node->children[1]))
-            constant_column = tryGetConstantColumnPositionAfterFilter(node->children[0], node->children[1], dag, transformed_header);
-        if (!constant_column && tryGetConstantField(node->children[0]))
-            constant_column = tryGetConstantColumnPositionAfterFilter(node->children[1], node->children[0], dag, transformed_header);
+            constant_columns = getConstantColumnPositionsAfterFilter(node->children[0], node->children[1], dag, transformed_header);
+        if (constant_columns.empty() && tryGetConstantField(node->children[0]))
+            constant_columns = getConstantColumnPositionsAfterFilter(node->children[1], node->children[0], dag, transformed_header);
 
-        if (constant_column && added_positions.insert(*constant_column).second)
-            result.push_back(*constant_column);
+        for (const auto constant_column : constant_columns)
+        {
+            if (added_positions.insert(constant_column).second)
+                result.push_back(constant_column);
+        }
     }
 
     return result;
