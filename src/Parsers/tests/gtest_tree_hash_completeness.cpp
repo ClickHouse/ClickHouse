@@ -432,6 +432,16 @@ TEST(TreeHashCompleteness, AlterAndUndropMembersAreSignificant)
               hashOf("UNDROP TABLE t ON CLUSTER c2"));
 }
 
+TEST(TreeHashCompleteness, AlterSnapshotDescriptionCloneHashEqual)
+{
+    const std::string query = "ALTER TABLE t UNLOCK SNAPSHOT 'snapshot' FROM S3('https://example.com/backup')";
+    ASTPtr ast = parse(query);
+    ASTPtr cloned = ast->clone();
+
+    EXPECT_EQ(cloned->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false));
+    EXPECT_EQ(cloned->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine());
+}
+
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
 {
     /// A plain view has no storage definition, and a materialized view with `TO [db].[table]` must
