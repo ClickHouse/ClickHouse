@@ -96,6 +96,16 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     ORDER BY id
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
 
+-- The expression can also be separated from the outer sort by a header-preserving `LimitStep`.
+-- The same source still crosses the sort as `s`, so replacing only `a` is not beneficial.
+SELECT 'plan: sibling alias below outer sort and limit — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT s, length(a)
+    FROM (SELECT s, s AS a, id FROM volume_reducing_function_push_down LIMIT 10)
+    ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
 -- `lengthUTF8` returns `UInt64`; it is not volume-reducing for a `FixedString` that occupies at
 -- most eight bytes per row.
 SELECT 'plan: small FixedString lengthUTF8 — not pushed';

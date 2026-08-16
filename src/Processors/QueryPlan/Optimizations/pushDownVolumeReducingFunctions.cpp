@@ -78,6 +78,26 @@ ActionsDAG * tryGetStepActions(IQueryPlanStep * step)
     return nullptr;
 }
 
+/// Find actions below a chain of one-input, header-preserving steps. `SortingStep` itself owns no
+/// actions, and steps such as `LimitStep` can sit between it and the `ExpressionStep` that created
+/// aliases of the same wide input.
+ActionsDAG * findActionsBelowHeaderPreservingSteps(QueryPlan::Node * node)
+{
+    while (node && node->children.size() == 1)
+    {
+        if (auto * actions = tryGetStepActions(node->step.get()))
+            return actions;
+
+        const auto & input_headers = node->step->getInputHeaders();
+        if (input_headers.size() != 1 || !blocksHaveEqualStructure(*input_headers.front(), *node->step->getOutputHeader()))
+            return nullptr;
+
+        node = node->children.front();
+    }
+
+    return nullptr;
+}
+
 /// Names of the input columns some output of `actions` depends on. An input nothing depends on is
 /// tolerated by `ActionsDAG::updateHeader` and by `ExpressionActions::execute` when the column is
 /// missing from the block, so it does not keep the column alive.
@@ -473,11 +493,12 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
             if (has_surfaced_sibling)
                 continue;
         }
-        else if (const auto * sorting_input_actions = tryGetStepActions(child_node->children.front()->step.get()))
+        else if (const auto * sorting_input_actions = findActionsBelowHeaderPreservingSteps(child_node->children.front()))
         {
             /// A `SortingStep` has no `ActionsDAG` of its own. Its input can nevertheless expose
-            /// the same wide source under multiple aliases, so inspect the expression immediately
-            /// below it before deciding that removing one name reduces the sort payload.
+            /// the same wide source under multiple aliases, possibly through header-preserving
+            /// steps such as `LimitStep`, so inspect the expression below them before deciding
+            /// that removing one name reduces the sort payload.
             const auto * source_below = sorting_input_actions->tryFindInOutputs(name_below);
             if (!source_below)
                 continue;
