@@ -347,6 +347,12 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
         {
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
+
+            if (!less((*base_row[i])[row_ind], staleness_border, getDirection(i)))
+                throw Exception(
+                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "WITH FILL STALENESS does not advance in the sorting direction");
+
             constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
         }
     }

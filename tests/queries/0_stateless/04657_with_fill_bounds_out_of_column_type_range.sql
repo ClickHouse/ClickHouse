@@ -46,6 +46,9 @@ SELECT 'STALENESS caps the sequence before TO, so the TO bound is not rejected';
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1025 STALENESS 20);
 SELECT count(), min(x), max(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -300 STALENESS -20);
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 3 STALENESS 21);
+-- The effective bound is derived at runtime from the previous input row. It must not wrap in the column type,
+-- otherwise `findBorder` selects the wrapped bound and suppresses the rows between the two input values.
+SELECT groupArray(x) FROM (SELECT arrayJoin([toUInt8(250), toUInt8(255)]) AS x ORDER BY x ASC WITH FILL STALENESS 20); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
 SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected';
 
