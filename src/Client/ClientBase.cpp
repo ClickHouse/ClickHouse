@@ -4222,6 +4222,13 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
             client_context->setSetting("readonly", static_cast<UInt64>(1));
     }
 
+    /// Put the query into the history of the line editor, like a query the user typed: it was
+    /// displayed as one, and the user may want to recall it with the history navigation to rerun
+    /// it or to edit it into a query of their own. Done before running it, so an interrupted or
+    /// failed query can be picked up and fixed as well.
+    if (ai_line_reader)
+        ai_line_reader->addQueryToHistory(query);
+
     const UInt64 seqno_before = ai_query_context->latestSeqno();
 
     ai_running_query_changed_dialect = false;
@@ -5200,6 +5207,13 @@ void ClientBase::runInteractive()
         output_stream,
         stdin_fd
     );
+#endif
+
+#if USE_CLIENT_AI
+    /// The AI agent adds the queries it runs to the history through this reader, so they can be
+    /// recalled and edited like the queries the user typed themselves.
+    ai_line_reader = lr.get();
+    SCOPE_EXIT({ ai_line_reader = nullptr; });
 #endif
 
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.

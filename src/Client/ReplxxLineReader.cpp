@@ -889,6 +889,20 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 
 void ReplxxLineReader::addToHistory(const String & line)
 {
+    /// In AI-chat mode, store the entry with a `? ` prefix so it is distinguishable in the
+    /// history file and recalled back into AI mode by syncModeFromHistory.
+    appendHistoryEntry(ai_mode ? ("? " + line) : line, /*is_sql=*/ !ai_mode);
+}
+
+void ReplxxLineReader::addQueryToHistory(const String & query)
+{
+    /// A query of the AI agent is SQL, so it is stored like a typed query - without the `? `
+    /// prefix of the AI questions, even though the reader is in AI mode while the agent works.
+    appendHistoryEntry(query, /*is_sql=*/ true);
+}
+
+void ReplxxLineReader::appendHistoryEntry(const String & entry, bool is_sql)
+{
     // locking history file to prevent from inconsistent concurrent changes
     //
     // replxx::Replxx::history_save() already has lockf(),
@@ -900,15 +914,13 @@ void ReplxxLineReader::addToHistory(const String & line)
     else
         locked = true;
 
-    /// In AI-chat mode, store the entry with a `? ` prefix so it is distinguishable in the
-    /// history file and recalled back into AI mode by syncModeFromHistory.
-    rx.history_add(ai_mode ? ("? " + line) : line);
+    rx.history_add(entry);
 
     /// Remember identifiers from the committed query so they are prioritized in later
     /// completions/hints this session (the "previously used" tier). AI questions are natural
     /// language, not SQL, so they are not added.
-    if (!ai_mode)
-        suggest.addUsedWords(extractIdentifiers(line.c_str()));
+    if (is_sql)
+        suggest.addUsedWords(extractIdentifiers(entry.c_str()));
 
     // flush changes to the disk
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))

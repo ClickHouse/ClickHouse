@@ -48,6 +48,8 @@ public:
     void setInitialText(const String & text) override;
 
     bool inAIMode() const override { return ai_mode; }
+
+    void addQueryToHistory(const String & query) override;
 private:
     InputStatus readOneLine(const String & prompt) override;
 
@@ -63,6 +65,11 @@ private:
     void restoreHistoryPrefix();
     void syncModeFromHistory();
     void addToHistory(const String & line) override;
+
+    /// Add one entry to the history in the form it is stored in (`? `-prefixed for an AI question)
+    /// and persist it. `is_sql` also feeds the identifiers of the entry to the completion.
+    void appendHistoryEntry(const String & entry, bool is_sql);
+
     int executeEditor(const std::string & path);
     void openEditor(bool format_query);
 
