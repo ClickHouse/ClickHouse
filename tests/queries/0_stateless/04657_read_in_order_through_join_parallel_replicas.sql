@@ -24,7 +24,7 @@ SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET query_plan_optimize_join_order_limit = 1, query_plan_join_swap_table = 0;
 
 SELECT 'without parallel replicas';
-SELECT events_04657.Time, events_04657.Id, payloads_04657.Payload
+SELECT events_04657.Time, events_04657.Id, ifNull(payloads_04657.Payload, 'NULL') AS Payload
 FROM events_04657 LEFT JOIN payloads_04657 ON events_04657.Id = payloads_04657.Id
 ORDER BY events_04657.Time LIMIT 5;
 
@@ -33,11 +33,11 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1;
 
-SELECT events_04657.Time, events_04657.Id, payloads_04657.Payload
+SELECT events_04657.Time, events_04657.Id, ifNull(payloads_04657.Payload, 'NULL') AS Payload
 FROM events_04657 LEFT JOIN payloads_04657 ON events_04657.Id = payloads_04657.Id
 ORDER BY events_04657.Time LIMIT 5;
 
-SELECT events_04657.Time, events_04657.Id, payloads_04657.Payload
+SELECT events_04657.Time, events_04657.Id, ifNull(payloads_04657.Payload, 'NULL') AS Payload
 FROM events_04657 LEFT JOIN payloads_04657 ON events_04657.Id = payloads_04657.Id
 ORDER BY events_04657.Time DESC LIMIT 5;
 

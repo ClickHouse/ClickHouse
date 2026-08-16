@@ -19,6 +19,7 @@ SET enable_parallel_replicas = 0;
 SET max_threads = 4;
 SET optimize_read_in_order = 1;
 SET query_plan_optimize_lazy_final = 1;
+SET read_in_order_use_virtual_row_per_block = 0;
 
 DROP TABLE IF EXISTS t_prefetching_concat_lazy_final;
 
