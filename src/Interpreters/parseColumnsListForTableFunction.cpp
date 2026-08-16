@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -62,13 +63,25 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 {
     auto validate_callback = [&](const IDataType & data_type)
     {
-        if (!settings.allow_experimental_time_decay_aggregate_functions && isExponentialTimeDecayingFloat64(data_type))
+        if (!settings.allow_experimental_time_decay_aggregate_functions)
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create column with type '{}' because ExponentialTimeDecayingFloat64 is experimental. "
-                "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow it",
-                data_type.getName());
+            bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
+            if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+            {
+                const String function_name = aggregate_function_type->getFunctionName();
+                is_experimental_time_decay_type
+                    = function_name == "exponentialTimeDecayedSum"
+                    || function_name == "exponentialTimeDecayedAvg"
+                    || function_name == "exponentialTimeDecayedCount"
+                    || function_name == "exponentialTimeDecayingFloat64";
+            }
+
+            if (is_experimental_time_decay_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because exponential time decay aggregate functions are experimental. "
+                    "Set setting allow_experimental_time_decay_aggregate_functions = 1 in order to allow them",
+                    data_type.getName());
         }
 
         if (!settings.allow_suspicious_low_cardinality_types)

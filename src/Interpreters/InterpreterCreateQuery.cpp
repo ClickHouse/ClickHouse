@@ -3,6 +3,7 @@
 
 #include <filesystem>
 
+#include <AggregateFunctions/AggregateFunctionExponentialTimeDecayed.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
@@ -561,6 +562,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         return std::make_shared<DataTypeUInt8>();
     }
 
+    ExperimentalTimeDecayAggregateFunctionMetadataScope metadata_scope(LoadingStrictnessLevel::ATTACH <= mode);
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
@@ -1116,9 +1118,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// If it's not attach and not materialized view to existing table,
-    /// we need to validate data types (check for experimental or suspicious types).
-    if (!create.attach && !create.is_materialized_view)
+    /// User-supplied CREATE and full ATTACH definitions must validate data types.
+    /// Short ATTACH and internal metadata loading must remain available for recovery.
+    if (!internal && !create.attach_short_syntax && !create.is_materialized_view)
     {
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())

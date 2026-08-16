@@ -36,6 +36,8 @@ namespace ErrorCodes
 namespace
 {
 
+thread_local bool allow_experimental_time_decay_aggregate_functions_for_metadata = false;
+
 enum class ExponentialTimeDecayedResult
 {
     Sum,
@@ -269,7 +271,8 @@ Float64 getDecayLength(const String & name, const Array & parameters)
 
 void assertExperimentalFeatureEnabled(const String & name, const Settings * settings)
 {
-    if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions])
+    if (settings && !(*settings)[Setting::allow_experimental_time_decay_aggregate_functions]
+        && !allow_experimental_time_decay_aggregate_functions_for_metadata)
         throw Exception(
             ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
             "Aggregate function {} is experimental and disabled by default. Enable it with setting "
@@ -310,6 +313,20 @@ void assertTimeArgument(const String & name, const DataTypes & argument_types)
             argument_types[0]->getName());
 }
 
+}
+
+ExperimentalTimeDecayAggregateFunctionMetadataScope::ExperimentalTimeDecayAggregateFunctionMetadataScope(bool enabled_)
+    : enabled(enabled_)
+    , previous_value(allow_experimental_time_decay_aggregate_functions_for_metadata)
+{
+    if (enabled)
+        allow_experimental_time_decay_aggregate_functions_for_metadata = true;
+}
+
+ExperimentalTimeDecayAggregateFunctionMetadataScope::~ExperimentalTimeDecayAggregateFunctionMetadataScope()
+{
+    if (enabled)
+        allow_experimental_time_decay_aggregate_functions_for_metadata = previous_value;
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(

@@ -57,11 +57,36 @@ ENGINE = Memory;
 INSERT INTO time_decay_feature_gate VALUES ((1, 0, 10));
 DETACH TABLE time_decay_feature_gate;
 
+CREATE TABLE time_decay_aggregate_state_reattach
+(
+    id UInt8,
+    value AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id;
+DETACH TABLE time_decay_aggregate_state_reattach;
+
 SET allow_experimental_time_decay_aggregate_functions = 0;
 
 -- Existing metadata must remain attachable for recovery, but new CREATE and
 -- ALTER operations cannot persist the experimental type without opting in.
 ATTACH TABLE time_decay_feature_gate;
+ATTACH TABLE time_decay_aggregate_state_reattach;
+SELECT 'aggregate metadata attach preserved';
+
+-- Full ATTACH definitions are fresh DDL, not metadata recovery, and must obey
+-- the same experimental type gate as CREATE.
+ATTACH TABLE time_decay_full_attach_blocked
+(
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+ATTACH TABLE time_decay_aggregate_attach_blocked
+(
+    value AggregateFunction(exponentialTimeDecayedSum(10), Float64, Float64)
+)
+ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+
 CREATE TABLE time_decay_feature_gate_blocked
 (
     value ExponentialTimeDecayingFloat64(10)
@@ -146,6 +171,7 @@ FROM
 SETTINGS aggregate_functions_null_for_empty = 1;
 
 DROP TABLE time_decay_feature_gate;
+DROP TABLE time_decay_aggregate_state_reattach;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 

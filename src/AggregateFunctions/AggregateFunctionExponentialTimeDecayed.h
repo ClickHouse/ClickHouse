@@ -8,6 +8,20 @@ namespace DB
 
 struct Settings;
 
+class ExperimentalTimeDecayAggregateFunctionMetadataScope
+{
+public:
+    explicit ExperimentalTimeDecayAggregateFunctionMetadataScope(bool enabled_);
+    ~ExperimentalTimeDecayAggregateFunctionMetadataScope();
+
+    ExperimentalTimeDecayAggregateFunctionMetadataScope(const ExperimentalTimeDecayAggregateFunctionMetadataScope &) = delete;
+    ExperimentalTimeDecayAggregateFunctionMetadataScope & operator=(const ExperimentalTimeDecayAggregateFunctionMetadataScope &) = delete;
+
+private:
+    bool enabled;
+    bool previous_value;
+};
+
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const String & name,
     const DataTypes & argument_types,
