@@ -23,14 +23,14 @@ ClickHouse поддерживает следующие варианты синт
 **Детали**
 
 ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`.
-Поведение этой конструкции зависит от настройки [`count_distinct_implementation`](/ru/reference/settings/session-settings#count_distinct_implementation).
+Поведение этой конструкции зависит от настройки [`count_distinct_implementation`](/ru/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 Она определяет, какая из функций [uniq*](/ru/reference/functions/aggregate-functions/uniq) используется для выполнения этой операции.
 По умолчанию используется функция [uniqExact](/ru/reference/functions/aggregate-functions/uniqExact).
 
 Запрос `SELECT count() FROM table` по умолчанию оптимизируется с использованием метаданных MergeTree.
-Если вам нужно использовать безопасность на уровне строк, отключите эту оптимизацию с помощью настройки [`optimize_trivial_count_query`](/ru/reference/settings/session-settings#optimize_trivial_count_query).
+Если вам нужно использовать безопасность на уровне строк, отключите эту оптимизацию с помощью настройки [`optimize_trivial_count_query`](/ru/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-Однако запрос `SELECT count(nullable_column) FROM table` можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Однако запрос `SELECT count(nullable_column) FROM table` можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 При `optimize_functions_to_subcolumns = 1` функция считывает только подстолбец [`null`](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки всех данных столбца.
 Запрос `SELECT count(n) FROM table` преобразуется в `SELECT sum(NOT n.null) FROM table`.
 

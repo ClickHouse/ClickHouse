@@ -1,0 +1,45 @@
+---
+description: 'PuffinMetadata 포맷에 관한 문서'
+keywords: ['PuffinMetadata']
+slug: /interfaces/formats/PuffinMetadata
+title: 'PuffinMetadata'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) 파일 푸터 메타데이터를 읽기 위한 특수 입력 형식입니다.
+푸터의 `BlobMetadata` 목록에 있는 blob 항목마다 행 하나를 출력합니다.
+
+지원되는 blob 유형은 `deletion-vector-v1`뿐입니다. 다른 blob 유형(예: `apache-datasketches-theta-v1`)이 포함된 파일은 거부됩니다.
+
+고정 출력 컬럼:
+
+* `blob_type` (`String`) - blob 유형(예: `deletion-vector-v1`)
+* `snapshot_id` (`Int64`) - blob의 스냅샷 ID
+* `sequence_number` (`Int64`) - blob의 시퀀스 번호
+* `fields` (`Array(Int32)`) - blob이 적용되는 필드 ID 목록
+* `offset` (`Int64`) - 파일 내 blob 페이로드의 오프셋
+* `length` (`Int64`) - blob 페이로드의 바이트 단위 길이
+* `compression_codec` (`String`) - 있는 경우 blob 페이로드의 압축 코덱
+* `properties` (`Map(String, String)`) - blob별 속성
+
+푸터의 선택적 최상위 `FileMetadata.properties`(예: `created-by`)는 있는 경우 유형을 검사하지만 컬럼으로 반환하지는 않습니다. 키가 있으면 문자열 값으로 구성된 JSON 객체여야 하며, null은 허용되지 않습니다.
+
+LZ4로 압축된 Puffin 푸터와 비압축 Puffin 푸터를 지원합니다. 푸터 페이로드 크기(및 선언된 LZ4 콘텐츠 크기)는 해당하는 경우 압축률과 절대 상한으로 제한되며, 크기가 너무 큰 푸터는 메모리 할당 전에 거부됩니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+푸터 blob 검사:
+
+```sql
+SELECT blob_type, snapshot_id, sequence_number, offset, length, compression_codec,
+       mapKeys(properties), mapValues(properties)
+FROM file(deletes.puffin, PuffinMetadata);
+```
+
+`Puffin` 포맷과 함께 사용하여 `deletion-vector-v1` blob 페이로드를 읽습니다.
