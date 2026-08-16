@@ -114,6 +114,12 @@ bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
     /// numbers_mt(4e7)`, the total CPU time grows by 8% at 4 partitions, 20% at 16 and 96% at 96.
     /// Past a point that outweighs deduplicating in more threads, so do not follow `max_threads` up.
     static constexpr size_t max_partitions = 16;
+    static constexpr size_t max_scatter_streams = 16;
+
+    /// Repartitioning wires `num_streams * num_partitions` connections. Narrow the input just as
+    /// `ShuffleSendStep` does, so a wide pipeline cannot create an excessive scatter mesh.
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
 
     const size_t num_streams = pipeline.getNumStreams();
     const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
