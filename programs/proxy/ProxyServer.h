@@ -49,6 +49,7 @@ private:
 #if USE_SSL
     Poco::Net::Context::Ptr server_tls_context;
     Poco::Net::Context::Ptr client_tls_context;
+    bool acme_enabled = false;
 #endif
 
     std::vector<std::unique_ptr<FrontendContext>> frontend_contexts;

@@ -229,6 +229,7 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
         global_context->makeGlobalContext();
         global_context->setApplicationType(Context::ApplicationType::SERVER);
         ACME::Client::instance().initialize(abstract_config);
+        acme_enabled = true;
         LOG_INFO(log, "ACME certificate provisioning is enabled");
     }
 #else
@@ -331,6 +332,14 @@ void ProxyServer::stop()
     /// process teardown. In-flight client connections are dropped.
     if (health)
         health->join();
+
+#if USE_SSL
+    if (acme_enabled)
+    {
+        ACME::Client::instance().shutdown();
+        acme_enabled = false;
+    }
+#endif
 
     if (silk_initialized)
     {

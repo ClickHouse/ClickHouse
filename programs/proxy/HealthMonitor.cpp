@@ -134,7 +134,7 @@ void HealthMonitor::pollResources(Backend & backend)
         Poco::URI::encode(config.health_check.resource_query, "", query);
 
         const String request =
-            "GET /?query=" + query + " HTTP/1.1\r\n"
+            "GET /?query=" + query + " HTTP/1.0\r\n"
             "Host: " + backend.config().host + "\r\n"
             "Authorization: Basic " + credentials + "\r\n"
             "Connection: close\r\n\r\n";

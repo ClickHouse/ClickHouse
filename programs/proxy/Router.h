@@ -69,7 +69,7 @@ private:
         std::map<String, bool> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
     BackendPoolPtr resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);
-    BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config);
+    BackendPoolPtr poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener);
 };
 
 }

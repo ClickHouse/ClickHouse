@@ -123,7 +123,7 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
     first_seen_finished.notify_all();
 }
 
-BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config)
+BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener)
 {
     /// Dynamic pools may only be shared by configurations with identical behavior.
     /// Length-prefix strings so that delimiters in names, hosts, or credentials cannot alias.
@@ -146,6 +146,9 @@ BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_confi
     append(backend_config.weight);
     append(backend_config.monitor_user);
     append(backend_config.monitor_password);
+    append(toString(listener.protocol));
+    append(listener.port);
+    append(backendPortFor(listener.protocol, backend_config, listener.port));
 
     std::lock_guard lock(dynamic_mutex);
     auto it = dynamic_pools.find(key);
@@ -164,7 +167,7 @@ BackendPoolPtr Router::resolvePool(const RouteAttributes & attributes, const Lis
     if (auto target = table->resolve(attributes))
     {
         if (target->backend)
-            return poolForDynamicBackend(*target->backend);
+            return poolForDynamicBackend(*target->backend, listener);
 
         auto it = pools.find(target->pool_name);
         chassert(it != pools.end());    /// Pool names are validated when the configuration is loaded.
