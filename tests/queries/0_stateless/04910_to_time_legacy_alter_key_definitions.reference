@@ -1,2 +1,3 @@
 toTimeWithFixedDate(c0), c1
+toTimeWithFixedDate(c0)
 GROUP BY toTimeWithFixedDate
