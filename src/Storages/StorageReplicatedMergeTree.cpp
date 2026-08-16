@@ -8608,6 +8608,8 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
     auto statuses = queue.getMutationsStatus();
+    if (statuses.empty())
+        return statuses;
 
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
@@ -8631,6 +8633,11 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
     for (auto & status : statuses)
     {
+        /// An unfinished mutation with nothing to do is waiting for an in-flight INSERT whose part
+        /// is not committed yet, so the remaining bytes are unknown and `progress` stays unset.
+        if (!status.is_done && status.parts_to_do_names.empty())
+            continue;
+
         UInt64 bytes_to_do = 0;
         Float64 bytes_in_flight_done = 0;
         for (const auto & part_name : status.parts_to_do_names)

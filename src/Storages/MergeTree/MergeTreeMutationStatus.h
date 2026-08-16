@@ -57,7 +57,8 @@ struct MergeTreeMutationStatus
     UInt64 bytes_to_do = 0;
     /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the
     /// active table size, including the live fraction of parts currently being rewritten.
-    Float64 progress = 0;
+    /// Unset when the remaining work is not known yet, i.e. `!is_done` with empty `parts_to_do_names`.
+    std::optional<Float64> progress = {};
 /// NOLINTEND(readability-redundant-string-init)
 };
 

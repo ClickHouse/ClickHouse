@@ -1350,6 +1350,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
+    if (current_mutations_by_version.empty())
+        return {};
+
     std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
