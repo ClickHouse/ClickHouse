@@ -779,6 +779,7 @@ void PostgreSQLHandler::run()
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
+                    is_query_in_progress = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
@@ -788,9 +789,11 @@ void PostgreSQLHandler::run()
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
+                    is_query_in_progress = true;
                     processDescribeQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::FLUSH:
+                    is_query_in_progress = true;
                     message_transport->send(
                         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR,
@@ -801,6 +804,7 @@ void PostgreSQLHandler::run()
                     message_transport->dropMessage();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
+                    is_query_in_progress = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;
@@ -2161,53 +2165,52 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// `pg_enum` (`enumtypid`), because the standard introspection path of a PostgreSQL client is a join
     /// against `pg_type.oid`, and a missing row silently drops the column or type from the result.
     /// An array type carries the OID of its element type in `typelem` (`typcategory` = 'A'), as in
-    /// PostgreSQL; all array types share one `typreceive`, mirroring PostgreSQL's single `array_recv`,
-    /// and likewise the range, multirange and enum types share one `range_recv` / `multirange_recv` /
-    /// `enum_recv` each. The `typreceive` values are synthetic - clients only test them against zero to
-    /// probe for binary I/O support - and the names and categories match `pg_catalog` proper.
+    /// PostgreSQL. `typreceive` is zero for every type because the server does not implement binary
+    /// input decoding for bound parameters or `COPY`; advertising a receiver would cause clients to
+    /// select an unsupported input path.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type AS
 SELECT * FROM VALUES(
     'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull UInt8, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
-    (16,   11, 'bool',        0, 0, 'b', 246, 0, 0, 'B'),
-    (17,   11, 'bytea',       0, 0, 'b', 248, 0, 0, 'U'),
-    (18,   11, 'char',        0, 0, 'b', 245, 0, 0, 'S'),
-    (19,   11, 'name',        0, 0, 'b', 244, 0, 0, 'S'),
-    (20,   11, 'int8',        0, 0, 'b', 241, 0, 0, 'N'),
-    (21,   11, 'int2',        0, 0, 'b', 243, 0, 0, 'N'),
-    (23,   11, 'int4',        0, 0, 'b', 242, 0, 0, 'N'),
-    (25,   11, 'text',        0, 0, 'b', 247, 0, 0, 'S'),
-    (26,   11, 'oid',         0, 0, 'b', 254, 0, 0, 'N'),
-    (700,  11, 'float4',      0, 0, 'b', 250, 0, 0, 'N'),
-    (701,  11, 'float8',      0, 0, 'b', 251, 0, 0, 'N'),
-    (1043, 11, 'varchar',     0, 0, 'b', 249, 0, 0, 'S'),
-    (1082, 11, 'date',        0, 0, 'b', 252, 0, 0, 'D'),
-    (1114, 11, 'timestamp',   0, 0, 'b', 253, 0, 0, 'D'),
-    (1184, 11, 'timestamptz', 0, 0, 'b', 255, 0, 0, 'D'),
-    (1700, 11, 'numeric',     0, 0, 'b', 256, 0, 0, 'N'),
-    (2950, 11, 'uuid',        0, 0, 'b', 257, 0, 0, 'U'),
-    (1000, 11, '_bool',       0, 0, 'b', 260, 16,   0, 'A'),
-    (1005, 11, '_int2',       0, 0, 'b', 260, 21,   0, 'A'),
-    (1007, 11, '_int4',       0, 0, 'b', 260, 23,   0, 'A'),
-    (1009, 11, '_text',       0, 0, 'b', 260, 25,   0, 'A'),
-    (1016, 11, '_int8',       0, 0, 'b', 260, 20,   0, 'A'),
-    (1021, 11, '_float4',     0, 0, 'b', 260, 700,  0, 'A'),
-    (1022, 11, '_float8',     0, 0, 'b', 260, 701,  0, 'A'),
-    (1182, 11, '_date',       0, 0, 'b', 260, 1082, 0, 'A'),
-    (1231, 11, '_numeric',    0, 0, 'b', 260, 1700, 0, 'A'),
-    (2951, 11, '_uuid',       0, 0, 'b', 260, 2950, 0, 'A'),
-    (3904, 11, 'int4range',      0, 0, 'r', 261, 0, 0, 'R'),
-    (3906, 11, 'numrange',       0, 0, 'r', 261, 0, 0, 'R'),
-    (3910, 11, 'tsrange',        0, 0, 'r', 261, 0, 0, 'R'),
-    (3912, 11, 'tstzrange',      0, 0, 'r', 261, 0, 0, 'R'),
-    (3914, 11, 'daterange',      0, 0, 'r', 261, 0, 0, 'R'),
-    (3926, 11, 'int8range',      0, 0, 'r', 261, 0, 0, 'R'),
-    (3905, 11, 'int4multirange', 0, 0, 'm', 262, 0, 0, 'R'),
-    (3907, 11, 'nummultirange',  0, 0, 'm', 262, 0, 0, 'R'),
-    (3911, 11, 'tsmultirange',   0, 0, 'm', 262, 0, 0, 'R'),
-    (3913, 11, 'tstzmultirange', 0, 0, 'm', 262, 0, 0, 'R'),
-    (3915, 11, 'datemultirange', 0, 0, 'm', 262, 0, 0, 'R'),
-    (3927, 11, 'int8multirange', 0, 0, 'm', 262, 0, 0, 'R'),
-    (40000, 11, 'mood',          0, 0, 'e', 263, 0, 0, 'E')
+    (16,   11, 'bool',        0, 0, 'b', 0, 0, 0, 'B'),
+    (17,   11, 'bytea',       0, 0, 'b', 0, 0, 0, 'U'),
+    (18,   11, 'char',        0, 0, 'b', 0, 0, 0, 'S'),
+    (19,   11, 'name',        0, 0, 'b', 0, 0, 0, 'S'),
+    (20,   11, 'int8',        0, 0, 'b', 0, 0, 0, 'N'),
+    (21,   11, 'int2',        0, 0, 'b', 0, 0, 0, 'N'),
+    (23,   11, 'int4',        0, 0, 'b', 0, 0, 0, 'N'),
+    (25,   11, 'text',        0, 0, 'b', 0, 0, 0, 'S'),
+    (26,   11, 'oid',         0, 0, 'b', 0, 0, 0, 'N'),
+    (700,  11, 'float4',      0, 0, 'b', 0, 0, 0, 'N'),
+    (701,  11, 'float8',      0, 0, 'b', 0, 0, 0, 'N'),
+    (1043, 11, 'varchar',     0, 0, 'b', 0, 0, 0, 'S'),
+    (1082, 11, 'date',        0, 0, 'b', 0, 0, 0, 'D'),
+    (1114, 11, 'timestamp',   0, 0, 'b', 0, 0, 0, 'D'),
+    (1184, 11, 'timestamptz', 0, 0, 'b', 0, 0, 0, 'D'),
+    (1700, 11, 'numeric',     0, 0, 'b', 0, 0, 0, 'N'),
+    (2950, 11, 'uuid',        0, 0, 'b', 0, 0, 0, 'U'),
+    (1000, 11, '_bool',       0, 0, 'b', 0, 16,   0, 'A'),
+    (1005, 11, '_int2',       0, 0, 'b', 0, 21,   0, 'A'),
+    (1007, 11, '_int4',       0, 0, 'b', 0, 23,   0, 'A'),
+    (1009, 11, '_text',       0, 0, 'b', 0, 25,   0, 'A'),
+    (1016, 11, '_int8',       0, 0, 'b', 0, 20,   0, 'A'),
+    (1021, 11, '_float4',     0, 0, 'b', 0, 700,  0, 'A'),
+    (1022, 11, '_float8',     0, 0, 'b', 0, 701,  0, 'A'),
+    (1182, 11, '_date',       0, 0, 'b', 0, 1082, 0, 'A'),
+    (1231, 11, '_numeric',    0, 0, 'b', 0, 1700, 0, 'A'),
+    (2951, 11, '_uuid',       0, 0, 'b', 0, 2950, 0, 'A'),
+    (3904, 11, 'int4range',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3906, 11, 'numrange',       0, 0, 'r', 0, 0, 0, 'R'),
+    (3910, 11, 'tsrange',        0, 0, 'r', 0, 0, 0, 'R'),
+    (3912, 11, 'tstzrange',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3914, 11, 'daterange',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3926, 11, 'int8range',      0, 0, 'r', 0, 0, 0, 'R'),
+    (3905, 11, 'int4multirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (3907, 11, 'nummultirange',  0, 0, 'm', 0, 0, 0, 'R'),
+    (3911, 11, 'tsmultirange',   0, 0, 'm', 0, 0, 0, 'R'),
+    (3913, 11, 'tstzmultirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (3915, 11, 'datemultirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (3927, 11, 'int8multirange', 0, 0, 'm', 0, 0, 0, 'R'),
+    (40000, 11, 'mood',          0, 0, 'e', 0, 0, 0, 'E')
 ))");
 
     /// `pg_namespace`, `pg_class` and `pg_attribute` combine a fixed set of built-in catalog rows (used by

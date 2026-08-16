@@ -5,6 +5,7 @@ import decimal
 import logging
 import os
 import random
+import select
 import socket
 import struct
 import threading
@@ -903,6 +904,40 @@ def test_extended_query_errors_recover_at_sync(started_cluster):
         seen = _pg_read_until(sock, b"Z")
         assert b"E" in seen, seen
         assert_recovered()
+    finally:
+        sock.close()
+
+
+def test_extended_query_cycle_does_not_send_ready_before_sync(started_cluster):
+    """Every extended-protocol cycle stays active until `Sync`, including `Close` and `Describe`.
+    There must be exactly one `ReadyForQuery`, after the matching `Sync`."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    def send(message_type, body):
+        sock.sendall(message_type + struct.pack("!i", 4 + len(body)) + body)
+
+    def assert_no_ready_before_sync(expected_type):
+        message_type, body = _pg_read_message(sock)
+        assert message_type == expected_type, (message_type, body)
+        ready, _, _ = select.select([sock], [], [], 0.1)
+        assert not ready, "the server sent a response before Sync"
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"Z" in seen, seen
+
+    try:
+        send(b"P", b"close_probe\x00SELECT 1\x00\x00\x00")
+        send(b"S", b"")
+        _pg_read_until(sock, b"Z")
+        send(b"C", b"Sclose_probe\x00")
+        assert_no_ready_before_sync(b"3")
+
+        send(b"P", b"describe_probe\x00SELECT 1\x00\x00\x00")
+        send(b"S", b"")
+        _pg_read_until(sock, b"Z")
+        send(b"D", b"Sdescribe_probe\x00")
+        assert_no_ready_before_sync(b"E")
     finally:
         sock.close()
 
