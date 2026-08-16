@@ -72,8 +72,9 @@ bool containsForbiddenSubquery(const ASTPtr & ast, const NameSet & source_column
             /// bare identifier is valid only when it names a table column; otherwise
             /// it is the unsupported table-backed set form (`x IN table`).
             const auto & set_side = arguments.back();
-            if (set_side->as<ASTTableIdentifier>()
-                || (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side, source_column_names)))
+            if (const auto * table_identifier = set_side->as<ASTTableIdentifier>(); table_identifier && !source_column_names.contains(table_identifier->name()))
+                return true;
+            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side, source_column_names))
                 return true;
             if (const auto * identifier = set_side->as<ASTIdentifier>(); identifier && !source_column_names.contains(identifier->name()))
                 return true;
