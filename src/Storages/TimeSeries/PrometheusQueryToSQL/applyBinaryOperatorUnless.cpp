@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -41,44 +42,107 @@ SQLQueryPiece applyBinaryOperatorUnless(
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
 
-    /// Step 1:
-    /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        countForEach(values) AS join_count
-    /// GROUP BY join_group
-    /// FROM right
-    ///
-    String step1;
+    /// One-step grid: anti-join on join_group (no per-step countForEach / arrayMap masking).
+    const bool single_step =
+        (stepsInTimeSeriesRange(left_argument.start_time, left_argument.end_time, left_argument.step) == 1);
+
+    ASTPtr result_query;
+
+    if (single_step)
     {
+        /// Step 1:
+        /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group
+        /// FROM right
+        /// WHERE isNotNull(values[1])
+        ///
+        String step1;
+        {
+            SelectQueryBuilder builder;
+
+            bool right_metric_name_dropped = right_argument.metric_name_dropped;
+            builder.select_list.push_back(transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /*drop_metric_name=*/ true,
+                right_metric_name_dropped));
+            builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+
+            builder.where = makeASTFunction(
+                "isNotNull",
+                makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
+
+            builder.from_table = right;
+
+            ASTPtr step1_ast = builder.getSelectQuery();
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+            step1 = context.subqueries.back().name;
+        }
+
+        /// Step 2:
+        /// SELECT group, values
+        /// FROM left LEFT ANTI JOIN step1
+        /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
         SelectQueryBuilder builder;
 
-        bool right_metric_name_dropped = right_argument.metric_name_dropped;
-        builder.select_list.push_back(transformGroupASTForBinaryOperator(
-            operator_node,
-            make_intrusive<ASTIdentifier>(ColumnNames::Group),
-            /*drop_metric_name=*/ true,
-            right_metric_name_dropped));
-        builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
-        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        builder.select_list.back()->setAlias(ColumnNames::JoinCount);
+        builder.from_table = left;
 
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+        builder.join_kind = JoinKind::Left;
+        builder.join_strictness = JoinStrictness::Anti;
+        builder.join_table = step1;
 
-        builder.from_table = right;
+        bool left_metric_name_dropped = left_argument.metric_name_dropped;
+        builder.join_on = makeASTFunction(
+            "equals",
+            transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /*drop_metric_name=*/ true,
+                left_metric_name_dropped),
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
-        ASTPtr step1_ast = builder.getSelectQuery();
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
-        step1 = context.subqueries.back().name;
+        result_query = builder.getSelectQuery();
     }
-
-    /// Step 2:
-    /// SELECT group,
-    ///        if(notEmpty(join_count), arrayMap(x, y -> if(y = 0, x, NULL), values, join_count), values) AS values
-    /// FROM left LEFT ANY JOIN step1
-    /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
-    ///
-    ASTPtr step2;
+    else
     {
+        /// Step 1:
+        /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
+        ///        countForEach(values) AS join_count
+        /// GROUP BY join_group
+        /// FROM right
+        ///
+        String step1;
+        {
+            SelectQueryBuilder builder;
+
+            bool right_metric_name_dropped = right_argument.metric_name_dropped;
+            builder.select_list.push_back(transformGroupASTForBinaryOperator(
+                operator_node,
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                /*drop_metric_name=*/ true,
+                right_metric_name_dropped));
+            builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+
+            builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+            builder.select_list.back()->setAlias(ColumnNames::JoinCount);
+
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+
+            builder.from_table = right;
+
+            ASTPtr step1_ast = builder.getSelectQuery();
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step1_ast), SQLSubqueryType::TABLE});
+            step1 = context.subqueries.back().name;
+        }
+
+        /// Step 2:
+        /// SELECT group,
+        ///        if(notEmpty(join_count), arrayMap(x, y -> if(y = 0, x, NULL), values, join_count), values) AS values
+        /// FROM left LEFT ANY JOIN step1
+        /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
+        ///
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -118,11 +182,11 @@ SQLQueryPiece applyBinaryOperatorUnless(
                 left_metric_name_dropped),
             make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
-        step2 = builder.getSelectQuery();
+        result_query = builder.getSelectQuery();
     }
 
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
-    res.select_query = std::move(step2);
+    res.select_query = std::move(result_query);
     res.metric_name_dropped = left_argument.metric_name_dropped;
 
     res.start_time = left_argument.start_time;
