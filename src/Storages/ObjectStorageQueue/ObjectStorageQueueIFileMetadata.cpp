@@ -59,6 +59,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     processing_by_another_processor_since = 0;
+    std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+    foreign_processing_observers.clear();
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -85,6 +87,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
     processing_by_another_processor_since = 0;
+    std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+    foreign_processing_observers.clear();
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -95,16 +99,24 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
     if (state_ != FileStatus::State::Processing)
+    {
         processing_by_another_processor_since = 0;
+        std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+        foreign_processing_observers.clear();
+    }
     state = state_;
 }
 
-void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
+void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(const String & observer)
 {
     /// Publish the foreign marker before `Processing`: contenders which observe the
     /// state without acquiring `processing_lock` must not mistake it for our attempt.
     const auto processing_since = now();
     processing_by_another_processor_since = processing_since;
+    {
+        std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+        foreign_processing_observers[observer] = processing_since;
+    }
     processing_start_time = processing_since;
     processing_end_time = {};
     processed_rows = 0;
@@ -121,6 +133,10 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProces
     chassert(state_ == State::Processed || state_ == State::Failed);
     /// The data of an abandoned local attempt does not describe the terminal state.
     processing_by_another_processor_since = 0;
+    {
+        std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+        foreign_processing_observers.clear();
+    }
     processing_start_time = {};
     processing_end_time = {};
     processed_rows = 0;
@@ -130,11 +146,18 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProces
     last_exception = exception;
 }
 
-bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(time_t ttl_sec) const
+time_t ObjectStorageQueueIFileMetadata::FileStatus::processingByAnotherProcessorSince(const String & observer) const
 {
-    const time_t since = processing_by_another_processor_since.load();
+    std::lock_guard foreign_processing_lock(foreign_processing_observers_mutex);
+    const auto it = foreign_processing_observers.find(observer);
+    return it == foreign_processing_observers.end() ? 0 : it->second;
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(const String & observer, time_t ttl_sec) const
+{
+    const time_t since = processingByAnotherProcessorSince(observer);
     if (!since)
-        return false;
+        return true;
     return now() - since >= ttl_sec;
 }
 
@@ -184,7 +207,8 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
     LoggerPtr log_,
-    time_t foreign_processing_node_cache_ttl_sec_)
+    time_t foreign_processing_node_cache_ttl_sec_,
+    String foreign_processing_observer_)
     : path(path_)
     , zookeeper_name(zookeeper_name_)
     , node_name(getNodeName(path_))
@@ -193,6 +217,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , foreign_processing_node_cache_ttl_sec(foreign_processing_node_cache_ttl_sec_)
+    , foreign_processing_observer(std::move(foreign_processing_observer_))
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -344,7 +369,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_observer, foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -390,7 +415,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_observer, foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -444,7 +469,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(
                     LOG_TEST(log, "File {} is already being processed by a concurrent local processor", path);
                 }
                 else
-                    file_status->onProcessingByAnotherProcessor();
+                    file_status->onProcessingByAnotherProcessor(foreign_processing_observer);
             }
             else
             {

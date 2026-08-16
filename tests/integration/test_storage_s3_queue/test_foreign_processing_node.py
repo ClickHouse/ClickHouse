@@ -481,6 +481,83 @@ def test_foreign_processing_node_cache_ttl_is_per_table(started_cluster):
         )
 
 
+def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_table(started_cluster):
+    """A second table must not extend the first table's foreign-node cache deadline."""
+    node = started_cluster.instances["instance"]
+
+    suffix = generate_random_string()
+    first_table_name = f"test_foreign_deadline_first_{suffix}"
+    second_table_name = f"test_foreign_deadline_second_{suffix}"
+    first_dst_table_name = f"{first_table_name}_dst"
+    second_dst_table_name = f"{second_table_name}_dst"
+    keeper_path = f"/clickhouse/test_foreign_deadline_{suffix}"
+    files_path = f"test_foreign_deadline_{suffix}_data"
+
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+    common_settings = {
+        "keeper_path": keeper_path,
+        "s3queue_processing_threads_num": 1,
+        "s3queue_loading_retries": 100,
+    }
+    create_table(
+        started_cluster,
+        node,
+        first_table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            **common_settings,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 4,
+        },
+    )
+    create_table(
+        started_cluster,
+        node,
+        second_table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            **common_settings,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, first_table_name, first_dst_table_name)
+        run_with_retry(lambda count: count == 0, lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()), retries=2)
+
+        # The zero-TTL table probes the same foreign node after the first table has cached it.
+        create_mv(node, second_table_name, second_dst_table_name)
+        time.sleep(3)
+        node.query(f"SYSTEM PAUSE {second_table_name}")
+
+        # Expire the first table's own observation, then release the node. Before the fix,
+        # the second table's last probe resets the shared deadline and delays this retry.
+        time.sleep(2)
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        run_with_retry(
+            lambda count: count == 1,
+            lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()),
+            retries=2,
+        )
+    finally:
+        node.query(
+            f"""
+        SYSTEM START {second_table_name};
+        DROP TABLE IF EXISTS {second_dst_table_name};
+        DROP TABLE IF EXISTS {first_dst_table_name};
+        DROP TABLE IF EXISTS {second_table_name};
+        DROP TABLE IF EXISTS {first_table_name};
+        """
+        )
+
+
 def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
     """`foreign_processing_node_cache_ttl_seconds` must be changeable on a live table.
 

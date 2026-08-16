@@ -21,7 +21,8 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_,
         /// Zero (the default) means to always check keeper.
-        time_t foreign_processing_node_cache_ttl_sec_ = 0);
+        time_t foreign_processing_node_cache_ttl_sec_ = 0,
+        String foreign_processing_observer_ = {});
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
 

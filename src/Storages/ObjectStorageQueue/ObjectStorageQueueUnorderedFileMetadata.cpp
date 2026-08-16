@@ -21,7 +21,8 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     bool use_persistent_processing_nodes_,
     const std::string & zookeeper_name_,
     LoggerPtr log_,
-    time_t foreign_processing_node_cache_ttl_sec_)
+    time_t foreign_processing_node_cache_ttl_sec_,
+    String foreign_processing_observer_)
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
@@ -33,7 +34,8 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         metadata_ref_count_,
         use_persistent_processing_nodes_,
         log_,
-        foreign_processing_node_cache_ttl_sec_)
+        foreign_processing_node_cache_ttl_sec_,
+        std::move(foreign_processing_observer_))
 {
     LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
              "processed_path: {}, processing_path: {}, failed_path: {}",

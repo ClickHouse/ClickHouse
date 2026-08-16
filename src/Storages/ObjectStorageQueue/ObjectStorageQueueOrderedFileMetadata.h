@@ -43,7 +43,8 @@ public:
         const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_,
         /// Zero (the default) means to always check keeper.
-        time_t foreign_processing_node_cache_ttl_sec_ = 0);
+        time_t foreign_processing_node_cache_ttl_sec_ = 0,
+        String foreign_processing_observer_ = {});
 
     struct BucketHolder;
     using BucketHolderPtr = std::shared_ptr<BucketHolder>;

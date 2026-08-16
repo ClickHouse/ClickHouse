@@ -104,6 +104,7 @@ public:
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
+        const String foreign_processing_observer;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
         /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.

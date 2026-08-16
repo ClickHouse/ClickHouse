@@ -136,7 +136,8 @@ public:
     FileMetadataPtr getFileMetadata(
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
-        time_t foreign_processing_node_cache_ttl_sec = 0);
+        time_t foreign_processing_node_cache_ttl_sec = 0,
+        String foreign_processing_observer = {});
 
     /// Register table in keeper metadata.
     /// active = false:

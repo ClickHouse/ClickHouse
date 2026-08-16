@@ -113,6 +113,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , mode(metadata->getTableMetadata().getMode())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
     , storage_id(storage_id_)
+    , foreign_processing_observer(storage_id_.getNameForLogs())
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , foreign_processing_node_cache_ttl_sec(foreign_processing_node_cache_ttl_sec_)
@@ -286,7 +287,8 @@ ObjectStorageQueueSource::FileIterator::next()
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}, /// No buckets for Unordered mode.
-                        foreign_processing_node_cache_ttl_sec.load());
+                        foreign_processing_node_cache_ttl_sec.load(),
+                        foreign_processing_observer);
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -498,7 +500,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
         const auto status = metadata->tryGetFileStatus(path);
         if (!status
             || !status->isProcessingByAnotherProcessor()
-            || status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec.load()))
+            || status->shouldRetryProcessing(foreign_processing_observer, foreign_processing_node_cache_ttl_sec.load()))
             return false;
 
         LOG_TEST(log, "Skipping file {}: Processing by another processor", path);
@@ -594,7 +596,7 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
     {
         const auto status = metadata->tryGetFileStatus(object->getPath());
         /// An evicted or non-foreign status does not defer the recheck.
-        if (status && status->isProcessingByAnotherProcessor() && !status->shouldRetryProcessing(ttl_sec))
+        if (status && status->isProcessingByAnotherProcessor() && !status->shouldRetryProcessing(foreign_processing_observer, ttl_sec))
             return false;
 
         due.push_back(std::move(object));
@@ -612,7 +614,7 @@ std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignPro
     for (const auto & object : foreign_processing_files_to_recheck)
     {
         const auto status = metadata->tryGetFileStatus(object->getPath());
-        const time_t since = status ? status->processingByAnotherProcessorSince() : 0;
+        const time_t since = status ? status->processingByAnotherProcessorSince(foreign_processing_observer) : 0;
 
         /// An evicted or non-foreign status does not defer the recheck
         /// (see `takeDueForeignProcessingRechecks`): wake up immediately.
@@ -653,7 +655,7 @@ void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
     /// Only a fresh observation defers the recheck. An already-expired one (e.g. the TTL
     /// is zero) means keeper is checked on every pass: queueing the file would make it
     /// due immediately and spin the iterator instead of letting the pass finish.
-    if (status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec.load()))
+    if (status->shouldRetryProcessing(foreign_processing_observer, foreign_processing_node_cache_ttl_sec.load()))
         return;
 
     foreign_processing_files_to_recheck.push_back(std::move(object_info));
@@ -862,7 +864,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             bool set_processing = false;
             try
             {
-                file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load());
+                file_metadata = metadata->getFileMetadata(
+                    object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load(), foreign_processing_observer);
                 set_processing = file_metadata->trySetProcessing();
             }
             catch (...)

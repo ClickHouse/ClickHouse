@@ -424,7 +424,8 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     ObjectStorageQueuePartitioningMode partitioning_mode_,
     const ObjectStorageQueueFilenameParser * parser_,
     LoggerPtr log_,
-    time_t foreign_processing_node_cache_ttl_sec_)
+    time_t foreign_processing_node_cache_ttl_sec_,
+    String foreign_processing_observer_)
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
@@ -436,7 +437,8 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         metadata_ref_count_,
         use_persistent_processing_nodes_,
         log_,
-        foreign_processing_node_cache_ttl_sec_)
+        foreign_processing_node_cache_ttl_sec_,
+        std::move(foreign_processing_observer_))
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
     , bucket_info(bucket_info_)

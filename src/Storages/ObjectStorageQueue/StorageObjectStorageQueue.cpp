@@ -1939,7 +1939,8 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// while the failed node is still per-file.
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
-    auto file_metadata = files_metadata->getFileMetadata(path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load());
+    auto file_metadata = files_metadata->getFileMetadata(
+        path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load(), getStorageID().getNameForLogs());
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 

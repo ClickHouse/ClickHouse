@@ -105,6 +105,39 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
     ASSERT_EQ(file_status->processed_rows.load(), 5UL);
 }
 
+/// A foreign `processing` observation belongs to the table which made it. A table
+/// which has not observed the node itself must probe keeper instead of inheriting
+/// another table's cache deadline.
+template <typename FS>
+void expectForeignProcessingCacheDeadlineIsPerTable()
+{
+    if constexpr (requires(FS & status, const String & observer)
+    {
+        status.onProcessingByAnotherProcessor(observer);
+        status.shouldRetryProcessing(observer, time_t{});
+        status.processingByAnotherProcessorSince(observer);
+    })
+    {
+        auto file_status = std::make_shared<FS>("data/file.csv");
+        const String first_table = "default.first_table";
+        const String second_table = "default.second_table";
+
+        file_status->onProcessingByAnotherProcessor(first_table);
+
+        ASSERT_FALSE(file_status->shouldRetryProcessing(first_table, 3600));
+        ASSERT_TRUE(file_status->shouldRetryProcessing(second_table, 3600));
+        ASSERT_NE(file_status->processingByAnotherProcessorSince(first_table), 0);
+        ASSERT_EQ(file_status->processingByAnotherProcessorSince(second_table), 0);
+    }
+    else
+        FAIL() << "FileStatus does not keep foreign processing observations per table";
+}
+
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingCacheDeadlineIsPerTable)
+{
+    expectForeignProcessingCacheDeadlineIsPerTable<FileStatus>();
+}
+
 namespace
 {
 
