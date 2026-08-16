@@ -91,6 +91,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -1895,7 +1896,26 @@ DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
+    void set(std::string_view name, const Field & value) override;
 };
+
+void ServerSettingsImpl::set(std::string_view name, const Field & value)
+{
+#if defined(MEMORY_SANITIZER)
+    if (name == "global_profiler_real_time_period_ns" || name == "global_profiler_cpu_time_period_ns")
+    {
+        if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The server setting `{}` is not supported in a MemorySanitizer build",
+                name);
+        }
+    }
+#endif
+
+    BaseSettings::set(name, value);
+}
 
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
