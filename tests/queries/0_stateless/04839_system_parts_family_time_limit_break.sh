@@ -26,8 +26,8 @@
 #   the full result of a 20-part table takes at least 10 seconds;
 # - the per-column checkpoints of `system.parts_columns` and `system.projection_parts_columns`:
 #   the failpoint sleeps 1 second per `COLUMNS_CANCELLATION_CHECK_PERIOD` (128) enumerated
-#   columns of a part, so building the full result over a single part with 641 columns takes
-#   at least 5 seconds;
+#   columns of a part, so building the full result over a single part with 1025 columns takes
+#   at least 8 seconds;
 # - the stop callback inside the parts-snapshot walks of MergeTree: for the tables with the
 #   '_snap' name marker the failpoint sleeps 500 ms per enumerated part inside the walk itself
 #   and polls the callback on every part (its regular cadence of 8192 parts cannot be reached
@@ -53,10 +53,10 @@ NUM_PARTS=20
 # This fixture exercises the eager storage-discovery pass in `StoragesDroppedInfoStream`.
 NUM_DROPPED_TABLES=20
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
-# loops, which fire every 128 enumerated columns: 641 columns give 5 checkpoints per part.
-NUM_WIDE_COLUMNS=640
+# loops, which fire every 128 enumerated columns: 1025 columns give 8 checkpoints per part.
+NUM_WIDE_COLUMNS=1024
 # A query that stops at the first checkpoint after the deadline takes about a second, while the
-# full result takes at least five seconds to build.
+# full result takes at least eight seconds to build.
 # The debug flaky-check workers can take several seconds to initialize the system-table query
 # pipeline. The uninterruptible snapshot walk still takes at least ten seconds, leaving a wide
 # margin while avoiding a scheduler-sensitive bound.
@@ -175,7 +175,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
 
 # $1 - the position of the check, $2 - a label, $3 - the system table, $4 - the source table,
 # $5 - the select list (default: name).
-# With the failpoint enabled, building the full result takes at least five seconds, and a query
+# With the failpoint enabled, building the full result takes at least eight seconds, and a query
 # with a 1 second deadline must stop at the checkpoints and finish much earlier. The elapsed time
 # of every query is looked up afterwards in `system.query_log` by its `log_comment`, which also
 # gives the checks their deterministic output order.
@@ -221,7 +221,7 @@ function timed_dropped_discovery()
     timed_query 12 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
 
     # The '_meta' fixture times out inside the column-metadata prepass (1 second per 128 enumerated
-    # metadata columns, at least 5 seconds for the full prepass over 641 columns).
+    # metadata columns, at least 8 seconds for the full prepass over 1025 columns).
     timed_query 13 parts_columns_meta parts_columns t_slowdown_system_parts_meta
     timed_query 14 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
 } | $CLICKHOUSE_CLIENT
