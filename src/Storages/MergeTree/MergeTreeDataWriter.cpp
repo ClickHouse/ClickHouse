@@ -986,7 +986,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         const auto & rows_ttl = metadata_snapshot->getRowsTTL();
         updateTTL(context, rows_ttl, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
-        /// Record the rows-TTL expression and time zone these timestamps were computed under, so the fast
+        /// Record the rows-TTL expression and the server time zone these timestamps were computed under, so the fast
         /// `MODIFY TTL` path can later verify the part is not stale (see `MergeTreeDataPartTTLInfos`) -
         /// unless some row's timestamp is exactly 0 (the epoch), which means "no TTL" to the rest of the
         /// machinery and is excluded from the stored `min`: with such a row the bounds are not a complete
@@ -994,7 +994,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps)
         {
             new_data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
-            new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::instance());
+            new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::serverTimezoneInstance());
         }
     }
 

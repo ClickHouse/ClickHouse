@@ -1,7 +1,7 @@
--- The `Date` conversion in `ITTLAlgorithm` uses the effective `session_timezone` of the
--- mutation context. The fast path must prove and fingerprint the shift in that same zone.
--- Compare a full-storage part (eligible for the metadata-only fast path) with a packed part
--- (which must be rewritten) while a non-empty, non-server `session_timezone` is active.
+-- `MergeTreeDataWriter` materializes `Date` bounds in the server time zone, while
+-- `ITTLAlgorithm` uses the mutation context's `session_timezone`. A part written with a
+-- non-server session zone must therefore fall back from the metadata-only path. Compare it
+-- with a packed part, which is always rewritten.
 
 SET alter_sync = 2;
 SET session_timezone = 'Asia/Kolkata';
