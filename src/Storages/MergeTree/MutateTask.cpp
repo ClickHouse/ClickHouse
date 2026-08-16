@@ -3077,7 +3077,7 @@ private:
         /// full-rewrite mutation path does. The part-wide codec remains approximate because the
         /// other columns are hardlinked from the source part.
         const bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
-        bool is_explicit_recompression;
+        bool is_explicit_recompression = false;
         if (codec_is_approximate)
         {
             auto part_compression_codec = ctx->data->getCompressionCodecForPart(
