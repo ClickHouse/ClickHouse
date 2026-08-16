@@ -271,7 +271,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         /// `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection and cannot use a
         /// runtime filter.
         if (algorithm == JoinAlgorithm::PARTIAL_MERGE
-            && MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
+            && join_step->isPartialMergeJoinSupported())
             return false;
 
         /// Unlike the sorted-merge algorithms below, these algorithms may be selected without

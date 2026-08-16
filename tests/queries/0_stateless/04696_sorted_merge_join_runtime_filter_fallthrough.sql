@@ -72,6 +72,13 @@ EXPLAIN actions = 1
 SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id
 ) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
 
+SELECT '--- Unsupported earlier `partial_merge` falls through to `hash` with a runtime filter ---';
+
+SELECT * FROM (
+EXPLAIN actions = 1
+SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id AND l.a > r.b
+) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
+
 SELECT '--- Results are the same as with plain `hash` ---';
 
 SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id;

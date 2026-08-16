@@ -198,6 +198,7 @@ public:
     /// and `buildPhysicalJoin` (the actual selection). The result is memoized; `node` must be the plan node
     /// holding this step.
     bool inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node);
+    bool isPartialMergeJoinSupported() const;
 
     /// `applyParallelReplicas` may replace a join input with a distributed read after
     /// `tryAddJoinRuntimeFilter` memoized the eligibility on the pre-rewrite plan. The stale `true`

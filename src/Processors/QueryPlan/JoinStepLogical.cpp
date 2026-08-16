@@ -33,6 +33,7 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
@@ -1265,6 +1266,34 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
         = joinInputCanBeReadInJoinKeyOrder(*node.children[0], left_keys, sorting_settings)
         && joinInputCanBeReadInJoinKeyOrder(*node.children[1], right_keys, sorting_settings);
     return *inputs_can_be_read_in_join_key_order;
+}
+
+bool JoinStepLogical::isPartialMergeJoinSupported() const
+{
+    if (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    /// Keep this in sync with `MergeJoin::isSupported(table_join)`: a mixed condition is
+    /// stored on `TableJoin` and cannot be evaluated by `MergeJoin`, while a one-sided
+    /// condition is pushed down and does not affect its selectability. An `OR` condition
+    /// creates multiple clauses, so it is likewise not supported by `MergeJoin`.
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        const bool is_equality
+            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
+        const bool is_asof_inequality
+            = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
+
+        if (predicate_op == JoinConditionOperator::Or || !lhs || !rhs)
+            return false;
+
+        if (!is_equality && !is_asof_inequality
+            && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            return false;
+    }
+
+    return true;
 }
 
 static void addSortingForMergeJoin(
