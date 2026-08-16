@@ -551,6 +551,24 @@ bool groupByTTLExpiryAffectedByEarlierSet(
     return false;
 }
 
+bool groupByTTLSetExpressionsAffectedByEarlierSet(
+    const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
+{
+    if (earlier_set_targets.empty())
+        return false;
+
+    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
+    const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, earlier_set_targets);
+    for (const auto & set_part : group_by_ttl.set_parts)
+        for (const auto * input : set_part.expression->getActionsDAG().getInputs())
+            if (affected_materialized.contains(input->result_name))
+                return true;
+    return false;
+}
+
 std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
@@ -610,6 +628,14 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     for (const auto & expiry_column : getGroupByTTLExpiryStorageColumns(group_by_ttl, storage_names))
         if (affected_materialized.contains(expiry_column))
             needs_materialized_refresh = true;
+
+    /// A later `SET` expression can aggregate a MATERIALIZED column too. It is evaluated by
+    /// `TTLAggregationAlgorithm` after this refresh, so rebuild every affected MATERIALIZED input
+    /// before the aggregate sees a stale value from an earlier `SET`.
+    for (const auto & set_part : group_by_ttl.set_parts)
+        for (const auto * input : set_part.expression->getActionsDAG().getInputs())
+            if (affected_materialized.contains(input->result_name))
+                needs_materialized_refresh = true;
 
     /// This TTL's expiry/`WHERE` can also read a SUBCOLUMN of a rewritten physical parent, not only a
     /// MATERIALIZED column: e.g. `ORDER BY tup.ts` pre-extracts `tup.ts` into the stream, earlier

@@ -104,6 +104,23 @@ SELECT max(payload) = toYear(max(d)) AS payload_matches_stored_d, countIf(d != t
 DROP TABLE ttl_k2;
 
 
+SELECT '--- K3';
+
+-- K3: a later TTL can read an affected MATERIALIZED column from its SET expression even when its
+-- own expiry does not. Refresh it before aggregation; otherwise `payload` is computed from the
+-- pre-SET d while the post-TTL repair writes the new d.
+CREATE TABLE ttl_k3 (k UInt32, ts DateTime, anchor DateTime, ts2 DateTime, d Date MATERIALIZED toDate(ts2) + toIntervalYear(5), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET ts2 = min(anchor),
+    ts + toIntervalDay(1) GROUP BY k SET payload = toUInt64(toYear(max(d)))
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+INSERT INTO ttl_k3 (k, ts, anchor, ts2, payload) SELECT 1, toDateTime('2020-01-01 00:00:00'), toDateTime('2000-03-04 00:00:00'), toDateTime('2040-06-15 00:00:00'), 10 FROM numbers(8);
+OPTIMIZE TABLE ttl_k3 FINAL;
+SELECT max(payload) = toYear(max(d)) AS payload_matches_stored_d, countIf(d != toDate(ts2) + toIntervalYear(5)) AS stale_d FROM ttl_k3;
+
+DROP TABLE ttl_k3;
+
+
 SELECT '--- L1';
 
 -- L1 (round 10, subcolumn expiry, in-transform): a later TTL that expires on a SUBCOLUMN of a SET

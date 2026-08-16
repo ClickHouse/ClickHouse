@@ -46,6 +46,15 @@ bool groupByTTLExpiryAffectedByEarlierSet(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context);
 
+/// True when a `GROUP BY` TTL's `SET` expression reads a MATERIALIZED column derived from an
+/// earlier firing `SET` target. Such a column is stale in the in-stream block until it is
+/// recomputed, so the aggregate expression must not consume its pre-`SET` value.
+bool groupByTTLSetExpressionsAffectedByEarlierSet(
+    const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context);
+
 /// Build an `ActionsDAG` over `header` that refreshes the derived columns whose in-stream value went
 /// stale after an earlier `GROUP BY` TTL `SET`, so this TTL's `TTLAggregationAlgorithm` sees post-`SET`
 /// values. Two kinds of staleness are repaired:

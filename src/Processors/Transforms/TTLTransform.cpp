@@ -145,6 +145,9 @@ TTLTransform::TTLTransform(
         const bool expiry_affected_by_earlier_set = groupByTTLExpiryAffectedByEarlierSet(
             group_by_ttl, earlier_group_by_set_targets, metadata_snapshot_, context);
 
+        const bool set_expressions_affected_by_earlier_set = groupByTTLSetExpressionsAffectedByEarlierSet(
+            group_by_ttl, earlier_group_by_set_targets, metadata_snapshot_, context);
+
         const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl) || expiry_affected_by_earlier_set;
 
         ExpressionActionsPtr key_refresh_actions;
@@ -153,7 +156,7 @@ TTLTransform::TTLTransform(
         /// column its expiry reads stale (isTTLExpired would read the pre-SET value and skip aggregation).
         /// Losing input order (the cascade case above) does not change any column value, so no refresh is
         /// needed there.
-        if (affected_by_earlier_set || expiry_affected_by_earlier_set)
+        if (affected_by_earlier_set || expiry_affected_by_earlier_set || set_expressions_affected_by_earlier_set)
         {
             if (auto refresh_dag = buildRefreshGroupByKeysDAG(
                     getInputPort().getHeader(), metadata_snapshot_, group_by_ttl, earlier_group_by_set_targets, context))
