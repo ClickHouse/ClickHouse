@@ -166,7 +166,7 @@ def test_stable_with_type_shaping_settings(start_cluster):
         "merge('default', '^nested_source$')",
         settings={"flatten_nested": 0},
     )
-    assert "n Nested(a UInt8)" in node3.query(
+    assert "`n` Nested(a UInt8)" in node3.query(
         "SHOW CREATE TABLE nested_as_table_function FORMAT TSVRaw"
     )
 
@@ -177,6 +177,9 @@ def test_stable_with_type_shaping_settings(start_cluster):
 
     # The `SYSTEM FLUSH LOGS` query context must not influence the schema of a system log
     # or its union table. Otherwise every flush with these settings recreates the union table.
+    # Restarting makes the next flush recheck the union-table definition, exercising the
+    # settings pinned by `SystemLog::addSettingsForQuery` on that path.
+    node3.restart_clickhouse()
     settings = {"flatten_nested": 0, "data_type_default_nullable": 1}
     node3.query("SYSTEM FLUSH LOGS query_log", settings=settings)
     assert node3.query("DESCRIBE TABLE system.all_query_log") == node3.query(
