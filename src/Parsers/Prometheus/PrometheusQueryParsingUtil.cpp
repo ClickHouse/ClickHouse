@@ -162,6 +162,14 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 6)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
                     char bytes[3];  /// 3 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
@@ -196,7 +204,15 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0xFFFF.
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 10)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0x10FFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
                     pos += 10;
@@ -255,10 +271,20 @@ bool PrometheusQueryParsingUtil::tryParseStringLiteral(
 
     /// A string literal enclosed in quotes or double quotes: escape sequences need to be parsed.
     std::string_view unquoted = input.substr(1, input.length() - 2);
-    if (!tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, error_pos))
+    const size_t newline_pos = unquoted.find('\n');
+    size_t unescape_error_pos = 0;
+    const bool unescape_succeeded = tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos);
+
+    if (newline_pos != String::npos && (unescape_succeeded || newline_pos < unescape_error_pos))
     {
-        if (error_pos)
-            ++*error_pos;
+        setErrorMessage(error_message, "unterminated quoted string");
+        setErrorPos(error_pos, 0);
+        return false;
+    }
+
+    if (!unescape_succeeded)
+    {
+        setErrorPos(error_pos, unescape_error_pos + 1);
         return false;
     }
 
