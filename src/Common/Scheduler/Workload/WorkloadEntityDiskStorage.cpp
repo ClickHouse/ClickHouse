@@ -109,7 +109,7 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("while loading workload entity {} from path {}", backQuote(entity_name), path));
+        tryLogCurrentException(log, fmt::format("while loading workload entity {} from path {}", backQuote(entity_name), pathToString(path)));
         return nullptr; /// Failed to load this entity, will ignore it
     }
 }
