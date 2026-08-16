@@ -5965,7 +5965,8 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             LOG_TRACE(log, "Trying to startup table from right now");
             /// Try activating replica in the current thread.
             restarting_thread.run();
-            restarting_thread.start(false);
+            /// The restarting thread task can be deactivated (i.e. due to shutdown()), and then run() will not schedule task, so force scheduling as well
+            restarting_thread.start(/*schedule=*/ true);
         }
         else
         {
