@@ -270,6 +270,7 @@ WHERE e = 'missing'
 SETTINGS validate_enum_literals_in_operators = 0;
 
 SET enable_json_type = 1;
+SET enable_analyzer = 1;
 
 SELECT reinterpretAsUInt64(json.a.:Float64)
 FROM
