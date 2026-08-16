@@ -1,0 +1,45 @@
+inner nearest join, L2Distance
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+left nearest join, L2Distance
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+4	
+inner nearest join, cosineDistance
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+distance function arguments in reverse order
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+strictness after the kind keyword
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+the distance is recomputable from the output columns
+1	123 N Main St	0.0866
+2	123 Maple Ave	0.1225
+3	123 W Main St	0.1414
+a single equality key
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+4	123 W Main St
+Float32 and Float64 vectors are joined through the common supertype
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+a single-side condition in ON excludes candidates before picking the nearest
+1	123 Maple Ave
+2	123 Maple Ave
+3	123 W Main St
+LEFT with join_use_nulls: unmatched right columns are NULL
+1	123 N Main St
+2	123 Maple Ave
+3	123 W Main St
+4	\N
+formatted query keeps the NEAREST keyword
+SELECT 1 FROM t1 NEAREST LEFT JOIN t2 ON (t1.k = t2.k) AND L2Distance(t1.v, t2.v)

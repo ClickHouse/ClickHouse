@@ -166,6 +166,7 @@ ConstantJoin::OutputPlan ConstantJoin::makeOutputPlan(JoinKind kind, JoinStrictn
                 break;
             case JoinStrictness::Unspecified:
             case JoinStrictness::Asof:
+            case JoinStrictness::Nearest:
                 UNREACHABLE();
         }
     }

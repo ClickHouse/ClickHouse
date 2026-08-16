@@ -1,6 +1,8 @@
 #include <Interpreters/RowRefs.h>
 
+#include <Core/Block.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnVector.h>
@@ -13,6 +15,8 @@
 #include <base/types.h>
 #include <Common/RadixSort.h>
 
+#include <cmath>
+#include <limits>
 #include <mutex>
 
 
@@ -23,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace
@@ -220,6 +225,155 @@ private:
     }
 };
 
+template <typename T, NearestJoinDistanceFunction distance_function>
+class NearestVectorMatcher : public NearestVectorMatcherBase
+{
+    static constexpr bool is_cosine = (distance_function == NearestJoinDistanceFunction::CosineDistance);
+
+    struct ArraySlice
+    {
+        const T * data;
+        size_t size;
+    };
+
+    static ArraySlice sliceAt(const IColumn & vector_column, size_t row_num)
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(vector_column);
+        const auto & offsets = column_array.getOffsets();
+        const auto & elements = assert_cast<const ColumnVector<T> &>(column_array.getData()).getData();
+
+        /// For PaddedPODArray offsets[-1] is a valid zero, so no special case for row_num == 0.
+        size_t begin = offsets[row_num - 1];
+        size_t end = offsets[row_num];
+        return {elements.data() + begin, end - begin};
+    }
+
+    ArraySlice storedSliceAt(UInt64 ref_word) const
+    {
+        const StoredBlock * stored_block = stored_blocks[refWordBlockNo(ref_word)];
+        size_t row_num = refWordRowNo(ref_word);
+        const IColumn * column = stored_block->columns[vector_column_position].get();
+        if (const ColumnReplicated * replicated = stored_block->replicated_columns[vector_column_position])
+        {
+            row_num = replicated->getIndexes().getIndexAt(row_num);
+            column = replicated->getNestedColumn().get();
+        }
+        return sliceAt(*column, row_num);
+    }
+
+public:
+    NearestVectorMatcher(const StoredBlock * const * stored_blocks_, size_t vector_column_position_)
+        : stored_blocks(stored_blocks_), vector_column_position(vector_column_position_)
+    {
+    }
+
+    Float64 probeNorm(ArraySlice probe) const
+    {
+        Float64 sum_of_squares = 0.0;
+        for (size_t i = 0; i < probe.size; ++i)
+            sum_of_squares += Float64(probe.data[i]) * Float64(probe.data[i]);
+        return std::sqrt(sum_of_squares);
+    }
+
+    Float64 distanceToStored(ArraySlice probe, Float64 probe_norm, UInt64 ref_word) const
+    {
+        auto stored = storedSliceAt(ref_word);
+
+        if (stored.size != probe.size)
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Cannot compute the distance in NEAREST JOIN: array sizes differ: {} and {}",
+                probe.size, stored.size);
+
+        if constexpr (is_cosine)
+        {
+            Float64 dot_product = 0.0;
+            Float64 stored_sum_of_squares = 0.0;
+            for (size_t i = 0; i < stored.size; ++i)
+            {
+                dot_product += Float64(probe.data[i]) * Float64(stored.data[i]);
+                stored_sum_of_squares += Float64(stored.data[i]) * Float64(stored.data[i]);
+            }
+
+            /// A zero-norm vector has no direction, so the cosine distance to it is undefined
+            /// (0/0). Produce NaN, which the argmin comparisons never select.
+            return 1.0 - dot_product / (probe_norm * std::sqrt(stored_sum_of_squares));
+        }
+        else
+        {
+            /// The squared L2 distance selects the same nearest row as the L2 distance.
+            Float64 sum_of_squares = 0.0;
+            for (size_t i = 0; i < stored.size; ++i)
+            {
+                Float64 difference = Float64(probe.data[i]) - Float64(stored.data[i]);
+                sum_of_squares += difference * difference;
+            }
+            return sum_of_squares;
+        }
+    }
+
+    UInt64 findNearest(const IColumn & probe_vector_column, size_t probe_row, RowRefList candidates) const override
+    {
+        auto probe = sliceAt(probe_vector_column, probe_row);
+        [[maybe_unused]] Float64 probe_norm = 0.0;
+        if constexpr (is_cosine)
+            probe_norm = probeNorm(probe);
+
+        Float64 min_distance = std::numeric_limits<Float64>::infinity();
+        UInt64 best_ref_word = 0;
+
+        for (UInt64 ref_word : candidates)
+        {
+            Float64 distance = distanceToStored(probe, probe_norm, ref_word);
+
+            /// NaN distances fail this comparison, so rows with undefined distances are never chosen.
+            if (distance < min_distance)
+            {
+                min_distance = distance;
+                best_ref_word = ref_word;
+            }
+        }
+
+        return best_ref_word;
+    }
+
+    void updateNearestSwapped(
+        const IColumn & probe_vector_column, size_t probe_row, RowRefList candidates,
+        const NearestSwapUpdateContext & context) const override
+    {
+        auto probe = sliceAt(probe_vector_column, probe_row);
+        [[maybe_unused]] Float64 probe_norm = 0.0;
+        if constexpr (is_cosine)
+            probe_norm = probeNorm(probe);
+
+        /// The probe row's values are copied at most once, on its first improvement.
+        Int64 capture_row = -1;
+
+        for (UInt64 ref_word : candidates)
+        {
+            Float64 distance = distanceToStored(probe, probe_norm, ref_word);
+
+            size_t dense_index = context.block_row_offsets[refWordBlockNo(ref_word)] + refWordRowNo(ref_word);
+            /// NaN distances fail this comparison, so rows with undefined distances never improve.
+            if (distance < context.state->best_distance[dense_index])
+            {
+                if (capture_row < 0)
+                {
+                    auto & captured = context.state->captured;
+                    for (size_t i = 0; i < captured.size(); ++i)
+                        captured[i]->insertFrom(*context.probe_block->getByPosition(i).column, probe_row);
+                    capture_row = static_cast<Int64>(captured.empty() ? 0 : captured.front()->size() - 1);
+                }
+                context.state->best_distance[dense_index] = distance;
+                context.state->best_capture_row[dense_index] = capture_row;
+            }
+        }
+    }
+
+private:
+    const StoredBlock * const * stored_blocks;
+    size_t vector_column_position;
+};
+
 }
 
 StoredBlock::StoredBlock(Columns columns_) : columns(std::move(columns_))
@@ -392,6 +546,53 @@ std::optional<TypeIndex> SortedLookupVectorBase::getTypeSize(const IColumn & aso
 #undef DISPATCH
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "ASOF join not supported for type: {}", std::string(asof_column.getFamilyName()));
+}
+
+std::optional<TypeIndex> NearestVectorMatcherBase::getVectorElementType(const IColumn & vector_column)
+{
+    const auto * column_array = typeid_cast<const ColumnArray *>(&vector_column);
+    if (!column_array)
+        return std::nullopt;
+
+    TypeIndex element_type = column_array->getData().getDataType();
+    if (element_type != TypeIndex::Float32 && element_type != TypeIndex::Float64)
+        return std::nullopt;
+
+    return element_type;
+}
+
+NearestVectorMatcherPtr createNearestVectorMatcher(
+    TypeIndex element_type,
+    NearestJoinDistanceFunction distance_function,
+    const StoredBlock * const * stored_blocks,
+    size_t vector_column_position)
+{
+    auto create = [&]<typename T>() -> NearestVectorMatcherPtr
+    {
+        switch (distance_function)
+        {
+            case NearestJoinDistanceFunction::L2Distance:
+                return std::make_unique<NearestVectorMatcher<T, NearestJoinDistanceFunction::L2Distance>>(
+                    stored_blocks, vector_column_position);
+            case NearestJoinDistanceFunction::CosineDistance:
+                return std::make_unique<NearestVectorMatcher<T, NearestJoinDistanceFunction::CosineDistance>>(
+                    stored_blocks, vector_column_position);
+            case NearestJoinDistanceFunction::None:
+                break;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid NEAREST JOIN distance function");
+    };
+
+    switch (element_type)
+    {
+        case TypeIndex::Float32:
+            return create.template operator()<Float32>();
+        case TypeIndex::Float64:
+            return create.template operator()<Float64>();
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid NEAREST JOIN vector element type: {}", static_cast<UInt32>(element_type));
+    }
 }
 
 }

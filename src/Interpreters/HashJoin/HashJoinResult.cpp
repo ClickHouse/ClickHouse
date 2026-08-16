@@ -140,7 +140,8 @@ static void appendRightColumns(
         block.insert(std::move(col));
     }
 
-    bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    bool last_key_is_lookup = table_join.strictness() == JoinStrictness::Asof
+        || table_join.strictness() == JoinStrictness::Nearest;
     /// For `LEFT ANTI` (and `RIGHT ANTI` after `TableJoin::swapSides`), the upstream filter
     /// in `HashJoinResult::next` has already kept only unmatched rows, so right-side key
     /// columns must hold defaults rather than left key values (issue #99959).
@@ -154,8 +155,8 @@ static void appendRightColumns(
     for (size_t i = 0; i < properties.required_right_keys.columns(); ++i)
     {
         const auto & right_key = properties.required_right_keys.getByPosition(i);
-        /// asof column is already in block.
-        if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
+        /// The ASOF column (or the NEAREST vector column) is already in the block.
+        if (last_key_is_lookup && right_key.name == table_join.getOnlyClause().key_names_right.back())
             continue;
 
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);

@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -1373,10 +1374,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
         && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
     /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
     /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
-    /// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
-    /// and marking the join as a join with constant would leave `table_join_clauses` empty.
-    /// Instead, it is rejected below with INVALID_JOIN_ON_EXPRESSION.
-    if (join_operator.strictness != JoinStrictness::Asof && (is_always_true_predicate || is_always_false_predicate))
+    /// ASOF and NEAREST JOIN are excluded: a constant expression cannot contain the required inequality
+    /// or distance predicate, and marking the join as a join with constant would leave `table_join_clauses` empty.
+    /// Instead, they are rejected below with INVALID_JOIN_ON_EXPRESSION.
+    if (join_operator.strictness != JoinStrictness::Asof && join_operator.strictness != JoinStrictness::Nearest
+        && (is_always_true_predicate || is_always_false_predicate))
     {
         bool join_expression_value = join_expression.empty();
         join_expression.clear();
@@ -1413,7 +1415,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context,
                 join_operator.shared_runtime_filter_descriptors);
 
-        if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
+        if (!ie_join_description && !has_keys
+            && join_operator.strictness != JoinStrictness::Asof && join_operator.strictness != JoinStrictness::Nearest)
         {
             /// No equality keys were found: drop the empty clause added above; the disjunctive
             /// path below builds its own clauses, IEJoin does not use them at all.
@@ -1492,6 +1495,67 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 formatJoinCondition(join_expression));
 
         join_expression.erase(found_asof_predicate_it);
+    }
+
+    if (join_operator.strictness == JoinStrictness::Nearest)
+    {
+        if (is_disjunctive_condition)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "NEAREST join does not support multiple disjuncts in JOIN ON expression");
+
+        chassert(table_join_clauses.size() == 1);
+        if (table_join_clauses.front().key_names_left.empty())
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "NEAREST join requires at least one equality predicate in JOIN ON expression, in {}",
+                formatJoinCondition(join_expression));
+
+        /// Find strictly one distance function over the two vector columns, one from each side.
+        auto found_distance_it = join_expression.end();
+        for (auto it = join_expression.begin(); it != join_expression.end(); ++it)
+        {
+            auto conjunct = it->resolveAliases();
+            const auto * node = conjunct.getNode();
+            if (node->type != ActionsDAG::ActionType::FUNCTION || node->children.size() != 2 || !node->function)
+                continue;
+
+            auto distance_function = getNearestJoinDistanceFunction(node->function->getName());
+            if (distance_function == NearestJoinDistanceFunction::None)
+                continue;
+
+            auto arguments = conjunct.getArguments();
+            auto lhs = arguments[0];
+            auto rhs = arguments[1];
+
+            /// The distance is symmetric, so accept the arguments in either order.
+            if (lhs.fromRight() && rhs.fromLeft())
+                std::swap(lhs, rhs);
+            else if (!lhs.fromLeft() || !rhs.fromRight())
+                continue;
+
+            if (found_distance_it != join_expression.end())
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "NEAREST join does not support multiple distance functions in JOIN ON expression");
+            found_distance_it = it;
+
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
+
+            const auto * vector_type = typeid_cast<const DataTypeArray *>(lhs.getType().get());
+            if (!vector_type || !WhichDataType(vector_type->getNestedType()).isNativeFloat())
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "NEAREST join requires the distance function arguments to be Array(Float32) or Array(Float64), got {}",
+                    lhs.getType()->getName());
+
+            used_expressions.push_back(lhs);
+            used_expressions.push_back(rhs);
+
+            table_join->setNearestDistanceFunction(distance_function);
+            table_join->setNearestSwapped(join_operator.nearest_swapped);
+            table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
+        }
+        if (found_distance_it == join_expression.end())
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "NEAREST join requires one distance function (L2Distance or cosineDistance) over the two vector columns in JOIN ON expression, in {}",
+                formatJoinCondition(join_expression));
+
+        join_expression.erase(found_distance_it);
     }
 
     /// For IEJoin there is no join clause to attach single-side conditions to; conditions

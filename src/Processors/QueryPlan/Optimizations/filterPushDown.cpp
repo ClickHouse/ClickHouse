@@ -611,12 +611,17 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
+      * 3. NEAREST join: removing right rows before the join changes which row is the nearest one.
       */
-    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
+    auto disallows_push_down_to_right = [](JoinStrictness strictness)
+    {
+        return strictness == JoinStrictness::Asof || strictness == JoinStrictness::Nearest;
+    };
+    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && !disallows_push_down_to_right(table_join_ptr->strictness());
     if (logical_join)
     {
         bool has_logical_lookup = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
-        allow_push_down_to_right = !has_logical_lookup && logical_join->getJoinOperator().strictness != JoinStrictness::Asof;
+        allow_push_down_to_right = !has_logical_lookup && !disallows_push_down_to_right(logical_join->getJoinOperator().strictness);
     }
 
     if (!allow_push_down_to_right)

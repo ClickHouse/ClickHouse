@@ -1278,8 +1278,51 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness)
                 && !should_worry_about_partial_merge_join
                 && !skip_flip_any_join;
-            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
+            /// A swapped NEAREST join keeps its per-original-left-row semantics through the
+            /// `nearest_swapped` marker. It always runs on the plain hash algorithm and never
+            /// spills (grace is unsupported for NEAREST, so the spilling wrapper is never chosen).
+            const bool suitable_nearest_swap = join_operator.strictness == JoinStrictness::Nearest
+                && join_operator.kind == JoinKind::Inner
+                && !should_worry_about_partial_merge_join;
+            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join && !suitable_nearest_swap)
                 flip_join = false;
+
+            if (flip_join && join_operator.strictness == JoinStrictness::Nearest)
+            {
+                /// The swapped NEAREST join builds the smaller left side and streams the right side
+                /// past it, maintaining a per-left-row argmin. That helps when the equality keys are
+                /// selective (few candidate pairs) and hurts when every streamed row updates many
+                /// argmin states. When NDV statistics of the equality keys back the estimate, require
+                /// the estimated number of candidate pairs (the ALL-semantics join cardinality) not
+                /// to exceed the streamed side's row count. Without statistics the selectivity stays
+                /// 1.0 and the estimate degenerates to the cross product, so only the size
+                /// comparison above applies.
+                auto has_ndv_stats = [&](const JoinActionRef & operand)
+                {
+                    for (const DPJoinEntry * side : {entry->left.get(), entry->right.get()})
+                    {
+                        auto it = side->column_stats.find(operand.getColumnName());
+                        if (it != side->column_stats.end() && it->second.num_distinct_values > 0)
+                            return true;
+                    }
+                    return false;
+                };
+                bool has_equality_key_stats = false;
+                for (const auto & predicate : join_operator.expression)
+                {
+                    auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+                    if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+                        continue;
+                    if (has_ndv_stats(lhs) || has_ndv_stats(rhs))
+                    {
+                        has_equality_key_stats = true;
+                        break;
+                    }
+                }
+                if (has_equality_key_stats && entry->estimated_rows && rhs_estimation
+                    && *entry->estimated_rows > *rhs_estimation)
+                    flip_join = false;
+            }
 
             if (flip_join)
             {
@@ -1287,6 +1330,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 std::swap(left_rels, right_rels);
                 std::swap(left_child_node, right_child_node);
                 join_operator.kind = reverseJoinKind(join_operator.kind);
+                if (join_operator.strictness == JoinStrictness::Nearest)
+                    join_operator.nearest_swapped = true;
             }
 
             auto left_header_ptr = left_child_node->step->getOutputHeader();
@@ -1602,8 +1647,13 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
+    /// NEAREST INNER joins may be swapped (never reordered): the flip is marked on the join
+    /// operator and the physical join then finds the nearest probe row per build row. The flag
+    /// is not serialized, so distributed plans keep the written side order.
+    bool nearest_swap_candidate = strictness == JoinStrictness::Nearest && kind == JoinKind::Inner
+        && !optimization_settings.make_distributed_plan && !optimization_settings.keep_logical_steps;
     if (!optimization_settings.query_plan_optimize_join_order_limit
-        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
+        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness) && !nearest_swap_candidate)
         || locality != JoinLocality::Unspecified
         || kind == JoinKind::Paste
         || !join_operator.residual_filter.empty()
@@ -1614,7 +1664,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind) || nearest_swap_candidate) && query_graph_size_limit > 2)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 

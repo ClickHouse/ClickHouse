@@ -227,6 +227,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             case JoinStrictness::Anti:
                 ostr << "ANTI ";
                 break;
+            case JoinStrictness::Nearest:
+                ostr << "NEAREST ";
+                break;
         }
     }
 
@@ -405,6 +408,7 @@ static JoinStrictness parseJoinStrictness(const String & s)
     if (s == "ASOF") return JoinStrictness::Asof;
     if (s == "SEMI") return JoinStrictness::Semi;
     if (s == "ANTI") return JoinStrictness::Anti;
+    if (s == "NEAREST") return JoinStrictness::Nearest;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinStrictness: '{}'", s);
 }
 

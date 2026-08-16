@@ -2417,11 +2417,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto * nearest_join_query_scope = scope.joins_count > 0 ? scope.getNearestQueryScope() : nullptr;
         auto * nearest_join_query_scope_query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;
         const auto * join_node = nearest_join_query_scope_query_node ? nearest_join_query_scope_query_node->getJoinTreeNode()->as<JoinNode>() : nullptr;
-        if (join_node && join_node->getStrictness() == JoinStrictness::Asof &&
+        if (join_node && (join_node->getStrictness() == JoinStrictness::Asof || join_node->getStrictness() == JoinStrictness::Nearest) &&
             scope.expressions_in_resolve_process_stack.has(join_node->getJoinExpression().get()))
         {
-            /// Disable constant folding for ASOF JOIN ON expressions.
-            /// In ASOF JOIN, comparison functions like >= or <= are not evaluated normally.
+            /// Disable constant folding for ASOF and NEAREST JOIN ON expressions.
+            /// In ASOF JOIN, comparison functions like >= or <= are not evaluated normally;
+            /// in NEAREST JOIN, the same holds for the distance function.
             /// They instead indicate which columns should be used for finding the closest matching rows.
             /// Even though whole expression is constant, code handling ASOF JOIN may expect presence of comparison function,
             /// and consider query as malformed if we replace it to constant.

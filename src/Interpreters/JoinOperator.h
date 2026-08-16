@@ -33,6 +33,13 @@ struct JoinOperator
     /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
     std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
 
+    /// NEAREST join whose inputs were swapped by the join order optimizer so that the smaller
+    /// (original left) side becomes the build side. The physical join must then find the nearest
+    /// probe row per BUILD row instead of the nearest build row per probe row. Set by
+    /// `optimizeJoinLogical` (like `shared_runtime_filter_descriptors`, not serialized: the swap
+    /// never fires when a distributed plan is built).
+    bool nearest_swapped = false;
+
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,

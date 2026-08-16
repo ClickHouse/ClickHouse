@@ -1,0 +1,12 @@
+L2: rows differing between the swapped and unswapped plans (expect 0 0)
+0	0
+L2: the swapped plan matches every matchable row (expect 840)
+840
+cosine: rows differing between the swapped and unswapped plans (expect 0 0)
+0	0
+the distance is recomputable from the output columns under swap (expect 0)
+0
+a single-side ON condition filters candidates identically under swap (expect 0 0)
+0	0
+LEFT NEAREST is never swapped and keeps unmatched rows (expect 1000 160)
+1000	160

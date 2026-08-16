@@ -201,6 +201,11 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     auto & join_operator = builder_context.join_operator;
 
+    if (join_operator.strictness == JoinStrictness::Nearest)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "NEAREST JOIN does not support USING; use ON with equality conditions and a distance function, "
+            "for example: ON t1.key = t2.key AND L2Distance(t1.vec, t2.vec)");
+
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
 
     JoinActionRef::AddFunction using_concat_function(FunctionFactory::instance().get("firstNonDefault", nullptr));
@@ -521,7 +526,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         changed_types = buildJoinUsingCondition(join_expression_node, build_context);
     }
     /// JOIN ON non-constant expression
-    else if (!join_expression_constant.has_value() || build_context.join_operator.strictness == JoinStrictness::Asof)
+    else if (!join_expression_constant.has_value()
+        || build_context.join_operator.strictness == JoinStrictness::Asof
+        || build_context.join_operator.strictness == JoinStrictness::Nearest)
     {
         if (join_expression_node->getNodeType() != QueryTreeNodeType::FUNCTION)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,

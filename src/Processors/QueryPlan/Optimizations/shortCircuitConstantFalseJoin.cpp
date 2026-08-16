@@ -53,8 +53,8 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
     if (isPaste(kind))
         return 0;
 
-    /// ASOF matching is inequality-based; leave it untouched.
-    if (strictness == JoinStrictness::Asof)
+    /// ASOF matching is inequality-based and NEAREST matching is distance-based; leave them untouched.
+    if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Nearest)
         return 0;
 
     if (!onConditionIsAlwaysFalse(*join))

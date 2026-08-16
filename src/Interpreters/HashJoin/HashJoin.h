@@ -211,8 +211,23 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
+    const std::optional<TypeIndex> & getNearestVectorElementType() const { return nearest_vector_element_type; }
+    NearestJoinDistanceFunction getNearestDistanceFunction() const { return nearest_distance_function; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
+    /// Swapped NEAREST mode (see `TableJoin::nearestSwapped`): the probe only updates per-build-row
+    /// argmin states, and the joined rows are emitted through the delayed-blocks channel once the
+    /// probe stream is consumed.
+    bool nearestSwapped() const;
+    bool hasDelayedBlocks() const override { return nearestSwapped(); }
+    IBlocksStreamPtr getDelayedBlocks() override;
+    /// Acquires an argmin state for one probing stream (creating it on first use); the probe block
+    /// defines the capture layout on the first call. Returns nullptr when not in swapped mode.
+    NearestSwapState * acquireNearestSwapState(const Block & probe_block) const;
+    void releaseNearestSwapState(NearestSwapState * state) const;
+    const UInt64 * nearestSwapBlockRowOffsets() const { return nearest_swap_block_row_offsets.data(); }
+
+    /// The right-side column of the last key pair: the ASOF inequality column or the NEAREST vector column.
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
     /// Different types of keys for maps.
@@ -410,6 +425,8 @@ public:
     using MapsOne = MapsTemplate<RowRef>;
     using MapsAll = MapsTemplate<RowRefList>;
     using MapsAsof = MapsTemplate<AsofRowRefs>;
+    /// NEAREST joins use MapsAll: their buckets hold plain row refs, and the vectors are read from
+    /// the stored blocks at probe time (see NearestVectorMatcherBase).
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
@@ -559,6 +576,27 @@ private:
     const String instance_id;
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
+    /// For NEAREST JOIN: the element type of the vector columns (Float32/Float64) and the distance function.
+    std::optional<TypeIndex> nearest_vector_element_type;
+    const NearestJoinDistanceFunction nearest_distance_function;
+
+    /// Swapped NEAREST mode (see `TableJoin::nearestSwapped`): the probe updates per-build-row
+    /// argmin states and emits nothing; the results are emitted through `getDelayedBlocks` after
+    /// the probe stream is consumed. States are pooled: a probing stream owns at most one state
+    /// at a time, and all states are merged at emission.
+    mutable std::mutex nearest_swap_mutex;
+    mutable std::vector<std::unique_ptr<NearestSwapState>> nearest_swap_states;
+    mutable std::vector<NearestSwapState *> nearest_swap_free_states;
+    /// Dense build-row index: block_row_offsets[block_no] + row_no. Built in onBuildPhaseFinish.
+    mutable std::vector<UInt64> nearest_swap_block_row_offsets;
+    mutable UInt64 nearest_swap_total_rows = 0;
+    /// Structure of the probe input and of the join output, captured from the plan-time header
+    /// derivation pass through joinBlock (see JoiningTransform::transformHeader).
+    mutable Block nearest_swap_probe_sample;
+    mutable bool nearest_swap_probe_sample_captured = false;
+    mutable Block nearest_swap_output_sample;
+    mutable bool nearest_swap_output_sample_captured = false;
+    mutable std::atomic_bool nearest_swap_results_emitted{false};
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.

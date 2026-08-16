@@ -286,6 +286,9 @@ void calculateHashTableCacheKeys(
             /// inequalities must not share collected statistics.
             if (table_join.strictness() == JoinStrictness::Asof)
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
+            /// For NEAREST the distance function is likewise part of the join semantics.
+            if (table_join.strictness() == JoinStrictness::Nearest)
+                frame.hash.update(static_cast<uint8_t>(table_join.getNearestDistanceFunction()));
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
                 mixed->getActionsDAG().updateHash(frame.hash);

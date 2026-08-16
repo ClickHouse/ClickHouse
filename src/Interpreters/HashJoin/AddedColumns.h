@@ -147,7 +147,7 @@ public:
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
-        bool is_asof_join,
+        bool last_key_is_lookup,
         bool is_join_get_,
         bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
@@ -159,7 +159,7 @@ public:
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
-        if (is_asof_join)
+        if (last_key_is_lookup)
             ++num_columns_to_add;
 
         if constexpr (lazy)
@@ -187,12 +187,33 @@ public:
                 addColumn(src_column);
         }
 
-        if (is_asof_join)
+        if (last_key_is_lookup)
         {
             chassert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
             addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
+
+            /// NEAREST JOIN: the probe evaluates distances against the vectors stored in the
+            /// right blocks, so the matcher needs the stored blocks and the position of the
+            /// vector column inside them (it is saved by initRightBlockStructure).
+            if (const auto & vector_element_type = join.getNearestVectorElementType())
+            {
+                nearest_matcher = createNearestVectorMatcher(
+                    *vector_element_type,
+                    join.getNearestDistanceFunction(),
+                    join.getJoinedData()->stored_columns_index->blocksData(),
+                    saved_block_sample.getPositionByName(right_asof_column.name));
+
+                /// Swapped NEAREST (see TableJoin::nearestSwapped): the probe updates per-build-row
+                /// argmin state instead of emitting rows.
+                if (join.nearestSwapped())
+                {
+                    nearest_swap_join = &join;
+                    nearest_swap_state = join.acquireNearestSwapState(left_block);
+                    nearest_swap_block_row_offsets = join.nearestSwapBlockRowOffsets();
+                }
+            }
         }
 
         for (auto & tn : lazy_output.type_name)
@@ -211,13 +232,13 @@ public:
 
         /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
         /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
-        /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
+        /// (joinGet, ASOF and NEAREST use the cold per-block paths). `resolveEmitColumns` builds exactly the
         /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
         /// selecting different right-column subsets each get their columns built rather than reusing a
         /// table scoped to some other query's columns.
         if constexpr (lazy)
         {
-            if (!is_join_get && !is_asof_join)
+            if (!is_join_get && !last_key_is_lookup)
                 join.getJoinedData()->stored_columns_index->resolveEmitColumns(
                     saved_block_sample.columns(),
                     lazy_output.right_indexes,
@@ -282,6 +303,25 @@ public:
     MatchedRowsStats * match_stats = nullptr;
 
     size_t matched_left_rows = 0;
+
+    /// Set only for NEAREST JOIN (see the constructor).
+    NearestVectorMatcherPtr nearest_matcher;
+
+    /// Set only for swapped NEAREST JOIN (see the constructor). The state is owned by the join
+    /// and returned to its pool when this AddedColumns is destroyed, so the object must not be
+    /// copied or moved.
+    const HashJoin * nearest_swap_join = nullptr;
+    NearestSwapState * nearest_swap_state = nullptr;
+    const UInt64 * nearest_swap_block_row_offsets = nullptr;
+
+    AddedColumns(const AddedColumns &) = delete;
+    AddedColumns & operator=(const AddedColumns &) = delete;
+
+    ~AddedColumns()
+    {
+        if (nearest_swap_join)
+            nearest_swap_join->releaseNearestSwapState(nearest_swap_state);
+    }
 
     void reserve(bool need_replicate)
     {

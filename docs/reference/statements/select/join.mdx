@@ -3,7 +3,7 @@ description: 'Documentation for JOIN Clause'
 sidebarTitle: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
-keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN', 'NATURAL JOIN']
+keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'NEAREST JOIN', 'LEFT NEAREST JOIN', 'PASTE JOIN', 'NATURAL JOIN']
 doc_type: 'reference'
 ---
 
@@ -14,7 +14,7 @@ The `JOIN` clause produces a new table by combining columns from one or multiple
 ```sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF|NEAREST] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -46,6 +46,7 @@ Additional join types available in ClickHouse are:
 | `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`         | A denylist on "join keys", without producing a cartesian product.                                                                        |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`               | Joining sequences with a non-exact match. `ASOF JOIN` usage is described below.                                                           |
+| `NEAREST JOIN`, `LEFT NEAREST JOIN`         | Joining on equality keys plus the closest vector by distance. `NEAREST JOIN` usage is described below.                                    |
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 <Note>
@@ -334,6 +335,43 @@ For example, consider the following tables:
 <Note>
 `ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
 It's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
+</Note>
+
+## NEAREST JOIN usage {#nearest-join-usage}
+
+`NEAREST JOIN` joins each left row with the right row whose embedding vector is the closest, considering only right rows that match on the equality keys. It is useful for entity resolution over noisy data: exact parts of a record (identifiers, codes, extracted keywords) join on equality, while the fuzzy remainder is matched by the distance between embeddings.
+
+Syntax:
+
+```sql
+SELECT expressions_list
+FROM table_1
+NEAREST [LEFT] JOIN table_2
+ON equi_cond1 [AND equi_cond2 ...] AND distance_function(table_1.vec, table_2.vec)
+```
+
+You can use any number of equality conditions and exactly one distance function over a pair of vector columns, one column from each side. Supported distance functions: [L2Distance](/reference/functions/distance-functions#l2distance) and [cosineDistance](/reference/functions/distance-functions#cosinedistance). The vector columns must have the type [Array(Float32) or Array(Float64)](/reference/data-types/array), and the arrays of the two sides must have equal sizes at execution time.
+
+For every left row, the join finds the right rows with equal keys and returns the one minimizing the distance function. `NEAREST JOIN` (same as `INNER`) drops left rows that have no right row with equal keys; `NEAREST LEFT JOIN` returns them with default values for the right columns. Rows whose distance is not an ordinary number (for example, the cosine distance to a zero vector) are never selected as the closest ones.
+
+Example:
+
+```sql
+SELECT upload.query_id, base.address
+FROM upload_addresses AS upload
+NEAREST LEFT JOIN base_addresses AS base
+    ON upload.zip = base.zip
+        AND upload.house_number = base.house_number
+        AND cosineDistance(upload.street_embedding, base.street_embedding)
+```
+
+This is semantically equivalent to joining on the equality keys only, ordering by the distance, and keeping the first row per left row with [LIMIT 1 BY](/reference/statements/select/limit-by) — but the closest row is selected inside the join, so the per-key Cartesian product is never materialized.
+
+When the left table is smaller than the right one, the optimizer may swap the join inputs of a `NEAREST JOIN` (like it does for `INNER JOIN`, controlled by [query_plan_join_swap_table](/operations/settings/settings#query_plan_join_swap_table)): the smaller side is loaded into memory and the larger side is streamed past it, which keeps the memory usage proportional to the smaller side. The result does not depend on the swap.
+
+<Note>
+`NEAREST JOIN` is supported only by the `hash` and `parallel_hash` join algorithms.
+It requires at least one equality condition, and it's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
 </Note>
 
 ## PASTE JOIN usage {#paste-join-usage}

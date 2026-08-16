@@ -741,6 +741,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         if (join_on_const_ok)
             return;
 
+        if (table_join.strictness == JoinStrictness::Nearest)
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "NEAREST JOIN is supported only with the new analyzer (enable_analyzer = 1)");
+
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};

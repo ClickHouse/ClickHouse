@@ -1,0 +1,8 @@
+inner: rows differing from the LIMIT 1 BY rewrite in both directions (expect 0 0)
+0	0
+inner: row count matches the number of matched left rows (expect 2500)
+2500
+cosine: rows differing from the LIMIT 1 BY rewrite in both directions (expect 0 0)
+0	0
+left: unmatched left rows are preserved with defaults (expect 500)
+500

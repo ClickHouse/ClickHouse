@@ -1,0 +1,47 @@
+<test>
+    <create_query>
+        CREATE TABLE nearest_join_base ENGINE = MergeTree ORDER BY k AS
+        SELECT
+            number % 10000 AS k,
+            number AS base_id,
+            arrayMap(i -> toFloat32(sipHash64(number, i) % 1000000) / 1000000, range(32)) AS vec
+        FROM numbers(1000000)
+    </create_query>
+
+    <create_query>
+        CREATE TABLE nearest_join_upload ENGINE = MergeTree ORDER BY query_id AS
+        SELECT
+            number AS query_id,
+            number % 10000 AS k,
+            arrayMap(i -> toFloat32(sipHash64(number, i, 42) % 1000000) / 1000000, range(32)) AS vec
+        FROM numbers(100000)
+    </create_query>
+
+    <query>
+        SELECT upload.query_id, base.base_id
+        FROM nearest_join_upload AS upload
+        NEAREST JOIN nearest_join_base AS base ON upload.k = base.k AND L2Distance(upload.vec, base.vec)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT upload.query_id, base.base_id
+        FROM nearest_join_upload AS upload
+        NEAREST JOIN nearest_join_base AS base ON upload.k = base.k AND cosineDistance(upload.vec, base.vec)
+        FORMAT Null
+    </query>
+
+    <!-- The semantically equivalent rewrite with a plain join: materializes the whole
+         per-key fanout and then keeps the closest row per left row. -->
+    <query>
+        SELECT upload.query_id, base.base_id
+        FROM nearest_join_upload AS upload
+        INNER JOIN nearest_join_base AS base ON upload.k = base.k
+        ORDER BY upload.query_id, L2Distance(upload.vec, base.vec)
+        LIMIT 1 BY upload.query_id
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS nearest_join_base</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nearest_join_upload</drop_query>
+</test>

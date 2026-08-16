@@ -1,0 +1,14 @@
+USING is not supported
+a distance function is required
+an equality predicate is required
+only one distance function is allowed
+the distance function must take one column from each side
+a constant join expression is rejected
+a cross-side inequality in ON is rejected
+RIGHT and FULL kinds are rejected
+integer vectors are promoted to the floating point supertype
+1	a
+vectors without a native floating point supertype are rejected
+nullable vector elements are rejected by the distance function
+array sizes must match at execution time
+the old analyzer is not supported

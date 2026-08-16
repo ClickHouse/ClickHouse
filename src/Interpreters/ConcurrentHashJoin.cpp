@@ -666,7 +666,9 @@ struct DispatchKeyShape
 static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_key_columns)
 {
     DispatchKeyShape shape{total_key_columns, join.getKeySizes().at(0)};
-    if (join.getTableJoin().strictness() == JoinStrictness::Asof)
+    /// For NEAREST the trailing key is the vector column, excluded from scatter hashing for the same reason.
+    if (join.getTableJoin().strictness() == JoinStrictness::Asof
+        || join.getTableJoin().strictness() == JoinStrictness::Nearest)
     {
         if (shape.num_key_columns > 0)
             --shape.num_key_columns;

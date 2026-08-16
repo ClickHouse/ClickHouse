@@ -169,7 +169,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(join_on_keys),
         join.table_join->getMixedJoinExpression(),
         join.additional_filter_required_rhs_pos,
-        join_features.is_asof_join,
+        join_features.last_key_is_lookup,
         is_join_get,
         record_refs_for_stats);
 
@@ -235,12 +235,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, bool is_asof_join>
+template <typename KeyGetter, bool exclude_last_key_column>
 KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range)
 {
     KeyGetter getter = [&]()
     {
-        if constexpr (is_asof_join)
+        if constexpr (exclude_last_key_column)
         {
             auto key_column_copy = key_columns;
             auto key_size_copy = key_sizes;
@@ -278,15 +278,17 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 {
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
+    constexpr bool is_nearest_join = STRICTNESS == JoinStrictness::Nearest;
+    constexpr bool last_key_is_lookup = is_asof_join || is_nearest_join;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
     if constexpr (is_asof_join)
         asof_column = key_columns.back();
 
-    auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+    auto key_getter = createKeyGetter<KeyGetter, last_key_is_lookup>(key_columns, key_sizes);
 
-    /// For ALL and ASOF join always insert values
-    is_inserted = !mapped_one || is_asof_join;
+    /// For ALL, ASOF and NEAREST join always insert values
+    is_inserted = !mapped_one || last_key_is_lookup;
 
     const size_t rows = ScatteredBlock::Selector::size(selector);
 
@@ -326,6 +328,10 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
 
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_block_no, ind, pool, *asof_column);
+        else if constexpr (is_nearest_join)
+            /// The vector column is not copied anywhere: the bucket stores plain row refs and the
+            /// probe reads the vectors from the stored blocks (see NearestVectorMatcherBase).
+            Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool);
         else if constexpr (mapped_one)
             is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, ind, pool);
         else
@@ -343,7 +349,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     JoinStuff::JoinUsedFlags & used_flags,
     HashJoin::RightTableData::KeyRange key_range)
 {
-    constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
+    constexpr bool last_key_is_lookup = STRICTNESS == JoinStrictness::Asof || STRICTNESS == JoinStrictness::Nearest;
     switch (type)
     {
 #define M(TYPE) \
@@ -357,7 +363,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
             key_getter_vector.push_back( \
-                std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
+                std::move(createKeyGetter<KeyGetter, last_key_is_lookup>(join_on_key.key_columns, join_on_key.key_sizes, key_range))); \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }
@@ -514,6 +520,32 @@ void processMatch(
         }
         else
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+    }
+    else if constexpr (join_features.is_nearest_join)
+    {
+        const IColumn & left_vector_column = added_columns.leftAsofKey();
+
+        if (added_columns.nearest_swap_state)
+        {
+            /// Swapped NEAREST: update the per-build-row argmin state and emit nothing; the
+            /// results are emitted through the delayed-blocks channel after the probe stream ends.
+            NearestSwapUpdateContext context{
+                added_columns.nearest_swap_state,
+                added_columns.nearest_swap_block_row_offsets,
+                &added_columns.left_block};
+            added_columns.nearest_matcher->updateNearestSwapped(left_vector_column, ind, mapped, context);
+        }
+        else
+        {
+            UInt64 best_ref_word = added_columns.nearest_matcher->findNearest(left_vector_column, ind, mapped);
+            if (best_ref_word)
+            {
+                setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+                added_columns.appendFromBlock(best_ref_word, join_features.add_missing);
+            }
+            else
+                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+        }
     }
     else if constexpr (join_features.is_all_join)
     {

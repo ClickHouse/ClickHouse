@@ -203,6 +203,8 @@ static void parseJoinStrictness(IParser::Pos & pos, ASTTableJoin & table_join, E
         table_join.strictness = JoinStrictness::Semi;
     else if (ParserKeyword(Keyword::ANTI).ignore(pos, expected) || ParserKeyword(Keyword::ONLY).ignore(pos, expected))
         table_join.strictness = JoinStrictness::Anti;
+    else if (ParserKeyword(Keyword::NEAREST).ignore(pos, expected))
+        table_join.strictness = JoinStrictness::Nearest;
 }
 
 bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -285,8 +287,12 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "SEMI|ANTI JOIN should be LEFT or RIGHT.");
 
+            if (table_join->strictness == JoinStrictness::Nearest &&
+                (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Inner))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "NEAREST JOIN should be LEFT or INNER.");
+
             if (is_natural && table_join->strictness != JoinStrictness::Unspecified)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be combined with ANY/ALL/ASOF/SEMI/ANTI modifiers.");
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be combined with ANY/ALL/ASOF/SEMI/ANTI/NEAREST modifiers.");
 
             if (is_natural && (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Paste))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be used with CROSS or PASTE join.");

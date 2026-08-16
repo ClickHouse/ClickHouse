@@ -103,7 +103,7 @@ public:
         bool is_join_get = false);
 
 private:
-    template <typename KeyGetter, bool is_asof_join>
+    template <typename KeyGetter, bool exclude_last_key_column>
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
 
     template <typename KeyGetter, typename HashMap, typename Selector>
@@ -222,6 +222,7 @@ extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, Hash
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Nearest, HashJoin::MapsAll>;
 
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Any, HashJoin::MapsAll>;
@@ -229,6 +230,7 @@ extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::All, Hash
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Semi, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Nearest, HashJoin::MapsAll>;
 
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsAll>;
@@ -238,6 +240,7 @@ extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::All, Hash
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Semi, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Nearest, HashJoin::MapsAll>;
 
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Any, HashJoin::MapsAll>;
@@ -245,4 +248,5 @@ extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::All, HashJ
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Semi, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Asof, HashJoin::MapsAsof>;
+extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Nearest, HashJoin::MapsAll>;
 }

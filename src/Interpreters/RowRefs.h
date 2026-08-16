@@ -520,4 +520,73 @@ struct SortedLookupVectorBase
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality);
+
+/** Probe-time distance evaluator for NEAREST JOIN.
+  *
+  * The hash map buckets of a NEAREST join hold plain row references (`RowRefList`, exactly as ALL
+  * joins do); the right-side vectors stay where they already are - in the stored blocks - instead
+  * of being copied into per-bucket buffers. Copying looks attractive by analogy with the sorted
+  * arrays of ASOF JOIN, but an ASOF entry is 8 bytes while a vector is kilobytes: with millions of
+  * small equality groups the copies double the memory of the join and dominate the build time.
+  *
+  * One matcher is created per probe batch. `findNearest` scans the candidate refs of one key,
+  * reads each stored vector in place, and returns the ref word of the row whose vector has the
+  * minimal distance to the probe vector. Reads are lock-free: probing starts only after the build
+  * phase is finished, so the stored blocks no longer change.
+  */
+/// Per-build-row argmin state of a swapped NEAREST join (see `TableJoin::nearestSwapped`): for the
+/// build row with dense index i, `best_distance[i]` is the smallest distance seen so far and
+/// `best_capture_row[i]` points into `captured` where the values of the probe row that achieved it
+/// were copied (-1 = no ordinary distance seen). One instance is owned by at most one probing
+/// stream at a time; the states of all streams are merged when the results are emitted.
+struct NearestSwapState
+{
+    PaddedPODArray<Float64> best_distance;
+    PaddedPODArray<Int64> best_capture_row;
+    MutableColumns captured;
+};
+
+/// Everything `updateNearestSwapped` needs besides the probe row itself.
+struct NearestSwapUpdateContext
+{
+    NearestSwapState * state;
+    /// Dense index of a build row = block_row_offsets[block_no] + row_no.
+    const UInt64 * block_row_offsets;
+    /// Source of the captured values (the probe block) in the layout of `state->captured`.
+    const Block * probe_block;
+};
+
+class NearestVectorMatcherBase
+{
+public:
+    virtual ~NearestVectorMatcherBase() = default;
+
+    /// Returns the element type (Float32/Float64) if the column is Array(Float32) or Array(Float64),
+    /// std::nullopt otherwise.
+    static std::optional<TypeIndex> getVectorElementType(const IColumn & vector_column);
+
+    /// Scans the candidate rows of one key and returns the encoded ref word of the row whose stored
+    /// vector has the minimal distance to the array value of probe_vector_column at probe_row.
+    /// Returns 0 when no stored distance evaluates to an ordinary number (for example, cosine
+    /// distance with a zero-norm vector).
+    virtual UInt64 findNearest(const IColumn & probe_vector_column, size_t probe_row, RowRefList candidates) const = 0;
+
+    /// Swapped NEAREST: for every candidate build row whose distance to the probe row improves on
+    /// the recorded best, update the state and capture the probe row's values (at most one copy per
+    /// probe row, shared by all candidates it improves).
+    virtual void updateNearestSwapped(
+        const IColumn & probe_vector_column, size_t probe_row, RowRefList candidates,
+        const NearestSwapUpdateContext & context) const = 0;
+};
+
+using NearestVectorMatcherPtr = std::unique_ptr<NearestVectorMatcherBase>;
+
+/// `stored_blocks` and `vector_column_position` locate the right-side vector column:
+/// `stored_blocks[block_no]` is the stored block a row ref points into (`StoredColumnsIndex::blocksData`),
+/// and `vector_column_position` is the position of the vector column inside its stored columns.
+NearestVectorMatcherPtr createNearestVectorMatcher(
+    TypeIndex element_type,
+    NearestJoinDistanceFunction distance_function,
+    const StoredBlock * const * stored_blocks,
+    size_t vector_column_position);
 }

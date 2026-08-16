@@ -186,6 +186,14 @@ private:
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
+    /// For NEAREST JOIN: the distance function applied to the last key column pair (the vector columns).
+    NearestJoinDistanceFunction nearest_distance_function = NearestJoinDistanceFunction::None;
+
+    /// For NEAREST JOIN: the join order optimizer swapped the inputs so that the smaller (original
+    /// left) side is the build side. The join must find the nearest probe row per BUILD row and emit
+    /// the results after the probe stream is consumed. See `JoinOperator::nearest_swapped`.
+    bool nearest_swapped = false;
+
     NamesAndTypesList columns_from_left_table;
     NamesAndTypesList result_columns_from_left_table;
 
@@ -448,6 +456,12 @@ public:
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
+
+    void setNearestDistanceFunction(NearestJoinDistanceFunction distance_function) { nearest_distance_function = distance_function; }
+    NearestJoinDistanceFunction getNearestDistanceFunction() const { return nearest_distance_function; }
+
+    void setNearestSwapped(bool nearest_swapped_) { nearest_swapped = nearest_swapped_; }
+    bool nearestSwapped() const { return nearest_swapped; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only

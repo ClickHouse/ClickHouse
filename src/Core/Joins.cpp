@@ -35,6 +35,7 @@ const char * toString(JoinStrictness strictness)
         case JoinStrictness::Asof: return "ASOF";
         case JoinStrictness::Semi: return "SEMI";
         case JoinStrictness::Anti: return "ANTI";
+        case JoinStrictness::Nearest: return "NEAREST";
     }
 }
 
@@ -57,6 +58,16 @@ const char * toString(ASOFJoinInequality asof_join_inequality)
         case ASOFJoinInequality::Greater: return "GREATER";
         case ASOFJoinInequality::LessOrEquals: return "LESS_OR_EQUALS";
         case ASOFJoinInequality::GreaterOrEquals: return "GREATER_OR_EQUALS";
+    }
+}
+
+const char * toString(NearestJoinDistanceFunction distance_function)
+{
+    switch (distance_function)
+    {
+        case NearestJoinDistanceFunction::None: return "NONE";
+        case NearestJoinDistanceFunction::L2Distance: return "L2_DISTANCE";
+        case NearestJoinDistanceFunction::CosineDistance: return "COSINE_DISTANCE";
     }
 }
 
