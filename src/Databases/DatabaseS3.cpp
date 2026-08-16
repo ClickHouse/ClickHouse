@@ -205,11 +205,11 @@ void DatabaseS3::shutdown()
 {
 }
 
-DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, const String & database_name)
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, const String & database_name_)
 {
     Configuration result;
 
-    const StorageID database_id{database_name, ""};
+    const StorageID database_id{database_name_, ""};
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, &database_id))
     {
         auto & collection = *named_collection;
