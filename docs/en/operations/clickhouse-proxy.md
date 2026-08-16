@@ -227,7 +227,8 @@ its CPU and memory usage over HTTP, which the `least_resources` strategy uses.
 
 An HTTP listener can answer `/ping`, serve static pages, and expose a JSON status page describing
 all pools, their backends, and per-backend statistics. These endpoints are served by the proxy
-itself and do not require a user name or a backend.
+itself and do not require a user name or a backend. The status page is disabled by default; set
+`status_path` to enable it.
 
 ```xml
 <http>

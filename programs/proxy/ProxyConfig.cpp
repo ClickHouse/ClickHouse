@@ -333,7 +333,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     }
 
     res.http.ping_path = config.getString("proxy.http.ping_path", "/ping");
-    res.http.status_path = config.getString("proxy.http.status_path", "/proxy_status");
+    res.http.status_path = config.getString("proxy.http.status_path", "");
     res.http.add_x_forwarded_for = config.getBool("proxy.http.add_x_forwarded_for", false);
 
     if (config.has("proxy.http.static"))

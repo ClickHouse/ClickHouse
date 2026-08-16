@@ -152,7 +152,7 @@ struct StaticPageConfig
 struct HTTPConfig
 {
     String ping_path = "/ping";
-    String status_path = "/proxy_status";   /// JSON with backends health and statistics. Empty string disables it.
+    String status_path; /// JSON with backends health and statistics. Empty string disables it.
     bool add_x_forwarded_for = false;
     std::vector<StaticPageConfig> static_pages;
 };
