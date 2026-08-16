@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
@@ -399,6 +400,21 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
             right_projection_columns.emplace_back("1", std::make_shared<DataTypeUInt64>());
 
         size_t right_columns_count = right_projection_columns.size();
+
+        /// A scalar is not a one-element tuple. Both sides have one physical column in
+        /// this shape, so the ordinary column-count check below cannot detect it. The
+        /// set builder also rejects this conversion, but it must be reported here before
+        /// constant folding can remove the `IN` expression from an unreachable predicate.
+        if (right_columns_count == 1 && !left_tuple_type)
+        {
+            const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
+            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get()))
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Cannot cast {} to {} in IN",
+                    in_first_argument_result_type->getName(),
+                    right_projection_columns.front().type->getName());
+        }
 
         if (right_columns_count > 0 && left_columns_count != right_columns_count)
         {
