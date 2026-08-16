@@ -445,7 +445,7 @@ String getInsertDataSchemaMismatchDescription(
     {
         SampledValueEvidence nested;
         nested.numbers_inferred_type = nested_numbers_inferred_type(evidence.numbers_inferred_type, step);
-        if (evidence.column_index)
+        if (evidence.column_index.has_value())
         {
             nested.column_index = evidence.column_index;
             nested.path = evidence.path;
