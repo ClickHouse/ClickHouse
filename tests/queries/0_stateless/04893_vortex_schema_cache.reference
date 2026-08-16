@@ -1,11 +1,13 @@
 n	Nullable(UInt64)					
 s	Nullable(String)					
+t	Nullable(Tuple(a Nullable(UInt64), b Nullable(String)))
 n	UInt64					
 s	String					
+t	Tuple(a UInt64, b String)
 n	Nullable(UInt64)					
 s	Nullable(String)					
-n	Nullable(UInt64)					
-s	Nullable(String)					
-n	Nullable(UInt64)					
-s	Nullable(String)					
-4
+t	Nullable(Tuple(a UInt64, b String))
+n	UInt64
+s	String
+t	Tuple(a UInt64, b String)
+3
