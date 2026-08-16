@@ -419,6 +419,12 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
+        /// Is true if the function is monotonic over the whole subset of the input range on which its
+        /// evaluation succeeds, but the evaluation may throw an exception for the rest of the range
+        /// (so it is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// It is enough to push a comparison constant through a sorting key expression: stored key
+        /// values always belong to the subset on which the evaluation succeeds.
+        bool is_always_monotonic_where_defined = false;
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
