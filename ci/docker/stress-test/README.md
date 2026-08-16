@@ -7,7 +7,12 @@ Usage:
 ```
 $ ls $HOME/someclickhouse
 clickhouse
-$ docker run --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output clickhouse/stress-test
+$ mkdir -p $HOME/test_output $HOME/server_log $HOME/cores
+$ docker run --cap-add=SYS_PTRACE --privileged --ulimit nofile=1048576:1048576 \
+    -e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' --tmpfs /tmp/clickhouse:mode=1777 \
+    --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output \
+    --volume=$PWD:/repo --volume=$HOME/server_log:/var/log/clickhouse-server \
+    --volume=$HOME/cores:/cores clickhouse/stress-test /repo/tests/docker_scripts/stress_runner.sh
 Start clickhouse-server service: Path to data directory in /etc/clickhouse-server/config.xml: /var/lib/clickhouse/
 DONE
 2018-10-22 13:40:35,744 Will wait functests to finish
