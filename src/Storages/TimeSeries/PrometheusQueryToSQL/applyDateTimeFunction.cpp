@@ -3,8 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
@@ -113,60 +111,6 @@ namespace
             return nullptr;
 
         return &it->second;
-    }
-
-    /// Finds the `time()` call reachable from `node` after peeling off any number of `scalar(...)`, `vector(...)`,
-    /// unary `+...`, and `Offset` (`@ <timestamp>` / `offset <duration>`) wrappers. All of these are
-    /// value-preserving no-ops in the generic conversion path: applyFunctionScalar()'s
-    /// CONST_SCALAR/SINGLE_SCALAR/SCALAR_GRID cases, applyFunctionVector(), applyUnaryOperator()'s '+' case, and
-    /// applyOffset()'s offsetEvaluationTime()/setEvaluationTime() (for those same store methods) each return
-    /// their argument's SQLQueryPiece unchanged (aside from `type`/`node`/`start_time`/`end_time`/`step`
-    /// bookkeeping - never touching `scalar_value`/`select_query`), so any nesting of these around `time()` - e.g.
-    /// `vector(time())`, `scalar(vector(time()))`, `vector(scalar(vector(time())))`, `+time()` - carries the exact
-    /// same (possibly Float32-lossy) underlying value. Skipping the `Offset` node here at conversion time would be
-    /// safe: `NodeEvaluationRangeGetter` pre-computes each node's evaluation range in a separate upfront
-    /// AST-walking pass (before any conversion), and for an `Offset` node it already applies the `@`/`offset`
-    /// adjustment to the range it assigns to the *inner* expression (see NodeEvaluationRangeGetter.cpp), so looking
-    /// up the range for the innermost `time()` node directly would still yield the correctly shifted
-    /// start_time/end_time. NOTE: as of this writing, the `Offset` branch below is unreachable in practice - per
-    /// the PromQL grammar (contrib/antlr4-grammars/promql/PromQLParser.g4) and its ANTLR visitor
-    /// (PrometheusQueryParsingUtil-antlr.cpp), an `Offset` node is only ever constructed directly around an
-    /// `InstantSelector`, `RangeSelector`, or `Subquery` node - never directly around a `Function` or
-    /// `UnaryOperator` node - so `@`/`offset` can't syntactically attach directly to `time()`/`scalar(...)`/
-    /// `vector(...)`/unary `+` (e.g. `vector(time()) @ 123` fails to parse). The branch is kept anyway for
-    /// defensive forward-compatibility (e.g. if the grammar is ever relaxed) and is a verified no-op for every
-    /// currently-reachable AST, since it only recurses into cases the pre-existing checks already reject.
-    /// Returns nullptr if `node` isn't (possibly wrapped) exactly a bare `time()` call.
-    const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(const Node * node)
-    {
-        if (node->node_type == NodeType::UnaryOperator)
-        {
-            const auto * unary_operator = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
-            if (unary_operator->operator_name != "+")
-                return nullptr;
-
-            return findTimeCallThroughScalarVectorWrappers(unary_operator->getArgument());
-        }
-
-        if (node->node_type == NodeType::Offset)
-        {
-            const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(node);
-            return findTimeCallThroughScalarVectorWrappers(offset->getExpression());
-        }
-
-        if (node->node_type != NodeType::Function)
-            return nullptr;
-
-        const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
-
-        if (isFunctionTime(function->function_name))
-            return function->getArguments().empty() ? function : nullptr;
-
-        if ((isFunctionScalar(function->function_name) || isFunctionVector(function->function_name))
-            && (function->getArguments().size() == 1))
-            return findTimeCallThroughScalarVectorWrappers(function->getArguments()[0]);
-
-        return nullptr;
     }
 }
 

@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 #include <limits>
@@ -198,6 +199,9 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     const auto function_name = function_node->function_name;
     checkArgumentTypes(function_name, arguments, context);
 
+    arguments[0] = makeVaryingScalarPrecisionSafe(
+        function_name, function_node->getArguments()[0], std::move(arguments[0]), context);
+
     PhiSource phi_source;
     {
         auto & phi_argument = arguments[0];
@@ -356,8 +360,8 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     ASTPtr quantile_grid;
     if (varying_phi)
     {
-        /// The grid is Array(context.scalar_data_type), which can be Array(Float32); normalized here so the
-        /// aggregate and the edge-case wrapping below see one type regardless of the table's value type.
+        /// The grid is Array of either the scalar or (for a time() grid kept at full precision) the timestamp
+        /// type; normalized here so the aggregate and the edge-case wrapping below see one type in every case.
         auto castVaryingPhi = [&]
         {
             return makeASTFunction(

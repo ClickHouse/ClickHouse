@@ -1511,6 +1511,49 @@ def test_range_functions_with_varying_scalar_on_float32_table():
         node.query("DROP TABLE prometheus_f32_range SYNC")
 
 
+# Regression test: a varying scalar argument was carried as an array of the TimeSeries table's scalar (value)
+# type, so on a Float32 table a `time()` grid was rounded to ~128-second granularity before the function used
+# it - 1770582640 became 1770582656 - and the prediction horizon was off by tens of seconds on every step.
+# `time()` is now rebuilt at the timestamp column's own precision for this argument. Series `m` rises by 1 per
+# second, so at the first evaluation step the window holds (1770582580, 10) and (1770582640, 70), the fitted
+# value is 70, and the horizon is the evaluation time itself: 70 + 1770582640 is 1770582700 once rounded to
+# the table's Float32 value type, where rounding the horizon first used to give 1770582800.
+# An expression merely derived from `time()` cannot be rebuilt this way, so it is rejected instead of
+# silently returning a horizon rounded the same way.
+def test_predict_linear_with_time_horizon_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_epoch (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_epoch (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(1770582580, 3), 10), (toDateTime64(1770582640, 3), 70), "
+            "(toDateTime64(1770582700, 3), 130)])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, 'predict_linear(m[120], time())', "
+                "1770582640, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('2026-02-08 20:30:40.000',1770582700),('2026-02-08 20:31:40.000',1770582800)]",
+                ]
+            ],
+        )
+
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, 'predict_linear(m[120], time() - 60)', "
+            "1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+    finally:
+        node.query("DROP TABLE prometheus_f32_epoch SYNC")
+
+
 def test_math_functions():
     do_query_test(
         "abs(vector(-3))",

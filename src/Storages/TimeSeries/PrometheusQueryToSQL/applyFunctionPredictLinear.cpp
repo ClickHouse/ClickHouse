@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -85,6 +86,8 @@ SQLQueryPiece applyFunctionPredictLinear(
     /// The second argument (`t`, prediction horizon in seconds) may be a constant, a single-row
     /// scalar subquery, or (e.g. `time()` in a range query) a scalar grid -- one value per grid point.
     auto & scalar_argument = arguments[1];
+    scalar_argument = makeVaryingScalarPrecisionSafe(
+        function_name, function_node->getArguments()[1], std::move(scalar_argument), context);
     ASTPtr predict_offset_ast;
     bool varying_predict_offset = false;
     switch (scalar_argument.store_method)
@@ -104,8 +107,8 @@ SQLQueryPiece applyFunctionPredictLinear(
             /// A scalar grid is always exactly one row with one Array column (see e.g. fromFunctionTime.cpp),
             /// so it can be registered and referenced the same way as SINGLE_SCALAR above, no JOIN needed.
             context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR);
-            /// The grid is Array(context.scalar_data_type), which can be Array(Float32); normalized here so
-            /// the aggregate sees one type regardless of the table's value type.
+            /// The grid is Array of either the scalar or (for a time() grid kept at full precision) the
+            /// timestamp type; normalized here so the aggregate sees one type in every case.
             predict_offset_ast = makeASTFunction(
                 "CAST", make_intrusive<ASTIdentifier>(context.subqueries.back().name), make_intrusive<ASTLiteral>("Array(Float64)"));
             break;
