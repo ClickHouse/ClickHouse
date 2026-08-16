@@ -237,6 +237,47 @@ TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
     EXPECT_FALSE(filter.getRecordedKeyRanges());
 }
 
+TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationIsIgnored)
+{
+    const auto type = makeUInt64Type();
+    auto lookup = createRuntimeFilterLookup();
+
+    /// Simulates the executor interleaving where `HashJoin::publishSharedRuntimeFilters` replaces the
+    /// lookup entry with a prebuilt shared fixed-hash-table filter before a late
+    /// `BuildRuntimeFilterTransform::finish()` registers its set filter: the late registration must be
+    /// ignored (the shared filter probes the complete hash table), not fail the query.
+    auto shared_filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::SharedFixedHashTable(
+            type,
+            [](const ColumnWithTypeAndName & values)
+            {
+                auto result = ColumnUInt8::create();
+                auto & result_data = result->getData();
+                result_data.resize(values.column->size());
+                for (size_t row = 0; row < values.column->size(); ++row)
+                    result_data[row] = values.column->getUInt(row) == 3 || values.column->getUInt(row) == 7;
+                return result;
+            }));
+    lookup->replace("runtime_filter", std::move(shared_filter));
+
+    auto late_filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(
+            type,
+            /*bytes_limit_=*/1_MiB,
+            /*exact_values_limit_=*/100));
+    late_filter->insert(makeUInt64Column({1}));
+    EXPECT_NO_THROW(lookup->add("runtime_filter", "runtime_filter", std::move(late_filter)));
+
+    auto filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(filter);
+    /// The shared filter stays authoritative: the late set filter's keys are dropped.
+    expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 7}, type)), {0, 1, 1});
+}
+
 TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
 {
     const auto type = makeUInt64Type();

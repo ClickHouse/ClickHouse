@@ -694,6 +694,16 @@ void RuntimeFilter::merge(const RuntimeFilter * source)
             data.accessWriteEnabled(
                 [&](Data * destination_data)
                 {
+                    /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
+                    /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
+                    /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
+                    /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter
+                    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
+                    /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
+                    /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
+                    if (std::holds_alternative<SharedFixedHashTable>(destination_data->filter))
+                        return;
+
                     if (destination_data->filter.index() != source_data->filter.index())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
