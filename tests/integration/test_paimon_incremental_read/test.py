@@ -279,6 +279,7 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
         )
     )
     reader.start()
+    restarted = False
     try:
         zk = cluster.get_kazoo_client("zoo1")
         try:
@@ -298,8 +299,18 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
 
         # Crash inside the window: watermark committed, batch not delivered.
         node.restart_clickhouse(kill=True)
+        restarted = True
     finally:
+        # The failpoint is process-global and PAUSEABLE: if we failed before
+        # the kill, the server is still running with it armed and the reader
+        # is still blocked on it — disarm it so neither this reader thread
+        # nor the next test hangs. After a kill-restart it is gone anyway.
+        if not restarted:
+            node.query(
+                "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_after_watermark_commit"
+            )
         reader.join(timeout=60)
+        assert not reader.is_alive(), "the reader thread never finished"
     # The killed reader must never have delivered the 10-row batch.
     assert reader_result.get("out") != "10\n", (
         f"the batch was delivered despite the kill: {reader_result!r}"
