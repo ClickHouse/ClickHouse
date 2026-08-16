@@ -80,6 +80,9 @@ SELECT * FROM (SELECT tuple(map('k', CAST(1, 'UInt64'))) AS t) AS a
 INNER JOIN (SELECT tuple(map('k', CAST(1, 'Int64'))) AS t) AS b USING (t); -- { serverError NO_COMMON_TYPE }
 SELECT * FROM (SELECT [CAST(1, 'UInt64')] AS t) AS a
 INNER JOIN (SELECT [CAST(1, 'Int64')] AS t) AS b ON a.t = b.t; -- { serverError NO_COMMON_TYPE }
+SELECT 'A nested Tuple key is rejected: the join null-key map only supports nullable elements of the outermost Tuple';
+SELECT * FROM (SELECT tuple(tuple(CAST(NULL, 'Nullable(UInt64)'))) AS t) AS a
+INNER JOIN (SELECT tuple(tuple(CAST(NULL, 'Nullable(Int64)'))) AS t) AS b ON a.t = b.t; -- { serverError NO_COMMON_TYPE }
 
 SELECT 'USING is supported for INNER JOIN, where the result contains only the common values';
 SELECT x, toTypeName(x) FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;

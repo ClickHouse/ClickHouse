@@ -59,6 +59,7 @@ A Tuple key: an element out of the common range turns the whole tuple into NULL,
 (1)	(1)
 (1)	Tuple(UInt64)
 A Tuple with an element that accurateCastOrNull cannot represent, such as an Array or a Map, is rejected
+A nested Tuple key is rejected: the join null-key map only supports nullable elements of the outermost Tuple
 USING is supported for INNER JOIN, where the result contains only the common values
 0	UInt64
 1	UInt64

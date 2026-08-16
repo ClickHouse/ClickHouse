@@ -184,19 +184,24 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
 
 /// Mirrors `validateNestedTypesForAccurateCastOrNull` in CastOverloadResolver.cpp: `accurateCastOrNull`
 /// reports an inexact conversion of a Tuple element by a NULL in place of that element, so every element
-/// has to be able to hold it, recursively. `Tuple(Array(UInt64))` is an example of a type that cannot.
-static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type)
+/// of the outermost Tuple has to be able to hold it. `Tuple(Array(UInt64))` is an example of a type that cannot.
+static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type, bool is_nested_tuple = false)
 {
     /// `getMostSubtype` reports the absence of a common subtype for a Tuple element by `Nothing` in its place.
     if (isNothing(type))
         return false;
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
+        /// The join null-key map only extracts nullable elements of the outermost Tuple.
+        /// A NULL in a nested Tuple would otherwise remain a regular hash key and match another NULL.
+        if (is_nested_tuple)
+            return false;
+
         const auto & elements = tuple_type->getElements();
-        return std::ranges::all_of(elements, isSupportedByAccurateCastOrNull);
+        return std::ranges::all_of(elements, [](const auto & element) { return isSupportedByAccurateCastOrNull(element, true); });
     }
     if (type->isNullable())
-        return isSupportedByAccurateCastOrNull(removeNullable(type));
+        return isSupportedByAccurateCastOrNull(removeNullable(type), is_nested_tuple);
     return type->canBeInsideNullable() || canContainNull(*type);
 }
 
