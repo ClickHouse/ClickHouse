@@ -2577,7 +2577,9 @@ static bool tryPrepareSetColumnsForIndex(
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
         /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
+        /// `Nothing` is another representation of an all-NULL literal array and is handled below.
         const NullMap * source_null_map = nullptr;
+        const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
@@ -2614,16 +2616,17 @@ static bool tryPrepareSetColumnsForIndex(
         for (size_t i = 0; i < set_size; ++i)
         {
             const bool null_in_source = source_null_map && (*source_null_map)[i];
-            if ((!key_is_nullable && null_in_source) || cast_failure_null_map[i])
+            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
                 filter[i] = 0;
         }
 
-        if (key_is_nullable && source_null_map)
+        if (key_is_nullable && (source_null_map || source_is_nothing))
         {
             auto null_map = ColumnUInt8::create();
             null_map->getData().assign(cast_failure_null_map);
             auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
-            nullable_set_column->applyNullMap(*source_null_map);
+            if (source_null_map)
+                nullable_set_column->applyNullMap(*source_null_map);
             set_column = std::move(nullable_set_column);
         }
         else
