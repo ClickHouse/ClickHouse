@@ -243,17 +243,17 @@ STAR_PROJECTION_RE = r"\bselect\s+(?:(?:distinct|all)\s+)?(?:[A-Za-z_]\w*\.)?\*"
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
 # semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)(?:\b(?:path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
-    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
+    r"(?i)(?:[`\"]?\b(?:path|data_path|data_paths|metadata_path)\b[`\"]?[^\"`|;]{0,300}?"
+    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue)\b"
     rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\."
-    r"(?:parts|detached_parts|projection_parts|tables|disks)\b)"
+    r"(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue)\b)"
 )
 # The server data root fetched as `SELECT value` or a star projection from
 # `system.server_settings` where `name = 'path'`. The `value` token (or `*`) is required
 # so that queries that merely inspect the setting without materializing the path (e.g.
 # `SELECT count()`) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
-    rf"(?i)(?:\bvalue\b|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.server_settings\b"
+    rf"(?i)(?:[`\"]?\bvalue\b[`\"]?|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.server_settings\b"
     r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b)"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,
@@ -291,7 +291,15 @@ REDIRECT_TO_VAR_RE = re.compile(
 # fine, but any other substitution is suspicious once the file fetches a server path. This
 # includes helpers that conceal the system-table query from the redirection line.
 REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>(?:>|\|)?\s*\"?(?:\$\(|`)")
-REDIRECT_TO_MKTEMP_RE = re.compile(r"\$\(\s*mktemp\b")
+# Exempt only a redirect whose complete target is the result of `mktemp`; a server path
+# plus a `mktemp`-generated basename is still a write into server-owned data.
+REDIRECT_TO_MKTEMP_RE = re.compile(
+    r"(?<!-)>(?:>|\|)?\s*\"?\$\(\s*mktemp\b[^)]*\)\"?\s*(?:$|[;|&])"
+)
+SHELL_COMMAND_STRING_RE = re.compile(
+    r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    r"(?:sh|bash)\s+-c\b|\beval\s+"
+)
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
 )
@@ -382,6 +390,7 @@ def check_no_server_data_manipulation(files):
                     REDIRECT_TO_COMMAND_SUBSTITUTION_RE.search(code)
                     and not REDIRECT_TO_MKTEMP_RE.search(code)
                 )
+                or SHELL_COMMAND_STRING_RE.search(code)
                 or CLICKHOUSE_DISKS_WRITE_RE.search(code)
             ):
                 errors.append(

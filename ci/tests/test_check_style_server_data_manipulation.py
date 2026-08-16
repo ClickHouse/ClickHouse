@@ -121,6 +121,12 @@ def test_redirect_into_server_path_is_flagged(tmp_path):
         'cat <<\'EOF\' > "$(get_path)/data.bin"\n'
         "broken\nEOF\n",
     )
+    assert _run(
+        tmp_path,
+        'get_path() { ${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts'
+        " WHERE table = 't' AND active LIMIT 1\"; }\n"
+        'echo broken > "$(get_path)/$(mktemp -u)"\n',
+    )
 
 
 def test_tee_into_server_path_is_flagged(tmp_path):
@@ -219,6 +225,47 @@ def test_server_root_fetch_is_flagged(tmp_path):
         'root=$(printf "%s" "$row" | cut -f2)\n'
         'rm -f "$root/flags/force_drop_table"\n',
     )
+
+
+def test_other_server_path_carriers_are_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.databases'
+        " WHERE name = currentDatabase()\")\n"
+        'rm -f "$path.sql"\n',
+    )
+    assert _run(
+        tmp_path,
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.detached_tables'
+        " WHERE database = currentDatabase() LIMIT 1\")\n"
+        'rm -f "$path"\n',
+    )
+    assert _run(
+        tmp_path,
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT data_path FROM system.distribution_queue LIMIT 1")\n'
+        'rm -f "$path/bad"\n',
+    )
+
+
+def test_quoted_server_path_identifiers_are_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT `path` FROM system.parts'
+        " WHERE table = 't' AND active LIMIT 1\")\n"
+        'rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        'root=$(${CLICKHOUSE_CLIENT} -q \'SELECT "value" FROM system.server_settings'
+        " WHERE name = 'path'\")\n"
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
+
+
+def test_shell_command_string_executor_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'sh -c "rm -f \\"$path/data.bin\\""\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "rm -f \\"$path/data.bin\\""\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'eval "rm -f \\"$path/data.bin\\""\n')
 
 
 def test_server_settings_inspection_without_value_is_not_flagged(tmp_path):
