@@ -132,8 +132,8 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/macos-signer",
-        path="./ci/docker/macos-signer",
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
         platforms=[Docker.Platforms.AMD],
         depends_on=["clickhouse/fasttest"],
     ),
