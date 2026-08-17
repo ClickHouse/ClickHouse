@@ -1,3 +1,9 @@
+const normalizeSearchText = value => value
+  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
 export const Glossary = ({ children, metadata = {} }) => {
   const nodeText = (node) => {
     if (node === null || node === undefined || typeof node === 'boolean') return '';
@@ -47,24 +53,20 @@ export const Glossary = ({ children, metadata = {} }) => {
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const normalizedDescriptionQuery = normalizedQuery.replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalizedQuery = normalizeSearchText(query);
   const visibleEntries = normalizedQuery
     ? entries
         .map((entry, index) => {
-          const term = entry.term.toLocaleLowerCase();
-          const aliases = (entry.aliases || []).map(alias => alias.toLocaleLowerCase());
-          const description = nodeText(entry.content)
-            .toLocaleLowerCase()
-            .replace(/[^a-z0-9]+/g, ' ')
-            .trim();
+          const term = normalizeSearchText(entry.term);
+          const aliases = (entry.aliases || []).map(normalizeSearchText);
+          const description = normalizeSearchText(nodeText(entry.content));
           let rank;
 
           if (term === normalizedQuery) rank = 0;
           else if (term.includes(normalizedQuery)) rank = 1;
           else if (aliases.some(alias => alias === normalizedQuery)) rank = 2;
           else if (aliases.some(alias => alias.includes(normalizedQuery))) rank = 3;
-          else if (normalizedDescriptionQuery && ` ${description} `.includes(` ${normalizedDescriptionQuery} `)) rank = 4;
+          else if (` ${description} `.includes(` ${normalizedQuery} `)) rank = 4;
           else return null;
 
           return { entry, index, rank };
