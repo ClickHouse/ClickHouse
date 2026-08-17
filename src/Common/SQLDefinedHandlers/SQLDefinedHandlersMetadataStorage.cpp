@@ -20,6 +20,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/timespanFromSeconds.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/pathToString.h>
 
@@ -246,7 +247,7 @@ public:
     bool waitUpdate(size_t timeout) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::waitUpdate");
-        if (wait_event->tryWait(static_cast<Int64>(timeout)))
+        if (wait_event->tryWait(toPocoMilliseconds(timeout)))
             return true;
 
         std::string res;

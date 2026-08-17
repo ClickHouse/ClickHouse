@@ -4,11 +4,6 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
-
 namespace DB
 {
 
