@@ -149,7 +149,8 @@ def main():
 
     # 2. Up, Up, Down walks the history (the entries end in "rand", which has many hint
     #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
-    #    so its result (222) is printed.
+    #    so its result (222) is printed. The result can use either Pretty or TabSeparated output
+    #    depending on the client's default format.
     history = make_history_file(
         "down_navigates", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
     )
@@ -158,7 +159,7 @@ def main():
         args + [f"--history_file={history}"],
         "down_navigates_history",
         [b"\x1b[A", b"\x1b[A", b"\x1b[B", b"\r"],
-        lambda o: re.search(r"│\s*222\s*│", o) is not None,
+        lambda o: re.search(r"(?:│\s*222\s*│|\r?\n222\r?\n)", o) is not None,
     )
 
     # 3. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
