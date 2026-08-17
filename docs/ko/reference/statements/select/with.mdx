@@ -237,9 +237,9 @@ SELECT gen_name('test', '.sql') as file_name;
 
 **예시 3:** 자유 변수를 사용하는 고차 함수
 
-다음 예시 쿼리는 바인딩되지 않은 식별자가 가장 가까운 스코프의 엔터티로 해석됨을 보여줍니다.
+다음 예시 쿼리는 바인딩되지 않은 식별자가 가장 가까운 범위의 엔터티로 해석됨을 보여줍니다.
 여기서 `extension`은 `gen_name` 람다 함수 본문에서 바인딩되어 있지 않습니다.
-`extension`은 `generated_names`의 정의 및 사용 스코프에서 공통 스칼라 표현식으로 `'.txt'`로 정의되어 있지만, `generated_names` 서브쿼리(subquery)에서 사용할 수 있으므로 테이블 `extension_list`의 컬럼(column)으로 해석됩니다.
+`extension`은 `generated_names`의 정의 및 사용 범위에서 공통 스칼라 표현식으로 `'.txt'`로 정의되어 있지만, `generated_names` 서브쿼리(subquery)에서 사용할 수 있으므로 테이블 `extension_list`의 컬럼(column)으로 해석됩니다.
 
 ```sql
 CREATE TABLE extension_list
@@ -280,7 +280,7 @@ ORDER BY s;
 **예시 5:** 스칼라 서브쿼리 결과 사용하기
 
 ```sql
-/* 이 예시는 가장 큰 테이블 상위 10개를 반환합니다 */
+/* this example would return TOP 10 of most huge tables */
 WITH
     (
         SELECT sum(bytes)
@@ -296,11 +296,26 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**예시 6:** 서브쿼리에서 표현식 재사용
+**예시 6:** 서브쿼리에서 람다로 정의된 공통 스칼라 표현식 재사용
+
+인수가 명시적으로 바인딩되도록 공통 스칼라 표현식을 람다로 정의합니다:
 
 ```sql
-WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
-SELECT * FROM test1;
+WITH (value) -> value + 1 AS increment
+SELECT increment(first_result) AS second_increment
+FROM
+(
+    SELECT increment(number) AS first_result
+    FROM numbers(3)
+);
+```
+
+```response
+┌─second_increment─┐
+│                2 │
+│                3 │
+│                4 │
+└──────────────────┘
 ```
 
 <div id="recursive-queries">

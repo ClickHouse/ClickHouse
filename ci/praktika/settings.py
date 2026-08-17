@@ -108,6 +108,9 @@ class _Settings:
     # If enabled, Config Workflow creates a content-addressed .git/modules/ archive
     # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
     ENABLE_SUBMODULE_CACHE: bool = False
+    # If enabled, submodule clones authenticate with the App installation token
+    # (required for private submodules); otherwise they run anonymously.
+    ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
     # v2: records carry the producing workflow event, used as the reuse trust
     # signal instead of the branch (see CacheRunnerHooks.configure).
@@ -219,6 +222,7 @@ _USER_DEFINED_SETTINGS = [
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",
+    "ENABLE_SUBMODULE_CLONE_AUTH",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
