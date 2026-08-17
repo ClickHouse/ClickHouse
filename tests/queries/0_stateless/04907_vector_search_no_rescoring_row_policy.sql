@@ -50,9 +50,8 @@ SETTINGS
     distributed_plan_max_rows_to_broadcast = 0,
     apply_prewhere_after_final = 1;
 
--- A row-policy DAG also carries all required table columns as passthrough outputs. A policy
--- that does not consume the vector column must not disable the no-rescoring rewrite merely
--- because it carries `vec` through.
+-- A row-policy DAG carries all required table columns as passthrough outputs. The no-rescoring
+-- rewrite must be disabled even when a policy does not otherwise consume the vector column.
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 CREATE ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy
 USING tenant = 1 AS RESTRICTIVE TO ALL;
@@ -67,8 +66,8 @@ SELECT count() FROM
 WHERE explain LIKE '%Sort description: sqrt(_distance)%';
 
 -- With FINAL, this non-consuming policy is deferred and its retained `vec` passthrough is
--- replayed by `FilterTransform`. The rewrite must remain valid when that deferred DAG sees the
--- rewritten read header in a local distributed plan.
+-- replayed by `FilterTransform`. The no-rescoring rewrite must remain disabled on the local
+-- distributed-plan path too.
 SELECT count(id) FROM
 (
     SELECT id FROM tab_vec_row_policy FINAL
