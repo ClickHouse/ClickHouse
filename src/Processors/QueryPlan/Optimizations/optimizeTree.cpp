@@ -52,7 +52,11 @@ extern const int SUPPORT_IS_DISABLED;
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan)
 {
     if (!optimization_settings.optimize_plan)
         return;
@@ -95,6 +99,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        query_plan.getMaxThreads(),
+        query_plan.getConcurrencyControl(),
         optimization_settings.make_distributed_plan,
     };
 
@@ -218,6 +224,8 @@ void optimizeTreeSecondPass(
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        query_plan.getMaxThreads(),
+        query_plan.getConcurrencyControl(),
         optimization_settings.make_distributed_plan,
     };
 

@@ -814,7 +814,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (optimization_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -1118,7 +1118,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
 
-QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, size_t max_threads, bool concurrency_control)
 {
     std::unordered_set<Node *> used;
     std::stack<Node *> stack;
@@ -1139,6 +1139,8 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 
     QueryPlan new_plan;
     new_plan.root = root;
+    new_plan.max_threads = max_threads;
+    new_plan.concurrency_control = concurrency_control;
 
     auto it = nodes.begin();
     while (it != nodes.end())
@@ -1187,6 +1189,8 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 
     QueryPlan new_plan;
     new_plan.root = subplan_root;
+    new_plan.max_threads = max_threads;
+    new_plan.concurrency_control = concurrency_control;
 
     auto it = nodes.begin();
     while (it != nodes.end())

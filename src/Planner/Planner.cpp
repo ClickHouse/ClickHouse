@@ -2136,10 +2136,9 @@ void Planner::buildPlanForUnionNode()
 ///
 /// Also never use the cache in plans that are serialized for remote execution: logical plans are
 /// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
-/// `createRemotePlanForParallelReplicas`), and `make_distributed_plan` serializes every distributed
-/// plan fragment. The cache steps hold node-local state - a `QueryResultCacheWriter` or the cached
-/// chunks themselves - which has no serialized representation. The cache is populated and read by
-/// the plan the initiator executes itself.
+/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
+/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
+/// representation. The cache is populated and read by the plan the initiator executes itself.
 static bool shouldUseQueryCacheForSubquery(
     const QueryNode & query_node,
     bool outer_can_use_cache,
@@ -2153,7 +2152,7 @@ static bool shouldUseQueryCacheForSubquery(
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    if (select_query_options.build_logical_plan || settings[Setting::make_distributed_plan])
+    if (select_query_options.build_logical_plan)
         return false;
 
     const bool is_subquery = select_query_options.is_subquery;
