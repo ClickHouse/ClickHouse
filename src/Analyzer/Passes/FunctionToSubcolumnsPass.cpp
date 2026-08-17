@@ -1230,7 +1230,7 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
-    /// Memoizes supportsOptimizationToSubcolumns for the lifetime of this visitor.
+    /// Memoizes the storage subcolumn support predicates for the lifetime of this visitor.
     SubcolumnSupportCache subcolumn_support_cache;
 
 public:
