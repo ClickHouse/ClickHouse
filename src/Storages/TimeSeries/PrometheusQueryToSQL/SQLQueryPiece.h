@@ -62,10 +62,11 @@ struct SQLQueryPiece
     ResultType type = ResultType::SCALAR;
     StoreMethod store_method = StoreMethod::EMPTY;
 
-    /// Operators and functions drop the metric name, i.e. the tag named '__name__.
+    /// Operators and functions drop the metric name, i.e. the tag named `__name__`.
     bool metric_name_dropped = false;
 
-    /// The metric name is the same for every series in the result.
+    /// The metric name is the same for every series in the result. This allows `dropMetricName` to skip duplicate-series
+    /// validation when removing `__name__`.
     /// This is meaningful only while metric_name_dropped is false.
     bool metric_name_is_constant = false;
 
