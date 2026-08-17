@@ -83,4 +83,11 @@ select sequenceMatch('(?+)')(time, data = 0, data = 1, data = 2, data = 3) from 
 select sequenceCount('(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
 select sequenceMatchEvents('(?0)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test; -- { serverError BAD_ARGUMENTS }
 
+-- A lone sign in a temporal condition must be rejected, not read as a duration of 0.
+select sequenceMatch('(?1)(?t>+)(?2)')(time, data = 1, data = 2) from sequence_test; -- { serverError SYNTAX_ERROR }
+select sequenceCount('(?1)(?t<=+)(?2)')(time, data = 1, data = 2) from sequence_test; -- { serverError SYNTAX_ERROR }
+select sequenceMatchEvents('(?1)(?t==+)(?2)')(time, data = 1, data = 2) from sequence_test; -- { serverError SYNTAX_ERROR }
+select 1 = sequenceMatch('(?1)(?t>+0)(?2)')(time, data = 1, data = 2) from sequence_test;
+select 0 = sequenceMatch('(?1)(?t>+1)(?2)')(time, data = 1, data = 2) from sequence_test;
+
 drop table sequence_test;
