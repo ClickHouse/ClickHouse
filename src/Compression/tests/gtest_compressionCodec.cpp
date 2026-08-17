@@ -3040,6 +3040,56 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 8);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputDecimalAdjustmentWidth)
+{
+    /// The Float32 encoder limits zigzag ULP adjustments to 16 bits. A 31-bit adjustment
+    /// could wrap the ordered-float representation during reconstruction.
+    const std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x21,                         // alpha = 1
+        0x00,                         // bits = 0
+        0x1F,                         // adjustment_bits = 31, above the encoder limit
+        0x19, 0x00, 0x00, 0x00,       // base = 25 -> 2.5f
+        0x00, 0x00                    // exception_count = 0
+    };
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 4);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalForReconstructionOverflow)
+{
+    /// `base = INT32_MAX` plus a packed offset of one must not wrap to `INT32_MIN`.
+    std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x20,                         // alpha = 0
+        0x01,                         // bits = 1
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // base = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 128, 0x00);
+    vectors[10] = 0x01; // first packed offset = 1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 4);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaReconstructionOverflow)
+{
+    /// `first_q = INT32_MAX` followed by a zigzag-encoded delta of one must not wrap.
+    std::vector<UInt8> vectors = {
+        0x02,                         // mode = DECIMAL_DELTA
+        0x20,                         // alpha = 0
+        0x02,                         // bits = 2
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // first_q = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 256, 0x00);
+    vectors[14] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 2), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 8);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
 {
     const std::vector<UInt8> vectors = {
@@ -3167,6 +3217,17 @@ TEST_F(WallabyTest, CompressesSparsePeriodicExceptionsAsDecimal)
         values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
 
     EXPECT_LT(wallabyCompressedSize(values), 1000u);
+}
+
+TEST_F(WallabyTest, ReusesExceptionPositionsAcrossDecimalVectors)
+{
+    /// Exception positions are local to each 1024-value vector. Reusing the same positions in
+    /// a second vector must round-trip instead of being rejected as duplicate exceptions.
+    std::vector<Float64> values(2048);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 2000u);
 }
 
 TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
@@ -3315,6 +3376,23 @@ TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
     values[512] = 1e7;
 
     EXPECT_LT(wallabyCompressedSize(values), 1500u);
+}
+
+TEST_F(WallabyTest, CapsFullWidthDecimalRange)
+{
+    /// A sign-crossing outlier makes the uncapped Frame-of-Reference range exactly 64 bits,
+    /// but it must not suppress the capped search. Exiling that one value leaves a 20-bit
+    /// range for the remaining values, much smaller than the RAW or XOR encodings.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i + 1 < values.size(); ++i)
+    {
+        const auto index = static_cast<UInt64>(i);
+        const auto offset = static_cast<Int64>((index * 977 % 1023) * 1024);
+        values[i] = static_cast<Float64>(-(Int64{1} << 62) + offset);
+    }
+    values.back() = static_cast<Float64>(Int64{1} << 62);
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
 }
 
 TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
@@ -3577,6 +3655,22 @@ TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
         values[i] = 511.0000001;
 
     EXPECT_LT(wallabyCompressedSize(values), 1250u);
+}
+
+TEST_F(WallabyTest, ChoosesScaleAfterCappingWideAdjustmentOutlier)
+{
+    /// The scale chooser must compare the complete capped adjustment plan for every candidate.
+    /// Here alpha 2 quantizes the column into three cent buckets. Most values need a 9-bit ULP
+    /// adjustment, while one value needs 26 bits. The uncapped price incorrectly favors alpha 8,
+    /// but capping the adjustment lanes at 9 bits and exiling that one outlier makes alpha 2
+    /// substantially smaller.
+    std::vector<Float64> values(1024);
+    constexpr std::array<Float64, 3> offsets{0.00000003, 0.01000003, 0.02000003};
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 1000000.0 + offsets[i % offsets.size()];
+    values[512] = 1000000.01490003;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1600u);
 }
 
 }

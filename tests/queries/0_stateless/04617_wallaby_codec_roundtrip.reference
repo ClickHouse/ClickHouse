@@ -19,6 +19,12 @@
 3	-inf
 4	-0
 5	1.5e-300
+0	3.14
+1	nan
+2	inf
+3	-inf
+4	-0
+5	1.5e-30
 # Compression is effective on a decimal time series
 1
 # Wallaby is not applicable to non-float types and takes no arguments
