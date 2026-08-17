@@ -479,7 +479,21 @@ It is currently only implemented in StorageObjectStorage.
       Block partition_source_block;
     };
 
-    virtual void commitExportPartitionTransaction(
+    /// Paths produced by the destination storage during commit. Surfaced via
+    /// system.replicated_partition_exports for debugging
+    struct ExportPartitionCommitInfo
+    {
+      /// Iceberg destinations only.
+      String iceberg_metadata_file;
+      String iceberg_manifest_list;
+      String iceberg_manifest_file;
+
+      /// Plain object storage destinations only: path of the commit marker file
+      /// written/observed by StorageObjectStorage::commitExportPartitionTransaction.
+      String commit_marker_file;
+    };
+
+    virtual ExportPartitionCommitInfo commitExportPartitionTransaction(
       const String & /* transaction_id */,
       const String & /* partition_id */,
       const Strings & /* exported_paths */,

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -55,6 +56,16 @@ ColumnsDescription StorageSystemReplicatedPartitionExports::getColumnsDescriptio
             "Per-replica last exception entries. Each tuple records the most recent exception observed by that replica plus a best-effort within-replica count. Empty array if no replica has reported an exception for this task."},
         {"exception_count", std::make_shared<DataTypeUInt64>(),
             "Sum of per-replica exception counts. Each replica owns its own count, so the sum is exact w.r.t. the in-memory snapshot; within-replica updates remain best-effort and may under-count by one under concurrent failures."},
+        {"destination_file_paths", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())),
+            "Per-part destination file paths written to the destination object storage. Keyed by part name; values are the file paths produced by exporting that part. Mirrored from ZooKeeper on every poll while PENDING; partial during in-flight tasks. When the in-memory mirror could not fully refresh from Keeper (or a processed leaf is unreadable), the map may contain the key and/or path value '<failed to read from zk>' for the affected part (or for the whole field if listing processed leaves failed); replaced on the next successful poll."},
+        {"committed_metadata_file", std::make_shared<DataTypeString>(),
+            "For Iceberg destinations: path of the new metadata JSON file written at commit time. Empty for non-Iceberg destinations and for tasks that have not committed yet. May also be empty if the committing replica crashed between writing the object-storage files and persisting commit_info. If the export was already committed by a previous run (detected via the transaction id stored in the snapshot summary), this column holds a human-readable note instead of a path since the original committer's paths are not trivially recoverable."},
+        {"committed_manifest_list", std::make_shared<DataTypeString>(),
+            "For Iceberg destinations: path of the manifest list file (snap-*.avro) referenced by the new snapshot. Empty under the same conditions as committed_metadata_file."},
+        {"committed_manifest_file", std::make_shared<DataTypeString>(),
+            "For Iceberg destinations: path of the manifest file referenced by committed_manifest_list. Empty under the same conditions as committed_metadata_file."},
+        {"committed_marker_file", std::make_shared<DataTypeString>(),
+            "For plain object storage destinations: path of the per-transaction commit marker file written by the destination. Empty for Iceberg destinations and for tasks that have not committed yet."},
         {"local_backoff_per_part", std::make_shared<DataTypeArray>(backoff_tuple),
             "Per-part retry back-off local to this replica: parts currently waiting before their next attempt, with attempt count and the next eligible time. Not shared across replicas; empty if no part is backing off."},
     };
@@ -162,6 +173,25 @@ void StorageSystemReplicatedPartitionExports::fillData(MutableColumns & res_colu
                 per_replica.push_back(Tuple{ex.replica, ex.message, ex.part, ex.time, ex.count});
             res_columns[i++]->insert(per_replica);
             res_columns[i++]->insert(info.exception_count);
+
+            Map destination_paths_map;
+            destination_paths_map.reserve(info.destination_file_paths_per_part.size());
+            for (const auto & [part_name, paths] : info.destination_file_paths_per_part)
+            {
+                Array paths_array;
+                paths_array.reserve(paths.size());
+                for (const auto & path : paths)
+                    paths_array.push_back(path);
+                destination_paths_map.emplace_back(Tuple{part_name, std::move(paths_array)});
+            }
+            res_columns[i++]->insert(std::move(destination_paths_map));
+
+            res_columns[i++]->insert(info.committed_metadata_file);
+            res_columns[i++]->insert(info.committed_manifest_list);
+
+            res_columns[i++]->insert(info.committed_manifest_file);
+
+            res_columns[i++]->insert(info.committed_marker_file);
 
             Array backoff_array;
             backoff_array.reserve(info.backoff_per_part.size());

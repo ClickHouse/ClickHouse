@@ -373,6 +373,14 @@ def test_catalog_idempotent_retry(catalog_export_cluster):
         f"got {len(history)}"
     )
 
+    committed_metadata_file = node.query(
+        f"SELECT committed_metadata_file FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{source}' AND partition_id = '{pid}'"
+    ).strip()
+    assert committed_metadata_file == "<committed in a previous run, paths unavailable>", (
+        f"Expected already-committed sentinel after idempotent retry, got: {committed_metadata_file!r}"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Replicated catalog tests

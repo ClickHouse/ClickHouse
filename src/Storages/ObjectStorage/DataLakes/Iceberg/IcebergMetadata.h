@@ -31,6 +31,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -163,7 +164,7 @@ public:
     /// data_file_paths contains the metadata-path for each exported data file (as recorded in
     /// ZooKeeper).  For every path a co-located sidecar Avro file (same path, ".avro" extension)
     /// must exist in the object storage; it supplies record_count and file_size_in_bytes.
-    void commitExportPartitionTransaction(
+    IStorage::ExportPartitionCommitInfo commitExportPartitionTransaction(
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id,
         const String & transaction_id,
@@ -176,6 +177,8 @@ public:
         ContextPtr context) override;
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
+
+    std::string getTableLocation() const override { return persistent_components.table_location; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
@@ -241,7 +244,12 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 
-    bool commitImportPartitionTransactionImpl(
+    /// Non-empty return value means the attempt succeeded (covers both the normal
+    /// publish path and the `isExportPartitionTransactionAlreadyCommitted` short-circuit).
+    /// An empty `ExportPartitionCommitInfo` means the caller must retry. The
+    /// short-circuit branch fills `iceberg_metadata_file` with a sentinel note since
+    /// the original committer's paths are not trivially recoverable from inside this call.
+    std::optional<IStorage::ExportPartitionCommitInfo> commitImportPartitionTransactionImpl(
         FileNamesGenerator & filename_generator,
         Poco::JSON::Object::Ptr & metadata,
         Poco::JSON::Object::Ptr & partition_spec,
@@ -268,7 +276,8 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    const DB::Iceberg::PersistentTableComponents persistent_components;
+    mutable std::shared_ptr<SecondaryStorages> secondary_storages;
+    DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

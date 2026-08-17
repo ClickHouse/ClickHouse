@@ -45,6 +45,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVector.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
@@ -187,7 +188,8 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
                 local_context,
                 log,
                 manifest_list_entry.manifest_file_path,
-                manifest_list_entry.manifest_file_byte_size);
+                manifest_list_entry.manifest_file_byte_size,
+                *secondary_storages);
 
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 manifest_file_cacheable_part.deserializer,
@@ -214,7 +216,8 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     const ActionsDAG * filter_dag_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<SecondaryStorages> secondary_storages_)
     : object_storage(object_storage_)
     , filter_dag(
           [&]() -> std::shared_ptr<const ActionsDAG>
@@ -237,6 +240,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
+    , secondary_storages(secondary_storages_)
     , manifest_file_content_type(manifest_file_content_type_)
 {
 }
@@ -248,10 +252,12 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<SecondaryStorages> secondary_storages_)
     : logger(getLogger("IcebergIterator"))
     , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , local_context(local_context_)
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)
     , data_files_iterator(
@@ -261,7 +267,8 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          persistent_components_)
+          persistent_components_,
+          secondary_storages_)
     , deletes_iterator(
           object_storage,
           local_context_,
@@ -269,10 +276,11 @@ IcebergIterator::IcebergIterator(
           filter_dag.get(),
           table_snapshot_,
           data_snapshot_,
-          persistent_components_)
+          persistent_components_,
+          secondary_storages_)
     , blocking_queue(100)
     , callback(std::move(callback_))
-    , local_context(local_context_)
+    , secondary_storages(secondary_storages_)
     , table_schema_id(table_snapshot_->schema_id)
 {
     auto delete_file = deletes_iterator.next();
@@ -342,11 +350,16 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ProcessedManifestFileEntryPtr manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        IcebergDataObjectInfoPtr object_info
-            = std::make_shared<IcebergDataObjectInfo>(
-                manifest_file_entry,
-                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
-                table_state_snapshot->schema_id);
+        const auto & raw_metadata_path = manifest_file_entry->parsed_entry->file_path_key.serialize();
+        auto [storage_to_use, resolved_key] = resolveObjectStorageForPath(
+            persistent_components.table_location, raw_metadata_path,
+            object_storage, *secondary_storages, local_context,
+            persistent_components.path_resolver);
+
+        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(
+            manifest_file_entry, raw_metadata_path, table_state_snapshot->schema_id, storage_to_use, resolved_key);
+
+        object_info->info.requires_external_storage = (storage_to_use != object_storage);
 
         const auto & data_file_path = object_info->info.data_object_file_path_key;
         bool has_deletion_vector = false;
@@ -377,12 +390,18 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             }
 
             const auto & parsed_entry = deletion_vector->parsed_entry;
+            const auto puffin_metadata_path = parsed_entry->file_path_key.serialize();
+            auto [puffin_storage, puffin_key] = resolveObjectStorageForPath(
+                persistent_components.table_location, puffin_metadata_path,
+                object_storage, *secondary_storages, local_context,
+                persistent_components.path_resolver);
+
             /// For icebergCluster, next() runs on the initiator's task-distribution path: DV
             /// I/O / CRC / roaring materialization happen here, then excluded_rows is sent on
             /// the wire per task. Workers apply the bitmap and do not re-read the Puffin blob.
             auto excluded_rows = Iceberg::loadDeletionVector(
-                object_storage,
-                persistent_components.path_resolver.resolve(parsed_entry->file_path_key),
+                puffin_storage,
+                puffin_key,
                 parsed_entry->content_offset.value(),
                 parsed_entry->content_size_in_bytes.value(),
                 data_file_path,
@@ -439,7 +458,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                         lower.has_value() ? lower->serialize() : "[no lower bound]",
                         upper.has_value() ? upper->serialize() : "[no upper bound]");
                     object_info->addPositionDeleteObject(
-                        position_delete, persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key));
+                        position_delete, position_delete->parsed_entry->file_path_key.serialize());
                 }
             }
         }
@@ -457,7 +476,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
             object_info->addEqualityDeleteObject(
-                equality_delete, persistent_components.path_resolver.resolve(equality_delete->parsed_entry->file_path_key));
+                equality_delete, equality_delete->parsed_entry->file_path_key.serialize());
         }
 
         if (!object_info->info.equality_deletes_objects.empty())
@@ -469,12 +488,49 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->info.data_object_file_path_key);
         }
 
+        if (!object_info->info.requires_external_storage)
+        {
+            /// Flag the file if it resolves to a different storage/key (e.g. a same-bucket file outside the table prefix)
+            auto needs_absolute_path_protocol = [&](const String & file_path)
+            {
+                auto [del_storage, del_key] = resolveObjectStorageForPath(
+                    persistent_components.table_location, file_path, object_storage, *secondary_storages, local_context,
+                    persistent_components.path_resolver);
+                if (del_storage != object_storage)
+                    return true;
+                try
+                {
+                    auto [stripped_storage, stripped_key] = resolveObjectStorageForPath(
+                        persistent_components.table_location, SchemeAuthorityKey(file_path).key, object_storage,
+                        *secondary_storages, local_context, persistent_components.path_resolver);
+                    return stripped_storage != object_storage || stripped_key != del_key;
+                }
+                catch (const Exception &)
+                {
+                    /// The stripped key is unresolvable, so old workers cannot read it either.
+                    return true;
+                }
+            };
+            auto any_needs_protocol = [&](const auto & delete_objects)
+            {
+                for (const auto & del : delete_objects)
+                    if (needs_absolute_path_protocol(del.file_path))
+                        return true;
+                return false;
+            };
+
+            object_info->info.requires_external_storage =
+                any_needs_protocol(object_info->info.position_deletes_objects)
+                || any_needs_protocol(object_info->info.equality_deletes_objects);
+        }
+
         object_info->relative_path_with_metadata.setFileMetaInfo(std::make_shared<DataFileMetaInfo>(
                                     *persistent_components.schema_processor,
                                     table_schema_id, /// current schema id to use current column names
                                     manifest_file_entry->resolved_schema_id, /// file's schema id to interpret value_bounds bytes
                                     manifest_file_entry->parsed_entry->columns_infos,
                                     manifest_file_entry->parsed_entry->value_bounds));
+
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
 
         if (callback)

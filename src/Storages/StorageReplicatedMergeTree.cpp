@@ -134,7 +134,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
-#include "Functions/generateSnowflakeID.h"
 #include "Interpreters/StorageID.h"
 #include "QueryPipeline/QueryPlanResourceHolder.h"
 #include "Storages/ExportReplicatedMergeTreePartitionManifest.h"
@@ -8737,7 +8736,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
 
     ExportReplicatedMergeTreePartitionManifest manifest;
 
-    manifest.transaction_id = generateSnowflakeIDString();
+    manifest.transaction_id = toString(UUIDHelpers::generateV4());
     manifest.query_id = query_context->getCurrentQueryId();
     manifest.partition_id = partition_id;
     manifest.destination_database = dest_database;

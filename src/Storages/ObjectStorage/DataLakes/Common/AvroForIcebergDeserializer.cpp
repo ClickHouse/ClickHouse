@@ -170,7 +170,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     }
 
 
-    const auto file_path_key = IcebergPathFromMetadata::deserialize(
+    const auto file_path_from_metadata = IcebergPathFromMetadata::deserialize(
         getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
     /// NOTE: This is weird, because in manifest file partition looks like this:
     /// {
@@ -275,7 +275,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         case FileContentType::DATA: {
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::DATA,
-                file_path_key,
+                file_path_from_metadata,
                 row_index,
                 status,
                 sequence_number,
@@ -339,7 +339,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::POSITION_DELETE,
-                file_path_key,
+                file_path_from_metadata,
                 row_index,
                 status,
                 sequence_number,
@@ -372,7 +372,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     c_data_file_equality_ids);
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::EQUALITY_DELETE,
-                file_path_key,
+                file_path_from_metadata,
                 row_index,
                 status,
                 sequence_number,
