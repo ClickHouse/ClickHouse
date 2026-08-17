@@ -86,6 +86,46 @@ nullable tuple expr, like
 2
 nullable tuple expr, like, opt off
 2
+implicit key conversion, wrapped, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(accurateCast(toString(__table1.k), \'UUID\'), \'22222222-2222-2222-2222-222222222222\')
+implicit key conversion, wrapped, equals
+1
+implicit key conversion, wrapped, equals, opt off
+1
+implicit key conversion, wrapped, like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(accurateCast(toString(__table1.k), \'UUID\'), (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+implicit key conversion, wrapped, like
+2
+implicit key conversion, wrapped, like, opt off
+2
+implicit key conversion, bare, equals
+1
+implicit key conversion, bare, equals, opt off
+1
+implicit key conversion, simple key, equals - plan
+SELECT count() AS `count()`
+FROM default.data_n AS __table1
+WHERE in(accurateCast(toString(__table1.n), \'UInt64\'), _CAST([1, 4], \'Array(UInt64)\'))
+implicit key conversion, simple key, equals
+2
+implicit key conversion, simple key, equals, opt off
+2
+implicit key conversion, numeric widening, equals - plan
+SELECT count() AS `count()`
+FROM default.data_n AS __table1
+WHERE equals(toUInt8(__table1.n), _CAST(2, \'UInt64\'))
+implicit key conversion, numeric widening, equals
+1
+implicit key conversion, numeric widening, equals, opt off
+1
 bare key, equals - plan
 SELECT count() AS `count()`
 FROM default.data AS __table1

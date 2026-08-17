@@ -163,6 +163,97 @@ SELECT count() FROM data
 WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
+-- `dictGet` implicitly converts the key expression to the key column type
+-- (`IDictionary::convertKeyColumns`), so a `String` key expression is valid for a
+-- `UUID` key column. The rewrite must mirror that conversion.
+SELECT 'implicit key conversion, wrapped, equals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) = 'onboarding';
+SELECT 'implicit key conversion, wrapped, equals';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) = 'onboarding';
+SELECT 'implicit key conversion, wrapped, equals, opt off';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) = 'onboarding'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'implicit key conversion, wrapped, like - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) LIKE 'pay%';
+SELECT 'implicit key conversion, wrapped, like';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) LIKE 'pay%';
+SELECT 'implicit key conversion, wrapped, like, opt off';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', tuple(toString(k))) LIKE 'pay%'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'implicit key conversion, bare, equals';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', toString(k)) = 'onboarding';
+SELECT 'implicit key conversion, bare, equals, opt off';
+SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', toString(k)) = 'onboarding'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- `dictGet` throws for a Nullable key expression that needs conversion (the nested
+-- column holds default values at NULL rows), so the rewrite must not change that:
+-- the optimization is skipped and the query fails the same way with it on and off.
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', toString(k), NULL)) = 'onboarding'; -- { serverError CANNOT_PARSE_UUID }
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', toString(k), NULL)) = 'onboarding'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_UUID }
+
+-- The same implicit conversion applies to simple-key dictionaries.
+DROP DICTIONARY IF EXISTS dict_simple_key;
+DROP TABLE IF EXISTS ref_simple;
+DROP TABLE IF EXISTS data_n;
+
+CREATE TABLE ref_simple
+(
+    id UInt64,
+    attr String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO ref_simple VALUES (1, 'paywall'), (2, 'onboarding'), (4, 'paywall');
+
+CREATE DICTIONARY dict_simple_key
+(
+    id UInt64,
+    attr String DEFAULT 'none'
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'ref_simple'))
+LAYOUT(HASHED())
+LIFETIME(0);
+
+CREATE TABLE data_n
+(
+    n UInt64
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO data_n VALUES (1), (2), (3), (4);
+
+SELECT 'implicit key conversion, simple key, equals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toString(n)) = 'paywall';
+SELECT 'implicit key conversion, simple key, equals';
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toString(n)) = 'paywall';
+SELECT 'implicit key conversion, simple key, equals, opt off';
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toString(n)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- When a common supertype exists (a narrow integer against a wide key type), the
+-- plain comparison already matches `dictGet` conversion semantics and no cast is
+-- inserted, keeping the key expression usable for index analysis.
+SELECT 'implicit key conversion, numeric widening, equals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toUInt8(n)) = 'onboarding';
+SELECT 'implicit key conversion, numeric widening, equals';
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toUInt8(n)) = 'onboarding';
+SELECT 'implicit key conversion, numeric widening, equals, opt off';
+SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toUInt8(n)) = 'onboarding'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
 -- Control: the bare key form must keep working exactly as before.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
