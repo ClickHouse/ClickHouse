@@ -8701,6 +8701,26 @@ function parseInbandException(text, format)
     return null;
 }
 
+/// An HTTP error in a plain `JSONEachRow` / `JSONLines` / `NDJSON` response is a line containing
+/// `{"exception":...}`. These formats deliberately remain absent from `parseInbandException`:
+/// under `200 OK`, such an object can be an ordinary row. The non-OK path knows it is an error,
+/// however, and saves the displayed exception separately. Recognize that saved carrier on restore
+/// so a Back/Forward replay keeps the live error-only presentation instead of echoing the JSON line
+/// and then placing the error beneath it.
+function parsePlainHttpExceptionLine(text)
+{
+    for (const line of text.split('\n')) {
+        if (!line.startsWith('{"exception":')) continue;
+        try {
+            const parsed = JSON.parse(line);
+            if (typeof parsed.exception === 'string') return parsed.exception;
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
 /// Keep a bounded tail of the raw stream, separately from the capped snapshot
 /// (`appendCappedSnapshot`): the snapshot cap stops `reply` growing at ~100 KB, so an in-band
 /// exception trailer arriving after that would never be seen by `parseInbandException` — a failed
@@ -10212,8 +10232,9 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
     ///   - an HTTP-error response (`!response.ok`) whose body IS the error text: there `postImpl` sets
     ///     `display_error` equal to the saved `data`, so this branch steps aside on the equality and
     ///     the fallthrough below renders `data` as the error alone, without first echoing it as output.
+    const plain_http_exception = parsePlainHttpExceptionLine(data);
     const has_failure_signal_in_data =
-        exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null;
+        exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null || plain_http_exception !== null;
     if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
         if (formatIs(format, default_format)) {
             let fragment = document.createDocumentFragment();
@@ -10312,6 +10333,13 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
     if (inband_message !== null) {
         el.updateRaw(data);
         el.renderError(inband_message);
+        return;
+    }
+
+    /// See `parsePlainHttpExceptionLine`: an error response in an each-row JSON format is rendered
+    /// as its exception alone by the live non-OK path, not as a raw result followed by an error.
+    if (plain_http_exception !== null) {
+        el.renderError(plain_http_exception);
         return;
     }
 
@@ -11228,6 +11256,16 @@ function setActivePanel(tab) {
 function clearPanel(tab) {
     if (tab.resultEl) { tab.resultEl.clear(); tab.resultEl.style.display = ''; }
     if (tab.multiContainer) { tab.multiContainer.innerHTML = ''; tab.multiContainer.style.display = 'none'; }
+    /// A cleared pane no longer owns a result. Clear both the tab-owned controls and the data that
+    /// backs the shared Download/Copy handlers, otherwise a connection failure after a successful
+    /// query can leave actions for that previous, invisible result available.
+    tab.downloadVisible = false;
+    tab.copyVisible = false;
+    tab.downloadQuery = '';
+    tab.downloadParams = {};
+    tab.downloadDatabase = '';
+    tab.downloadUrl = '';
+    tab.downloadUser = '';
     tab.logoVisible = true;
     /// A cleared tab has no logs/metrics and shows the result view; its toggles are re-offered as the
     /// new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when active.
@@ -11237,7 +11275,7 @@ function clearPanel(tab) {
     /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     tab.resources = null;
-    if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; }
+    if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; paintDownloadCopy(tab); }
 }
 
 /// Point the shared download/copy buttons at a tab's stored state.
@@ -13592,7 +13630,8 @@ function tokensBeforeInlineInsertPayload(tokens)
 {
     let depth = 0;
     let saw_insert = false;
-    let saw_statement_keyword = false;
+    let leading_with = false;
+    let leading_explain = false;
     let saw_select_source = false;
     let select_reads_inline_data = false;
     for (let i = 0; i < tokens.length; ++i) {
@@ -13617,11 +13656,24 @@ function tokensBeforeInlineInsertPayload(tokens)
         if (depth !== 0 || t.type !== TT.BareWord) continue;
 
         const lower = t.token.toLowerCase();
-        if (!saw_statement_keyword) {
-            saw_statement_keyword = true;
-            saw_insert = lower === 'insert';
-            if (!saw_insert) return tokens;
-            continue;
+        if (!saw_insert) {
+            if (lower === 'insert') {
+                saw_insert = true;
+                continue;
+            }
+            /// `ParserInsertQuery` accepts a leading `WITH`; `ParserExplainQuery` can wrap that
+            /// insert. Keep scanning those prefixes until their top-level `INSERT`, while returning
+            /// as soon as they resolve to a non-insert statement such as `WITH ... SELECT`.
+            if (!leading_with && !leading_explain && lower === 'with') {
+                leading_with = true;
+                continue;
+            }
+            if (!leading_with && !leading_explain && lower === 'explain') {
+                leading_explain = true;
+                continue;
+            }
+            if ((leading_with || leading_explain) && lower !== 'select') continue;
+            return tokens;
         }
         /// `SELECT`, `WITH`, and `FROM` start the query source of an `INSERT ... SELECT`. Its
         /// `FORMAT` clauses are SQL unless that source reads inline rows with `input`.
