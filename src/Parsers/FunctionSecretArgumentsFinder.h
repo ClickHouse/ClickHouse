@@ -87,11 +87,13 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked (`role_arn` and `role_session_name`; the map's
-    /// secret is `external_id`). Any other key - unknown, malformed or an expression - fails closed.
+    /// value stays visible when the map is masked (the AWS assume-role identifiers and their GCP
+    /// impersonation counterparts; the map's secret is `external_id`). Any other key - unknown,
+    /// malformed or an expression - fails closed.
     static bool isNonSecretExtraCredentialsKey(std::string_view key)
     {
-        return key == "role_arn" || key == "role_session_name";
+        return key == "role_arn" || key == "role_session_name" || key == "impersonate_service_account"
+            || key == "impersonation_delegates" || key == "impersonation_scopes";
     }
 
 protected:

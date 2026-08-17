@@ -33,6 +33,11 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString impersonate_service_account;
+    extern const S3AuthSettingsString impersonation_delegates;
+    extern const S3AuthSettingsString impersonation_scopes;
+    extern const S3AuthSettingsUInt64 impersonation_lifetime_seconds;
+    extern const S3AuthSettingsString iam_credentials_endpoint;
 }
 
 #endif
@@ -134,10 +139,34 @@ namespace
         return location;
     }
 
+    /// `extra_credentials` is shared with the `s3` table function, which accepts the GCP impersonation
+    /// counterparts of `role_arn` there. A backup destination has no channel to carry them to its client, so
+    /// reject them rather than parse and drop them. Checked both where the destination identity is computed, so
+    /// an `ON CLUSTER` backup fails before any coordination, and in `creator_fn`, which is reached without it.
+    void rejectGcpImpersonationInExtraCredentials(const S3::S3AuthSettings & auth_settings)
+    {
+        if (!String(auth_settings[S3AuthSetting::impersonate_service_account]).empty()
+            || !String(auth_settings[S3AuthSetting::impersonation_delegates]).empty()
+            || !String(auth_settings[S3AuthSetting::impersonation_scopes]).empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "GCP service account impersonation is not supported in `extra_credentials` of a backup "
+                "destination. Configure it in a named collection and use `S3(collection)` instead.");
+    }
+
     void validateS3CredentialsForIdentity(const BackupInfo & backup_info, const ResolvedS3BackupLocation & location, ContextPtr context)
     {
         if (location.collection)
+        {
+            /// The same reason `extra_credentials` is checked here and not only in `creator_fn`: an impersonation
+            /// override on a collection must fail an `ON CLUSTER` backup before any coordination starts. The
+            /// collection's own fields are not needed -- with `is_loading_from_existing_metadata` false the check
+            /// only throws or returns -- so a scratch settings object stands in for the one `creator_fn` fills.
+            S3::S3AuthSettings auth_settings_unused;
+            checkQueryOverriddenGcpImpersonation(
+                *location.collection, context, auth_settings_unused, /*is_loading_from_existing_metadata=*/false);
             return;
+        }
 
         if (backup_info.args.size() == 3)
         {
@@ -157,6 +186,8 @@ namespace
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials for backup destination identity");
             }
+
+            rejectGcpImpersonationInExtraCredentials(auth_settings);
         }
     }
 
@@ -286,7 +317,15 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            auth[S3AuthSetting::impersonate_service_account] = collection->getOrDefault<String>("impersonate_service_account", "");
+            auth[S3AuthSetting::impersonation_delegates] = collection->getOrDefault<String>("impersonation_delegates", "");
+            auth[S3AuthSetting::impersonation_scopes] = collection->getOrDefault<String>("impersonation_scopes", "");
+            auth[S3AuthSetting::impersonation_lifetime_seconds]
+                = collection->getOrDefault<UInt64>("impersonation_lifetime_seconds", S3::DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS);
+            auth[S3AuthSetting::iam_credentials_endpoint] = collection->getOrDefault<String>("iam_credentials_endpoint", "");
 
+            checkQueryOverriddenGcpImpersonation(
+                *collection, params.context, auth, /*is_loading_from_existing_metadata=*/false);
         }
         else
         {
@@ -302,6 +341,8 @@ void registerBackupEngineS3(BackupFactory & factory)
 
                 if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
+
+                rejectGcpImpersonationInExtraCredentials(auth_settings);
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);

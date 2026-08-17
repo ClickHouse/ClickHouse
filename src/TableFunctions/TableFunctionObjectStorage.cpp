@@ -637,6 +637,81 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 Further examples can be found [here](/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)
 
+## Impersonating a service account (Google Cloud Storage) {#impersonating-a-service-account-google-cloud-storage}
+
+Google Cloud has no direct equivalent for AWS STS `AssumeRole`, but has *service account impersonation*: a
+source identity that holds the `roles/iam.serviceAccountTokenCreator` role on a target service account exchanges its own credentials for a short-lived access token. Because the result is a bearer token rather than a key pair plus a session token, impersonation applies only to the Google Cloud Storage XML (S3-interoperability) endpoint, which ClickHouse reaches with `http_client = gcp_oauth`.
+
+Impersonation is configured on a named collection, in the server `<s3>` configuration, in a dynamic
+[`s3` disk](/concepts/features/configuration/server-config/storing-data#dynamic-configuration) definition, or per query in
+`extra_credentials`:
+
+```xml
+<named_collections>
+    <gcs_analytics>
+        <url>https://storage.googleapis.com/my-bucket/</url>
+        <http_client>gcp_oauth</http_client>
+        <impersonate_service_account>analytics-reader@my-project.iam.gserviceaccount.com</impersonate_service_account>
+    </gcs_analytics>
+</named_collections>
+```
+
+```sql
+SELECT count() FROM s3(gcs_analytics, filename = 'events/*.parquet');
+```
+
+| Setting                            | Description                                                                                                                                                                                                                            |
+|------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `impersonate_service_account`      | Email (or numeric unique id) of the service account to impersonate. Requires `http_client = gcp_oauth`. The GCP counterpart of `role_arn`.                                                                                              |
+| `impersonation_delegates`          | Optional comma-separated delegation chain. The source identity must hold `roles/iam.serviceAccountTokenCreator` on the first entry, each entry on the next, and the last entry on `impersonate_service_account`.                        |
+| `impersonation_scopes`             | Optional comma-separated OAuth 2.0 scopes. Defaults to `https://www.googleapis.com/auth/devstorage.read_write`.                                                                                                                         |
+| `impersonation_lifetime_seconds`   | Requested token lifetime, `3600` by default. Google caps this at one hour unless the organization policy `constraints/iam.allowServiceAccountCredentialLifetimeExtension` raises the cap to 12 hours.                                   |
+| `iam_credentials_endpoint`         | Overrides the IAM Service Account Credentials API endpoint (`https://iamcredentials.googleapis.com`). For Private Service Connect endpoints and tests. Must be an absolute URL, and is subject to `remote_url_allow_hosts`.               |
+
+`impersonate_service_account` and `impersonation_delegates` accept a service account either as a bare email (or
+numeric unique id) or as the `projects/-/serviceAccounts/<email>` resource name that Google's own documentation
+uses.
+
+The first three settings may also be given per query in `extra_credentials`, alongside the source identity
+configured for the endpoint:
+
+```sql
+SELECT count() FROM s3(
+    'https://storage.googleapis.com/my-bucket/events/*.parquet',
+    extra_credentials(impersonate_service_account = 'analytics-reader@my-project.iam.gserviceaccount.com'));
+```
+
+A query that names its own `impersonate_service_account` takes `impersonation_delegates` and
+`impersonation_scopes` from the same `extra_credentials`, and inherits neither from the configuration: they
+qualify the target they were configured with, so they never carry over to a target the query chose. A query
+that names no target qualifies the configured one.
+
+`impersonation_lifetime_seconds` and `iam_credentials_endpoint` are **not** accepted there — they are operator
+configuration, and `iam_credentials_endpoint` in particular decides which host receives the source identity's
+access token. `impersonation_delegates` and `impersonation_scopes` are refused in `extra_credentials` without an
+`impersonate_service_account` in force, since they only qualify a target. A backup destination accepts none of
+them: configure impersonation in a named collection and use `S3(collection)` instead.
+
+The source identity comes from the same place as it does without impersonation: the explicit Google Application
+Default Credentials triple (`google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token`) when
+it is set, and the GCP metadata service otherwise.
+
+Impersonating from the server's metadata identity is a server-managed credential, so — exactly as for
+`http_client = gcp_oauth` on its own — it is refused for user queries unless
+[`s3_allow_server_credentials_in_user_queries`](/reference/settings/session-settings/s3-allow#s3_allow_server_credentials_in_user_queries)
+is enabled. There is no counterpart to `external_id`: on Google Cloud, the confused-deputy problem is addressed
+with IAM conditions and Workload Identity Federation rather than with a shared secret on the token exchange.
+
+For the same reason, a query on a named collection may not override which identity is impersonated, or where the
+source identity's own token is sent — `s3(gcs_analytics, impersonate_service_account = ...)` is refused — unless
+the query also supplies the Google Application Default Credentials triple, i.e. brings its own source identity.
+Otherwise the exchange would be performed with the collection's operator-provisioned identity: an overridden
+`impersonate_service_account` would reach a target the operator did not provision, and an overridden
+`iam_credentials_endpoint` would send that identity's access token to a host of the caller's choosing. The same
+applies to `impersonation_delegates` and `impersonation_scopes`. `impersonation_lifetime_seconds` may be
+overridden: the minted token never leaves the server, and the target, the delegation chain, the scopes and the
+endpoint all remain the operator's.
+
 ## Working with archives {#working-with-archives}
 
 Suppose that we have several archive files with following URIs on S3:

@@ -307,7 +307,14 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
                         || *key == "role_session_name" || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token"
+                        /// The impersonation target and its qualifiers select an identity, so they belong with
+                        /// `role_arn` above. `iam_credentials_endpoint` and `impersonation_lifetime_seconds` do
+                        /// not: they are configuration in the same class as `url` (which is kept), and a base
+                        /// backup whose locator lost its Private Service Connect endpoint cannot be reopened on
+                        /// restore from a network that only permits that host.
+                        || *key == "impersonate_service_account" || *key == "impersonation_delegates"
+                        || *key == "impersonation_scopes");
             }),
         res.kv_args.end());
 

@@ -18,6 +18,7 @@
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
+#include <IO/GCPServiceAccountImpersonation.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -805,6 +806,18 @@ constexpr auto DEFAULT_SERVICE_ACCOUNT = "default";
 constexpr auto DEFAULT_METADATA_SERVICE = "metadata.google.internal";
 constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "computeMetadata/v1/instance/service-accounts";
 
+GCPImpersonationParams makeImpersonationParams(const PocoHTTPClientConfiguration & client_configuration)
+{
+    return GCPImpersonationParams
+    {
+        .target_service_account = client_configuration.impersonate_service_account,
+        .delegates = parseGCPCommaSeparatedList(client_configuration.impersonation_delegates),
+        .scopes = parseGCPCommaSeparatedList(client_configuration.impersonation_scopes),
+        .lifetime_seconds = static_cast<Int64>(client_configuration.impersonation_lifetime_seconds),
+        .endpoint = client_configuration.iam_credentials_endpoint,
+    };
+}
+
 }
 
 PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration)
@@ -815,6 +828,7 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
     , google_adc_client_id(client_configuration.google_adc_client_id)
     , google_adc_client_secret(client_configuration.google_adc_client_secret)
     , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+    , impersonation(makeImpersonationParams(client_configuration))
 {
     const bool has_client_id = !google_adc_client_id.empty();
     const bool has_client_secret = !google_adc_client_secret.empty();
@@ -827,6 +841,27 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
                 "GCP OAuth ADC credentials must be specified together: "
                 "google_adc_client_id, google_adc_client_secret, and google_adc_refresh_token "
                 "must all be set or all be empty");
+    }
+
+    /// `impersonation_delegates`, `impersonation_scopes`, `impersonation_lifetime_seconds` and
+    /// `iam_credentials_endpoint` are inert without a target, so a server- or endpoint-level
+    /// `iam_credentials_endpoint` (a Private Service Connect endpoint, say) leaves plain `gcp_oauth` access
+    /// working for queries that do not impersonate.
+    if (!impersonation.target_service_account.empty())
+    {
+        /// A configured `impersonation_scopes` that parses to nothing (only separators or whitespace) must not
+        /// silently become the default read/write scope: the operator was narrowing access, and the fallback
+        /// would widen it instead. Checked here rather than in `validateGCPImpersonationParams`, which sees only
+        /// the parsed list and so cannot tell "set to nothing" from "not set".
+        if (!client_configuration.impersonation_scopes.empty() && impersonation.scopes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`impersonation_scopes` is set to '{}', which contains no scope. Remove it to use the default "
+                "({}), or give a comma-separated list of OAuth 2.0 scopes.",
+                client_configuration.impersonation_scopes,
+                DEFAULT_GCP_IMPERSONATION_SCOPE);
+
+        validateGCPImpersonationParams(impersonation);
     }
 }
 
@@ -858,9 +893,60 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
 {
+    if (impersonation.target_service_account.empty())
+        return requestSourceBearerToken();
+
+    /// The source token is not tied to the lifetime of the token it mints -- the metadata service hands out
+    /// about an hour of validity, while `impersonation_lifetime_seconds` may be a minute -- so keep it across
+    /// exchanges instead of asking the metadata service (or the ADC token endpoint) again for each one.
+    if (!source_bearer_token || std::chrono::system_clock::now() > source_bearer_token->is_valid_to)
+    {
+        auto source_token = requestSourceBearerToken();
+
+        /// Hold it for 9/10 of the validity it reports, the same margin the tokens minted here use, so an
+        /// exchange is never started with a source token that expires in flight. Sampled after the request, so
+        /// the time the request itself took does not count as validity.
+        const auto now = std::chrono::system_clock::now();
+        source_token.is_valid_to = now + (source_token.is_valid_to - now) * 9 / 10;
+        source_bearer_token = std::move(source_token);
+    }
+
+    /// Service account impersonation: exchange the source token for one that acts as the target service
+    /// account. This is the GCP counterpart of the AWS STS `AssumeRole` step, and like `AssumeRole` it is
+    /// performed with the source identity's own credentials.
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    GCPOAuthToken result;
+    try
+    {
+        result = fetchImpersonatedGCPAccessToken(source_bearer_token->token, impersonation, timeouts, remote_host_filter, group);
+    }
+    catch (...)
+    {
+        /// The source token is the one thing kept across exchanges, so drop it when an exchange fails: if it
+        /// was what the endpoint rejected, reusing it would fail every attempt until it expires on this side.
+        source_bearer_token.reset();
+        throw;
+    }
+
+    /// Refresh at 9/10 of the lifetime, so a request is never signed with a token that expires in flight. At
+    /// least one second, so a very short lifetime does not turn every request into a token exchange.
+    return
+    {
+        .token = std::move(result.access_token),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(std::max<Int64>(1, result.expires_in * 9 / 10))
+    };
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestSourceBearerToken() const
+{
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 
+    return requestBearerTokenFromMetadataService();
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromMetadataService() const
+{
     chassert(!request_token_path.empty());
     chassert(!metadata_service.empty());
     chassert(!service_account.empty());

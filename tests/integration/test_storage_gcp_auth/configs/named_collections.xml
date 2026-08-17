@@ -1,16 +1,45 @@
 <clickhouse>
     <named_collections>
+        <!-- The rotating source identity: `metadata.py` hands out a fresh token with `expires_in: 0` for
+             `my-account`, and the GCS mock on this port expects exactly that sequence, so a read only succeeds
+             while the token is being refreshed. Port 22234 serves the impersonation tests instead. -->
         <gcs_conn>
-            <url>http://resolver:22234/test/</url>
+            <url>http://resolver:22238/test/</url>
             <http_client>gcp_oauth</http_client>
             <service_account>my-account</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_conn>
-         <gcs_conn_bad>
-            <url>http://resolver:22234/test/</url>
+        <!-- An account the metadata service does not have, so the token request 404s. -->
+        <gcs_conn_bad>
+            <url>http://resolver:22238/test/</url>
             <http_client>gcp_oauth</http_client>
             <service_account>non-existing-account</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_conn_bad>
+
+        <!-- Impersonate a service account, with the source identity taken from the (mocked) GCP metadata
+             service. Mirrors the AWS shape `role_arn` + server credentials as the STS base. The GCS mock on
+             port 22234 accepts only the impersonated token, so a read proves the exchange happened. -->
+        <gcs_impersonation_conn>
+            <url>http://resolver:22234/test/</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <impersonate_service_account>impersonated@test-project.iam.gserviceaccount.com</impersonate_service_account>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcs_impersonation_conn>
+
+        <!-- `impersonate_service_account` without `http_client = gcp_oauth`: there is no source identity to
+             impersonate from, so this must be rejected rather than silently ignored.
+
+             `iam_credentials_endpoint` is set even though nothing here should ever perform an exchange: an
+             unset one defaults to the real `iamcredentials.googleapis.com`, so leaving it out would make "no
+             request leaves the container" depend on ClickHouse refusing first, rather than on there being no
+             Google address configured anywhere in this suite. -->
+        <gcs_impersonation_without_oauth_conn>
+            <url>http://resolver:22234/test/</url>
+            <impersonate_service_account>impersonated@test-project.iam.gserviceaccount.com</impersonate_service_account>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcs_impersonation_without_oauth_conn>
     </named_collections>
 </clickhouse>
