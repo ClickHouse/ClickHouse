@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas, no-replicated-database
+-- no-parallel-replicas: the EXPLAIN assertions below require the exact-count projection to
+--   short-circuit on the initiator, which is suppressed when reading from remote replicas.
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 DROP TABLE IF EXISTS t;
@@ -28,6 +33,13 @@ SELECT count() FROM t WHERE NOT NULL;
 SELECT count() FROM t WHERE NOT (id >= 20 OR NULL);
 SELECT count() FROM t WHERE NOT (NOT (id >= 20 AND NULL));
 
+-- Where the negated expression supplies a value rather than a condition, its type must survive:
+-- ifNull(NOT NULL, 0) is UInt8, and reinterpreting a wider type would change the value.
+SELECT DISTINCT length(reinterpretAsFixedString(ifNull(NOT materialize(CAST(NULL, 'Nullable(Int64)')), 0))) FROM t;
+SELECT length(groupArray(id)) FROM t WHERE length(reinterpretAsFixedString(ifNull(NOT materialize(CAST(NULL, 'Nullable(Int64)')), 0))) = 1 SETTINGS optimize_use_implicit_projections = 0;
+SELECT DISTINCT length(reinterpretAsFixedString(ifNull(NOT materialize(CAST(NULL, 'Nullable(Float64)')), 0))) FROM t;
+SELECT length(groupArray(id)) FROM t WHERE length(reinterpretAsFixedString(ifNull(NOT materialize(CAST(NULL, 'Nullable(Float64)')), 0))) = 1 SETTINGS optimize_use_implicit_projections = 0;
+
 -- A row the predicate is NULL for must not be deleted by a mutation using that predicate.
 ALTER TABLE t DELETE WHERE NOT (id >= 38 AND NULL) SETTINGS mutations_sync = 2;
-SELECT groupArray(id) FROM t;
+SELECT arraySort(groupArray(id)) FROM t;
