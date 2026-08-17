@@ -335,7 +335,7 @@ void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
     /// the head ref of either, whose block is valid for the column-structure assertion.
     checkColumns(lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]->columns);
 #endif
-    if (has_columns_to_add)
+    if (record_row_refs)
     {
         lazy_output.addRef(ref_word);
     }
