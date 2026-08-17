@@ -751,11 +751,11 @@ Rows and bytes are reported once for the whole step (the `I/O` line). Time and p
 - `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
 - `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
 - `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
-- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
+- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. This metric is local to the stage: threads that work on other steps of the query at the same time do not count. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
 - `Stage (<stage>)` — the name of the stage. A step with a single stage prints the time line directly, without a `Stage (...)` label. Steps with several stages print one labeled line per stage, e.g. `Aggregating` shows `Stage (partial aggregation)` and `Stage (final aggregation)`, and a hash join shows `Stage (build)` and `Stage (probe)`.
 
 <Note>
-ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
+ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query. For that query-wide view, see the `Concurrency` metric printed with `time = 1` ([Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency)).
 </Note>
 
 <Note>
@@ -927,13 +927,13 @@ Concurrency: step <n>/<m> · branch <n>/<m>
 Here `step` refers to the step itself. `branch` refers to the subtree rooted at the step: the step together with all steps below it in the plan.
 
 - `Time` — the wall-clock time during which at least one thread did work for the step (`step`), or for any step of the subtree (`branch`). `<share>` is that time as a percentage of the query execution time.
-- `Concurrency` — the average number of threads that were busy with the query while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use.
+- `Concurrency` — the average number of threads that were busy with *any* step of the query — not only this one — while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use. This is the global counterpart of the per-stage `parallelism` metric: `parallelism` measures how parallel the stage itself was; `Concurrency` measures how parallel the whole query was during the step's lifetime.
 
 Both metrics are derived from work intervals. Each time a thread finishes a piece of work, the executor records an interval: the start time, the end time, and the step the work belongs to.
 
 `Time` of a step is the length of the union of that step's intervals. Gaps, where no thread worked on the step, do not count. `Time` of a branch unites the intervals of all steps of the subtree first.
 
-`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. The numerator counts threads busy with *any* step of the query, not only with the step in question. This is the difference from the per-stage `parallelism` metric, which counts only the threads of the stage itself. In other words, `Concurrency` answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime; a value near `1` means the query mostly ran on a single thread — though not necessarily on this step.
+`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. The numerator counts threads busy with *any* step of the query, not only with the step in question. This is the difference from the per-stage `parallelism` metric, which counts only the threads of the stage itself. In other words, `Concurrency` answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime. A value near `1` means the query serialized during that time: for `step`, the single busy thread was working on this step itself, which makes the step a serialization point; for `branch`, the thread was working somewhere in the subtree, not necessarily on this step. A serialized step is a real bottleneck only when its `Time` share is also significant.
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
