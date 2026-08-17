@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool external_storage_push_down_limit;
+    extern const SettingsUInt64 parallel_replicas_count;
 }
 
 namespace ErrorCodes
@@ -824,6 +825,13 @@ String transformQueryForExternalDatabaseImpl(
 bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     if (query_info.additional_filter_ast || !query_info.filter_asts.empty() || query_info.row_level_filter || query_info.prewhere_info)
+        return true;
+
+    /// The analyzer adds the custom-key parallel-replicas predicate as a planner filter step instead
+    /// of storing it in `SelectQueryInfo`. It is applied before `LIMIT`, so it cannot be combined
+    /// with a remote limit push-down.
+    if (context->canUseParallelReplicasCustomKey()
+        && context->getSettingsRef()[Setting::parallel_replicas_count] > 1)
         return true;
 
     /// With the analyzer, the row policy filter is resolved by the planner and is not reflected in `query_info`.

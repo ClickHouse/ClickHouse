@@ -602,6 +602,20 @@ TEST(TransformQueryForExternalDatabase, Limit)
         /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
         /*additional_filter=*/"column > 100");
 
+    /// With the analyzer, a custom-key parallel-replicas predicate is installed as a planner filter
+    /// instead of being retained in `SelectQueryInfo`. It is still local and runs before `LIMIT`.
+    state.context->setSetting("allow_experimental_parallel_reading_from_replicas", 1);
+    state.context->setSetting("max_parallel_replicas", 2);
+    state.context->setSetting("parallel_replicas_count", 2);
+    state.context->setSetting("parallel_replicas_mode", "custom_key_sampling");
+    state.context->setSetting("parallel_replicas_custom_key", "column");
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+    state.context->setSetting("allow_experimental_parallel_reading_from_replicas", 0);
+    state.context->setSetting("max_parallel_replicas", 1);
+    state.context->setSetting("parallel_replicas_count", 1);
+
     /// `external_storage_push_down_limit = false` disables pushing the LIMIT down (previous behavior).
     state.context->setSetting("external_storage_push_down_limit", false);
     check(state, 1, {"column"},
