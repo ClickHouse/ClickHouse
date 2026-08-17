@@ -568,8 +568,12 @@ SELECT * FROM tab ORDER BY event_id;
 
 **2.** Filtering on `Time` values
 
+<Note>
+In ClickHouse 26.6 and earlier, run `SET use_legacy_to_time = 0` before this query.
+In those versions, [`use_legacy_to_time`](/reference/settings/session-settings/use#use_legacy_to_time) defaults to `1`, which makes `toTime` use the legacy `toTimeWithFixedDate` behavior.
+</Note>
+
 ``` sql
-SET use_legacy_to_time = 0;
 SELECT * FROM tab WHERE time = toTime('14:30:25')
 ```
 

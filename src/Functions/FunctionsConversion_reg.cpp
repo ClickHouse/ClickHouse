@@ -1160,6 +1160,11 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+
+<Note>
+In ClickHouse 26.6 and earlier, run `SET use_legacy_to_time = 0` before using the conversion documented here.
+In those versions, [`use_legacy_to_time`](/reference/settings/session-settings/use#use_legacy_to_time) defaults to `1`, which makes `toTime` use the legacy `toTimeWithFixedDate` behavior.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
@@ -1171,7 +1176,6 @@ Supports conversion from String, FixedString, DateTime, DateTime64, or numeric t
         "DateTime64 to Time conversion",
         R"(
 SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
@@ -1182,7 +1186,6 @@ SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         "DateTime to Time conversion",
         R"(
 SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
@@ -1193,7 +1196,6 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         "Integer (seconds since epoch) to Time conversion",
         R"(
 SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime(52225, 'UTC'))
         )",
         R"(
