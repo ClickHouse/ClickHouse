@@ -2,7 +2,5 @@
 6
 -- the strictest mode keeps rejecting the query, exactly like a Distributed table without a sharding key
 UNABLE_TO_SKIP_UNUSED_SHARDS
--- SHOW CREATE TABLE serializes the implicit sharding key
-rand()
--- the emitted definition recreates a table that accepts a multi-shard INSERT
-4
+-- SHOW CREATE TABLE rejects a misleading standalone Remote definition
+THERE_IS_NO_QUERY
