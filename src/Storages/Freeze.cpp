@@ -1,6 +1,7 @@
 #include <Storages/Freeze.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
@@ -24,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_PARSE_UUID;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -147,6 +149,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     auto disks_map = local_context->getDisksMap();
     for (auto & [_, disk] : disks_map)
     {
+        std::vector<std::function<void()>> assert_writable_at_admission_epoch;
+
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
@@ -161,8 +165,45 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                 for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
                 {
                     auto table_directory = prefix_directory / table_it->name();
+
+                    /// `SYSTEM UNFREEZE` receives only the on-disk path, unlike `ALTER TABLE ...
+                    /// UNFREEZE`. Resolve the UUID directory back to its storage before deleting
+                    /// anything, so leader-election tables get the same admission-epoch fence.
+                    /// A missing UUID mapping can mean that a follower has dropped its local
+                    /// metadata while the shared table is still alive elsewhere; fail closed in
+                    /// that case rather than let this node delete another leader's snapshot.
+                    std::shared_ptr<MergeTreeData> merge_tree;
+                    try
+                    {
+                        const UUID table_uuid = parseFromString<UUID>(table_it->name());
+                        auto storage = DatabaseCatalog::instance().tryGetByUUID(table_uuid).second;
+                        if (!storage)
+                        {
+                            throw Exception(
+                                ErrorCodes::SUPPORT_IS_DISABLED,
+                                "Cannot safely SYSTEM UNFREEZE table UUID {} because its local metadata is unavailable",
+                                table_uuid);
+                        }
+                        merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                    }
+                    catch (const Exception & e)
+                    {
+                        /// Legacy `data/` paths need not be UUID directories. Preserve their
+                        /// existing behavior; UUID paths, which are used by leader election, are
+                        /// either resolved above or rejected before any deletion.
+                        if (e.code() != ErrorCodes::CANNOT_PARSE_UUID)
+                            throw;
+                    }
+
+                    const UInt64 admission_epoch = merge_tree ? merge_tree->currentLeadershipEpoch() : 0;
+                    auto assert_table_writable = [merge_tree, admission_epoch]
+                    {
+                        if (merge_tree)
+                            merge_tree->assertWritableLeaderAtEpoch(admission_epoch);
+                    };
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
-                        [](const String &) { return true; }, backup_name, {disk}, table_directory, [] {});
+                        [](const String &) { return true; }, backup_name, {disk}, table_directory, assert_table_writable);
+                    assert_writable_at_admission_epoch.emplace_back(std::move(assert_table_writable));
                     for (auto & command_result : current_result_info)
                         command_result.command_type = "SYSTEM UNFREEZE";
                     result_info.insert(
@@ -176,6 +217,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
         if (disk->existsDirectory(backup_path))
         {
             /// After unfreezing we need to clear revision.txt file and empty directories
+            for (const auto & assert_writable : assert_writable_at_admission_epoch)
+                assert_writable();
             disk->removeRecursive(backup_path);
         }
     }
