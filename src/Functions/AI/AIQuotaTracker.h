@@ -9,11 +9,13 @@ namespace DB
 {
 
 /// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
-/// call in the query (owned by the query `Context`) and updated concurrently from the pipeline
-/// threads, so the counters are `atomic`.
+/// call in the query context (owned by the query `Context`) and updated concurrently from the
+/// pipeline threads, so the counters are `atomic`. It is per query-execution context: a distributed
+/// query has one per shard/fragment (each makes its own `Context`), so the limits bound each server
+/// independently rather than the query globally.
 ///
-/// The API-call limit is a hard per-query cap, while token limits are best effort (we only know
-/// the usage after the call returns).
+/// The API-call limit is a hard cap within a context, while token limits are best effort (we only
+/// know the usage after the call returns).
 class AIQuotaTracker
 {
 public:
