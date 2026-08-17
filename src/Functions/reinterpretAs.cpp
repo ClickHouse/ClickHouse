@@ -66,11 +66,21 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!type_col)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument to {} must be a constant string describing type."
+                " Instead there is non-constant column of type {}",
+                getName(),
+                arguments[1].type->getName());
+
         DataTypePtr from_type = arguments[0].type;
 
-        /// The result type comes from the declarative signature (see getSignatureString); the checks
-        /// below only validate that the source and destination types are memory-compatible.
-        DataTypePtr to_type = IFunction::getReturnTypeImpl(arguments);
+        /// Resolve the query-provided type name outside the signature's factory-info suppression so
+        /// `query_log.used_data_type_families` records it. The signature validates the same type
+        /// expression, while the lookup below preserves the legacy query-log attribution.
+        DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        IFunction::getReturnTypeImpl(arguments);
 
         WhichDataType result_reinterpret_type(to_type);
 
