@@ -1246,6 +1246,19 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "Replication slot {} disappeared after the initial snapshot completed. Clearing the nested tables "
                 "and reloading all of them from a new snapshot",
                 replication_slot);
+
+            /// The completion marker describes the lost slot, not the replacement snapshot. Remove it
+            /// before changing the shared tables or creating the replacement slot: if this worker dies
+            /// while reloading, the next leader must enter the interrupted-snapshot recovery path instead
+            /// of resuming from the replacement slot's confirmed LSN into a partial snapshot.
+            assertReplicationLeadershipIsLive();
+            const String marker_path = coordination_keeper_path + "/snapshot_completed";
+            const auto code = coordination_zookeeper->tryRemove(marker_path);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, marker_path);
+
+            /// The marker deletion used the same session that owns /leader. Do not proceed if that
+            /// session expired while deleting it, because another worker may already be rebuilding.
             assertReplicationLeadershipIsLive();
             truncateNestedTables();
             assertReplicationLeadershipIsLive();
@@ -3459,8 +3472,12 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                                 "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                                 doubleQuoteString(publication_name));
 
-                    pqxx::nontransaction tx(connection.getRef());
-                    result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
+                    /// The existing publication is authoritative on ATTACH/restart even without
+                    /// coordination. Scanning the live schema here can add wrappers for tables which were
+                    /// created after the publication and therefore have no nested table or replication
+                    /// stream, making the already-synchronized path retry forever.
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
