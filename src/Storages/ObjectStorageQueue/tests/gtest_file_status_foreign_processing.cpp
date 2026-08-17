@@ -18,18 +18,40 @@ using FileStatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
 
 /// `afterSetProcessing` does not touch keeper, so the state machine of a shared
 /// `FileStatus` can be tested on a metadata object with dummy keeper paths.
-std::shared_ptr<ObjectStorageQueueUnorderedFileMetadata> makeFileMetadata(
+template <typename Metadata = ObjectStorageQueueUnorderedFileMetadata>
+std::shared_ptr<Metadata> makeFileMetadata(
     FileStatusPtr file_status, std::atomic<size_t> & metadata_ref_count)
 {
-    return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
-        "/clickhouse/test_foreign_processing",
-        "data/file.csv",
-        file_status,
-        /* max_loading_retries */ 3,
-        metadata_ref_count,
-        /* use_persistent_processing_nodes */ false,
-        "default",
-        getLogger("gtest_file_status_foreign_processing"));
+    if constexpr (requires { typename Metadata::ForeignProcessingObservers; })
+    {
+        /// Keep the registry shared by the metadata objects in this test. A contender
+        /// must observe the same foreign node as the processor which first saw it.
+        static const auto foreign_processing_observers = std::make_shared<typename Metadata::ForeignProcessingObservers>(100);
+
+        return std::make_shared<Metadata>(
+            "/clickhouse/test_foreign_processing",
+            "data/file.csv",
+            file_status,
+            /* max_loading_retries */ 3,
+            metadata_ref_count,
+            /* use_persistent_processing_nodes */ false,
+            "default",
+            getLogger("gtest_file_status_foreign_processing"),
+            /* foreign_processing_node_cache_ttl_sec */ 0,
+            foreign_processing_observers);
+    }
+    else
+    {
+        return std::make_shared<Metadata>(
+            "/clickhouse/test_foreign_processing",
+            "data/file.csv",
+            file_status,
+            /* max_loading_retries */ 3,
+            metadata_ref_count,
+            /* use_persistent_processing_nodes */ false,
+            "default",
+            getLogger("gtest_file_status_foreign_processing"));
+    }
 }
 
 }
