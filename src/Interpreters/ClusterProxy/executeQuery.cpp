@@ -923,6 +923,12 @@ static std::pair<size_t, size_t> countAndCapReplicas(
 
 size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
 {
+    /// Remote replicas must use the exact count selected by the initiator. In particular, the non-local-plan
+    /// path lets any remote replica send the first announcement, so independently reading `system.clusters`
+    /// here could make that announcement disagree with the coordinator's snapshot.
+    if (const auto coordinator_replicas_count = context->getClientInfo().obsolete_count_participating_replicas)
+        return coordinator_replicas_count;
+
     const size_t all_nodes_count = cluster->getShardsInfo().at(0).getAllNodeCount();
 
     /// Mirror `prepareConnectionPoolsForParallelReplicas` so the mark-segment-size heuristic sizes by the same
@@ -1094,6 +1100,10 @@ void executeQueryWithParallelReplicas(
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
+    /// Send the initiator-owned coordinator count to every replica. This occupies a long-standing compatible
+    /// `ClientInfo` field, so older servers continue to deserialize it safely (while ignoring the value).
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
+
     auto external_tables = new_context->getExternalTables();
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
@@ -1219,6 +1229,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
     if (connection_pools.size() == 1)
         return nullptr;
 
@@ -1635,6 +1646,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         std::tie(connection_pools, max_replicas_to_use) = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
         connection_pools.resize(max_replicas_to_use);
     }
+
+    new_context->getClientInfo().obsolete_count_participating_replicas = max_replicas_to_use;
 
     String formatted_query;
     {
