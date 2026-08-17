@@ -724,9 +724,13 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         uint32_t reverse_search = Replxx::KEY::control('R');
         /// The found entry is a whole new line displayed at once - do not pop hints on it (see
         /// historyNavigate).
+        const std::string original_text = rx.get_state().text();
         suppress_hints_once = true;
         auto result = rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-        suppressHintsForDisplayedLine();
+        if (rx.get_state().text() != original_text)
+            suppressHintsForDisplayedLine();
+        else
+            suppress_hints_once = false;
         return result;
     });
 
@@ -777,9 +781,13 @@ replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::
     /// suppression must be armed before it; the pin below keeps later regenerations of the
     /// recalled text hintless (the refresh inside the action may be throttled and replayed after
     /// this returns) and is cleared by the first edit.
+    const std::string original_text = rx.get_state().text();
     suppress_hints_once = true;
     auto result = rx.invoke(action, code);
-    suppressHintsForDisplayedLine();
+    if (rx.get_state().text() != original_text)
+        suppressHintsForDisplayedLine();
+    else
+        suppress_hints_once = false;
     return result;
 }
 
