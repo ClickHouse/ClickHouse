@@ -34,15 +34,35 @@ void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chu
     }
 }
 
+void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows)
+{
+    if (abandoned)
+        return;
+
+    ++chunks_observed;
+    rows_observed += num_rows;
+    unique_rows_observed += num_unique_rows;
+
+    if (chunks_observed < OBSERVATION_CHUNK_COUNT)
+        return;
+
+    double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
+    abandoned = unique_rate >= UNIQUE_RATE_THRESHOLD;
+}
+
 DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    bool allow_abandoning_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
+    if (allow_abandoning_)
+        abandon_controller.emplace();
+
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
@@ -184,6 +204,9 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
+    if (abandon_controller && abandon_controller->isAbandoned())
+        return;
+
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
@@ -223,26 +246,33 @@ void DistinctTransform::transform(Chunk & chunk)
         }
     }
 
-    if (data.empty())
-        data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+    if (data->empty())
+        data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    const auto old_set_size = data.getTotalRowCount();
+    const auto old_set_size = data->getTotalRowCount();
     IColumn::Filter filter(num_rows);
 
-    switch (data.type)
+    switch (data->type)
     {
         case SetVariants::Type::EMPTY:
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
+            buildFilter(*data->NAME, column_ptrs, filter, num_rows, *data, lc_mask ? &*lc_mask : nullptr); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
 
-    const auto new_set_size = data.getTotalRowCount();
+    const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
+
+    if (abandon_controller)
+    {
+        abandon_controller->update(num_rows, num_selected);
+        if (abandon_controller->isAbandoned())
+            data.reset();
+    }
 
     /// Just go to the next chunk if there isn't any new record in the current one.
     if (num_selected == 0)
@@ -252,7 +282,7 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Stop reading, but still emit the new rows from the current chunk (their keys are
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(new_set_size, data ? data->getTotalByteCount() : 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
     if (num_selected == num_rows)

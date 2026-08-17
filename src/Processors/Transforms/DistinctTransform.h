@@ -7,6 +7,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -52,14 +53,48 @@ private:
     size_t new_indices_observed = 0;
 };
 
+/// Preliminary per-stream deduplication (e.g. in front of a set fill, see `CreatingSetStep`) pays off
+/// only when it removes rows: the consumer deduplicates anyway, so on mostly-unique input the transform
+/// removes almost nothing while its hash table duplicates the memory of the structure being filled
+/// downstream.
+///
+/// This controller accumulates, over all chunks seen so far, how many rows survived deduplication.
+/// Once enough chunks have been observed for the rate to be meaningful, it is checked after every
+/// chunk; when nearly all rows survive, the transform abandons: it drops the accumulated hash table
+/// and passes the remaining chunks through untouched.
+class DeduplicationAbandonController
+{
+public:
+    bool isAbandoned() const { return abandoned; }
+
+    void update(size_t num_rows, size_t num_unique_rows);
+
+private:
+    /// Number of chunks to observe before the rate is checked.
+    static constexpr size_t OBSERVATION_CHUNK_COUNT = 5;
+
+    /// Fraction of the observed rows that survived deduplication. Above this rate the removal is too
+    /// small to help the consumer, while the hash table keeps growing with the unique rows.
+    static constexpr double UNIQUE_RATE_THRESHOLD = 0.9;
+
+    bool abandoned = false;
+    size_t chunks_observed = 0;
+    size_t rows_observed = 0;
+    size_t unique_rows_observed = 0;
+};
+
 class DistinctTransform final : public ISimpleTransform
 {
 public:
+    /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
+    /// the output is then no longer fully deduplicated, so it must only be enabled when the consumer
+    /// deduplicates the output anyway.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
-        const Names & columns_);
+        const Names & columns_,
+        bool allow_abandoning_ = false);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -68,7 +103,8 @@ protected:
 
 private:
     ColumnNumbers key_columns_pos;
-    SetVariants data;
+    /// Reset after the controller abandons deduplication, freeing the accumulated set.
+    std::optional<SetVariants> data{std::in_place};
     Sizes key_sizes;
     const UInt64 limit_hint;
 
@@ -94,6 +130,8 @@ private:
     std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 
     LCOptimizationController lc_optimization_controller;
+
+    std::optional<DeduplicationAbandonController> abandon_controller;
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
