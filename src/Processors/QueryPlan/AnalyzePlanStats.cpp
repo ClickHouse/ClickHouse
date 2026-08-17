@@ -384,9 +384,6 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
         printMetricGroup(group, out, prefix);
     }
 
-    if (interval_timings && step_data.stage_reports.size() == 1)
-        return;
-
     for (const auto & stage : step_data.stage_reports)
         printStage(stage, step_data.label_stages, out, prefix, processors_info);
 }
