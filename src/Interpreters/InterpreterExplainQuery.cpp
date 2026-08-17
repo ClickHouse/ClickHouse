@@ -509,6 +509,7 @@ struct QueryAnalyzeSettings
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
         {"matches", query_plan_options.matches},
+        {"time", query_plan_options.time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -763,6 +764,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
     ExplainPlanOptions query_plan_options;
+    bool time = false;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -810,7 +812,9 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
-    result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
+    const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
+    result->query_plan_options = analyze_settings.query_plan_options;
+    result->time = analyze_settings.query_plan_options.time;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
     /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
@@ -1251,6 +1255,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             step_wall_clock_registry->populateFromPlan(plan);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
+            pipeline.setCollectWorkIntervals(analyzed.time);
+
             CompletedPipelineExecutor executor(pipeline);
 
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
@@ -1278,7 +1284,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
 
             formatHeaderExplainAnalyze(total_time_ns, planning_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
 

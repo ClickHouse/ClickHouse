@@ -14,6 +14,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
+#include <Processors/Executors/ExecutionThreadContext.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -297,6 +298,34 @@ bool PipelineExecutor::checkTimeLimit()
 void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 {
     read_progress_callback = std::move(callback);
+}
+
+void PipelineExecutor::setCollectWorkIntervals(bool collect_work_intervals_)
+{
+    collect_work_intervals = collect_work_intervals_;
+}
+
+WorkIntervalsPerThread PipelineExecutor::takeWorkIntervals()
+{
+    if (!collect_work_intervals)
+        return {};
+
+    WorkIntervalsPerThread result;
+    result.reserve(tasks.getNumThreads());
+
+    for (size_t thread_ind = 0; thread_ind < tasks.getNumThreads(); ++thread_ind)
+    {
+        auto intervals_of_thread = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+        if (intervals_of_thread.empty())
+            continue;
+
+        for (auto & interval : intervals_of_thread)
+            interval.start_of_interval_ns -= query_start_ns;
+
+        result.push_back(std::move(intervals_of_thread));
+    }
+
+    return result;
 }
 
 void PipelineExecutor::finalizeExecution()
@@ -635,6 +664,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
+    query_start_ns = clock_gettime_ns();
+
     Queue queue;
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
@@ -642,7 +673,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
+
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, collect_work_intervals, step_wall_clock_registry, read_progress_callback.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to

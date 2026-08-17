@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/WorkInterval.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <queue>
 #include <condition_variable>
@@ -27,6 +28,9 @@ private:
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
 
+    /// The intervals for computing the time per step in EXPLAIN ANALYZE
+    std::vector<WorkInterval> work_intervals;
+
 public:
 #ifndef NDEBUG
     /// Time for different processing stages.
@@ -49,6 +53,7 @@ public:
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
+    const bool collect_work_intervals = false;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -65,13 +70,19 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
+    WorkIntervals takeWorkIntervals();
+
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
-    {}
+        , collect_work_intervals(collect_work_intervals_)
+    {
+        if (collect_work_intervals)
+            work_intervals.reserve(1024ul);
+    }
 };
 
 }

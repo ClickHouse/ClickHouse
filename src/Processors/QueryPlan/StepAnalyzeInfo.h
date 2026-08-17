@@ -13,6 +13,8 @@ namespace DB
 enum class MetricGroupKey : UInt8
 {
     IO,
+    Time,
+    Concurrency,
     Left,
     Right,
     HashTable,
@@ -50,8 +52,13 @@ enum class MetricKey : UInt8
     Blocks,
     Storage,
 
+    Time,
+    TimeShare,
+
+    Concurrency,
+
     SortTime,
-    SortShare,
+    SortTimeShare,
 
     Min,
     Median,
@@ -67,6 +74,7 @@ enum class MetricFormat : UInt8
     Time,
     Percent,
     Ratio,
+    Fraction,
 };
 
 std::string_view toString(MetricGroupKey key);
@@ -74,7 +82,13 @@ std::string_view toString(MetricKey key);
 
 MetricFormat formatOf(MetricKey key);
 
-using MetricValue = std::variant<std::monostate, Int64, UInt64, double, std::string>;
+struct Fraction
+{
+    double numerator = 0;
+    double denominator = 0;
+};
+
+using MetricValue = std::variant<std::monostate, Int64, UInt64, double, std::string, Fraction>;
 
 struct StepMetric
 {

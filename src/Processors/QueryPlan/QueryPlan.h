@@ -13,7 +13,6 @@
 #include <functional>
 #include <list>
 #include <memory>
-#include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -86,6 +85,9 @@ struct ExplainPlanOptions
     /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
     /// durin colleciton
     bool matches = false;
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    /// Gives access to more elaborative time metrics, affects the performance of a query
+    bool time = false;
 
     SettingsChanges toSettingsChanges() const;
 };
