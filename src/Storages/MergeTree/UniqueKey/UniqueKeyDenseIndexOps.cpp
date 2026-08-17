@@ -268,9 +268,11 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
         ///
-        /// The rebuilt SST is deliberately not recorded in the part's checksums:
-        /// the in-memory map and `checksums.txt` stay as loaded.
-        MergeTreeDataPartChecksums scratch_checksums;
+        /// The writer records the file in `part->checksums` itself, overwriting
+        /// the stale entry left by a removed corrupt SST. Persist the merged
+        /// checksums and refresh the size counters so the repaired part stays
+        /// consistent: load-time size checks, backup/fetch, and part-size
+        /// accounting all see the rebuilt file.
         SSTIndexWriter::write(
             storage,
             accumulated,
@@ -280,7 +282,11 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
             /*permutation=*/nullptr,
             /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
             data.getContext(),
-            scratch_checksums);
+            part->checksums);
+
+        part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
+        part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
+        part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
 
         const UInt64 elapsed_us = rebuild_watch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount);
@@ -368,7 +374,14 @@ Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
         if (chunk.rows() == 0)
             continue;
         for (size_t c = 0; c < chunk.columns(); ++c)
-            accum_columns[c]->insertRangeFrom(*chunk.getByPosition(c).column, 0, chunk.rows());
+        {
+            /// Chunk columns may arrive sparsely serialized; inserting them into
+            /// the dense accumulator would fail, and `ColumnSparse` has no
+            /// comparable serialization for the SST encoding either. No-op for
+            /// already dense columns.
+            auto chunk_column = chunk.getByPosition(c).column->convertToFullColumnIfSparse();
+            accum_columns[c]->insertRangeFrom(*chunk_column, 0, chunk.rows());
+        }
     }
 
     Block accumulated = pipeline_header.cloneEmpty();

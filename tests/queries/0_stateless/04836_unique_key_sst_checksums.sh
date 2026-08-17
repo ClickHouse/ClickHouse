@@ -5,11 +5,10 @@
 # recorded in `checksums.txt`:
 # 1. Normal round-trip: a valid SST survives DETACH + ATTACH.
 # 2. Size-preserving corruption: passes the size check, caught by RocksDB, rebuilt.
+#    The table carries a sparsely-serialized all-default UK column, so the rebuild
+#    also covers the `ColumnSparse` densify path in `readUniqueKeyColumns`.
 # 3. Missing SST: rejected by the size check, part detached as broken.
 # 4. Readonly startup: rebuild is impossible, so a corrupt SST fails the ATTACH.
-
-# Pin sparse serialization off (CI injects a random value): the rebuild path
-# `readUniqueKeyColumns` does not handle `ColumnSparse` yet.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,19 +18,23 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS uk_sst_checksums"
 
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_unique_key = 1;
-    CREATE TABLE uk_sst_checksums (id UInt64, v String)
+    CREATE TABLE uk_sst_checksums (a UInt64, id UInt64, v String)
     ENGINE = MergeTree
-    UNIQUE KEY (id)
-    ORDER BY (id)
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, ratio_of_defaults_for_sparse_serialization = 1.0;
+    UNIQUE KEY (a, id)
+    ORDER BY (a, id)
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, ratio_of_defaults_for_sparse_serialization = 0.9;
 "
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_checksums SELECT number, toString(number) FROM numbers(500)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_checksums SELECT 0, number, toString(number) FROM numbers(500)"
 
 # Section 1: the SST is written and recorded in checksums.txt (grepped directly
-# since CHECK TABLE is rejected for UNIQUE KEY tables).
-echo "sst_present"
+# since CHECK TABLE is rejected for UNIQUE KEY tables). `a` is all-default and
+# stored sparsely; `id` keeps the compound key unique.
+echo "sparse_uk_column_stored"
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active")
+[ "$(stat -c%s "${PART_PATH}a.bin")" -lt "$(stat -c%s "${PART_PATH}id.bin")" ] && echo "yes" || echo "no"
+
+echo "sst_present"
 [ -f "${PART_PATH}unique_key_index.sst" ] && echo "yes" || echo "no"
 
 echo "sst_in_checksums"
@@ -85,7 +88,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_unique_key = 1;
     CREATE TABLE uk_sst_ro (id UInt64, v String)
     ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
-    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, ratio_of_defaults_for_sparse_serialization = 1.0;
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 "
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_ro SELECT number, toString(number) FROM numbers(200)"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE uk_sst_ro MODIFY SETTING table_readonly = 1"
