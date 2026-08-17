@@ -47,6 +47,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.select_query = builder.getSelectQuery();
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }
@@ -86,6 +87,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.scalar_value = {};
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }
@@ -107,6 +109,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             query_piece.select_query = builder.getSelectQuery();
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }

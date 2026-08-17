@@ -65,6 +65,9 @@ struct SQLQueryPiece
     /// Operators and functions drop the metric name, i.e. the tag named '__name__.
     bool metric_name_dropped = false;
 
+    /// The metric name is the same for every series in the result.
+    bool metric_name_is_constant = false;
+
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
     /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
     /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.
