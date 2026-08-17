@@ -9,8 +9,8 @@
 --
 -- The correctness half of the test is direction-agnostic: `ORDER BY` results must be identical to
 -- non-parallel execution, with LIMIT and with a deep OFFSET. Every ordered query is run with the split off
--- and on, so the two blocks must match line for line - a broken per-replica range assignment would drop or
--- duplicate rows, and a broken merge would reorder them.
+-- and on, so the two blocks must match line for line - a rewrite that loses one side of the union, or a merge
+-- that does not respect the shipped sort description, changes them.
 
 DROP TABLE IF EXISTS t_pr_read_in_order;
 
@@ -31,8 +31,9 @@ SET optimize_read_in_order = 1;
 -- decide against parallel replicas, so the plan-based split would never engage.
 SET automatic_parallel_replicas_mode = 0;
 
--- Coverage guard: every row read exactly once (a = 0..99999). No ORDER BY here on purpose - an aggregate
--- over an ordered subquery would have the sort removed as redundant, so it would not test anything extra.
+-- The rewritten plan still returns every row exactly once (a = 0..99999). No ORDER BY here on purpose - an
+-- aggregate over an ordered subquery would have the sort removed as redundant, so it would not test anything
+-- extra.
 SELECT '--- every row read exactly once, plan_based = 1 ---';
 SELECT count() = 100000, sum(a) = 4999950000 FROM t_pr_read_in_order SETTINGS parallel_replicas_plan_based = 1;
 

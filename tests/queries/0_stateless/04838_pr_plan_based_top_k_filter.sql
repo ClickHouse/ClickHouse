@@ -41,7 +41,7 @@ SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_re
 SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
--- A deep OFFSET: per-replica Top-K filtering must not drop a row that belongs in the global window.
+-- A deep OFFSET: the Top-K threshold must not drop a row that belongs in the requested window.
 SELECT '--- deep OFFSET, plan_based = 0 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
 SELECT '--- deep OFFSET, plan_based = 1 ---';
@@ -94,7 +94,7 @@ SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_pla
 SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
--- A deep OFFSET, which is applied once above the merge while each replica still ships `LIMIT` + `OFFSET` rows.
+-- A deep OFFSET, applied once above the merge, while a replica may stop at `LIMIT` + `OFFSET` rows.
 SELECT '--- Top-K disabled, deep OFFSET, plan_based = 0 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
 SELECT '--- Top-K disabled, deep OFFSET, plan_based = 1 ---';

@@ -32,7 +32,8 @@ SET optimize_read_in_order = 0;
 SET automatic_parallel_replicas_mode = 0;
 
 -- Aggregation on the primary-key prefix must match non-parallel execution exactly. Aggregating the
--- per-group results keeps the reference small while still failing on any dropped or duplicated range.
+-- per-group results keeps the reference small while still failing if the partial aggregation shipped with the
+-- fragment and the `MergingAggregated` above the union do not add up to the same groups.
 SELECT '--- GROUP BY pk, plan_based = 0, local_plan = 1 ---';
 SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)

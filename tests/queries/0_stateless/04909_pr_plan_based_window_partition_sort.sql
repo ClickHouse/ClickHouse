@@ -30,8 +30,9 @@ SET automatic_parallel_replicas_mode = 0;
 -- The partition scatter is only inserted with more than one thread, and CI randomizes `max_threads`.
 SET max_threads = 4;
 
--- The window results must match non-parallel execution: aggregating the per-partition row numbers fails on any
--- dropped or duplicated row, and the last-value check fails if a partition is not ordered by `a`.
+-- The window results must match non-parallel execution. `row_number()` restarts per partition, so these
+-- aggregates change as soon as the window is computed over the wrong scope - a partition spread over several
+-- streams, or rows of one partition arriving out of order.
 SELECT '--- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 0 ---';
 SELECT p, count(), sum(rn), max(rn) FROM
     (SELECT p, row_number() OVER (PARTITION BY p ORDER BY a) AS rn FROM t_pr_window)
