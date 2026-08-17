@@ -619,6 +619,62 @@ is_active_worker_worktree()
     return 1
 }
 
+# List processes whose current directory is the worker or one of its
+# descendants. Agents can accidentally leave servers running after their turn;
+# those processes race with `git clean` by recreating files as it removes them.
+worktree_processes()
+{
+    local wt="$1" proc pid
+
+    while IFS= read -r proc; do
+        pid=${proc##*/}
+        [[ "$pid" != "$$" && "$pid" != "$BASHPID" ]] || continue
+        printf '%s\n' "$pid"
+    done < <(
+        find /proc -mindepth 2 -maxdepth 2 -type l -name cwd \
+            \( -lname "$wt" -o -lname "$wt (deleted)" -o -lname "$wt/*" \) \
+            -printf '%h\n' 2>/dev/null
+    )
+}
+
+stop_worktree_processes()
+{
+    local wt="$1" pid attempt
+    local -a pids=()
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to stop processes in an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ${#pids[@]} )) || return 0
+    echo "Stopping leftover processes in $wt: ${pids[*]}" >&2
+
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || sudo -n kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # A watchdog can replace a server while the first process snapshot is
+    # being terminated. Rescan before escalating so the replacement is also
+    # removed. `SIGKILL` is appropriate here: these are orphaned processes from
+    # a completed task, and cleanup cannot safely proceed while they are live.
+    for attempt in 1 2 3; do
+        mapfile -t pids < <(worktree_processes "$wt")
+        (( ${#pids[@]} )) || return 0
+        for pid in "${pids[@]}"; do
+            kill -KILL "$pid" 2>/dev/null || sudo -n kill -KILL "$pid" 2>/dev/null || true
+        done
+        sleep 0.1
+    done
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ! ${#pids[@]} )) || {
+        echo "Could not stop leftover processes in $wt: ${pids[*]}" >&2
+        return 1
+    }
+}
+
 # Remove registered worktrees nested below a directory before deleting that
 # directory. Git otherwise leaves their administrative entries behind and can
 # refuse to remove the parent. Deepest paths go first.
@@ -657,6 +713,7 @@ prepare_worktree_for_task()
         return 1
     fi
 
+    stop_worktree_processes "$wt"
     git -C "$wt" reset --hard -q HEAD
     git -C "$wt" checkout --detach -q HEAD
     remove_registered_descendants "$wt"
@@ -666,13 +723,19 @@ prepare_worktree_for_task()
             'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
         git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
     fi
-    if ! git -C "$wt" clean -ffdx -e '/build*/'; then
-        # Integration tests run services in containers and can leave
-        # root-owned untracked files behind. Retry the identical, path-scoped
-        # cleanup non-interactively; if elevation is unavailable, fail closed.
-        echo "Retrying cleanup with elevated permissions: $wt" >&2
-        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/'
-    fi
+    # Integration tests can leave root-owned artifacts, and stale servers can
+    # briefly recreate files while cleanup is traversing a directory. Retry
+    # the identical, path-scoped cleanup after stopping any replacement
+    # processes. If elevation is unavailable, fail closed.
+    local attempt
+    for attempt in 1 2 3; do
+        git -C "$wt" clean -ffdx -e '/build*/' && return 0
+        stop_worktree_processes "$wt"
+        echo "Retrying cleanup with elevated permissions ($attempt/3): $wt" >&2
+        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/' && return 0
+    done
+    echo "Worktree cleanup did not converge after 3 attempts: $wt" >&2
+    return 1
 }
 
 remove_managed_cache_dir()
