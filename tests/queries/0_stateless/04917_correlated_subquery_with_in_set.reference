@@ -55,13 +55,13 @@
 20
 20
 -- two-level nested correlated subquery, IN set in the inner body
-100
-100
+60
+60
 -- a correlated set subquery is still rejected
 -- an ordinary CTE body without an IN set is unaffected
 100
 -- unchanged when parallel replicas are requested
-100
+60
 -- the delayed step is expanded before execution and does not survive
 1
 0

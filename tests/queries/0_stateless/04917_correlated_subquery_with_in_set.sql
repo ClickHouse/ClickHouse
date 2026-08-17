@@ -183,10 +183,10 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
 SELECT '-- two-level nested correlated subquery, IN set in the inner body';
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS m WHERE m.s = o.s AND EXISTS (
-        SELECT 1 FROM t_main AS n WHERE n.k = m.k AND n.g IN (SELECT val FROM t_src WHERE val <= 6)));
+        SELECT 1 FROM t_main AS n WHERE n.k = m.k AND n.k < 20 AND n.g IN (SELECT val FROM t_src WHERE val = 3)));
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS m WHERE m.s = o.s AND EXISTS (
-        SELECT 1 FROM t_main AS n WHERE n.k = m.k AND n.g IN (0, 1, 2, 3, 4, 5, 6)));
+        SELECT 1 FROM t_main AS n WHERE n.k = m.k AND n.k < 20 AND n.g IN (3)));
 
 SELECT '-- a correlated set subquery is still rejected';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -201,7 +201,7 @@ SELECT '-- unchanged when parallel replicas are requested';
 -- them for any correlated query, and the plan-based path runs a plan carrying an unmaterialized set
 -- locally. So this asserts the request is harmless, not that replicas were used.
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6))
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (SELECT val FROM t_src WHERE val = 3))
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3;
 
 SELECT '-- the delayed step is expanded before execution and does not survive';
