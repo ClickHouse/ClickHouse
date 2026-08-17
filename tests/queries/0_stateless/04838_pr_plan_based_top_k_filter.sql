@@ -71,4 +71,17 @@ SELECT 'distributed_without_top_k', countIf(explain LIKE '%ReadFromParallelRepli
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5)
 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
+-- That distributed read is the shipped-`SortingStep` path for a non-primary-key `ORDER BY`, so check its
+-- results too: the shape assertion above still passes if the per-replica sort or the merge on the initiator
+-- returns the wrong rows.
+SET use_top_k_dynamic_filtering = 0;
+SET use_skip_indexes_for_top_k = 0;
+
+SELECT 'no_top_k', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT 'no_top_k', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
+
+-- A deep OFFSET, which is applied once above the merge while each replica still ships `LIMIT` + `OFFSET` rows.
+SELECT 'no_top_k offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT 'no_top_k offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
+
 DROP TABLE t_pr_top_k;
