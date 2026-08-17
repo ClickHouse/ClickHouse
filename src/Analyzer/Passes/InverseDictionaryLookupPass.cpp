@@ -377,12 +377,17 @@ public:
         /// bare key values: scalar constants produced by `dictGetKeys` or a single-column
         /// `SELECT` from `dictionary(...)`. Unwrap the tuple, otherwise the rewrite pits
         /// `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
+        /// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
+        /// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key
+        /// behaves the same on both sides of the rewrite (`dictGet` returns `NULL`, so the
+        /// comparison is `NULL`; `NULL IN (...)` is `NULL` as well).
         /// Simple-key dictionaries are intentionally not affected: for them `dictGet`
         /// rejects the tuple form even without this optimization.
         if (dict_structure.key && key_cols.size() == 1)
         {
             auto & key_expr_node = dictget_function_info.key_expr_node;
-            const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_node->getResultType().get());
+            const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+            const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
             if (key_expr_tuple_type && key_expr_tuple_type->getElements().size() == 1)
             {
                 const auto * key_expr_function = key_expr_node->as<FunctionNode>();
@@ -394,8 +399,8 @@ public:
                 }
                 else
                 {
-                    /// Not a `tuple(...)` call, but still a one-element tuple (e.g. a column
-                    /// of type `Tuple(UUID)`): extract the element.
+                    /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element
+                    /// tuple, e.g. a column of type `Tuple(UUID)`: extract the element.
                     auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
                     tuple_element_function_node->getArguments().getNodes()
                         = {key_expr_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(1)))};

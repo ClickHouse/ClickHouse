@@ -66,6 +66,26 @@ tuple-typed column, like
 2
 tuple-typed column, like, opt off
 2
+nullable tuple expr, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(tupleElement(if(notEquals(__table1.k, \'33333333-3333-3333-3333-333333333333\'), tuple(__table1.k), _CAST(NULL, \'Nullable(Nothing)\')), 1), \'22222222-2222-2222-2222-222222222222\')
+nullable tuple expr, equals
+1
+nullable tuple expr, equals, opt off
+1
+nullable tuple expr, like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(tupleElement(if(notEquals(__table1.k, \'33333333-3333-3333-3333-333333333333\'), tuple(__table1.k), _CAST(NULL, \'Nullable(Nothing)\')), 1), (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+nullable tuple expr, like
+2
+nullable tuple expr, like, opt off
+2
 bare key, equals - plan
 SELECT count() AS `count()`
 FROM default.data AS __table1

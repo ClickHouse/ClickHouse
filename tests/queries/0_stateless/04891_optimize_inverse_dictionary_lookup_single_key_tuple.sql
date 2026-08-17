@@ -137,6 +137,32 @@ SELECT 'tuple-typed column, like, opt off';
 SELECT count() FROM data WHERE dictGet('dict_single_key', 'attr', kt) LIKE 'pay%'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
+-- The one-element tuple can be Nullable (e.g. produced by `if`): `dictGet` returns
+-- NULL for NULL keys, and so does the rewritten comparison.
+SELECT 'nullable tuple expr, equals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) = 'onboarding';
+SELECT 'nullable tuple expr, equals';
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) = 'onboarding';
+SELECT 'nullable tuple expr, equals, opt off';
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) = 'onboarding'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'nullable tuple expr, like - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) LIKE 'pay%';
+SELECT 'nullable tuple expr, like';
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) LIKE 'pay%';
+SELECT 'nullable tuple expr, like, opt off';
+SELECT count() FROM data
+WHERE dictGet('dict_single_key', 'attr', if(k != '33333333-3333-3333-3333-333333333333', tuple(k), NULL)) LIKE 'pay%'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
 -- Control: the bare key form must keep working exactly as before.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
