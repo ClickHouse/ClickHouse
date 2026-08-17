@@ -10,25 +10,12 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// True when the ExpressionStep is a pure identity and can be spliced out.
-///
-/// `ActionsDAG` no longer has `project_input`. `ExpressionStep::updateOutputHeader`
-/// uses `ActionsDAG::updateHeader`, which emits DAG outputs and then appends header
-/// columns that were not DAG inputs. Columns that are DAG inputs but not outputs are
-/// dropped, so those steps are projections and must stay.
-///
-/// The safe identity case is: every DAG node is INPUT, inputs and outputs are the
-/// same pointers in the same order, and the step input header equals the output header.
+/// True when the ExpressionStep only forwards columns and can be spliced out.
+/// `updateHeader` keeps passthrough columns and drops inputs that are not outputs,
+/// so a projection is not an identity even if every node is INPUT.
 bool isTrivialIdentityExpression(const ExpressionStep & expr)
 {
     const auto & dag = expr.getExpression();
-
-    for (const auto & node : dag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::INPUT)
-            return false;
-    }
-
     const auto & inputs = dag.getInputs();
     const auto & outputs = dag.getOutputs();
     if (inputs.size() != outputs.size())
@@ -37,6 +24,12 @@ bool isTrivialIdentityExpression(const ExpressionStep & expr)
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         if (inputs[i] != outputs[i])
+            return false;
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT)
             return false;
     }
 
