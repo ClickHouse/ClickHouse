@@ -30,7 +30,7 @@ sys.path.insert(0, _CI_DIR)
 try:
     # pylint: disable=import-error
     import get_previous_release_tag as gprt
-    from version_helper import get_version_from_string
+    from version_helper import get_version_from_string, get_version_from_tag
 finally:
     sys.path.remove(_CI_DIR)
 
@@ -218,6 +218,81 @@ def test_full_first_page_answers_without_reading_later_pages(monkeypatch):
     assert requested == [1]
 
 
+def _newest_below(page, server_version):
+    """The answer the selection rule should give, computed from the page itself.
+
+    Deliberately independent of the resolver, and taking the whole page rather
+    than a hand-listed subset of it, so the padding cannot drift out of the
+    expectation: this states the rule instead of repeating one recorded output.
+    """
+    version = get_version_from_string(server_version)
+    tags = [r["tag_name"] for r in page]
+    below = [t for t in tags if get_version_from_tag(t) < version]
+    return max(below, key=get_version_from_tag)
+
+
+def test_a_full_page_answers_across_several_minor_versions(monkeypatch):
+    """Page 1 in the shape the real feed has: many minors, newest near the top.
+
+    A complete page is authoritative because it spans far more releases than are
+    published between two minor bumps, so the newest release below the build
+    under test is on it. This pins the selection rule against that fixture with
+    an independently computed expectation.
+    """
+    page = _full_page(
+        [
+            _release(t)
+            for t in [
+                "v26.8.1.1-stable",
+                "v26.7.3.19-stable",
+                "v26.7.2.59-stable",
+                "v26.6.2.160-stable",
+                "v26.5.4.72-stable",
+                "v26.3.18.32-lts",
+                "v25.8.30.16-lts",
+            ]
+        ],
+        filler="v20",
+    )
+    _install_pager(monkeypatch, {1: page})
+
+    resolved = gprt.get_previous_release(get_version_from_string("26.8.1.1"))
+
+    assert str(resolved) == _newest_below(page, "26.8.1.1")
+
+
+def test_a_full_page_entirely_older_than_the_build_still_answers_from_page_one(
+    monkeypatch,
+):
+    """The boundary: every eligible entry is more than a minor behind.
+
+    No entry is a near miss below the build under test, which is the shape a long
+    release gap produces, and the padding sorts above it so the newest entry on
+    the page is not the answer. The resolver must still answer from page 1, with
+    the newest eligible entry rather than the first or last one it happens to see.
+    """
+    page = _full_page(
+        [
+            _release(t)
+            for t in [
+                "v26.3.18.32-lts",
+                "v26.1.7.44-stable",
+                "v25.8.30.16-lts",
+                "v25.3.24.11-lts",
+            ]
+        ]
+    )
+    requested = _install_pager(
+        monkeypatch,
+        {1: page, 2: _full_page([_release("v26.7.3.19-stable")])},
+    )
+
+    resolved = gprt.get_previous_release(get_version_from_string("26.8.1.1"))
+
+    assert str(resolved) == _newest_below(page, "26.8.1.1")
+    assert requested == [1]
+
+
 def test_none_server_version_resolves_the_newest_release(monkeypatch):
     """`download_last_release` passes None and expects the newest release."""
     _install_pager(
@@ -256,6 +331,35 @@ def test_none_server_version_with_no_recognized_tag_raises(monkeypatch):
 
 def test_find_previous_release_reports_not_found_for_no_releases():
     assert gprt.find_previous_release(None, []) == (False, None)
+
+
+def test_the_resolver_is_in_this_jobs_cache_digest():
+    """The guards above only stay live while their subject is digested.
+
+    `Digest.calc_job_digest` hashes the files `traverse_paths` yields for
+    `include_paths`, and `hook_cache` reuses a cached success while the digest is
+    unchanged. The resolver lives under `tests/ci`, which `./ci` does not cover,
+    so without an explicit entry a change to it leaves this job cache-skippable
+    and the cases above never run against it.
+    """
+    # pylint: disable=import-outside-toplevel
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    # `ci/defs/job_configs.py` does `from praktika import ...`, so `ci/` itself
+    # has to be importable for `import praktika` to resolve to `ci/praktika`.
+    for path in (root, os.path.join(root, "ci")):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+    from ci.defs.job_configs import JobConfigs
+    from ci.praktika.utils import Utils
+
+    digest_config = JobConfigs.ci_tests.digest_config
+    digested = Utils.traverse_paths(digest_config.include_paths, [])
+
+    assert "./tests/ci/get_previous_release_tag.py" in digested, (
+        "The Upgrade check baseline resolver is not in the CI Tests cache digest, "
+        f"so these guards can be skipped when it changes: {digest_config.include_paths}"
+    )
 
 
 def test_pages_built_here_match_the_page_size_the_resolver_requests():

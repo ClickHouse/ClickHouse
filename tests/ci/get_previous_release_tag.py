@@ -76,7 +76,8 @@ def get_previous_release(
         response.raise_for_status()
 
     releases = response.json()
-    # Only page 1 is read, which is sound only while it is a complete page.
+    # Page 1 holds the 100 most recently created releases, a window far wider than the
+    # gap between releases, so a complete page always contains the newest one below.
     if len(releases) < RELEASES_PER_PAGE:
         raise ReleaseNotFoundException(
             f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
