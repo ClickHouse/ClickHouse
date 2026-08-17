@@ -1,0 +1,9 @@
+--- The default identity file in ~/.ssh
+Using the SSH key from $HOME/.ssh/id_ed25519.
+1
+--- The ed25519 key in the ssh-agent
+Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
+--- The rsa key in the ssh-agent, with nothing in ~/.ssh
+Using the SSH key 'the rsa key' from the ssh-agent.
+1

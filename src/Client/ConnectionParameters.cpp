@@ -3,13 +3,22 @@
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/SSHAgent.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
+
+#include <fmt/ranges.h>
+
+#include <cstdio>
+#include <filesystem>
 
 namespace DB
 {
@@ -40,6 +49,132 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
 
     return false;
 }
+
+#if USE_SSH
+
+namespace fs = std::filesystem;
+
+/// The public key that `ssh-keygen` writes next to a private key, in the SSH wire format.
+/// Empty if there is no such file.
+String readPublicKeyBlob(const String & private_key_filename)
+{
+    String filename = private_key_filename + ".pub";
+    if (!fs::is_regular_file(filename))
+        return {};
+
+    String contents;
+    ReadBufferFromFile in(filename);
+    readStringUntilEOF(contents, in);
+
+    /// The format of the file is: the type of the key, the base64-encoded key, and an optional comment.
+    static constexpr std::string_view whitespace = " \t\r\n";
+    size_t key_begin = contents.find_first_of(whitespace);
+    if (key_begin != String::npos)
+        key_begin = contents.find_first_not_of(whitespace, key_begin);
+    if (key_begin == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The SSH public key file {} is malformed", filename);
+    size_t key_end = contents.find_first_of(whitespace, key_begin);
+
+    return base64Decode(contents.substr(key_begin, key_end - key_begin));
+}
+
+String askPassphrase(const String & key_name)
+{
+    String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", key_name);
+    char buf[1000] = {};
+    if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+        return result;
+    return {};
+}
+
+SSHKey loadPrivateKey(const String & filename, const std::optional<String> & passphrase)
+{
+    SSHKey key = SSHKeyFactory::makePrivateKeyFromFile(filename, passphrase, [&filename] { return askPassphrase(filename); });
+    if (!key.isPrivate())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} did not contain a private key (is it a public key?)", filename);
+    return key;
+}
+
+/// The key held by the ssh-agent that corresponds to one of the identity files, if any.
+std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<String> & identity_files)
+{
+    if (!SSHAgent::isAvailable())
+        return {};
+
+    std::vector<SSHAgent::Identity> identities = SSHAgent::listIdentities();
+    for (const String & identity_file : identity_files)
+    {
+        String key_blob = readPublicKeyBlob(identity_file);
+        if (key_blob.empty())
+            continue;
+
+        for (const SSHAgent::Identity & identity : identities)
+            if (identity.key_blob == key_blob)
+                return identity;
+    }
+
+    return {};
+}
+
+/// Finds the key to authenticate with when `--ssh-key-file` was specified without a file name:
+/// the same key that `ssh` would use for this host, either from the ssh-agent, or from a file in `~/.ssh`.
+SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
+{
+    std::vector<String> identity_files = getSSHIdentityFiles(host);
+
+    /// A key held by the ssh-agent is preferred: it does not need a passphrase.
+    /// But if the passphrase is specified, the user obviously wants the key file to be used.
+    if (!passphrase.has_value())
+    {
+        if (auto identity = findIdentityInSSHAgent(identity_files))
+        {
+            fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity->comment);
+            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob);
+        }
+    }
+
+    for (const String & identity_file : identity_files)
+    {
+        if (!fs::is_regular_file(identity_file))
+            continue;
+
+        fmt::print(stderr, "Using the SSH key from {}.\n", identity_file);
+        return loadPrivateKey(identity_file, passphrase);
+    }
+
+    /// There are no identity files, but the agent may still hold a key that the server knows about.
+    if (!passphrase.has_value() && SSHAgent::isAvailable())
+    {
+        std::vector<SSHAgent::Identity> identities = SSHAgent::listIdentities();
+        if (!identities.empty())
+        {
+            fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identities.front().comment);
+            return SSHKeyFactory::makeKeyFromSSHAgent(identities.front().key_blob);
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "No SSH key found: none of these files exists: {}. "
+        "Specify the key file with --ssh-key-file <path>, or add a key to the ssh-agent",
+        fmt::join(identity_files, ", "));
+}
+
+SSHKey getSSHKey(const String & host, const String & filename, const std::optional<String> & passphrase)
+{
+    if (filename.empty())
+        return findSSHKey(host, passphrase);
+
+    /// If the key is also held by the ssh-agent, use the agent: this way the passphrase is not needed.
+    if (!passphrase.has_value())
+    {
+        if (auto identity = findIdentityInSSHAgent({filename}))
+            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob);
+    }
+
+    return loadPrivateKey(filename, passphrase);
+}
+
+#endif
 
 }
 
@@ -86,25 +221,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     else if (config.has("ssh-key-file"))
     {
 #if USE_SSH
+        /// The file name can be empty: then the key is looked up the same way as `ssh` does it.
         std::string filename = config.getString("ssh-key-file");
-        std::string passphrase;
+
+        std::optional<std::string> passphrase;
         if (config.has("ssh-key-passphrase"))
-        {
             passphrase = config.getString("ssh-key-passphrase");
-        }
-        else
-        {
-            std::string prompt{"Enter your SSH private key passphrase (leave empty for no passphrase): "};
-            char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-                passphrase = result;
-        }
 
-        SSHKey key = SSHKeyFactory::makePrivateKeyFromFile(filename, passphrase);
-        if (!key.isPrivate())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} did not contain a private key (is it a public key?)", filename);
-
-        ssh_private_key = std::move(key);
+        ssh_private_key = getSSHKey(host, filename, passphrase);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif

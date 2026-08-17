@@ -2,7 +2,10 @@
 
 #include <Common/Exception.h>
 
+#include <functional>
+#include <optional>
 #include <string_view>
+#include <vector>
 #include <base/types.h>
 
 #include "config.h"
@@ -27,7 +30,7 @@ public:
     bool operator==(const SSHKey &) const;
     bool isEqual(const SSHKey & other) const;
 
-    bool isEmpty() { return key == nullptr; }
+    bool isEmpty() { return key == nullptr && agent_key_blob.empty(); }
     String signString(std::string_view input) const;
     bool verifySignature(std::string_view signature, std::string_view original) const;
 
@@ -45,6 +48,9 @@ public:
 
 private:
     ssh_key key = nullptr;
+    /// If set, the private key is not available here, and the signing is delegated to the ssh-agent.
+    /// It is the public key of the key held by the agent, in the SSH wire format.
+    String agent_key_blob;
     bool needs_deallocation = true;
 };
 
@@ -52,13 +58,27 @@ private:
 class SSHKeyFactory
 {
 public:
+    /// Called to ask the user for the passphrase of an encrypted private key.
+    using PassphraseCallback = std::function<String()>;
+
     /// The check whether the path is allowed to read for ClickHouse has
     /// (e.g. a file is inside `user_files` directory)
     /// to be done outside of this functions.
-    static SSHKey makePrivateKeyFromFile(String filename, String passphrase);
+    /// If the key is encrypted and `passphrase` is not set, `ask_passphrase` is called to obtain it.
+    static SSHKey makePrivateKeyFromFile(const String & filename, const std::optional<String> & passphrase, PassphraseCallback ask_passphrase = {});
     static SSHKey makePublicKeyFromFile(String filename);
     static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
+
+    /// A key that is held by the ssh-agent: only the public key `key_blob` (in the SSH wire format) is known here,
+    /// and every signature is made by the agent.
+    static SSHKey makeKeyFromSSHAgent(String key_blob);
 };
+
+/// The private key files that `ssh` would try when connecting to `host`:
+/// the identity files configured for that host in `~/.ssh/config` (and in the system-wide config),
+/// followed by the default identity files, such as `~/.ssh/id_ed25519`.
+/// The files do not necessarily exist.
+std::vector<String> getSSHIdentityFiles(const String & host);
 
 }
 

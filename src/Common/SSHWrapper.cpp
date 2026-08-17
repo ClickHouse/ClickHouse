@@ -2,6 +2,13 @@
 
 # if USE_SSH
 #    include <Common/Crypto/OpenSSLInitializer.h>
+#    include <Common/SSHAgent.h>
+#    include <base/scope_guard.h>
+
+#    include <cstdlib>
+#    include <cstring>
+#    include <pwd.h>
+#    include <unistd.h>
 
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
@@ -21,6 +28,10 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The namespace of the signatures, as defined by the `SSHSIG` format. The server expects exactly this one.
+constexpr const char * SIGNATURE_NAMESPACE = "clickhouse";
+
 struct SSHStringDeleter
 {
     void operator()(char * ptr) const { ssh_string_free_char(ptr); }
@@ -47,13 +58,84 @@ void checkKeyIsUsableInFIPSMode(ssh_key key)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     }
 }
+
+/// The system-wide client configuration, the same file that libssh and `ssh` read.
+constexpr std::string_view GLOBAL_SSH_CONFIG_FILE = "/etc/ssh/ssh_config";
+
+String getHomeDirectory()
+{
+    const char * home_directory = std::getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_directory && *home_directory)
+        return home_directory;
+
+    /// `HOME` is not set: fall back to the passwd database, the same as libssh does.
+    passwd entry{};
+    passwd * result = nullptr;
+    char buffer[16384];
+    if (getpwuid_r(getuid(), &entry, buffer, sizeof(buffer), &result) != 0 || result == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot determine the home directory of the current user");
+
+    return entry.pw_dir;
 }
 
-SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
+/// Substitutes the home directory and the host name in the name of an identity file.
+/// The other placeholders that `ssh` supports are left as is: a file with such a name simply will not be found.
+String expandIdentityFileName(std::string_view pattern, const String & home_directory, const String & host)
+{
+    String result;
+
+    if (pattern.starts_with("~/"))
+    {
+        result += home_directory;
+        pattern.remove_prefix(1);
+    }
+
+    for (size_t i = 0; i < pattern.size(); ++i)
+    {
+        if (pattern[i] != '%' || i + 1 == pattern.size())
+        {
+            result += pattern[i];
+            continue;
+        }
+
+        ++i;
+        switch (pattern[i])
+        {
+            case 'd': result += home_directory; break;
+            case 'h': result += host; break;
+            case '%': result += '%'; break;
+            default: result += '%'; result += pattern[i]; break;
+        }
+    }
+
+    return result;
+}
+
+/// Passed to libssh, which calls it only if the private key turns out to be encrypted.
+int askPassphrase(const char * /*prompt*/, char * buf, size_t len, int /*echo*/, int /*verify*/, void * userdata)
+{
+    const auto & callback = *static_cast<const SSHKeyFactory::PassphraseCallback *>(userdata);
+    String passphrase = callback();
+    if (passphrase.size() >= len)
+        return -1;
+    memcpy(buf, passphrase.data(), passphrase.size());
+    buf[passphrase.size()] = 0;
+    return 0;
+}
+
+}
+
+SSHKey SSHKeyFactory::makePrivateKeyFromFile(const String & filename, const std::optional<String> & passphrase, PassphraseCallback ask_passphrase)
 {
     ssh_key key = nullptr;
-    if (int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key); rc != SSH_OK)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file");
+    int rc = ssh_pki_import_privkey_file(
+        filename.c_str(),
+        passphrase ? passphrase->c_str() : nullptr,
+        ask_passphrase ? askPassphrase : nullptr,
+        &ask_passphrase,
+        &key);
+    if (rc != SSH_OK)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file {}", filename);
     checkKeyIsUsableInFIPSMode(key);
     return SSHKey(key);
 }
@@ -78,15 +160,24 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
     return SSHKey(key);
 }
 
+SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob)
+{
+    SSHKey key;
+    key.agent_key_blob = std::move(key_blob);
+    return key;
+}
+
 SSHKey::SSHKey(const SSHKey & other)
 {
     key = ssh_key_dup(other.key);
+    agent_key_blob = other.agent_key_blob;
 }
 
 SSHKey::SSHKey(SSHKey && other) noexcept
 {
     key = other.key;
     other.key = nullptr;
+    agent_key_blob = std::move(other.agent_key_blob);
 }
 
 SSHKey & SSHKey::operator=(const SSHKey & other)
@@ -95,6 +186,7 @@ SSHKey & SSHKey::operator=(const SSHKey & other)
         return *this;
     ssh_key_free(key);
     key = ssh_key_dup(other.key);
+    agent_key_blob = other.agent_key_blob;
     return *this;
 }
 
@@ -103,6 +195,7 @@ SSHKey & SSHKey::operator=(SSHKey && other) noexcept
     ssh_key_free(key);
     key = other.key;
     other.key = nullptr;
+    agent_key_blob = std::move(other.agent_key_blob);
     return *this;
 }
 
@@ -119,8 +212,11 @@ bool SSHKey::isEqual(const SSHKey & other) const
 
 String SSHKey::signString(std::string_view input) const
 {
+    if (!agent_key_blob.empty())
+        return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE);
+
     char * signature = nullptr;
-    if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, "clickhouse", SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)
+    if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, SIGNATURE_NAMESPACE, SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Error signing with ssh key");
     std::unique_ptr<char, SSHStringDeleter> sig_ptr(signature);
     return String(sig_ptr.get());
@@ -130,7 +226,7 @@ bool SSHKey::verifySignature(std::string_view signature, std::string_view origin
 {
     ssh_key verify_key = nullptr;
     String sig_str(signature);
-    int rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), "clickhouse", &verify_key);
+    int rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), SIGNATURE_NAMESPACE, &verify_key);
     if (rc != SSH_OK)
     {
         if (verify_key != nullptr)
@@ -181,6 +277,38 @@ SSHKey::~SSHKey()
 {
     if (needs_deallocation)
         ssh_key_free(key);
+}
+
+std::vector<String> getSSHIdentityFiles(const String & host)
+{
+    /// libssh already knows how to read `~/.ssh/config`, we only have to ask it for the result.
+    ssh_session session = ssh_new();
+    if (session == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot create an SSH session");
+    SCOPE_EXIT({ ssh_free(session); });
+
+    /// The host is needed to select the matching `Host` and `Match` sections of the config.
+    if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the host of an SSH session: {}", ssh_get_error(session));
+
+    /// The names of the config files are passed explicitly, because libssh takes the home directory
+    /// from the passwd database, while the rest of the client honors the `HOME` environment variable.
+    String home_directory = getHomeDirectory();
+    for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
+        if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
+            throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot parse the SSH configuration file {}: {}", config_file, ssh_get_error(session));
+
+    /// The identities from the config come first, the built-in default ones (`~/.ssh/id_ed25519` and so on) last.
+    /// They are not expanded, because expanding them in libssh would also resolve the home directory from the passwd database.
+    std::vector<String> result;
+    char * pattern = nullptr;
+    while (ssh_options_get(session, SSH_OPTIONS_NEXT_IDENTITY, &pattern) == SSH_OK)
+    {
+        std::unique_ptr<char, SSHStringDeleter> pattern_ptr(pattern);
+        result.push_back(expandIdentityFileName(pattern_ptr.get(), home_directory, host));
+    }
+
+    return result;
 }
 
 }
