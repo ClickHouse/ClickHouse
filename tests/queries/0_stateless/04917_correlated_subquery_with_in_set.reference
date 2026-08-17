@@ -45,9 +45,9 @@
 -- correlated NOT EXISTS
 40
 40
--- IN set in one arm of a UNION ALL body
-100
-100
+-- IN sets in both arms of a UNION ALL body
+80
+80
 -- IN set beneath an aggregation
 51
 51

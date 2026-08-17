@@ -150,15 +150,15 @@ SELECT count() FROM t_main AS o WHERE NOT EXISTS (
 SELECT count() FROM t_main AS o WHERE NOT EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (3));
 
-SELECT '-- IN set in one arm of a UNION ALL body';
+SELECT '-- IN sets in both arms of a UNION ALL body';
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6)
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (SELECT val FROM t_src WHERE val = 3)
     UNION ALL
-    SELECT 1 FROM t_main AS j WHERE j.s = o.s AND j.g > 100);
+    SELECT 1 FROM t_main AS j WHERE j.s = o.s AND j.k < 20 AND j.g IN (SELECT val FROM t_src WHERE val = 5));
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (0, 1, 2, 3, 4, 5, 6)
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (3)
     UNION ALL
-    SELECT 1 FROM t_main AS j WHERE j.s = o.s AND j.g > 100);
+    SELECT 1 FROM t_main AS j WHERE j.s = o.s AND j.k < 20 AND j.g IN (5));
 
 SELECT '-- IN set beneath an aggregation';
 SELECT count() FROM t_main AS o WHERE o.g >= (
