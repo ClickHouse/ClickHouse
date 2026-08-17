@@ -231,7 +231,6 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -5197,33 +5196,30 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
     /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
     /// counterpart of this check lives in `registerStorageMergeTree`.
-    if (!settings[Setting::allow_experimental_codecs])
+    std::unique_ptr<MergeTreeSettings> default_settings;
+    for (const auto & command : commands)
     {
-        std::unique_ptr<MergeTreeSettings> default_settings;
-        for (const auto & command : commands)
+        if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
+            continue;
+
+        for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
         {
-            if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-                continue;
-
-            for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
+            String codec;
+            if (command.type == AlterCommand::MODIFY_SETTING)
             {
-                String codec;
-                if (command.type == AlterCommand::MODIFY_SETTING)
-                {
-                    Field value;
-                    if (command.settings_changes.tryGet(setting_name, value))
-                        codec = value.safeGet<String>();
-                }
-                else if (command.settings_resets.contains(setting_name))
-                {
-                    if (!default_settings)
-                        default_settings = getDefaultSettings();
-                    codec = default_settings->get(setting_name).safeGet<String>();
-                }
-
-                if (!codec.empty())
-                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+                Field value;
+                if (command.settings_changes.tryGet(setting_name, value))
+                    codec = value.safeGet<String>();
             }
+            else if (command.settings_resets.contains(setting_name))
+            {
+                if (!default_settings)
+                    default_settings = getDefaultSettings();
+                codec = default_settings->get(setting_name).safeGet<String>();
+            }
+
+            if (!codec.empty())
+                CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
         }
     }
 
