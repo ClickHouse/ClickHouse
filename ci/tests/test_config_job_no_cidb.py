@@ -356,8 +356,11 @@ def test_config_job_outlives_the_submodule_cache_bound():
     from ci.praktika.native_jobs import _workflow_config_job
     from ci.praktika.settings import Settings
 
+    # The rest of the job needs its own room inside the cap: the archive upload plus
+    # the configuration work that already ran before the clone started.
     assert (
-        _workflow_config_job.timeout > Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+        _workflow_config_job.timeout - Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+        >= 600
     ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
 
 
@@ -401,17 +404,73 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
-        nj._prepare_submodule_cache(None, _Cfg())
+        cfg = _Cfg()
+        result = nj._prepare_submodule_cache(None, cfg)
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
 
+    assert result.status == "OK", result.status
+    assert cfg.submodule_cache_hash, "a successful population must publish its hash"
     clones = [(c, k) for c, k in calls if "submodule update" in c]
     assert len(clones) == 1, calls
     command, kwargs = clones[0]
     assert command.startswith(
         f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
     ), command
+    # Catches a trailing `|| true`, which would mask the exit code before `strict` sees it.
+    assert command.endswith("--jobs 64"), command
+    assert kwargs.get("strict") is True, kwargs
     assert kwargs.get("retries", 1) == 1, kwargs
+
+
+def test_submodule_cache_overrun_degrades_to_a_github_clone():
+    """An overrun must leave the cache hash unset rather than publishing a partial one.
+
+    Dependent jobs restore the cache only when the hash is set, so an unset hash is what
+    makes them clone from GitHub instead of unpacking a truncated archive.
+    """
+    import ci.praktika.native_jobs as nj
+
+    uploads = []
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **kwargs):
+            if "submodule update" in command:
+                # `timeout` fired; `strict=True` turns the non-zero exit into a raise.
+                raise RuntimeError("command failed, exit code 137")
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p):
+            return False
+
+        @staticmethod
+        def copy_file_to_s3(s3_path, **_k):
+            uploads.append(s3_path)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        result = nj._prepare_submodule_cache(None, cfg)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    assert result.status == "OK", result.status
+    assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
+    assert uploads == [], uploads
 
 
 if __name__ == "__main__":
