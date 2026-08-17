@@ -3,6 +3,10 @@
 -- ORDER BY prefix matching, and projections that reuse a GROUP BY key's name for
 -- a different expression.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 -- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.

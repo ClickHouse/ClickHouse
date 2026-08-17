@@ -7,6 +7,10 @@
 -- because it measures the aggregate-state arena directly and is not perturbed
 -- by block sizes or by the sanitizer builds' allocation overhead.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 SET enable_group_by_top_k_optimization = 1;
 -- The optimization declines any aggregation carrying a `GROUP BY` row limit, and
 -- the stateless test profile sets `max_rows_to_group_by` to a huge-but-non-zero

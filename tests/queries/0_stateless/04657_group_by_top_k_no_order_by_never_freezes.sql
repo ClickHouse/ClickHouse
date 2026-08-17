@@ -9,6 +9,10 @@
 -- With a real `ORDER BY` the freeze stays available, because falling back there
 -- costs nothing: the sort belongs to the query either way.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;

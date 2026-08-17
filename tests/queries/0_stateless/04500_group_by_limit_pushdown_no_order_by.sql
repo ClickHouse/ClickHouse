@@ -4,6 +4,10 @@
 -- never engages and the `EXPLAIN` / `AggregationTopKRowsSkipped` assertions
 -- that it fired would fail (results would still be correct).
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 -- Correctness of enable_group_by_top_k_optimization for `GROUP BY ... LIMIT`
 -- without ORDER BY.  The optimizer promotes this shape into the sorted one by
 -- synthesizing a SortingStep over all GROUP BY keys (any N groups are a valid

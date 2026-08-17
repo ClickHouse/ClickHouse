@@ -3,6 +3,10 @@
 -- methods, boundary ties (bitwise-distinct keys that compare equal), the
 -- adaptive freeze, tie overflow, and aggregate-state arena-slot reuse.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;

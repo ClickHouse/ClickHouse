@@ -3,6 +3,10 @@
 -- above `AggregatingStep` in a single-stage plan, so under parallel replicas
 -- the optimization never engages and the sort-processor assertions would fail.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 -- When the hash-table size statistics from a previous run say the group count
 -- cannot reach the top-K heap's capacity, the plan-level gate abandons the
 -- heap.  For a query without its own ORDER BY the optimization synthesized a
