@@ -140,6 +140,19 @@ WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS prefer_column_nam
 WITH cast(tuple(1), 'Tuple (x UInt8)') AS n
 SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
+-- The ARRAY JOIN expression is unresolved while its inner join tree is validated. A dotted joined
+-- column with the same prefix must take the conservative `ALIAS_REQUIRED` path instead of probing
+-- the unresolved expression's result type.
+DROP TABLE IF EXISTS arr_tuple;
+CREATE TABLE arr_tuple (arr Array(Tuple(x UInt8))) ENGINE = Memory;
+INSERT INTO arr_tuple VALUES ([(1)]);
+SELECT `a.x` FROM arr_tuple, (SELECT 2 AS `a.x`) ARRAY JOIN arr AS a; -- { serverError ALIAS_REQUIRED }
+
+-- The same applies to a transitive `WITH` alias: its first identifier must be resolved before a
+-- compound lookup can inspect the nested path, so validation keeps the strict behavior meanwhile.
+WITH CAST(tuple(1), 'Tuple(x UInt8)') AS base, base AS n
+SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
+
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
 -- exposes names that are only known after resolution, so the validation cannot prove the absence of a
 -- collision and keeps the strict behavior: the unaliased subquery is rejected even without a provable

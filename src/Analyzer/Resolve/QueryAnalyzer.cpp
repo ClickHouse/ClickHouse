@@ -1113,6 +1113,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
                 /// A dotted identifier is shadowed only when the ARRAY JOIN output can bind the nested
                 /// path. For example, `ARRAY JOIN [30] AS a` does not shadow a sibling column named
                 /// `a.x`: `a` is a scalar after ARRAY JOIN, so `a.x` falls back to the join tree.
+                /// The ARRAY JOIN expression is collected before the join tree is resolved. Its result
+                /// type is consequently unavailable for an identifier such as `ARRAY JOIN arr AS a`.
+                /// Keep the strict behavior rather than probing an unresolved node and throwing an
+                /// unrelated `UNSUPPORTED_METHOD` exception.
+                if (const auto * function_node = expression->as<FunctionNode>(); function_node && !function_node->isResolved())
+                    return true;
+                if (expression->as<IdentifierNode>())
+                    return true;
+
                 auto result_type = expression->getResultType();
                 if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
                     result_type = array_type->getNestedType();
@@ -1145,11 +1154,13 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         if (dot_pos != String::npos)
         {
             /// Join-tree validation runs before the projection and `WITH` expressions are resolved.
-            /// For an unresolved function expression its result type is not available yet, so probing
-            /// its nested path would throw `UNSUPPORTED_METHOD`. Keep the strict behavior in that
-            /// case: the absence of a shadowing collision cannot be proved until the expression is
-            /// resolved.
+            /// In particular, an alias may be an unresolved function or a transitive unresolved
+            /// identifier alias. Probing either one for a nested path would throw
+            /// `UNSUPPORTED_METHOD`. Keep the strict behavior until the absence of a collision can
+            /// be proved.
             if (const auto * function_node = it->second->as<FunctionNode>(); function_node && !function_node->isResolved())
+                return true;
+            if (it->second->as<IdentifierNode>())
                 return true;
 
             Identifier identifier(column_name);
