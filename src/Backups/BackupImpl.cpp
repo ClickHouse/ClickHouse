@@ -51,6 +51,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
+    extern const char backup_fail_reading_archive_size[];
 }
 
 namespace ErrorCodes
@@ -1410,12 +1411,11 @@ void BackupImpl::finalizeWriting()
         });
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
-        setCompressedSize();
     }
 
     /// The backup is published at this point: `.backup` is readable at the destination, or the
     /// archive has been finalized. A published backup must never be removed as a failed one, so arm
-    /// the guard read by `setIsCorrupted` before the durability steps below, which can still throw.
+    /// the guard read by `setIsCorrupted` before the steps below, which can still throw.
     writing_finalized = true;
 
     if (params.fsync_backup_files && writer)
@@ -1433,6 +1433,9 @@ void BackupImpl::finalizeWriting()
 
     if (!params.is_internal_backup)
     {
+        /// For an archive this reads the size back off the destination disk and can throw, so it
+        /// must stay below the guard above.
+        setCompressedSize();
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
@@ -1442,7 +1445,13 @@ void BackupImpl::finalizeWriting()
 void BackupImpl::setCompressedSize()
 {
     if (use_archive)
+    {
+        fiu_do_on(FailPoints::backup_fail_reading_archive_size,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_reading_archive_size is triggered");
+        });
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
+    }
     else
         compressed_size = uncompressed_size;
 }
