@@ -7,6 +7,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <algorithm>
@@ -76,7 +77,19 @@ namespace
         /// Prometheus appends output rows while iterating over the "many" side (the original right
         /// side under `group_right`), so the result order follows that side even for comparisons.
         bool order_side_is_left = !group_right;
-        bool result_has_sort_order = order_side_is_left ? left_argument.has_sort_order : right_argument.has_sort_order;
+        bool order_side_has_sort_order = order_side_is_left ? left_argument.has_sort_order : right_argument.has_sort_order;
+
+        /// The chosen side always ends up with a `sort_key`: its own if it has one, otherwise a
+        /// fallback tiebreak of its own `group` (same mechanism as the `or` operator's fallback).
+        auto makeSortKeyForSide = [&](bool side_has_sort_order) -> ASTPtr
+        {
+            if (side_has_sort_order)
+                return make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
+            return makeASTFunction(
+                "array",
+                makeExactSortKeyComponent(
+                    makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))));
+        };
 
         /// Step 1:
         /// new_left:
@@ -142,9 +155,9 @@ namespace
             builder.select_list.push_back(std::move(values));
 
             bool result_order_side = (side == left) ? order_side_is_left : !order_side_is_left;
-            if (result_order_side && result_has_sort_order)
+            if (result_order_side)
             {
-                ASTPtr sort_key = make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
+                ASTPtr sort_key = makeSortKeyForSide(order_side_has_sort_order);
                 if (check_side_one)
                     sort_key = makeASTFunction("any", std::move(sort_key));
                 sort_key->setAlias(ColumnNames::SortKey);
@@ -344,7 +357,6 @@ namespace
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
-            if (result_has_sort_order)
             {
                 String & result_order_side = order_side_is_left ? left : right;
                 ASTPtr sort_key = make_intrusive<ASTIdentifier>(Strings{result_order_side, ColumnNames::SortKey});
@@ -388,7 +400,7 @@ namespace
         res.end_time = left_argument.end_time;
         res.step = left_argument.step;
         res.metric_name_dropped = metric_name_dropped_from_result;
-        res.has_sort_order = result_has_sort_order;
+        res.has_sort_order = true;
 
         return res;
     }
