@@ -2196,6 +2196,14 @@ static NameSet getColumnsAggregatedForSummingFinal(
             /// An entry of `columns_to_sum` may name the column itself, the Nested table the column
             /// belongs to, or (with allow_tuple_element_aggregation) an element of a Tuple column.
             const auto nested_table_name = Nested::extractTableName(column.name);
+            /// A real top-level Nested `...Map` column is always handled by `sumMap`, even when
+            /// `columns_to_sum` is explicit. This is the same special case as in
+            /// `SummingSortedAlgorithm::defineColumns`.
+            if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map"))
+            {
+                aggregated_columns.insert(column.name);
+                continue;
+            }
             for (const auto & name : columns_to_sum)
             {
                 if (name == column.name || name == nested_table_name || name.starts_with(column.name + "."))
@@ -4155,10 +4163,13 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// so the read has to fetch all of them even when the query needs only a subset of them.
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
-            for (const auto & column_name : getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params))
+            const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
+            /// Preserve physical-column order. It matters for `Nested ...Map`: `sumMap` receives
+            /// its key and value arrays as a group, and iterating a `NameSet` would scramble them.
+            for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
             {
-                if (names.emplace(column_name).second)
-                    column_names_to_read.push_back(column_name);
+                if (aggregated_columns.contains(column.name) && names.emplace(column.name).second)
+                    column_names_to_read.push_back(column.name);
             }
         }
 
