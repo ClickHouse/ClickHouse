@@ -196,6 +196,8 @@ private:
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
     {
+        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generateRows");
+
         chassert(current_info);
 
         auto rows = std::min(max_rows, detached_parts.size());
