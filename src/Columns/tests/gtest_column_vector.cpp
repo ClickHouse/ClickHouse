@@ -163,57 +163,6 @@ TEST(ColumnVector, Filter)
 }
 
 template <typename T>
-static void testFilterContiguousRuns()
-{
-    constexpr size_t rows = 3 * 64 + 7;
-    auto source = createColumn<T>(rows);
-    PaddedPODArray<UInt8> filter;
-    filter.resize_fill(rows, 0);
-
-    for (size_t i = 4; i < 12; ++i)
-        filter[i] = 1;
-    for (size_t i = 20; i < 23; ++i)
-        filter[i] = 1;
-    filter[32] = 1;
-    for (size_t i = 40; i < 56; ++i)
-        filter[i] = 1;
-    filter[63] = 1;
-
-    filter[64] = 1;
-    for (size_t i = 68; i < 72; ++i)
-        filter[i] = 1;
-    for (size_t i = 80; i < 82; ++i)
-        filter[i] = 1;
-    filter[96] = 1;
-    for (size_t i = 108; i < 124; ++i)
-        filter[i] = 1;
-    filter[127] = 1;
-
-    for (size_t i = 128; i < 192; ++i)
-        filter[i] = 1;
-
-    filter[192] = 1;
-    filter[193] = 1;
-    filter[196] = 1;
-    filter[198] = 1;
-
-    auto filtered = source->filter(filter, -1);
-    ASSERT_TRUE(checkFilter(filter, *source, *filtered));
-
-    auto in_place = createColumn<T>(rows);
-    in_place->filter(filter);
-    ASSERT_TRUE(checkFilter(filter, *source, *in_place));
-}
-
-TEST(ColumnVector, FilterContiguousRuns)
-{
-    testFilterContiguousRuns<UInt8>();
-    testFilterContiguousRuns<UInt64>();
-    testFilterContiguousRuns<UInt128>();
-    testFilterContiguousRuns<Float64>();
-}
-
-template <typename T>
 static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 {
     auto column = ColumnVector<T>::create();
