@@ -27,9 +27,14 @@ Establece el tipo de contraseña que se asignará automáticamente en consultas 
 Los valores aceptados son:
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **Predeterminado:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ Los valores aceptados son:
 </div>
 
 Perfil de configuración predeterminado. Los perfiles de configuración están en el archivo especificado en la configuración `user_config`.
+
+* **Predeterminado:** `default`
 
 **Ejemplo**
 
@@ -52,6 +59,8 @@ Perfil de configuración predeterminado. Los perfiles de configuración están e
 </div>
 
 Tiempo de espera predeterminado de la sesión, en segundos.
+
+* **Predeterminado:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>

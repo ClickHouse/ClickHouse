@@ -109,7 +109,7 @@ ClickHouse 中的复制通过在多台服务器上维护**分片数据的副本*
 
 其余部分与没有副本配置时[相同](#select-forwarding)，因此上图中未显示。承载最初目标分布式表的 ClickHouse 服务器会收集所有本地结果，将其合并为最终的全局结果，并将其返回给查询发送方。
 
-请注意，ClickHouse 允许为步骤 ② 配置查询转发策略。默认情况下——与上图不同——分布式表会在可用时[优先](/zh/reference/settings/session-settings#prefer_localhost_replica)选择本地副本，但也可以使用其他负载均衡[策略](/zh/reference/settings/session-settings#load_balancing)。
+请注意，ClickHouse 允许为步骤 ② 配置查询转发策略。默认情况下——与上图不同——分布式表会在可用时[优先](/zh/reference/settings/session-settings/prefer#prefer_localhost_replica)选择本地副本，但也可以使用其他负载均衡[策略](/zh/reference/settings/session-settings/load-balancing#load_balancing)。
 
 <div id="where-to-find-more-information">
   ## 在哪里可以找到更多信息
