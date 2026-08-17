@@ -587,6 +587,21 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
+    /// The rest of replxx's default history recalls are routed through historyNavigate as well,
+    /// so that a recalled AI question (stored with a `? ` prefix) switches into AI-chat mode and
+    /// the displayed line does not pop the as-you-type hints. The uppercase M-P/M-N are re-bound
+    /// to completion below, so only the lowercase pair keeps the common-prefix search.
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::UP), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::DOWN), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::meta('<'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
+    rx.bind_key(Replxx::KEY::PAGE_UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
+    rx.bind_key(Replxx::KEY::meta('>'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
+    rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
+    rx.bind_key(Replxx::KEY::meta('p'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('n'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('G'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE_CURRENT, code); });
+    rx.bind_key(Replxx::KEY::meta('g'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE, code); });
+
     /// We don't want the default, "suspend" behavior, it confuses people.
     if (options.ignore_shell_suspend)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
@@ -774,6 +789,16 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     if (options.interactive_history_legacy_keymap)
         std::swap(key_fuzzy, key_regular);
 
+    /// The incremental history searches also go through historyNavigate for the AI-chat mode
+    /// switch: the search re-queues its terminating key (e.g. Enter) and returns before that key
+    /// is dispatched, so a found AI question already switched the mode (and lost the `? ` prefix)
+    /// by the time the line is committed. The skim binding below overrides C-R where the fuzzy
+    /// search is available; C-S (the forward search) and M-r (the search seeded with the current
+    /// line) are replxx defaults.
+    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
+
 #if USE_SKIM
     if (!options.embedded_mode)
     {
@@ -806,6 +831,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// (see historyNavigate).
                 suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+                /// The picked entry may be an AI question stored with a `? ` prefix - switch the
+                /// mode to match it (and strip the prefix), like the history navigation does.
+                syncModeFromHistory();
             }
 
             if (bracketed_paste_enabled)
@@ -827,14 +855,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
     rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
     {
-        /// Reverse search is detected by C-R.
-        uint32_t reverse_search = Replxx::KEY::control('R');
-        /// The found entry is a whole new line displayed at once - do not pop hints on it (see
-        /// historyNavigate).
-        suppress_hints_once = true;
-        auto result = rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-        suppressHintsForDisplayedLine();
-        return result;
+        /// Reverse search is detected by C-R, so it is passed instead of the pressed key.
+        return historyNavigate(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, Replxx::KEY::control('R'));
     });
 
     /// Change cursor style for overwrite mode to blinking (see console_codes(5))

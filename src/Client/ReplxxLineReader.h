@@ -61,11 +61,11 @@ private:
     /// The prompt shown while in AI-chat mode: the display name plus a magenta `:?`.
     std::string aiModePrompt() const;
 
-    /// Run a history-navigation action while keeping AI-chat mode in sync with the entries.
-    /// Entries for AI questions are stored with a `? ` prefix; the editable line shows the
-    /// question without it. Before moving, the prefix is restored on the current line so
-    /// replxx saves the entry in its stored form; after moving, the recalled entry sets the
-    /// mode (AI vs SQL) and the prefix is stripped from the editable line again.
+    /// Run a history-recall action (navigation, search, restore) while keeping AI-chat mode in
+    /// sync with the entries. Entries for AI questions are stored with a `? ` prefix; the
+    /// editable line shows the question without it. Before the action, the prefix is restored on
+    /// the current line so replxx saves the entry in its stored form; after it, the recalled
+    /// entry sets the mode (AI vs SQL) and the prefix is stripped from the editable line again.
     replxx::Replxx::ACTION_RESULT historyNavigate(replxx::Replxx::ACTION action, char32_t code);
     void restoreHistoryPrefix();
     void syncModeFromHistory();
