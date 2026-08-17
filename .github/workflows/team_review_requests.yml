@@ -1,12 +1,9 @@
 name: Documentation Team Review Requests
 
 on:
-  pull_request:
-    branches: [master]
-    types: [opened]
   pull_request_target:
     branches: [master]
-    types: [labeled]
+    types: [opened, labeled]
 
 concurrency:
   group: documentation-team-review-requests-${{ github.event_name }}-${{ github.event.pull_request.number }}
@@ -19,14 +16,14 @@ permissions:
 jobs:
   request-reviews-internal:
     if: >-
-      github.event_name == 'pull_request' &&
+      github.event.action == 'opened' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Check out internal PR revision
+      - name: Check out trusted base revision
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Request documentation team reviews
@@ -36,7 +33,8 @@ jobs:
 
   request-reviews-fork:
     if: >-
-      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'can be tested' &&
       github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'can be tested')
     runs-on: ubuntu-latest
