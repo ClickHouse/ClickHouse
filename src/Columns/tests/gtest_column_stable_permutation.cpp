@@ -21,14 +21,14 @@
 
 using namespace DB;
 
-static void stableGetColumnPermutation(
+void stableGetColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
     int nan_direction_hint,
     IColumn::Permutation & out_permutation)
 {
-    (void)limit;
+    (void)(limit);
 
     size_t size = column.size();
     out_permutation.resize(size);
@@ -48,7 +48,7 @@ static void stableGetColumnPermutation(
         });
 }
 
-static void columnGetPermutation(
+void columnGetPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,
@@ -58,7 +58,7 @@ static void columnGetPermutation(
     column.getPermutation(direction, IColumn::PermutationSortStability::Stable, limit, nan_direction_hint, out_permutation);
 }
 
-[[maybe_unused]] static void printColumn(const IColumn & column)
+void printColumn(const IColumn & column)
 {
     size_t column_size = column.size();
     Field value;
@@ -92,7 +92,7 @@ void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & 
     }
 }
 
-static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
+void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -105,7 +105,7 @@ static void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTrac
     }
 }
 
-static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
+void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const IColumn::Permutation & rhs, size_t limit)
 {
     if (limit == 0)
     {
@@ -118,7 +118,7 @@ static void assertPermutationsWithLimit(const IColumn::Permutation & lhs, const 
     }
 }
 
-static void assertColumnPermutation(
+void assertColumnPermutation(
     const IColumn & column,
     IColumn::PermutationSortDirection direction,
     size_t limit,

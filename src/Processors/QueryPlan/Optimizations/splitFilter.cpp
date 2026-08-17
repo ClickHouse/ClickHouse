@@ -8,7 +8,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
+size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
     if (!join_step || node->children.size() != 2 || typeid_cast<JoinStepLogicalLookup *>(node->children.back()->step.get()))
@@ -19,11 +19,11 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     {
         auto & child_node = *node->children.at(idx);
         const auto & header = child_node.step->getOutputHeader();
-        auto filter_dag = join_step->getFilterActions(side, header);
-        if (!filter_dag)
+        auto fitler_dag = join_step->getFilterActions(side, header);
+        if (!fitler_dag)
             continue;
-        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
-        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
+        const auto & filter_column_name = fitler_dag->dag.getOutputs()[fitler_dag->filter_pos]->result_name;
+        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(fitler_dag->dag), filter_column_name, fitler_dag->remove_filter);
         step->setStepDescription("Join filter");
 
         auto * new_node = &nodes.emplace_back(std::move(child_node));

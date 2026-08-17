@@ -89,17 +89,8 @@ try
 
                     readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
-
-                /// Before dropping the substreams cache, verify the reference counts of the columns
-                /// shared with the result columns; see the comment near the same check in
-                /// MergeTreeReaderWide::readRows.
-                validateColumnsOwnership(res_columns, nullptr, nullptr, &substreams_cache, &deserialize_states_caches);
             }
         }
-
-        /// The same check for the full-column reads of this granule; see the comment near the same
-        /// check in MergeTreeReaderWide::readRows.
-        validateColumnsOwnership(res_columns, &columns_cache, &columns_cache_for_subcolumns, nullptr, &deserialize_states_caches);
 
         ++from_mark;
         read_rows += rows_to_read;

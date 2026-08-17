@@ -1,5 +1,3 @@
-SET explain_query_plan_default = 'legacy';
-SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
@@ -11,7 +9,6 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_join_shard_by_pk_ranges = 0;
 SET allow_reorder_prewhere_conditions = 0;
-SET optimize_or_like_chain = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 DROP TABLE IF EXISTS t1;
@@ -54,7 +51,7 @@ EXPLAIN PLAN actions = 1, compact = 1, pretty = 1
 SELECT *
 FROM t1
 INNER JOIN t2 ON t1.a = t2.x
-SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'parallel_hash';
+SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash';
 
 DROP TABLE t1;
 DROP TABLE t2;

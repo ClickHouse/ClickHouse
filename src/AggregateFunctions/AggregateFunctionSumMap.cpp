@@ -243,7 +243,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -298,21 +298,16 @@ public:
                     Field value = values[col_idx];
 
                     /// Compatibility with previous versions.
-                    /// Peel off `Nullable` so the underlying `Decimal32`/`Decimal64` is recognised.
-                    /// Null values pass through unchanged and are handled by `SerializationNullable`.
-                    if (!value.isNull())
+                    WhichDataType value_type(values_types[col_idx]);
+                    if (value_type.isDecimal32())
                     {
-                        WhichDataType value_type(removeNullable(values_types[col_idx]));
-                        if (value_type.isDecimal32())
-                        {
-                            auto source = value.safeGet<DecimalField<Decimal32>>();
-                            value = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                        }
-                        else if (value_type.isDecimal64())
-                        {
-                            auto source = value.safeGet<DecimalField<Decimal64>>();
-                            value = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                        }
+                        auto source = value.safeGet<DecimalField<Decimal32>>();
+                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                    }
+                    else if (value_type.isDecimal64())
+                    {
+                        auto source = value.safeGet<DecimalField<Decimal64>>();
+                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
 
                     promoted_values_serializations[col_idx]->serializeBinary(value, buf, {});
@@ -320,11 +315,7 @@ public:
                 break;
             }
             default:
-                /// The version comes from the AggregateFunction data type parameter, which is
-                /// user/data-controlled and not validated at type creation. Throw a catchable
-                /// exception instead of LOGICAL_ERROR (which aborts debug/sanitizer builds).
-                /// Symmetric with deserialize() below.
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
         }
 
         for (const auto & elem : merged_maps)
@@ -345,10 +336,6 @@ public:
         readVarUInt(size, buf);
 
         FormatSettings format_settings;
-        /// Bool keys/values must be read as 0/1 int Fields, matching what add() stores from the
-        /// UInt8 column. Otherwise a bool-tagged Field reaches FieldVisitorSum on merge and throws
-        /// "Cannot sum Bools" (and breaks key dedup / zero-compaction). Same as MergeTreePartition::load.
-        format_settings.binary.read_bool_field_as_int = true;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
@@ -368,12 +355,10 @@ public:
                     promoted_values_serializations[col_idx]->deserializeBinary(value, buf, format_settings);
 
                     /// Compatibility with previous versions.
-                    /// Peel off `Nullable` so the underlying `Decimal32`/`Decimal64` is recognised.
-                    /// Null values come back as `Field::Null` and pass through unchanged.
                     if (value.getType() == Field::Types::Decimal128)
                     {
                         auto source = value.safeGet<DecimalField<Decimal128>>();
-                        WhichDataType value_type(removeNullable(values_types[col_idx]));
+                        WhichDataType value_type(values_types[col_idx]);
                         if (value_type.isDecimal32())
                         {
                             value = DecimalField<Decimal32>(source.getValue(), source.getScale());
@@ -796,7 +781,6 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
 }
 
-void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
     // these functions used to be called *Map, with now these names occupied by
@@ -1075,7 +1059,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
-    }, {.description = R"DOC(Like sumMap, but sums the values only for the keys that are present in a given whitelist of keys.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    }, {}});
 
     factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
@@ -1083,7 +1067,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
-    }, {.description = R"DOC(Like sumMapFiltered, but performs the summation without checking for numeric overflow (the result keeps the argument's value type).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    }, {}});
 }
 
 }

@@ -76,7 +76,6 @@ void JSONObjectEachRowRowOutputFormat::writeSuffix()
     writeChar('\n', *ostr);
 }
 
-void registerOutputFormatJSONObjectEachRow(FormatFactory & factory);
 void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONObjectEachRow", [](

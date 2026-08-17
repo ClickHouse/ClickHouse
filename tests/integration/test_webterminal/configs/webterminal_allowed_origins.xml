@@ -1,5 +1,5 @@
 <clickhouse>
-    <enable_webterminal>true</enable_webterminal>
+    <allow_experimental_webterminal>true</allow_experimental_webterminal>
 
     <!-- Operator-configured `Origin` allowlist. When non-empty, this
          replaces the default same-origin check on the WebSocket upgrade.

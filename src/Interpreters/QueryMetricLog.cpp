@@ -42,7 +42,7 @@ constexpr std::string_view query_metric_log_final_row_failpoint_query_id_prefix
 
 static auto logger = getLogger("QueryMetricLog");
 
-static String timePointToString(QueryMetricLog::TimePoint time)
+String timePointToString(QueryMetricLog::TimePoint time)
 {
     /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
     auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(time);
@@ -151,7 +151,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
     if (elem)
-        add([&](QueryMetricLogElement & element) { element = elem.value(); });
+        add(std::move(elem.value()));
 }
 
 /// We use TSA_NO_THREAD_SAFETY_ANALYSIS to prevent TSA complaining that we're modifying the query_status fields
@@ -224,7 +224,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     {
         auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, /* is_final = */ true);
         if (elem)
-            add([&](QueryMetricLogElement & element) { element = elem.value(); });
+            add(std::move(elem.value()));
     }
 
     /// The task has an `exec_mutex` locked while being executed. This same mutex is locked when
