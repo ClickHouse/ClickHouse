@@ -2095,7 +2095,8 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
+std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
+    const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
     /// them. This step is opaque to it: the per-table subplans are built lazily and their pipelines - not
@@ -2119,6 +2120,12 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
     /// `View` over a single `MergeTree` table has the same shape. Such a child was planned with parallel
     /// replicas cleared from its context (see `createChildrenPlans`), so distributing its read would be
     /// rejected later anyway, leaving an expanded `Merge` that is read by a single replica after all.
+    ///
+    /// The last word on whether a read can be distributed belongs to the caller, whose `can_ship_read` says
+    /// no for a table which is not replicated while `parallel_replicas_for_non_replicated_merge_tree` is off,
+    /// and for the target of a refreshable materialized view. Asking it here, instead of letting the reads be
+    /// dropped once the union is already in the plan, is what keeps "cannot be distributed" equal to "the
+    /// plan is left as it is" - and keeps the two decisions from drifting apart.
     auto table_it = selected_tables.begin();
     for (const auto & child : *child_plans)
     {
@@ -2135,7 +2142,7 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas()
             node = node->children.front();
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
-        if (!reading || reading->isQueryWithFinal())
+        if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
             return {};
     }
 

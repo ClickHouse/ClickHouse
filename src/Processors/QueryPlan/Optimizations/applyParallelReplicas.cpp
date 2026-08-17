@@ -478,7 +478,10 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
     for (auto * node : merge_nodes)
     {
         auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
-        if (auto expanded = merge.expandForParallelReplicas())
+        /// Expand only what this pass would go on to distribute: a `Merge` whose reads `collectReadsToDistribute`
+        /// would drop must keep its own step, so that a query which is not distributed keeps the plan it has
+        /// without the expansion.
+        if (auto expanded = merge.expandForParallelReplicas(mergeTreeReadCanBeShipped))
             query_plan.replaceNodeWithPlan(node, std::move(*expanded));
     }
 }

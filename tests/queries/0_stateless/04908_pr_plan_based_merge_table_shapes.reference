@@ -36,6 +36,9 @@
 0	1
 2100	2303950	1503450
 2100	2303950	1503450
+-- Merge over non-replicated tables which may not be read remotely
+0	1
+2000	1999000	1498500
 -- Merge over no tables
 0	0
 0	0	0

@@ -14,6 +14,8 @@ namespace DB
 
 struct QueryPlanResourceHolder;
 
+class ReadFromMergeTree;
+
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
@@ -208,9 +210,11 @@ public:
     /// For parallel replicas only: expand this opaque `Merge` read into a plan-level `UnionStep` over the
     /// per-table child plans, so that the parallel-replicas plan transformation can coordinate the
     /// underlying `MergeTree` reads and distribute the steps above them. Returns `nullopt` when the `Merge`
-    /// is not eligible (a child which is not a plain `MergeTree` read, a `FINAL` read, or nothing to read);
-    /// the caller then leaves this step untouched and the `Merge` is read by a single replica.
-    std::optional<QueryPlan> expandForParallelReplicas();
+    /// is not eligible (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read, or a
+    /// read which `can_ship_read` rejects); the caller then leaves this step untouched and the `Merge` is
+    /// read by a single replica. `can_ship_read` is the caller's own rule for a read it would distribute, so
+    /// that the expansion never happens for a `Merge` the caller would leave local anyway.
+    std::optional<QueryPlan> expandForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     void addFilter(FilterDAGInfo filter);
 

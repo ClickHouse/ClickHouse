@@ -119,6 +119,18 @@ FROM (SELECT trimLeft(explain) AS explain FROM (EXPLAIN pretty = 0, description 
 SELECT count(), sum(k), sum(v) FROM m_pbm_over_view;
 SELECT count(), sum(k), sum(v) FROM m_pbm_over_view SETTINGS enable_parallel_replicas = 0;
 
+-- A read that would not be distributed anyway must not be expanded: the reads of these tables cannot be
+-- shipped with `parallel_replicas_for_non_replicated_merge_tree = 0`, because a table which is not
+-- replicated can hold different data on every replica. The `Merge` read is then left exactly as it is
+-- instead of being turned into a union which nothing distributes.
+SELECT '-- Merge over non-replicated tables which may not be read remotely';
+SELECT
+    countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
+    countIf(explain = 'ReadFromMerge') > 0 AS merge_read_not_expanded
+FROM (SELECT trimLeft(explain) AS explain FROM (EXPLAIN pretty = 0, description = 0 SELECT count(), sum(k), sum(v) FROM m_pbm))
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+SELECT count(), sum(k), sum(v) FROM m_pbm SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
+
 -- A `Merge` matching no table at all has nothing to distribute either.
 SELECT '-- Merge over no tables';
 CREATE TABLE m_pbm_over_nothing (k UInt64, v UInt64) ENGINE = Merge(currentDatabase(), '^t_pbm_no_such_tables');
