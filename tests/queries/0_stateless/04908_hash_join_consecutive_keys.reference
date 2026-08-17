@@ -3,3 +3,4 @@ parallel	12	30	150
 right	14	30	183
 full	16	43	183
 packed-full	18	60	183
+parallel-packed-full	18	60	183
