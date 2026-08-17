@@ -778,6 +778,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// just like for a classical ALTER UPDATE (see the READ_COLUMN branch below,
     /// which only rebuilds when the column type changes and so misses patches).
     NameSet patch_updated_columns;
+    /// Columns reset to their type default by CLEAR COLUMN.
+    NameSet cleared_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -813,6 +815,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 updated_columns.insert(name);
             }
         }
+
+        /// CLEAR COLUMN replaces a column with its type default, which makes every MATERIALIZED
+        /// column reachable from it stale exactly as an UPDATE does, so it needs the same graph.
+        if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+            cleared_columns.insert(command.column_name);
     }
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
@@ -823,7 +830,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// an updated column to the transitive closure reachable from it.
     std::unordered_map<String, Names> column_to_dependent_materialized;
     std::unordered_map<String, Names> column_to_affected_materialized;
-    if (!updated_columns.empty())
+    if (!updated_columns.empty() || !cleared_columns.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
         /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
@@ -924,9 +931,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// through original values).
     NameSet cleared_columns_with_dependencies;
 
-    /// Whether any MATERIALIZED column depends on a cleared column and needs
-    /// to be recalculated with the type-default value.
-    bool need_recalculate_materialized_for_clear = false;
+    /// Cleared columns that some MATERIALIZED column is calculated from, so the reachable
+    /// MATERIALIZED columns have to be recalculated with the type-default value.
+    NameSet cleared_columns_for_materialized;
 
     if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
@@ -1131,7 +1138,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// see the stale on-disk value.
             for (const auto & affected_materialized_level : affected_materialized_levels)
             {
-                stages.emplace_back(context);
+                /// These stages belong to the same command, so they must carry its version:
+                /// on-fly reads derive the patch-visibility window from consecutive stages'
+                /// versions, and an absent version leaves that window unbounded above.
+                auto & materialized_stage = stages.emplace_back(context);
+                materialized_stage.mutation_version = command.mutation_version;
+
                 for (const auto & column : columns_desc)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized
@@ -1467,36 +1479,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// When clearing a column, any MATERIALIZED column whose expression
             /// depends on the cleared column must be recalculated so its stored
-            /// data stays consistent with the new (default) value.
+            /// data stays consistent with the new (default) value. The dependency graph
+            /// already excludes what cannot be recalculated, and it is transitive, so a
+            /// column reachable only through another MATERIALIZED column counts too.
             /// We must check every CLEAR COLUMN command (not short-circuit after the
             /// first match) so that all cleared columns used by materialized
             /// expressions are registered in `cleared_columns_with_dependencies`.
-            bool has_dependent_materialized = false;
-            for (const auto & column : columns_desc)
+            if (!getAffectedMaterializedByLevel({command.column_name}, column_to_dependent_materialized).empty())
             {
-                if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name)
-                    || !column.default_desc.expression)
-                    continue;
-
-                auto query = column.default_desc.expression->clone();
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dep : syntax_result->requiredSourceColumns())
-                {
-                    if (dep == command.column_name)
-                    {
-                        has_dependent_materialized = true;
-                        break;
-                    }
-                }
-                if (has_dependent_materialized)
-                    break;
-            }
-
-            if (has_dependent_materialized)
-            {
-                need_recalculate_materialized_for_clear = true;
+                cleared_columns_for_materialized.insert(command.column_name);
                 /// Ensure the cleared column enters the readonly stage
                 /// with its default value so the materialized expression
                 /// evaluates correctly.
@@ -1606,29 +1597,34 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// Recalculate all MATERIALIZED columns when at least one of them depends
-    /// on a cleared column.  This mirrors the logic used for UPDATE (see the
-    /// `affected_materialized` block above): we re-evaluate *every*
-    /// MATERIALIZED expression so that transitive dependencies are covered.
-    if (need_recalculate_materialized_for_clear)
+    /// Recalculate the MATERIALIZED columns reachable from a cleared column, one stage per
+    /// dependency level, exactly as the UPDATE path above does: recomputing the whole chain in
+    /// a single stage would evaluate each expression against the pre-stage values, leaving a
+    /// transitively dependent column one step behind.
+    if (!cleared_columns_for_materialized.empty())
     {
-        stages.emplace_back(context);
-        for (const auto & column : columns_desc)
+        for (const auto & affected_materialized_level
+             : getAffectedMaterializedByLevel(cleared_columns_for_materialized, column_to_dependent_materialized))
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                && column.default_desc.expression)
+            stages.emplace_back(context);
+            for (const auto & column : columns_desc)
             {
-                auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                    && affected_materialized_level.contains(column.name)
+                    && column.default_desc.expression)
+                {
+                    auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
-                ASTPtr materialized_column = makeASTFunction("_CAST",
-                    column.default_desc.expression->clone(),
-                    type_literal);
+                    ASTPtr materialized_column = makeASTFunction("_CAST",
+                        column.default_desc.expression->clone(),
+                        type_literal);
 
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+                    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
-                stages.back().column_to_updated.emplace(
-                    column.name,
-                    materialized_column);
+                    stages.back().column_to_updated.emplace(
+                        column.name,
+                        materialized_column);
+                }
             }
         }
     }

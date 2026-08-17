@@ -148,6 +148,50 @@ ALTER TABLE t_index UPDATE x = x + 1000000 WHERE 1;
 
 SELECT count() FROM t_index WHERE m2 > 1000000 SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT 'clear column';
+
+-- CLEAR COLUMN resets `x` to the type default, which makes the chain stale the same way an
+-- UPDATE does, so it needs the same one-stage-per-level treatment. Recomputed together, `m2`
+-- would read the pre-stage `m1` and `m3` the pre-stage `m2`, leaving both one step behind.
+DROP TABLE IF EXISTS t_clear;
+
+CREATE TABLE t_clear
+(
+    x Int32,
+    y Int32,
+    m1 Int32 MATERIALIZED x + 1,
+    m2 Int32 MATERIALIZED m1 + 1,
+    m3 Int32 MATERIALIZED m2 + 1
+)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple();
+
+INSERT INTO t_clear (x, y) VALUES (10, 0);
+SELECT x, m1, m2, m3 FROM t_clear;
+
+ALTER TABLE t_clear CLEAR COLUMN x IN PARTITION tuple();
+SELECT x, m1, m2, m3 FROM t_clear;
+
+-- An EPHEMERAL-derived column must be left alone here too: it cannot be recalculated outside
+-- INSERT, and reaching it would fail to resolve `e`. Only `mk` is affected by clearing `x`.
+DROP TABLE IF EXISTS t_clear_ephemeral;
+
+CREATE TABLE t_clear_ephemeral
+(
+    x Int32,
+    y Int32,
+    e Int32 EPHEMERAL 0,
+    me Int32 MATERIALIZED x + e,
+    me2 Int32 MATERIALIZED me + 100,
+    mk Int32 MATERIALIZED x + 1
+)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY tuple();
+
+INSERT INTO t_clear_ephemeral (x, y, e) VALUES (1, 0, 7);
+SELECT x, me, me2, mk FROM t_clear_ephemeral;
+
+ALTER TABLE t_clear_ephemeral CLEAR COLUMN x IN PARTITION tuple();
+SELECT x, me, me2, mk FROM t_clear_ephemeral;
+
 SELECT 'ttl';
 
 -- A TTL expression over a recalculated MATERIALIZED column must be re-evaluated: `d` moves from
@@ -205,6 +249,75 @@ SELECT y FROM t_on_fly;
 
 SYSTEM START MERGES t_on_fly;
 
+SELECT 'on the fly, subcolumn';
+
+-- A MATERIALIZED column defined over a subcolumn depends on the top-level column `t`, which is
+-- what the pending command updates. Analysed without the subcolumn rewrite the dependency reads
+-- as `t.a`, the command is filtered out of the on-fly chain, and the stale stored value is
+-- returned unless the query happens to select `t` itself.
+DROP TABLE IF EXISTS t_on_fly_subcolumn;
+
+CREATE TABLE t_on_fly_subcolumn
+(
+    t Tuple(a Int32, b Int32),
+    y Int32,
+    m1 Int32 MATERIALIZED t.a + 1,
+    m2 Int32 MATERIALIZED m1 + 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_on_fly_subcolumn (t, y) VALUES ((10, 0), 0);
+
+SYSTEM STOP MERGES t_on_fly_subcolumn;
+
+ALTER TABLE t_on_fly_subcolumn UPDATE t = (20, 0) WHERE 1;
+
+SELECT y, m1 FROM t_on_fly_subcolumn;
+SELECT m1 FROM t_on_fly_subcolumn;
+SELECT m2 FROM t_on_fly_subcolumn;
+
+SYSTEM START MERGES t_on_fly_subcolumn;
+
+SELECT 'on the fly, patch part';
+
+-- The per-level MATERIALIZED stages belong to the pending UPDATE, so they have to carry its
+-- mutation version: the patch-visibility window is derived from consecutive stages' versions, and
+-- without a version the patch becomes visible to the level stages, which then recompute `m1` from
+-- the patched `z` and override the value the patch carries itself. The on-fly read must agree with
+-- reading the materialized part plus its patch, which is `20 500 510 511` (`m1` in the patch was
+-- computed from `x = 10`, the value visible when the lightweight update ran).
+DROP TABLE IF EXISTS t_on_fly_patch;
+
+CREATE TABLE t_on_fly_patch
+(
+    id UInt64,
+    x Int32,
+    z Int32,
+    m1 Int32 MATERIALIZED x + z,
+    m2 Int32 MATERIALIZED m1 + 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_on_fly_patch (id, x, z) VALUES (1, 10, 100);
+
+SYSTEM STOP MERGES t_on_fly_patch;
+
+SET enable_lightweight_update = 1, apply_patch_parts = 1;
+ALTER TABLE t_on_fly_patch UPDATE x = 20 WHERE 1;
+
+-- The lightweight update must not read through the pending mutation, otherwise the `m1` it stores
+-- in the patch is already computed from `x = 20` and coincides with what recomputing it would give.
+SET apply_mutations_on_fly = 0;
+UPDATE t_on_fly_patch SET z = 500 WHERE 1;
+SET apply_mutations_on_fly = 1;
+
+SELECT x, z, m1, m2 FROM t_on_fly_patch;
+SELECT m1 FROM t_on_fly_patch;
+SELECT m2 FROM t_on_fly_patch;
+
+SYSTEM START MERGES t_on_fly_patch;
+
 SELECT 'on the fly, ephemeral';
 
 -- Reading a column downstream of an un-recalculatable one must not try to resolve the EPHEMERAL
@@ -239,7 +352,11 @@ DROP TABLE t_ephemeral;
 DROP TABLE t_key;
 DROP TABLE t_projection;
 DROP TABLE t_index;
+DROP TABLE t_clear;
+DROP TABLE t_clear_ephemeral;
 DROP TABLE t_ttl;
 DROP TABLE t_ephemeral_converging;
 DROP TABLE t_on_fly;
+DROP TABLE t_on_fly_subcolumn;
+DROP TABLE t_on_fly_patch;
 DROP TABLE t_on_fly_ephemeral;

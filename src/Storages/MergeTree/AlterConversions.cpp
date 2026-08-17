@@ -5,6 +5,7 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTLiteral.h>
@@ -574,6 +575,11 @@ void AlterConversions::addColumnsRequiredForMaterialized(
             return it->second;
 
         auto query = columns_desc.getDefault(column_name)->expression->clone();
+        /// Must match what `MutationsInterpreter::prepare` does before analysing the same
+        /// expression: without this, a default over a subcolumn yields `t.a` where the updated
+        /// column is named `t`, the dependency is not recognised, and the command that feeds it
+        /// is filtered out of the on-fly chain.
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
         auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
         return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
     };
