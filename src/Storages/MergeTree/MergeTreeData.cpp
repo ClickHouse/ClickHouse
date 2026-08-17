@@ -10282,6 +10282,83 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return commit(lock);
 }
 
+namespace
+{
+/// Track covered parts marked as removed by non-transactional operations for cleanup on failure.
+/// For transactional operations, MergeTreeTransaction rollback handles unlocking.
+class NonTransactionalMarkedAsRemovedTracker
+{
+public:
+    NonTransactionalMarkedAsRemovedTracker(MergeTreeData & data_, MergeTreeTransaction * txn_, AtomicLogger & log_)
+        : data(data_), txn(txn_), log(log_)
+    {}
+
+    NonTransactionalMarkedAsRemovedTracker(const NonTransactionalMarkedAsRemovedTracker &) = delete;
+    NonTransactionalMarkedAsRemovedTracker(NonTransactionalMarkedAsRemovedTracker &&) = delete;
+
+    NonTransactionalMarkedAsRemovedTracker & operator=(const NonTransactionalMarkedAsRemovedTracker &) = delete;
+    NonTransactionalMarkedAsRemovedTracker & operator=(NonTransactionalMarkedAsRemovedTracker &&) = delete;
+
+    void addParts(const DataPartsVector & parts)
+    {
+        if (txn)
+        {
+            return;
+        }
+
+        marked_parts.insert(marked_parts.end(), parts.begin(), parts.end());
+    }
+
+    size_t cleanup() noexcept
+    {
+        const size_t num_cleanup_errors = cleanup(marked_parts.begin(), marked_parts.end());
+
+        marked_parts.clear();
+
+        return num_cleanup_errors;
+    }
+
+    size_t cleanup(DataPartsVector::iterator begin, DataPartsVector::iterator end) noexcept
+    {
+        if (txn)
+        {
+            return 0;
+        }
+
+        size_t cleanup_errors = 0;
+        for (auto it = begin; it != end; ++it)
+        {
+            auto & marked_part = *it;
+
+            try
+            {
+                TransactionInfoContext context{data.getStorageID(), marked_part->name};
+
+                if (!marked_part->version->resetNonTransactionalRemovalTID(context))
+                {
+                    LOG_ERROR(log, "Failed to reset non-transactional removal TID for part {}", marked_part->name);
+                    ++cleanup_errors;
+                }
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Failed to reset non-transactional removal TID for part {}", marked_part->name);
+                tryLogCurrentException(log);
+                ++cleanup_errors;
+            }
+        }
+
+        return cleanup_errors;
+    }
+
+private:
+    const MergeTreeData & data;
+    const MergeTreeTransaction * txn = nullptr;
+    AtomicLogger & log;
+    DataPartsVector marked_parts;
+};
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
@@ -10302,48 +10379,86 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        NonTransactionalMarkedAsRemovedTracker marked_removed_parts_to_cleanup(data, txn, data.log);
 
-        for (const auto & part : precommitted_parts)
+        size_t num_covered_parts_processed = 0;
+        DataPartsVector covered_parts;
+        const auto cleanup = [&]() -> size_t
         {
-            DataPartPtr covering_part;
-            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
-
-            if (txn)
+            size_t num_errors = 0;
+            /// Try to cleanup parts from the previous iterations.
+            num_errors += marked_removed_parts_to_cleanup.cleanup();
+            /// Try to cleanup parts from the current iteration if any.
+            /// NonTransactionalMarkedAsRemovedTracker::addParts may throw on vector resize, so we
+            /// clean up marked parts straight from the covered_parts vector.
+            auto end = covered_parts.begin();
+            std::advance(end, num_covered_parts_processed);
+            num_errors += marked_removed_parts_to_cleanup.cleanup(covered_parts.begin(), end);
+            if (num_errors > 0)
             {
-                /// outdated parts should be also collected here
-                /// the visible outdated parts should be tried to be removed
-                /// more likely the conflict happens at the removing visible outdated parts, what is right actually
-                DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, acquired_parts_lock);
-
-                LOG_TEST(
-                    data.log,
-                    "Got {} outdated parts covered by {} (TID {} CSN {}): {}",
-                    covered_outdated_parts.size(),
-                    part->getNameWithState(),
-                    txn->tid,
-                    txn->getSnapshot(),
-                    fmt::join(getPartsNames(covered_outdated_parts), ", "));
-                data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
-
-                std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+                LOG_ERROR(data.log, "Failed to cleanup {} parts: they are still active but marked as removed "
+                 "(see system.parts where active AND removal_csn != 0)", num_errors);
             }
+            return num_errors;
+        };
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
+        try
+        {
+            for (const auto & part : precommitted_parts)
             {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
-            }
+                num_covered_parts_processed = 0;
+                DataPartPtr covering_part;
+                covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
 
-            covered_parts_for_commit.push_back(std::move(covered_parts));
+                if (txn)
+                {
+                    /// outdated parts should be also collected here
+                    /// the visible outdated parts should be tried to be removed
+                    /// more likely the conflict happens at the removing visible outdated parts, what is right actually
+                    DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, acquired_parts_lock);
+
+                    LOG_TEST(
+                        data.log,
+                        "Got {} outdated parts covered by {} (TID {} CSN {}): {}",
+                        covered_outdated_parts.size(),
+                        part->getNameWithState(),
+                        txn->tid,
+                        txn->getSnapshot(),
+                        fmt::join(getPartsNames(covered_outdated_parts), ", "));
+                    data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
+
+                    std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+                }
+
+                /// Call addNewPartAndRemoveCovered only if there's no covering part.
+                /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
+                if (!covering_part)
+                {
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn, num_covered_parts_processed);
+                    marked_removed_parts_to_cleanup.addParts(covered_parts);
+                    /// All marked covered parts are now tracked by the tracker, so no need to cleanup parts
+                    /// from the covered_parts vector if anything throws later.
+                    num_covered_parts_processed = 0;
+                }
+
+                covered_parts_for_commit.push_back(std::move(covered_parts));
+            }
         }
-
+        catch (Exception & e)
+        {
+            size_t num_cleanup_errors = cleanup();
+            if (num_cleanup_errors > 0)
+            {
+                e.addMessage("Failed to cleanup {} parts of table {}: they are still active but marked as removed "
+                 "(see system.parts where active AND removal_csn != 0)", num_cleanup_errors, data.getStorageID().getNameForLogs());
+            }
+            throw;
+        }
+        catch (...)
+        {
+            cleanup();
+            throw;
+        }
 
         NOEXCEPT_SCOPE({
             auto current_time = time(nullptr);
@@ -10360,7 +10475,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
-                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+                covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
                 if (covering_part)
                 {
                     /// It's totally fine for zero-level parts, because of possible race condition between ReplicatedMergeTreeSink and

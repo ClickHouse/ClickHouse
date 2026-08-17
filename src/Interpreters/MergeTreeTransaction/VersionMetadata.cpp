@@ -149,7 +149,7 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
             info.removal_csn = Tx::NonTransactionalCSN;
         return true;
     };
-    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(std::move(update_function));
 }
 
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
@@ -684,6 +684,45 @@ bool VersionMetadata::hasValidMetadata()
 void VersionMetadata::writeToBuffer(WriteBuffer & buf, bool one_line) const
 {
     getInfo().writeToBuffer(buf, one_line);
+}
+
+bool VersionMetadata::resetNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context)
+{
+    LOG_TEST(log, "Object {}, resetNonTransactionalRemovalTID", getObjectName());
+
+    TIDHash locked_by = 0;
+    if (!tryLockRemovalTID(Tx::NonTransactionalTID, transaction_context, &locked_by))
+    {
+        auto locked_by_txn = TransactionLog::instance().tryGetRunningTransaction(locked_by);
+        LOG_ERROR(log, "Failed to lock removal TID for part {}: already locked by txn {} {}",
+                transaction_context.part_name, locked_by, locked_by_txn ? locked_by_txn->tid : Tx::EmptyTID);
+        return false;
+    }
+
+    /// `unlockRemovalTID` can throw in case of logic error. Calling it inside the `SCOPE_EXIT` will result in `std::terminate`.
+    /// If `unlockRemovalTID` throws it means we have an inconsistent state, so crashing is probably the safest bet here.
+    /// The behavior mirrors `setAndStoreNonTransactionalRemovalTID`.
+    SCOPE_EXIT({ unlockRemovalTID(Tx::NonTransactionalTID, transaction_context); });
+
+    auto update_function = [](VersionInfo & info)
+    {
+        if (info.removal_csn == Tx::UnknownCSN)
+        {
+            return false;
+        }
+
+        if (!info.removal_tid.isNonTransactional())
+        {
+            return false;
+        }
+
+        info.removal_tid = Tx::EmptyTID;
+        info.removal_csn = Tx::UnknownCSN;
+        return true;
+    };
+    updateInfoWithRefreshDataThenStoreAndSetMetadata(std::move(update_function));
+
+    return true;
 }
 
 DataTypePtr getTransactionIDDataType()

@@ -106,6 +106,12 @@ public:
     /// Returns immediately if the part is already removed.
     virtual void setAndStoreNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context) = 0;
 
+    /// Reverts the effect of `setAndStoreNonTransactionalRemovalTID`.
+    /// Manages the removal lock itself.
+    /// - Returns true if the removal TID was successfully reset or nothing needs to be done.
+    /// - Returns false if tryLockRemovalTID failed.
+    bool resetNonTransactionalRemovalTID(const TransactionInfoContext & transaction_context);
+
     /// Checks if the data part can be safely removed from storage.
     /// Returns true if no running transaction can see this part anymore.
     /// Logic:
