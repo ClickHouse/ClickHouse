@@ -10,15 +10,13 @@ from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
 
-_NOTARY_KEY_SECRET = Secret.Config(
-    name="/release/apple-notary/notary_key",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-)
-NOTARY_ISSUER_ID = "b17e8d0b-6b5d-4063-9a1d-24d9baa80daf"
-NOTARY_KEY_ID = "99QTC6XVSW"
+RCODESIGN = "/rust/cargo/bin/rcodesign"
+PKCS11_PROXY = "/usr/lib/x86_64-linux-gnu/p11-kit-proxy.so"
+
+CERTIFICATE_CHAIN = Path("./ci/signing/apple-developer-id-chain.pem")
+ENTITLEMENTS = Path("./ci/signing/entitlements.plist")
 
 TEMP_DIR = Path(f"{Utils.cwd()}/ci/tmp")
-
 INPUT_BINARY = TEMP_DIR / "clickhouse"
 SIGNED_BINARY = TEMP_DIR / "signed" / "clickhouse"
 SIGNED_ZIP = TEMP_DIR / "clickhouse-macos.zip"
@@ -26,21 +24,22 @@ EMPTY_CONFIG = TEMP_DIR / "rcodesign-empty.toml"
 NOTARY_P8 = TEMP_DIR / "notary_key.p8"
 NOTARY_API_KEY_JSON = TEMP_DIR / "notary_api_key.json"
 
-TIMESTAMP_URL = "http://timestamp.apple.com/ts01"
-
-CERTIFICATE_CHAIN = Path("./ci/signing/apple-developer-id-chain.pem")
-ENTITLEMENTS = Path("./ci/signing/entitlements.plist")
-APPLE_TEAM_ID = "ZNDB5FJ8ZW"
-LEAF_COMMON_NAME = f"Developer ID Application: ClickHouse Inc. ({APPLE_TEAM_ID})"
-
 KMS_KEY_ARN = (
     "arn:aws:kms:us-east-1:640168457429:key/6b675f39-8cf0-4380-8668-425dc7548086"
 )
 KMS_REGION = "us-east-1"
 PKCS11_TOKEN_LABEL = "clickhouse_macos_signing"
 
-RCODESIGN = "/rust/cargo/bin/rcodesign"
-PKCS11_PROXY = "/usr/lib/x86_64-linux-gnu/p11-kit-proxy.so"
+APPLE_TEAM_ID = "ZNDB5FJ8ZW"
+LEAF_COMMON_NAME = f"Developer ID Application: ClickHouse Inc. ({APPLE_TEAM_ID})"
+TIMESTAMP_URL = "http://timestamp.apple.com/ts01"
+
+_NOTARY_KEY_SECRET = Secret.Config(
+    name="/release/apple-notary/notary_key",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
+NOTARY_ISSUER_ID = "b17e8d0b-6b5d-4063-9a1d-24d9baa80daf"
+NOTARY_KEY_ID = "99QTC6XVSW"
 
 MAX_SIZE_GROWTH_BYTES = 32 * 1024 * 1024
 
