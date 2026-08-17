@@ -54,12 +54,13 @@ def create_table(node, replica):
         ORDER BY k
         TTL d + INTERVAL 1 DAY CLEAR INDEX idx
         SETTINGS
-            always_fetch_merged_part = 1,
+            always_fetch_merged_part = 0,
             index_granularity = 2,
             index_granularity_bytes = '10Mi',
             merge_with_ttl_timeout = 1,
             min_bytes_for_wide_part = 0,
             min_rows_for_wide_part = 0,
+            prefer_fetch_merged_part_size_threshold = 1073741824,
             storage_policy = 's3_only'
         """
     )
@@ -245,7 +246,7 @@ def test_ttl_clear_index_leaves_patches_pending(started_cluster):
     node1.query("DROP TABLE ttl_clear_index_patches SYNC")
 
 
-def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
+def test_replicas_execute_ttl_clear_index_merge(started_cluster):
     create_table(node1, "r1")
     create_table(node2, "r2")
 
@@ -268,6 +269,7 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
     assert node2.query(index_size_query) == "1\n"
 
     source_merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    follower_merges_before = event_value(node2, "TTLClearIndexMetadataOnlyMerges")
     source_mismatches_before = event_value(node1, "DataAfterMergeDiffersFromReplica")
     follower_mismatches_before = event_value(node2, "DataAfterMergeDiffersFromReplica")
     follower_fetches_before = event_value(node2, "ReplicatedPartFetches")
@@ -299,8 +301,28 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
 
     node2.query("SYSTEM START TTL MERGES ttl_clear_index")
     node2.query("SYSTEM SYNC REPLICA ttl_clear_index")
-    assert event_value(node2, "ReplicatedPartFetches") > follower_fetches_before
+    assert (
+        event_value(node2, "TTLClearIndexMetadataOnlyMerges")
+        > follower_merges_before
+    )
+    assert event_value(node2, "ReplicatedPartFetches") == follower_fetches_before
     assert node2.query(index_size_query) == "0\n"
+
+    node2.query("SYSTEM FLUSH LOGS")
+    assert_eq_with_retry(
+        node2,
+        """
+        SELECT count() > 0
+        FROM system.part_log
+        WHERE database = currentDatabase()
+          AND table = 'ttl_clear_index'
+          AND event_type = 'MergeParts'
+          AND merge_reason = 'TTLClearIndexMerge'
+          AND error = 0
+          AND ProfileEvents['TTLClearIndexMetadataOnlyMerges'] > 0
+        """,
+        "1",
+    )
 
     assert event_value(node1, "DataAfterMergeDiffersFromReplica") == source_mismatches_before
     assert event_value(node2, "DataAfterMergeDiffersFromReplica") == follower_mismatches_before
