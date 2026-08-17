@@ -70,8 +70,14 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>>  keys16;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>>                   keys32;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>>                   keys64;
-    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
-    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
+    /// The 128/256-bit fixed-keys methods use the consecutive-keys optimization: with keys this
+    /// wide a repeated-key run saves the whole hash+probe per row while the check itself is just
+    /// packing the key (done anyway) and one wide compare. The adaptive hit-rate check in the
+    /// Aggregator (`min_hit_rate_to_use_consecutive_keys_optimization`) turns the cache off when
+    /// the data has no runs. The main beneficiary is aggregation of time-series-like streams
+    /// sorted by a wide key (e.g. the PromQL engine aggregating raw samples by the series id).
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, false, true>>  keys128;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, false, false, true>>  keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                          serialized;
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKey>>                  nullable_serialized;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKey>>                  prealloc_serialized;
@@ -84,8 +90,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>>           keys32_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
-    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
-    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
+    /// See the comment about the consecutive-keys optimization at `keys128`/`keys256`.
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, false, true>>  keys128_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, false, true>>  keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>                  serialized_two_level;
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyTwoLevel>>          nullable_serialized_two_level;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyTwoLevel>>          prealloc_serialized_two_level;

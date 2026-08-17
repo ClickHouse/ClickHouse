@@ -180,12 +180,12 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, c
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, false, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, false, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, false, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>;
