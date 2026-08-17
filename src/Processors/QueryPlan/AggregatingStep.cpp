@@ -833,6 +833,23 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
+        if (use_adaptive_aggregator)
+        {
+            /// The staged-chunk store: the producers' staged chunks travel their output ports
+            /// into it, and it assembles the merge once every producer finished (see
+            /// `AdaptiveAggregationMergeTransform`). The admission rejected bucket-ordered
+            /// output, so the merged single stream resizes exactly as the non-adaptive path.
+            chassert(!should_produce_results_in_order_of_bucket_number && !skip_merging);
+            pipeline.addTransform(std::make_shared<AdaptiveAggregationMergeTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                transform_params,
+                many_data,
+                new_merge_threads,
+                new_temporary_data_merge_threads,
+                dataflow_cache_updater));
+        }
+
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
