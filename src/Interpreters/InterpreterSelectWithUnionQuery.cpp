@@ -325,12 +325,24 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+            /// UNION keeps one stream per branch, so a preliminary DISTINCT deduplicates each of them
+            /// in parallel and shrinks what the final single-stream DISTINCT has to merge.
+            auto pre_distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentHeader(),
+                limits,
+                0,
+                result_header->getNames(),
+                true);
+            pre_distinct_step->setStepDescription("Preliminary DISTINCT");
+            query_plan.addStep(std::move(pre_distinct_step));
+
             auto distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
                 limits,
                 0,
                 result_header->getNames(),
                 false);
+            distinct_step->setStepDescription("DISTINCT");
 
             query_plan.addStep(std::move(distinct_step));
         }
