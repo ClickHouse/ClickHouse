@@ -2102,7 +2102,7 @@ void TCPHandler::receiveHello()
         {
             auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
             session = makeSession();
-            session->onAuthenticationFailure(user, getClientAddress(session->getClientInfo()), socket().peerAddress(), exception);
+            session->onAuthenticationFailure(user, getClientAddress(session->getClientInfo()), exception);
             throw exception; /// NOLINT
         }
     }
