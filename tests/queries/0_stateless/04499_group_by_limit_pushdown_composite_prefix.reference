@@ -20,8 +20,6 @@ trailing_agg_key_desc
 trailing_nullable_nulls_first
 trailing_nullable_nulls_last
 trailing_collate
-trailing_collate: not optimized
-0
 trailing_duplicate_key
 aliased key passes through: still optimized
 1

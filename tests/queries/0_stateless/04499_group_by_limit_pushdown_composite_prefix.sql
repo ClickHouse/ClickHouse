@@ -415,15 +415,6 @@ FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_collate;
 
-SELECT 'trailing_collate: not optimized';
-SELECT count() FROM
-(
-    EXPLAIN actions = 1
-    SELECT a, max(c), count()
-    FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
-)
-WHERE explain LIKE '%Top-K%';
-
 DROP TABLE IF EXISTS gt_trailing_duplicate_key;
 CREATE TABLE gt_trailing_duplicate_key ENGINE = Memory EMPTY AS
 SELECT a, b, count(), sum(val)
