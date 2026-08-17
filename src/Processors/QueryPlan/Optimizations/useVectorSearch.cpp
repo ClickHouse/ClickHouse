@@ -481,9 +481,10 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
         /// Row-level filters are executed by ReadFromMergeTree and are not represented by a separate
         /// plan node. Their ActionsDAG updates the read header and retains required table columns as
-        /// passthrough outputs, so retain the vector column whenever a row policy carries it. With
-        /// FINAL, the row-level filter can already be deferred before this pass runs, so check both
-        /// carriers.
+        /// passthrough outputs. `replaceVectorColumnWithDistanceColumn` removes the direct vector-column
+        /// passthrough from both active and deferred row-policy DAGs, but any other output that consumes
+        /// the vector column must still prevent the rewrite. With FINAL, the row-level filter can already
+        /// be deferred before this pass runs, so check both carriers.
         if (optimize_plan)
         {
             if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
@@ -491,7 +492,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 const ActionsDAG & row_level_filter_expression = row_level_filter->actions;
                 if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column))
                 {
-                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, nullptr))
+                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, findPassthroughOutput(row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
                 }
             }
@@ -501,7 +502,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 const ActionsDAG & deferred_row_level_filter_expression = deferred_row_level_filter->actions;
                 if (const auto * search_column_input = findSearchColumnInput(deferred_row_level_filter_expression, search_column))
                 {
-                    if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, nullptr))
+                    if (anyOutputConsumesInput(deferred_row_level_filter_expression, search_column_input, findPassthroughOutput(deferred_row_level_filter_expression, search_column_input)))
                         optimize_plan = false;
                 }
             }
