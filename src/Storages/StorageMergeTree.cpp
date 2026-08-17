@@ -2535,7 +2535,7 @@ bool StorageMergeTree::optimize(
         });
         const auto reserve_merge_slot = [&]
         {
-            if (!partition || !merge_mutate_executor)
+            if (!merge_mutate_executor)
                 return;
             reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
             if (reserved_merge_slot == 0)
