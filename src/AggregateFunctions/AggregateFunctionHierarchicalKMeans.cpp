@@ -989,19 +989,29 @@ public:
         size_t start = row_num ? offsets[row_num - 1] : 0;
         size_t length = offsets[row_num] - start;
 
-        /// A zero vector has no direction, so cosine against it is undefined. Under `spherical = 1` the whole
-        /// point is that every centroid is a unit direction, so reject the input rather than let a zero-norm
-        /// point silently drag a cluster mean toward the origin.
-        if (spherical)
+        /// One pass covering both input contracts.
+        ///
+        /// Non-finite coordinates are rejected because no comparison against NaN is ever true, so the
+        /// assignment kernel would quietly collect those rows into cluster 0 and the trained centroids could
+        /// come out non-finite. The rest of the vector-search stack treats them as invalid input the same way
+        /// (`checkVectorIsSane` in `MergeTreeIndexVectorSimilarity.cpp`).
+        ///
+        /// A zero vector has no direction, so cosine against it is undefined. Under `spherical = 1` every
+        /// centroid is meant to be a unit direction, so reject rather than let a zero-norm point drag a
+        /// cluster mean toward the origin.
+        double norm2 = 0;
+        for (size_t j = 0; j < length; ++j)
         {
-            double norm2 = 0;
-            for (size_t j = 0; j < length; ++j)
-                norm2 += static_cast<double>(nested[start + j]) * static_cast<double>(nested[start + j]);
-            if (norm2 == 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "hierarchicalKMeans: zero-norm vectors are not allowed with spherical = 1 "
-                    "(cosine is undefined for a vector with no direction)");
+            const Float x = nested[start + j];
+            if (!std::isfinite(x))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "hierarchicalKMeans: input vector must not contain non-finite values (NaN or Inf)");
+            norm2 += static_cast<double>(x) * static_cast<double>(x);
         }
+        if (spherical && norm2 == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "hierarchicalKMeans: zero-norm vectors are not allowed with spherical = 1 "
+                "(cosine is undefined for a vector with no direction)");
 
         data(place).addVector(&nested[start], static_cast<UInt32>(length), sample_cap);
     }
@@ -1052,6 +1062,13 @@ public:
 
         d.samples.resize(n);
         buf.readStrict(reinterpret_cast<char *>(d.samples.data()), n * sizeof(Float));
+
+        /// `add` rejects non-finite input, but a transported state bypasses `add` entirely, so the invariant
+        /// has to be re-established here before the payload can reach `kMeansLloyd`.
+        for (size_t i = 0; i < n; ++i)
+            if (!std::isfinite(d.samples[i]))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "hierarchicalKMeans: aggregate state contains non-finite values (NaN or Inf)");
 
         String rng_string;
         readStringBinary(rng_string, buf);

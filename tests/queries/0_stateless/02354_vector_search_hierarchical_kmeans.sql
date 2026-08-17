@@ -59,6 +59,17 @@ SELECT hierarchicalKMeans(2)(v) FROM (SELECT [1.0, 2.0]::Array(Float64) AS v); -
 SELECT hierarchicalKMeans(2)(v) FROM (SELECT 1.0::Float32 AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- An empty vector would make `dim` zero, which is also the "no rows yet" sentinel.
 SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS }
+-- No comparison against NaN is true, so a non-finite coordinate would collect rows into cluster 0 and can
+-- emit non-finite centroids. Rejected on the way in, matching the rest of the vector-search stack.
+SELECT hierarchicalKMeans(1)([toFloat32(nan)]::Array(Float32)); -- { serverError INCORRECT_DATA }
+SELECT hierarchicalKMeans(1)([toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
+SELECT hierarchicalKMeans(1)([-toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
+-- A transported state bypasses `add`, so the invariant is re-established on deserialization. The state is
+-- patched at runtime (1.0f -> NaN) rather than hardcoded, so this cannot drift with the serialization format.
+SELECT finalizeAggregation(CAST(
+    unhex(replaceOne(hex(hierarchicalKMeansState(1, 16, 20, 100)(v)), '0000803F', '0000C07F')),
+    'AggregateFunction(hierarchicalKMeans(1, 16, 20, 100), Array(Float32))'))
+FROM (SELECT [1.0]::Array(Float32) AS v); -- { serverError INCORRECT_DATA }
 -- Cosine is undefined for a vector with no direction.
 SELECT hierarchicalKMeans(1, 16, 20, 1000000, 0, 1)([0, 0]::Array(Float32)); -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
