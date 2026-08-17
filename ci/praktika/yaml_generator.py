@@ -159,7 +159,7 @@ jobs:
         TEMPLATE_JOB_0 = """
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
-    needs: [{NEEDS}]{IF_EXPRESSION}
+    needs:{NEEDS}{IF_EXPRESSION}
     name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
@@ -337,7 +337,14 @@ class PullRequestPushYamlGen:
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(sorted(map(Utils.normalize_string, _all_needs(job.name))))
+            normalized_needs = sorted(
+                map(Utils.normalize_string, _all_needs(job.name))
+            )
+            needs = (
+                "\n" + "\n".join(f"    - {need}" for need in normalized_needs)
+                if normalized_needs
+                else " []"
+            )
             job_name = job.name
             job_addons = []
             for addon in job.addons:

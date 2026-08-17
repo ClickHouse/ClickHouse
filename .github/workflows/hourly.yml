@@ -52,7 +52,8 @@ jobs:
 
   collect_flaky_tests:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Collect flaky tests"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -86,7 +87,8 @@ jobs:
 
   autoassign_approvers:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Autoassign approvers"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
