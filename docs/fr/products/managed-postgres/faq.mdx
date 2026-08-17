@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ sur Managed Postgres'
+title: 'FAQ sur ClickHouse Managed Postgres'
 description: 'Questions fréquentes sur ClickHouse Managed Postgres'
 keywords: ['faq managed postgres', 'questions postgres', 'métriques', 'extensions', 'migration', 'terraform', 'pgbouncer', 'requêtes préparées']
 doc_type: 'reference'
@@ -16,10 +16,10 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 </div>
 
 <div id="metrics-access">
-  ### Comment puis-je accéder aux métriques de mon instance Managed Postgres ?
+  ### Comment puis-je accéder aux métriques de mon instance ClickHouse Managed Postgres ?
 </div>
 
-Vous pouvez surveiller l’utilisation du CPU, de la mémoire, des IOPS et du stockage directement dans la console ClickHouse Cloud, dans l’onglet **Monitoring** de votre instance Managed Postgres.
+Vous pouvez surveiller l’utilisation du CPU, de la mémoire, des IOPS et du stockage directement dans la console ClickHouse Cloud, dans l’onglet **Monitoring** de votre instance ClickHouse Managed Postgres.
 
 De plus, vous pouvez consulter [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) pour obtenir une analyse détaillée de vos requêtes dans l’onglet **Query Insights**.
 
@@ -31,7 +31,7 @@ De plus, vous pouvez consulter [Query Performance Insights](https://clickhouse.c
   ### Quelles options de sauvegarde sont disponibles ?
 </div>
 
-Managed Postgres inclut des sauvegardes automatiques quotidiennes avec archivage continu du WAL, permettant une restauration à un instant donné à tout moment dans une période de rétention de 7 jours. Les sauvegardes sont stockées dans S3.
+ClickHouse Managed Postgres inclut des sauvegardes automatiques quotidiennes avec archivage continu du WAL, permettant une restauration à un instant donné à tout moment dans une période de rétention de 7 jours. Les sauvegardes sont stockées dans S3.
 
 Pour plus de détails sur la fréquence des sauvegardes, la rétention et la procédure de restauration à un instant donné, consultez la documentation [Sauvegarde et restauration](/fr/products/managed-postgres/backup-and-restore).
 
@@ -40,10 +40,10 @@ Pour plus de détails sur la fréquence des sauvegardes, la rétention et la pro
 </div>
 
 <div id="terraform-support">
-  ### Terraform est-il pris en charge pour Managed Postgres ?
+  ### Terraform est-il pris en charge pour ClickHouse Managed Postgres ?
 </div>
 
-Terraform n&#39;est pas actuellement pris en charge pour Managed Postgres. Nous recommandons d&#39;utiliser la console ClickHouse Cloud ou [OpenAPI](/fr/products/managed-postgres/openapi) pour créer et gérer vos instances.
+Terraform n&#39;est pas actuellement pris en charge pour ClickHouse Managed Postgres. Nous recommandons d&#39;utiliser la console ClickHouse Cloud ou [OpenAPI](/fr/products/managed-postgres/openapi) pour créer et gérer vos instances.
 
 <div id="extensions-and-configuration">
   ## Extensions et configuration
@@ -53,7 +53,7 @@ Terraform n&#39;est pas actuellement pris en charge pour Managed Postgres. Nous 
   ### Quelles extensions sont prises en charge ?
 </div>
 
-Managed Postgres inclut plus de 90 extensions PostgreSQL, dont des extensions populaires comme PostGIS, pgvector, pg&#95;cron et bien d’autres. Pour consulter la liste complète des extensions disponibles ainsi que les instructions d’installation, reportez-vous à la documentation [Extensions](/fr/products/managed-postgres/extensions).
+ClickHouse Managed Postgres inclut plus de 90 extensions PostgreSQL, dont des extensions populaires comme PostGIS, pg&#95;cron, pgvector et bien d’autres. Pour consulter la liste complète des extensions disponibles ainsi que les instructions d’installation, reportez-vous à la documentation [Extensions](/fr/products/managed-postgres/extensions).
 
 <div id="config-customization">
   ### Puis-je personnaliser les paramètres de configuration de PostgreSQL ?
@@ -73,7 +73,7 @@ Oui, vous pouvez modifier les paramètres de configuration de PostgreSQL et de P
   ### Pourquoi est-ce que je vois des erreurs `prepared statement does not exist` avec PgBouncer ?
 </div>
 
-Managed Postgres exécute PgBouncer en mode **transaction pooling**. Dans ce mode, une connexion backend Postgres n’est attribuée à votre client que pendant une seule transaction, puis remise dans le pool — la transaction suivante du même client peut être dirigée vers un autre backend.
+ClickHouse Managed Postgres exécute PgBouncer en mode **pool de connexions par transaction**. Dans ce mode, une connexion backend Postgres n’est attribuée à votre client que pendant une seule transaction, puis remise dans le pool — la transaction suivante du même client peut être dirigée vers un autre backend.
 
 Cela casse les **prepared statements côté serveur**, qui sont liés au backend précis ayant exécuté le `PREPARE` (ou le `Parse` de la requête étendue). Lorsque l’`EXECUTE` correspondant est envoyé à un autre backend, vous obtenez des erreurs comme :
 
@@ -109,7 +109,7 @@ Ils ne contrôlent pas la même chose :
 * **Postgres `max_connections`** fixe le nombre maximal de connexions **backend** à PostgreSQL lui-même. C’est la limite la plus coûteuse : chaque backend consomme de la mémoire et un slot de processus.
 * **PgBouncer `max_client_conn`** fixe le nombre maximal de connexions **client** pouvant être ouvertes simultanément dans le pooler. PgBouncer multiplexe ce grand nombre de connexions client sur un ensemble bien plus réduit de connexions backend.
 
-Une instance Managed Postgres typique est configurée pour que PgBouncer accepte environ **10× plus de connexions client que de backends Postgres** (par ex. 5 000 clients / 500 backends). Si vous voyez des erreurs de connexion au niveau du pooler, il est bien plus probable que vous atteigniez une limite backend par pool (`default_pool_size`) plutôt que la limite client globale.
+Une instance ClickHouse Managed Postgres typique est configurée pour que PgBouncer accepte environ **10× plus de connexions client que de backends Postgres** (par ex. 5 000 clients / 500 backends). Si vous voyez des erreurs de connexion au niveau du pooler, il est bien plus probable que vous atteigniez une limite backend par pool (`default_pool_size`) plutôt que la limite client globale.
 
 <div id="database-capabilities">
   ## Fonctionnalités de la base de données
@@ -119,13 +119,13 @@ Une instance Managed Postgres typique est configurée pour que PgBouncer accepte
   ### Puis-je créer plusieurs bases de données et schémas ?
 </div>
 
-Oui. Managed Postgres offre toutes les fonctionnalités natives de PostgreSQL, notamment la prise en charge de plusieurs bases de données et schémas au sein d’une même instance. Vous pouvez créer et gérer des bases de données et des schémas à l’aide des commandes PostgreSQL standard.
+Oui. ClickHouse Managed Postgres offre toutes les fonctionnalités natives de PostgreSQL, notamment la prise en charge de plusieurs bases de données et schémas au sein d’une même instance. Vous pouvez créer et gérer des bases de données et des schémas à l’aide des commandes PostgreSQL standard.
 
 <div id="rbac-support">
   ### Le contrôle d’accès basé sur les rôles (RBAC) est-il pris en charge ?
 </div>
 
-Vous bénéficiez d’un accès superutilisateur complet à votre instance Managed Postgres, ce qui vous permet de créer des rôles et de gérer les autorisations à l’aide des commandes PostgreSQL standard.
+Vous bénéficiez d’un accès superutilisateur complet à votre instance ClickHouse Managed Postgres, ce qui vous permet de créer des rôles et de gérer les autorisations à l’aide des commandes PostgreSQL standard.
 
 <Note>
   Des fonctionnalités RBAC avancées avec intégration à la Console sont prévues cette année.
@@ -146,10 +146,10 @@ Les mises à niveau, mineures comme majeures, sont effectuées par basculement e
 </div>
 
 <div id="migration-tools">
-  ### Quels outils sont disponibles pour migrer vers Managed Postgres ?
+  ### Quels outils sont disponibles pour migrer vers ClickHouse Managed Postgres ?
 </div>
 
-Managed Postgres prend en charge plusieurs méthodes de migration :
+ClickHouse Managed Postgres prend en charge plusieurs méthodes de migration :
 
 * **pg&#95;dump and pg&#95;restore** : pour les bases de données de petite taille ou les migrations ponctuelles. Consultez le guide [pg&#95;dump and pg&#95;restore](/fr/products/managed-postgres/migrations/pg_dump-pg_restore).
 * **réplication logique** : pour les bases de données plus volumineuses nécessitant un minimum d’indisponibilité. Consultez le guide [réplication logique](/fr/products/managed-postgres/migrations/logical-replication).

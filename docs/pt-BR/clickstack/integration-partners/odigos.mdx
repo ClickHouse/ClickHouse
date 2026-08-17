@@ -4,7 +4,7 @@ title: 'Enviando OpenTelemetry para o ClickStack com Odigos'
 sidebarTitle: 'Odigos'
 description: 'Instrumente automaticamente workloads do Kubernetes com o Odigos e exporte a telemetria para o ClickStack via OTLP'
 doc_type: 'guide'
-keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentação']
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'instrumentação automática']
 ---
 
 import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
@@ -190,7 +190,7 @@ Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece ape
   <Step title="Verifique a telemetria no ClickStack" id="verify-telemetry">
     1. Abra a interface do ClickStack (HyperDX):
        * **Open source ClickStack**: por exemplo, `http://<host>:8080` na imagem all-in-one.
-       * **Managed ClickStack**: abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e clique em **Launch ClickStack**. Consulte [Acesse a UI do ClickStack](/pt-BR/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) para mais detalhes.
+       * **Managed ClickStack**: abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e clique em **Launch ClickStack**.
     2. Verifique **Logs**, **Metrics** e **Traces** para conferir os dados dos seus serviços instrumentados.
     3. Filtre os traces por `odigos.version` para validar a exportação de ponta a ponta.
 
