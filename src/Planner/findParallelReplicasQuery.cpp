@@ -73,7 +73,7 @@ bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextP
             if (!underlying_storage)
                 return false;
 
-            return true;
+            return isTableNodeEligibleForParallelReplicas(table_node, underlying_storage, context);
         }
     }
 
