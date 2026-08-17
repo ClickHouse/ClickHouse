@@ -268,10 +268,9 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
         ///
-        /// `write` overwrites the part's `unique_key_index.sst` checksum entry,
-        /// which may describe the file we just replaced (or be absent, for a part
-        /// written before the SST was checksummed), so `checksums.txt` has to be
-        /// rewritten to match the new file.
+        /// The rebuilt SST is deliberately not recorded in the part's checksums:
+        /// the in-memory map and `checksums.txt` stay as loaded.
+        MergeTreeDataPartChecksums scratch_checksums;
         SSTIndexWriter::write(
             storage,
             accumulated,
@@ -281,8 +280,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
             /*permutation=*/nullptr,
             /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
             data.getContext(),
-            part->checksums);
-        part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
+            scratch_checksums);
 
         const UInt64 elapsed_us = rebuild_watch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount);

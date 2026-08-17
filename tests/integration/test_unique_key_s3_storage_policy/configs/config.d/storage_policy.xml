@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
+            </s3_disk>
+        </disks>
+        <policies>
+            <!-- Compatible with the implicit `default` policy: keeps the `default`
+                 volume (with the `default` disk) and adds an S3 volume, so a table
+                 created on the default policy can ALTER MODIFY SETTING
+                 storage_policy to it. -->
+            <default_with_s3>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <s3>
+                        <disk>s3_disk</disk>
+                    </s3>
+                </volumes>
+            </default_with_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

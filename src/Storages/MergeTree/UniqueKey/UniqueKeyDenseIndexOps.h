@@ -39,7 +39,7 @@ public:
     /// Materializes `unique_key_index.sst` when it is missing OR present but
     /// invalid. Presence alone is not trusted: the existing file is validated
     /// against the RocksDB block checksums and the part's row count, and
-    /// removed+rebuilt if it fails. The rebuild re-records the checksum entry.
+    /// removed+rebuilt if it fails.
     ///
     /// The SST is recorded in `checksums.txt`, so a missing or wrongly-sized file
     /// is rejected earlier by `checkConsistencyBase` and the part is detached as
