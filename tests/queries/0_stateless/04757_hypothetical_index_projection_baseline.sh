@@ -39,4 +39,14 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline;
 " 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
 
+# the no-scan path is still single-table only, and still honours force_data_skipping_indices
+echo "--- a join is not silently reported as single-table ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline AS x INNER JOIN t_hypo_proj_baseline AS y ON 0;" 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
+
+echo "--- a forced index still fails when nothing is read ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS force_data_skipping_indices = 'hi_b';
+" 2>&1 | grep -m1 -oE 'INDEX_NOT_USED'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_baseline;"

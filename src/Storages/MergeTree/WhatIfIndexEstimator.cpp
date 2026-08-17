@@ -68,7 +68,10 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
     if (!select)
         return nullptr;
-    return JoinedTables(context, *select).getLeftTableStorage();
+    JoinedTables joined_tables(context, *select);
+    if (joined_tables.tablesCount() != 1)
+        return nullptr;
+    return joined_tables.getLeftTableStorage();
 }
 
 /// Nothing was scanned, so mark every candidate not-applicable with the same reason
@@ -344,6 +347,14 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             /// The plan answers the query without reading the table's parts at all: a trivial
             /// count, a minmax_count or exact-count projection, or a projection that selected no
             /// ranges. No index on those parts would be read
+            /// Nothing can satisfy a forced name here, so throw like a real read would
+            for (const auto & forced_string : forced_strings)
+                for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, local_context->getSettingsRef()))
+                    throw Exception(
+                        ErrorCodes::INDEX_NOT_USED,
+                        "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                        backQuoteIfNeed(name));
+
             return buildResultWithoutScan(
                 *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
         }

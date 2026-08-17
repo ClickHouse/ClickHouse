@@ -10,3 +10,7 @@ source: empirical
 --- a plan with no MergeTree read step still reports candidates ---
 status: not_applicable
 reason: The query is answered without reading the table\'s parts, so an index on them would not be read
+--- a join is not silently reported as single-table ---
+NOT_IMPLEMENTED
+--- a forced index still fails when nothing is read ---
+INDEX_NOT_USED
