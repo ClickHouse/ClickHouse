@@ -158,12 +158,13 @@ def report_rabbitmq_recreations(result: Result) -> int:
         fail_cnt = sum(1 for r in result.results if not r.is_ok())
         result.set_info(f"Failures: {fail_cnt}/{len(result.results)}")
     result.set_info(
-        f"RabbitMQ container was recreated {count} time(s) after failing to start"
+        f"RabbitMQ container recreation was attempted {count} time(s)"
+        " after failing to start"
     )
     for snapshot in snapshots:
         if snapshot not in result.files:
             result.files.append(snapshot)
-    print(f"NOTE: RabbitMQ container recreations absorbed by retry: {count}")
+    print(f"NOTE: RabbitMQ container recreations observed: {count}")
     return count
 
 

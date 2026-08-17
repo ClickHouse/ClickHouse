@@ -128,7 +128,7 @@ def test_counts_tokens_across_worker_logs(temp_path):
     result = _result(children=[Result.Status.OK])
 
     assert job.report_rabbitmq_recreations(result) == 3
-    assert "recreated 3 time(s)" in result.info
+    assert "recreation was attempted 3 time(s)" in result.info
     assert len(result.files) == 3
 
 
@@ -241,7 +241,7 @@ def test_red_job_keeps_its_failure_count(temp_path):
 
     assert job.report_rabbitmq_recreations(result) == 1
     assert "Failures: 1/3" in result.info
-    assert "recreated 1 time(s)" in result.info
+    assert "recreation was attempted 1 time(s)" in result.info
 
 
 def test_green_job_keeps_its_failure_count(temp_path):
@@ -254,7 +254,7 @@ def test_green_job_keeps_its_failure_count(temp_path):
 
     assert job.report_rabbitmq_recreations(result) == 1
     assert "Failures: 0/2" in result.info
-    assert "recreated 1 time(s)" in result.info
+    assert "recreation was attempted 1 time(s)" in result.info
 
 
 def test_summary_is_not_duplicated_by_complete_job(temp_path):
@@ -274,13 +274,15 @@ def test_summary_is_not_duplicated_by_complete_job(temp_path):
     result._add_job_summary_to_info()  # what complete_job does next
     assert result.info.count("Failures:") == 1, result.info
     assert "Failures: 1/2" in result.info
-    assert result.info.count("recreated") == 1, result.info
+    assert result.info.count("recreation was attempted") == 1, result.info
 
 
-def test_report_does_not_claim_recovery(temp_path):
-    """The reporter runs before the retry's outcome is known to it: an exhausted-retries
-    run leaves a token in the log and still aborts the module. So the wording must hold
-    on every path and must not assert that the suite recovered."""
+def test_report_does_not_claim_recovery(temp_path, capsys):
+    """The waiter logs the token before it removes the old container, brings the new one
+    up and re-resolves its ID, and every one of those can raise; the retry can also be
+    exhausted with the module still aborting. So the token means an attempt was started,
+    not that a container was recreated or that the suite recovered, and the wording must
+    hold on every path and on both channels the reporter writes."""
     _write_log(
         temp_path,
         "pytest_parallel-gw0.log",
@@ -289,7 +291,14 @@ def test_report_does_not_claim_recovery(temp_path):
     result = _result(status=Result.Status.FAIL, children=[Result.Status.FAIL])
 
     job.report_rabbitmq_recreations(result)
-    assert "recover" not in result.info.lower(), result.info
+    stdout = capsys.readouterr().out
+    for channel in (result.info, stdout):
+        lowered = channel.lower()
+        assert "recover" not in lowered, channel
+        assert "absorb" not in lowered, channel
+        assert "was recreated" not in lowered, channel
+    assert "recreation was attempted 1 time(s)" in result.info
+    assert "observed: 1" in stdout, stdout
 
 
 def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
@@ -305,7 +314,7 @@ def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
 
     job.report_rabbitmq_recreations(result)
     assert "Session-level error from another writer" in result.info
-    assert "recreated 1 time(s)" in result.info
+    assert "recreation was attempted 1 time(s)" in result.info
     assert "Failures:" not in result.info
 
 
@@ -339,7 +348,7 @@ def test_report_survives_serialization(temp_path):
 
     job.report_rabbitmq_recreations(result)
     restored = Result.from_dict(json.loads(result.to_json()))
-    assert "recreated 1 time(s)" in restored.info
+    assert "recreation was attempted 1 time(s)" in restored.info
     assert "Failures: 0/1" in restored.info
     assert path in [str(f) for f in restored.files]
     assert restored.status == Result.Status.OK
