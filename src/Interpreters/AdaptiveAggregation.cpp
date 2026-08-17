@@ -1,11 +1,4 @@
-#include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
-
-namespace ProfileEvents
-{
-    extern const Event AdaptiveAggregationBucketsRetired;
-}
 
 namespace DB
 {
@@ -60,13 +53,6 @@ void Aggregator::publishStagedChunk(
         || std::get<StagedChunk::AggregatePayload>(block->payload).prepared);
 
     shared.backlog.publish(std::move(block));
-}
-
-void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, AdaptiveAggregationSession & shared, size_t bucket) const
-{
-    dest.adaptive_merge_bucket_arenas[bucket].reset();
-    shared.backlog.releaseMergedBucket(bucket);
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
 }
 
 void Aggregator::flushStaging(AdaptiveAggregationProducer & adaptive) const

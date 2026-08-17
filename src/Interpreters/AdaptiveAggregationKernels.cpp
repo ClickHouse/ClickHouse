@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationStagedBytes;
     extern const Event AdaptiveAggregationDrainedRecords;
+    extern const Event AdaptiveAggregationBucketsRetired;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
 }
@@ -788,17 +789,24 @@ void NO_INLINE StagedChunkBuilder::stageMisses(
     stageBuiltChunk(std::move(chunk), estimated_payload_bytes, sink);
 }
 
-void Aggregator::drainAdaptiveBucketForMerge(
+void StagedChunkDrainer::retireMergedBucket(AggregatedDataVariants & dest, size_t bucket) const
+{
+    dest.adaptive_merge_bucket_arenas[bucket].reset();
+    session.backlog.releaseMergedBucket(bucket);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
+}
+
+void StagedChunkDrainer::drainBucketForMerge(
     AggregatedDataVariants & dest,
     Arena * arena,
     size_t bucket_index,
-    AdaptiveAggregationSession & shared,
+    const StagedSliceApplier & applier,
     std::atomic<bool> & is_cancelled) const
 {
     if (is_cancelled.load(std::memory_order_relaxed))
         return;
 
-    const auto & backlog = shared.backlog.forMergeBucket(bucket_index);
+    const auto & backlog = session.backlog.forMergeBucket(bucket_index);
     if (backlog.empty())
         return;
 
@@ -813,22 +821,23 @@ void Aggregator::drainAdaptiveBucketForMerge(
         dest,
         [&](auto & method)
         {
-            drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>(
-                method, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
+            drained = drainBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>(
+                method, arena, backlog, bucket_index, records_available, places_scratch, applier, is_cancelled);
         });
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
-    shared.backlog.recordDrained(drained);
+    session.backlog.recordDrained(drained);
 }
 
 template <AdaptiveKeyStorage key_storage, typename Method>
-size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
+size_t NO_INLINE StagedChunkDrainer::drainBucketBacklog(
     Method & method,
     Arena * arena,
     const std::vector<StagedChunkPtr> & backlog,
     size_t bucket_index,
     size_t total_records,
     PaddedPODArray<AggregateDataPtr> & places,
+    const StagedSliceApplier & applier,
     std::atomic<bool> & is_cancelled) const
 {
     auto & impl = method.data.impls[bucket_index];
@@ -912,7 +921,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
         }
         else
         {
-            drainAdaptiveBucketImpl<key_storage>(method, arena, block, slice_begin, slice_end, places, bucket_index);
+            drainBucketSlice<key_storage>(method, arena, block, slice_begin, slice_end, places, bucket_index, applier);
         }
 
         update_reserve(slice_end - slice_begin);
@@ -923,14 +932,15 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 }
 
 template <AdaptiveKeyStorage key_storage, typename Method>
-void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
+void NO_INLINE StagedChunkDrainer::drainBucketSlice(
     Method & method,
     Arena * bucket_arena,
     const StagedChunk & block,
     size_t slice_begin,
     size_t slice_end,
     PaddedPODArray<AggregateDataPtr> & places,
-    size_t bucket_index) const
+    size_t bucket_index,
+    const StagedSliceApplier & applier) const
 {
     auto & impl = method.data.impls[bucket_index];
     const auto & keys = block.keys;
@@ -942,10 +952,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     /// every place in a drain slice is non-null, and the staged argument columns are always
     /// dense. The sparse check only mirrors the consume-path gate - a prepared staged chunk
     /// cannot carry sparse arguments.
-    bool use_compiled_functions = false;
-#if USE_EMBEDDED_COMPILER
-    use_compiled_functions = compiled_aggregate_functions_holder && !hasSparseArguments(prep.instructions.data());
-#endif
+    const bool use_compiled_functions = applier.useCompiledFunctions(prep.instructions.data());
 
     /// `places` is indexed by absolute record index: the compacted argument columns hold record
     /// j's values at row j, so the batch calls below consume the [slice_begin, slice_end) range
@@ -965,8 +972,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         if (inserted)
         {
             it->getMapped() = nullptr;
-            aggregate_data = bucket_arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-            createAggregateStates(aggregate_data, use_compiled_functions);
+            aggregate_data = applier.createStates(*bucket_arena, use_compiled_functions);
             it->getMapped() = aggregate_data;
         }
         else
@@ -975,23 +981,14 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         places[j] = aggregate_data;
     }
 
-    if (!params.aggregates_size)
+    if (!applier.aggregatesSize())
         return;
 
     /// Apply the aggregate functions to the delayed rows only: the slice is a contiguous row
     /// range of the compacted argument columns and of `places`, so the standard executor
     /// applies to it directly - one compiled row loop for the compiled functions, a batch pass
     /// per remaining function.
-    executeAggregateInstructions(
-        bucket_arena,
-        slice_begin,
-        slice_end,
-        prep.instructions.data(),
-        places.data(),
-        /*key_start=*/slice_begin,
-        /*has_only_one_value_since_last_reset=*/false,
-        /*all_keys_are_const=*/false,
-        use_compiled_functions);
+    applier.applyInstructions(bucket_arena, slice_begin, slice_end, prep.instructions.data(), places.data(), use_compiled_functions);
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
@@ -1007,11 +1004,12 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVar
     return table;
 }
 
-size_t Aggregator::drainStagedBatch(
+size_t StagedChunkDrainer::drainBatch(
     AggregatedDataVariants & table,
     const std::vector<StagedChunkPtr> & chunks,
     std::atomic<bool> & is_cancelled,
-    PaddedPODArray<AggregateDataPtr> & places_scratch) const
+    PaddedPODArray<AggregateDataPtr> & places_scratch,
+    const StagedSliceApplier & applier) const
 {
     size_t drained = 0;
     visitTwoLevelVariant(
@@ -1029,8 +1027,8 @@ size_t Aggregator::drainStagedBatch(
                 if (!records)
                     continue;
 
-                drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
-                    method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
+                drained += drainBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
+                    method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, applier, is_cancelled);
             }
         });
     return drained;
@@ -1104,7 +1102,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 
         const std::vector<StagedChunkPtr> batch(
             std::make_move_iterator(chunks.begin() + begin), std::make_move_iterator(chunks.begin() + end));
-        drained_records += drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+        drained_records += StagedChunkDrainer(shared).drainBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch, StagedSliceApplier(*this));
         begin = end;
     }
 
@@ -1158,7 +1156,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
                 shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
 
             const size_t drained_records
-                = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+                = StagedChunkDrainer(shared).drainBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch, StagedSliceApplier(*this));
             batch.clear();
 
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
@@ -1210,7 +1208,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     auto local = createAdaptiveDrainTable(routing_type);
 
-    const size_t drained_records = drainStagedBatch(*local, batch, shared.cancelled, places_scratch);
+    const size_t drained_records = StagedChunkDrainer(shared).drainBatch(*local, batch, shared.cancelled, places_scratch, StagedSliceApplier(*this));
     /// Release the staged memory before the write, not after; the batch is dropped rather
     /// than requeued even when cancellation stopped the drain early, because bucket-major
     /// progress means parts of every chunk may already be in the table.

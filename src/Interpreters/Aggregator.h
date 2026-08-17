@@ -264,46 +264,12 @@ public:
         bool & no_more_keys,
         AdaptiveAggregationProducer * adaptive) const;
 
-    /// One claimed batch of staged chunks into one drain table, bucket-major: bucket b's
-    /// slices from all of the batch's chunks drain consecutively, so the destination subtable
-    /// and its arena stay cache-hot across the whole batch instead of being revisited once per
-    /// chunk - the measured win of the pressure drains. The price is that the batch stays
-    /// alive until the pass ends: the callers bound a batch at about one spill floor of
-    /// records and release the chunks right after the call. Stops between buckets when
-    /// cancelled.
-    size_t drainStagedBatch(
-        AggregatedDataVariants & table,
-        const std::vector<StagedChunkPtr> & chunks,
-        std::atomic<bool> & is_cancelled,
-        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
-
     /// A fresh drain destination of the session's method type, with one arena per bucket.
     AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
 
     /// Writes a detached drain table through the ordinary external machinery and tears it
     /// down; skipped for a cancelled query, whose table just destroys itself.
     void spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const;
-
-    /// Retires a merged-and-converted bucket's working memory, called by the bucket's merge
-    /// task after a successful conversion (the output either copied the values out or captured
-    /// the arena slot's ownership): resets the bucket's arena slot and drops the backlog's
-    /// chunk references, whose borrow ends at conversion. The destination subtable buffer is
-    /// already released by the conversion itself. Never called for a cancelled or failed
-    /// bucket - the variants still own every non-retired slot, so ordinary destruction covers
-    /// those.
-    void retireAdaptiveMergedBucket(AggregatedDataVariants & dest, AdaptiveAggregationSession & shared, size_t bucket) const;
-
-    /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
-    /// by the merge task that owns the bucket, before it merges that bucket: production finished
-    /// before the merge sources were created and the ownership is exclusive, so the backlog is
-    /// read in place without locking; the chunks stay registered because the emplaced keys
-    /// borrow their staged bytes.
-    void drainAdaptiveBucketForMerge(
-        AggregatedDataVariants & dest,
-        Arena * arena,
-        size_t bucket,
-        AdaptiveAggregationSession & shared,
-        std::atomic<bool> & is_cancelled) const;
 
     /// Creates one transform's adaptive context, wiring its staged-chunk builder with the
     /// aggregate-argument positions the builder gathers.
@@ -469,6 +435,7 @@ private:
     friend struct AggregatedDataVariants;
     friend struct StagedChunkPreparation;
     friend struct StagedChunkBacklogSink;
+    friend class StagedSliceApplier;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
@@ -679,32 +646,6 @@ private:
     /// checks the structural invariants in debug builds) and hands it over as immutable to
     /// the session's backlog.
     void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
-
-    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`
-    /// selects the ownership: merge-time drains emplace keys pointing into the retained
-    /// chunks, while pressure-time drains persist them into the bucket's arena so the chunks
-    /// can be freed (the whole point of draining early).
-    template <AdaptiveKeyStorage key_storage, typename Method>
-    size_t drainAdaptiveBucketBacklog(
-        Method & method,
-        Arena * arena,
-        const std::vector<StagedChunkPtr> & backlog,
-        size_t bucket_index,
-        size_t total_records,
-        PaddedPODArray<AggregateDataPtr> & places,
-        std::atomic<bool> & is_cancelled) const;
-
-    /// Applies one staged chunk's slice [slice_begin, slice_end) to the bucket's table.
-    template <AdaptiveKeyStorage key_storage, typename Method>
-    void drainAdaptiveBucketImpl(
-        Method & method,
-        Arena * bucket_arena,
-        const StagedChunk & block,
-        size_t slice_begin,
-        size_t slice_end,
-        PaddedPODArray<AggregateDataPtr> & places,
-        size_t bucket_index) const;
-
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

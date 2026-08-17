@@ -309,7 +309,9 @@ protected:
         if (adaptive_session)
         {
             bucket_arena = data->at(0)->adaptive_merge_bucket_arenas[bucket_num].get();
-            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), bucket_arena, bucket_num, *adaptive_session, shared_data->is_cancelled);
+            StagedChunkDrainer(*adaptive_session)
+                .drainBucketForMerge(
+                    *data->at(0), bucket_arena, bucket_num, StagedSliceApplier(params->aggregator), shared_data->is_cancelled);
         }
 
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
@@ -321,7 +323,7 @@ protected:
         /// cancelled bucket skips retirement and leaves everything to the ordinary destruction
         /// of the variants, which still owns every non-retired slot.
         if (adaptive_session && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
-            params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
+            StagedChunkDrainer(*adaptive_session).retireMergedBucket(*data->at(0), bucket_num);
 
         shared_data->is_bucket_processed[bucket_num] = true;
 
