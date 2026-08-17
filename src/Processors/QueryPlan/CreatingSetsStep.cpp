@@ -68,8 +68,9 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                /// Deduplicate independently per stream
-                return std::make_shared<DistinctTransform>(header, SizeLimits{}, 0, Names{});
+                /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
+                /// mostly-unique input the transform may abandon and pass rows through.
+                return std::make_shared<DistinctTransform>(header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true);
             });
     }
 
