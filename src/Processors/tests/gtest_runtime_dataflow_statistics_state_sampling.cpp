@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -470,6 +472,92 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedP
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_sparse_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// The implicit default at `ColumnSparse::values[0]` is one outer `Array` row, but that row contains no
+/// nested aggregate states. The state leaf in the following real row must therefore not be skipped while
+/// sampling. This is the same row-expanding layout `Map` uses for its nested key/value arrays.
+TEST(RuntimeDataflowStatisticsStateSampling, SparseArrayStateDoesNotSkipFirstNestedValue)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t elements_in_state = 100000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto array_type = std::make_shared<DataTypeArray>(state_type);
+
+    auto nested_states = ColumnAggregateFunction::create(function);
+    nested_states->insertFrom(*source_state, 0);
+    auto array_offsets = ColumnArray::ColumnOffsets::create();
+    array_offsets->insert(0); /// The sparse default array row has no nested elements.
+    array_offsets->insert(1);
+    auto values = ColumnArray::create(std::move(nested_states), std::move(array_offsets));
+
+    auto sparse_offsets = ColumnUInt64::create();
+    sparse_offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
+
+    const auto exact_compressed_bytes = compressedColumnSize({sparse, array_type, "sparse_array_state"});
+    ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 11;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, array_type, "sparse_array_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+TEST(RuntimeDataflowStatisticsStateSampling, SparseMapStateDoesNotSkipFirstNestedValue)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t elements_in_state = 100000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), state_type);
+
+    auto keys = ColumnString::create();
+    keys->insertData("key", 3);
+    auto nested_states = ColumnAggregateFunction::create(function);
+    nested_states->insertFrom(*source_state, 0);
+    Columns tuple_elements;
+    tuple_elements.emplace_back(std::move(keys));
+    tuple_elements.emplace_back(std::move(nested_states));
+    auto array_offsets = ColumnArray::ColumnOffsets::create();
+    array_offsets->insert(0); /// The sparse default map row has no nested entries.
+    array_offsets->insert(1);
+    auto values = ColumnMap::create(ColumnArray::create(ColumnTuple::create(std::move(tuple_elements)), std::move(array_offsets)));
+
+    auto sparse_offsets = ColumnUInt64::create();
+    sparse_offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
+
+    const auto exact_compressed_bytes = compressedColumnSize({sparse, map_type, "sparse_map_state"});
+    ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 12;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, map_type, "sparse_map_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
     }
 
     const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);

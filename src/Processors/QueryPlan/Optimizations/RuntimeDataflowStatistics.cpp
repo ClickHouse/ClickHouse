@@ -214,18 +214,20 @@ static void forEachAggregateStateLeaf(
     if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(&column))
     {
         /// `ColumnSparse::values` keeps an implicit default at row zero for in-memory use. The sparse
-        /// serialization does not write it, so none of the aggregate-state samples or counts may include it.
-        const auto & values = sparse_column->getValuesPtr();
+        /// serialization does not write it, so remove that row before visiting nested state leaves. This
+        /// matters for row-expanding carriers such as `Array` and `Map`: their default row has no nested
+        /// elements, so their aggregate-state leaves already begin with the first serialized value.
+        const auto values = sparse_column->getValuesPtr()->cut(1, sparse_column->getValuesPtr()->size() - 1);
         if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(values.get()))
         {
-            callback(*aggregate_column, 1);
+            callback(*aggregate_column, 0);
             return;
         }
         values->forEachSubcolumnRecursively(
             [&](const IColumn & subcolumn)
             {
                 if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                    callback(*aggregate_column, 1);
+                    callback(*aggregate_column, 0);
             });
         return;
     }
