@@ -28,7 +28,7 @@
 [('dc','b'),('host','h4')]	1970-01-01 00:02:10.000	0
 [('dc','a'),('host','h1')]	1970-01-01 00:02:10.000	-9
 -- the shared argument is a range function, range
-[]	[('1970-01-01 00:01:50.000',0.7),('1970-01-01 00:02:00.000',0.5),('1970-01-01 00:02:10.000',0.2),('1970-01-01 00:02:20.000',nan)]
+[]	[('1970-01-01 00:01:50.000',19),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',6),('1970-01-01 00:02:20.000',nan)]
 -- nested aggregation pairs, instant
 []	1970-01-01 00:02:10.000	0.6
 -- the shared argument matches no series, instant
@@ -51,3 +51,5 @@
 -- not shared: one side is not an aggregation, instant
 -- not shared: quantile is not a one-argument aggregation, instant
 []	1970-01-01 00:02:10.000	-1.5
+-- invalid: scalar argument is a user error, not a logical error, instant
+-- invalid: range-vector argument is a user error, not a logical error, range
