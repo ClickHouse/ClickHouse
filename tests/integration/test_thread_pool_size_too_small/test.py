@@ -37,7 +37,10 @@ def test_too_small_thread_pool_size_fails_startup(start_cluster):
     # of the `system` database, which was one of the jobs stuck in that queue. `expected_to_fail` here
     # asserts that the process really exits, so a hang fails this test rather than timing out silently.
     node.stop_clickhouse()
-    node.replace_in_config(CONFIG_PATH, "10000", "64")
+    # `160` reaches the late-start saturation band: early startup succeeds, but
+    # a permanent worker started afterwards must still fail fast rather than be
+    # silently queued forever.
+    node.replace_in_config(CONFIG_PATH, "10000", "160")
     node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
 
     assert node.get_process_pid("clickhouse") is None
@@ -45,7 +48,7 @@ def test_too_small_thread_pool_size_fails_startup(start_cluster):
     assert node.contains_in_log("max_thread_pool_size")
 
     # Restore a working value so the server (and module teardown) is healthy again.
-    node.replace_in_config(CONFIG_PATH, "64", "10000")
+    node.replace_in_config(CONFIG_PATH, "160", "10000")
     node.start_clickhouse()
     assert node.get_process_pid("clickhouse") is not None
     assert node.query("SELECT 1") == "1\n"
