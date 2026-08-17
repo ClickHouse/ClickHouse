@@ -208,7 +208,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     if (!enable_setting_value.safeGet<bool>() && !(*settings)[Setting::allow_experimental_codecs])
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} is experimental. You can enable it with the '{}' setting",
+                            "Codec {} is experimental and not meant to be used in production."
+                            " You can enable it with the '{}' setting",
                             codec_family_name,
                             enable_setting_name);
                 }
