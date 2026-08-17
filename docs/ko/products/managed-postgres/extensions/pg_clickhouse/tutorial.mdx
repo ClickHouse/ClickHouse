@@ -204,6 +204,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 여기서는 ClickHouse 바이너리
 프로토콜을 사용하는 binary driver를 선택했습니다. HTTP 인터페이스를 사용하는 &quot;http&quot; driver를 사용할 수도 있습니다.
 
+<Note>
+  ClickHouse Cloud 콘솔에서 SQL을 실행하는 경우, 콘솔 관리자 사용자에게 외부 서버에 대한 액세스 권한을 부여하세요:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 다음으로 PostgreSQL 사용자를 ClickHouse 사용자에 매핑합니다. 가장 간단한 방법은
 현재 PostgreSQL 사용자를 외부 서버의 원격 사용자에 매핑하는 것입니다:
 
@@ -221,7 +229,7 @@ CREATE SCHEMA taxi;
 IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 ```
 
-이제 테이블이 가져와져 있어야 합니다: [psql]에서 `\det+`를 사용해 확인하십시오:
+이제 테이블을 가져왔을 것입니다. [psql]에서 `\det+`를 사용해 확인하십시오:
 
 ```pgsql
 taxi=# \det+ taxi.*
