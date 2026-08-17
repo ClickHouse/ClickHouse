@@ -69,7 +69,7 @@ find_os() {
 }
 
 download_seaweedfs() {
-  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.41}
+  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.42}
 
   wget "https://github.com/seaweedfs/seaweedfs/releases/download/${seaweedfs_version}/$(find_os)_$(find_arch).tar.gz" -O ./seaweedfs.tar.gz
   tar -xzf ./seaweedfs.tar.gz weed
@@ -114,9 +114,6 @@ start_seaweedfs() {
   pwd
   mkdir -p ./seaweedfs_data
   weed version
-  # the filer's empty-folder cleaner deletes a folder without excluding a PUT
-  # arriving between its count and the delete, which destroys the object
-  export WEED_FILER_OPTIONS_S3_EMPTY_FOLDER_CLEANUP_DELAY=24h
   # weed server also runs master/volume/filer services (each also binds a gRPC
   # port at +10000); keep them next to the S3 port, away from the ports used by
   # clickhouse-server, keeper, azurite and redpanda
