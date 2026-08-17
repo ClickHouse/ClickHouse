@@ -17,8 +17,8 @@ CREATE TABLE tab
     tags Array(String),
     INDEX idx_tags tags TYPE text(tokenizer = array)
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 4;
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab SELECT number, if(number < 47, ['make-payment-check'], ['common:a']) FROM numbers(1000);
 
@@ -76,19 +76,25 @@ SELECT '-- window function / QUALIFY: projection above the window still gets the
 SELECT count() FROM (SELECT hasAnyTokens(tags, ['make-payment-check']) AS h, row_number() OVER (ORDER BY id) AS rn FROM tab) WHERE h;
 SELECT count() FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM tab QUALIFY hasAnyTokens(tags, ['make-payment-check']));
 
+SELECT '-- direct read preserved: eligible WHERE reads the __text_index_* virtual column';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id FROM tab WHERE hasAnyTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1
+) WHERE explain ILIKE '%__text_index_idx_tags%';
+
 DROP TABLE tab;
 
 SELECT 'preprocessor is applied only on the index path';
 
-DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id UInt64,
     s String,
     INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(s))
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 4;
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab SELECT number, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
 
@@ -118,15 +124,14 @@ DROP TABLE tab;
 
 SELECT 'postprocessor is applied on the row-scan path too';
 
-DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id UInt64,
     s String,
     INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(s))
 )
-ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 4;
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab SELECT number, if(number < 10, 'Hello', 'World') FROM numbers(1000);
 
@@ -139,5 +144,25 @@ SELECT '-- WHERE is consistent across use_skip_indexes';
 
 SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasToken(s, 'HELLO') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE tab;
+
+SELECT 'postprocessor with an ALIAS column outside WHERE';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    str Nullable(String),
+    alias String ALIAS ifNull(str, 'default'),
+    INDEX idx_alias alias TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(alias))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab (id, str) SELECT number, if(number < 10, 'Hello', NULL) FROM numbers(1000);
+
+SELECT '-- SELECT-list position on an ALIAS column: postprocessor applied';
+
+SELECT countIf(hasToken(alias, 'HELLO')), countIf(hasAnyTokens(alias, ['DEFAULT'])) FROM tab;
 
 DROP TABLE tab;

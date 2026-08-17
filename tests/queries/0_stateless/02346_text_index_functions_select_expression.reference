@@ -19,6 +19,8 @@ Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 -- window function / QUALIFY: projection above the window still gets the tokenizer
 47
 47
+-- direct read preserved: eligible WHERE reads the __text_index_* virtual column
+1
 preprocessor is applied only on the index path
 -- SELECT-list position: preprocessor not applied
 0
@@ -35,3 +37,6 @@ postprocessor is applied on the row-scan path too
 -- WHERE is consistent across use_skip_indexes
 10
 10
+postprocessor with an ALIAS column outside WHERE
+-- SELECT-list position on an ALIAS column: postprocessor applied
+10	990
