@@ -46,9 +46,13 @@ namespace FailPoints
 namespace
 {
 
+/// Answers from the same index object, and by the same predicate, that assigns the index reader
+/// in `getIndexReadTaskForReadStep`. A part this reports as materialized reads the virtual column
+/// from the index; every other part must instead read the columns its default expression needs.
 bool hasMaterializedTextIndex(
     const StorageSnapshotPtr & storage_snapshot,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const IndexReadTasks & index_read_tasks,
     const String & virtual_column_name)
 {
     if (storage_snapshot->metadata->virtuals.empty())
@@ -60,14 +64,19 @@ bool hasMaterializedTextIndex(
 
     /// Name of the text index is embedded as a comment to the virtual column.
     const auto & text_index_name = virtual_column->comment;
-    for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
-    {
-        if (index_desc.type == "text" && index_desc.name == text_index_name)
-            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
-    }
+    auto index_task_it = index_read_tasks.find(text_index_name);
+    if (index_task_it == index_read_tasks.end())
+        return false;
 
-    return false;
+    const auto & index = index_task_it->second.index.index;
+    if (!index || !index->isTextIndex())
+        return false;
+
+    const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader);
+    if (!loaded_part)
+        return false;
+
+    return !!index->getDeserializedFormat(*loaded_part->getDataPart(), index->getFileName());
 }
 
 /// Columns absent in part may depend on other absent columns so we are
@@ -78,6 +87,7 @@ bool injectRequiredColumnsRecursively(
     const StorageSnapshotPtr & storage_snapshot,
     const AlterConversionsPtr & alter_conversions,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const IndexReadTasks & index_read_tasks,
     const GetColumnsOptions & options,
     Names & columns,
     NameSet & required_columns,
@@ -130,7 +140,8 @@ bool injectRequiredColumnsRecursively(
             add_column(column_in_storage->getNameInStorage());
             return true;
         }
-        else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
+        else if (isTextIndexVirtualColumn(column_name_in_part)
+            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, index_read_tasks, column_name_in_part))
         {
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
@@ -160,7 +171,7 @@ bool injectRequiredColumnsRecursively(
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            index_read_tasks, options, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -175,6 +186,7 @@ bool injectRequiredColumnsRecursively(
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    const IndexReadTasks & index_read_tasks,
     bool with_subcolumns,
     Names & columns)
 {
@@ -204,6 +216,7 @@ NameSet injectRequiredColumns(
             storage_snapshot,
             alter_conversions,
             data_part_info_for_reader,
+            index_read_tasks,
             options,
             columns,
             required_columns,
@@ -481,7 +494,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names column_to_read_after_prewhere = required_columns;
 
     /// Inject columns required for defaults evaluation
-    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, index_read_tasks, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -517,7 +530,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         if (!step_column_names.empty() || !has_adaptive_granularity)
         {
             injectRequiredColumns(
-                data_part_info_for_reader, storage_snapshot,
+                data_part_info_for_reader, storage_snapshot, index_read_tasks,
                 with_subcolumns, step_column_names);
         }
 

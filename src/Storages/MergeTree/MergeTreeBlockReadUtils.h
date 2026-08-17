@@ -15,6 +15,7 @@ class IMergeTreeDataPartInfoForReader;
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    const IndexReadTasks & index_read_tasks,
     bool with_subcolumns,
     Names & columns);
 
