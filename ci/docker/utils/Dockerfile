@@ -1,4 +1,4 @@
-# docker build -t clickhouse/macos-signer .
+# docker build -t clickhouse/utils .
 
 ARG FROM_TAG=latest
 FROM clickhouse/fasttest:$FROM_TAG
