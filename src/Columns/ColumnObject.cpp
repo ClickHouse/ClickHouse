@@ -1,7 +1,9 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -1235,12 +1237,27 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             ++dynamic_paths_it;
         }
 
-        /// Deserialize value in temporary column to get its hash.
+        /// Hash the value the same way ColumnDynamic hashes a value in its shared variant, so the hash is layout-independent.
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
-        auto tmp_column = ColumnDynamic::create();
-        getDynamicSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        auto value_type = decodeDataType(buf);
         hash.update(path);
+
+        /// A shared_data entry can be encoded as Nothing (a serialized NULL). Nothing has no usable
+        /// default serialization (SerializationNothing::deserializeBinary always throws), so it must be
+        /// special-cased here just like SerializationDynamic::deserializeBinary does for ColumnDynamic:
+        /// treat it as the null row and hash the same NULL_DISCRIMINATOR that ColumnDynamic::updateHashWithValue
+        /// hashes for a null value, instead of hashing a type name and deserialized value.
+        if (isNothing(value_type))
+        {
+            hash.update(ColumnVariant::NULL_DISCRIMINATOR);
+            continue;
+        }
+
+        auto type_name = value_type->getName();
+        hash.update(type_name);
+        auto tmp_column = value_type->createColumn();
+        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -2236,7 +2253,13 @@ int ColumnObject::SortedPathsIterator::compare(const SortedPathsIterator & rhs, 
     if (path != rhs_path)
         return path < rhs_path ? -1 : 1;
 
-    /// If paths are equal, compare their values.
+    /// If paths are equal, compare their values. When both values live in shared data they are
+    /// already serialized in Dynamic binary form, so compare them directly via
+    /// ColumnDynamic::compareSerializedValues (same order as the materializing path). Any other
+    /// combination keeps the materializing path unchanged.
+    if (current_path_type == PathType::SHARED_DATA && rhs.current_path_type == PathType::SHARED_DATA)
+        return ColumnDynamic::compareSerializedValues(getCurrentSharedDataValue(), rhs.getCurrentSharedDataValue(), nan_direction_hint);
+
     auto [column, n] = getCurrentPathColumnAndRow();
     auto [rhs_column, rhs_n] = rhs.getCurrentPathColumnAndRow();
     return column->compareAt(n, rhs_n, *rhs_column, nan_direction_hint);
@@ -2318,6 +2341,11 @@ std::pair<ColumnPtr, size_t> ColumnObject::SortedPathsIterator::getCurrentPathCo
         }
     }
 };
+
+std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() const
+{
+    return shared_data_values->getDataAt(shared_data_it);
+}
 
 ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
 {
