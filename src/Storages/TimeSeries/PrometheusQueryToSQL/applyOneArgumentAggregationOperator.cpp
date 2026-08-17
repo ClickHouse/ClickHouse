@@ -165,9 +165,16 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     auto res = argument;
     res.node = operator_node;
 
-    /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid
-    /// ambiguity with the input `group` column when the alias and the source column share the same name.
-    ASTPtr aggregation_query;
+    /// Aggregate over series:
+    /// SELECT <transformed_group> AS group, <aggregationForEach>(values) AS values
+    /// FROM <subquery>
+    /// [GROUP BY group]
+    /// HAVING notEmpty(values)
+    ///
+    /// The transformed group expression is aliased directly as `group`: in
+    /// `SELECT f(group) AS group ... GROUP BY group` the identifier inside the aliased expression
+    /// resolves to the source column while `GROUP BY group` resolves to the alias (this holds for
+    /// both the old and the new analyzer), so no extra column-renaming step is needed.
     {
         SelectQueryBuilder builder;
 
@@ -178,32 +185,19 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
             operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
         builder.select_list.push_back(std::move(new_group));
-        builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+        builder.select_list.back()->setAlias(ColumnNames::Group);
 
         builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)
-            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
         /// Drop empty-values rows.
         /// If the input has no rows then countForEach([]) returns [], but the number of values
         /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
         /// so we just drop such rows.
         builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
-        aggregation_query = builder.getSelectQuery();
-    }
-
-    /// Step 2: rename `new_group` back to `group`.
-    {
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
-
-        SelectQueryBuilder builder;
-        builder.from_table = context.subqueries.back().name;
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         res.select_query = builder.getSelectQuery();
     }
