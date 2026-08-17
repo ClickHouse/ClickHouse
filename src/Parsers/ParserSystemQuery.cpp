@@ -310,10 +310,6 @@ enum class SystemQueryTargetType : uint8_t
                 return false;
             res->serial_id_reset_value = ast->as<ASTLiteral &>().value.safeGet<UInt64>();
         }
-        else
-        {
-            res->serial_id_reset_value = 0;
-        }
     }
 
     if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))

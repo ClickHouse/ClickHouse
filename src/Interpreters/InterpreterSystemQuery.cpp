@@ -1367,7 +1367,6 @@ BlockIO InterpreterSystemQuery::execute()
             if (query.serial_id_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Serial ID series name cannot be empty");
 
-            /// Same path as `generateSerialID`: escapeForFileName, then reject escaped names longer than 100.
             String series_name = escapeForFileName(query.serial_id_name);
             if (series_name.size() > 100)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
