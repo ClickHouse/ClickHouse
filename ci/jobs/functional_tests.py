@@ -162,6 +162,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "amd_tsan": " --timeout 1200",  # NOTE (strtgbb): tsan is slow, increase the timeout to avoid timeout errors
+    "amd_debug": " --timeout 1200", # NOTE (carlosfelipeor): debug is slow, increase the timeout to avoid timeout errors
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
