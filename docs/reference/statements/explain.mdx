@@ -673,9 +673,8 @@ Settings:
 - `indexes` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `compact` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
-- `processors` — prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
-- `matches` — makes join steps do the extra bookkeeping needed for the `matched`, `match rate` and `fanout` metrics in the cases where those numbers cannot be derived from what the join produces anyway. Where they can, they are reported without this option. See [Join steps](#explain-analyze-join-steps). Default: 0.
-- `time` — prints per-step `Time` and `Concurrency` lines with the wall-clock time and the concurrency level of the step and of its branch. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency). Default: 0.
+- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
+- `matches` — For `EXPLAIN ANALYZE`, makes join steps do the extra bookkeeping needed for the `matched`, `match rate` and `fanout` metrics in the cases where those numbers cannot be derived from what the join produces anyway. Where they can, they are reported without this option. See [Join steps](#explain-analyze-join-steps). Default: 0.
 
 <Note>
 Because `EXPLAIN ANALYZE` actually executes the wrapped query, it behaves like that
@@ -914,26 +913,6 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 ```
 
 `<n>` is the number of processors in the stage. A large gap between `median` and `max` points to load skew between parallel processors.
-
-#### Step and branch wall-clock time and concurrency levels {#explain-analyze-concurrency}
-
-With `time = 1` two more lines are printed for every query plan step:
-
-```txt
-Time: step <t> (<share>%) · branch <t> (<share>%)
-Concurrency: step <n>/<m> · branch <n>/<m>
-```
-
-Here `step` refers to the step itself. `branch` refers to the subtree rooted at the step: the step together with all steps below it in the plan.
-
-- `Time` — the wall-clock time during which at least one thread did work for the step (`step`), or for any step of the subtree (`branch`). `<share>` is that time as a percentage of the query execution time.
-- `Concurrency` — the average number of threads that were busy with the query while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use.
-
-Both metrics are derived from work intervals. Each time a thread finishes a piece of work, the executor records an interval: the start time, the end time, and the step the work belongs to.
-
-`Time` of a step is the length of the union of that step's intervals. Gaps, where no thread worked on the step, do not count. `Time` of a branch unites the intervals of all steps of the subtree first.
-
-`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. The numerator counts threads busy with *any* step of the query, not only with the step in question. This is the difference from the per-stage `parallelism` metric, which counts only the threads of the stage itself. In other words, `Concurrency` answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime; a value near `1` means the query mostly ran on a single thread — though not necessarily on this step.
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 

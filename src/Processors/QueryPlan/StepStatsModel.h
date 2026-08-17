@@ -57,21 +57,12 @@ struct AnalyzedStepData
     bool label_stages = false;
 };
 
-struct StepTimeAndConcurrency
-{
-    UInt64 step_time_ns = 0;
-    UInt64 branch_time_ns = 0;
-    double step_concurrency = 0;
-    double branch_concurrency = 0;
-};
-
 struct StepStatsContext
 {
     const IQueryPlanStep * step = nullptr;
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
-    const StepTimeAndConcurrency * time_and_conc_stats = nullptr;
     StepGroupStatsByGroupId group_stats;
 
     /// For a join step: the actual cost of its join-reorder cluster branch, accumulated by

@@ -156,7 +156,7 @@ void appendSortShare(StepAnalysisReport & report, const StepStatsContext & conte
         return;
 
     const double share = 100.0 * static_cast<double>(*sort_time_ns) / static_cast<double>(stage_sum_elapsed_ns);
-    group->metrics.emplace_back(MetricKey::SortTimeShare, share);
+    group->metrics.emplace_back(MetricKey::SortShare, share);
 }
 
 void reshapeSpillGroup(MetricGroup & spill_group)
@@ -170,8 +170,6 @@ void reshapeSpillGroup(MetricGroup & spill_group)
                 return false;
             else if constexpr (std::is_arithmetic_v<T>)
                 return value != T{0};
-            else if constexpr (std::is_same_v<T, Fraction>)
-                return value.numerator != 0 && value.denominator != 0;
             else
                 return !value.empty();
         }, metric.value);

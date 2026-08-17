@@ -8,8 +8,6 @@ std::string_view toString(MetricGroupKey key)
     switch (key)
     {
         case MetricGroupKey::IO: return "I/O";
-        case MetricGroupKey::Time: return "Time";
-        case MetricGroupKey::Concurrency: return "Concurrency";
         case MetricGroupKey::Left: return "Left";
         case MetricGroupKey::Right: return "Right";
         case MetricGroupKey::HashTable: return "Hash table";
@@ -35,11 +33,6 @@ std::string_view toString(MetricKey key)
         case MetricKey::OutputRows: return "output rows";
         case MetricKey::InputBytes: return "input bytes";
         case MetricKey::OutputBytes: return "output bytes";
-
-        case MetricKey::Time: return "time";
-        case MetricKey::TimeShare: return "time share";
-
-        case MetricKey::Concurrency: return "concurrency";
 
         case MetricKey::Rows: return "rows";
         case MetricKey::RowsEstimated: return "rows estimated";
@@ -68,7 +61,7 @@ std::string_view toString(MetricKey key)
         case MetricKey::Storage: return "storage";
 
         case MetricKey::SortTime: return "sort time";
-        case MetricKey::SortTimeShare: return "sort share";
+        case MetricKey::SortShare: return "sort share";
 
         case MetricKey::Min: return "min";
         case MetricKey::Median: return "median";
@@ -111,7 +104,6 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::Size:
             return MetricFormat::Bytes;
 
-        case MetricKey::Time:
         case MetricKey::SortTime:
         case MetricKey::Min:
         case MetricKey::Median:
@@ -120,16 +112,12 @@ MetricFormat formatOf(MetricKey key)
             return MetricFormat::Time;
 
         case MetricKey::MatchRate:
-        case MetricKey::TimeShare:
-        case MetricKey::SortTimeShare:
+        case MetricKey::SortShare:
             return MetricFormat::Percent;
 
         case MetricKey::Fanout:
         case MetricKey::QError:
             return MetricFormat::Ratio;
-
-        case MetricKey::Concurrency:
-            return MetricFormat::Fraction;
     }
 }
 

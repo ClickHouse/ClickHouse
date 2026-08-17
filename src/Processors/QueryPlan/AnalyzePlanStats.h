@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <utility>
 #include <set>
 #include <string>
@@ -9,7 +8,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinBranchCosts.h>
 #include <Processors/QueryPlan/StepStatsModel.h>
-#include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
@@ -36,7 +34,7 @@ class AnalyzeStepsStats
     using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
 
 public:
-    AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
@@ -55,8 +53,6 @@ private:
     ProcessorsByStep processors_by_step;
 
     JoinBranchCosts join_branch_costs;
-
-    std::optional<StepIntervalTimings> interval_timings;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;
