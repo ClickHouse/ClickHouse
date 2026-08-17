@@ -1083,6 +1083,17 @@ If the response exceeds this limit, the query fails with an error.
 
 Default: `10485760` (10 MiB).
 )", 0) \
+    DECLARE(Bool, http_allow_path_requests, false, R"(
+Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
+
+This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
+
+**Example**
+
+```xml
+<http_allow_path_requests>1</http_allow_path_requests>
+```
+)", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
 Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server.
 
