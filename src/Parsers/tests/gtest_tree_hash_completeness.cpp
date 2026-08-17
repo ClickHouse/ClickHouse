@@ -524,16 +524,22 @@ TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
     }
 }
 
-TEST(TreeHashCompleteness, ExplicitNilUuidClauseIsNormalizedAway)
+TEST(TreeHashCompleteness, ExplicitNilUuidClausesAreRejected)
 {
-    /// `has_uuid_clause` is true even for the all-zero UUID, but formatting prints the clause only
-    /// for a non-`Nil` value, so the flag must stay outside the hash: hashing it would make the
-    /// formatted query hash differently than the original and raise `Inconsistent AST formatting`
-    /// in a debug build. See the comment on `ASTCreateQuery::has_uuid_clause`.
-    const std::string nil_clause = "ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000000'";
-    ASTPtr ast = parse(nil_clause);
-    EXPECT_EQ(ast->formatWithSecretsOneLine(), "ATTACH TABLE t");
-    EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false));
+    /// Both clauses used to retain presence state that formatting could not represent. Reject them
+    /// at parsing instead of allowing a tree that changes meaning when formatted and reparsed.
+    EXPECT_THROW(parse("ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000000'"), Exception);
+    EXPECT_THROW(
+        parse("CREATE TABLE t TO INNER UUID '00000000-0000-0000-0000-000000000000' "
+              "(x UInt32) ENGINE = SharedSet('/z', 'r')"),
+        Exception);
+
+    String json = serializeASTToJSON(*parse("ATTACH TABLE t"));
+    const String key = R"("has_uuid_clause":false)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.replace(pos, key.size(), R"("has_uuid_clause":true)");
+    expectJSONRejected(json);
 }
 
 TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)

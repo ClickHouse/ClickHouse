@@ -56,6 +56,12 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     return comment;
 }
 
+void rejectNilUUIDClause(bool attach, bool has_uuid_clause, const UUID & uuid)
+{
+    if (attach && has_uuid_clause && uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ATTACH queries cannot use a Nil UUID");
+}
+
 }
 
 bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -860,6 +866,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
 
     /// A shortcut for ATTACH a previously detached table.
     bool short_attach = attach && !from_path;
@@ -1122,8 +1129,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (targets)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
 
+        const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        if (inner_uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+
         auto view_targets = make_intrusive<ASTViewTargets>();
-        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        view_targets->setInnerUUID(ViewTarget::To, inner_uuid);
 
         targets = view_targets;
     }
@@ -1557,6 +1568,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = has_uuid_clause;
+    rejectNilUUIDClause(attach, has_uuid_clause, uuid);
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1820,6 +1832,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->setIsTemporary(is_temporary);
 
     auto * table_id = table->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, table_id->has_uuid, table_id->uuid);
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
@@ -1901,7 +1914,12 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
         if (to_inner_uuid)
-            targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
+        {
+            const UUID inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            if (inner_uuid == UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID cannot use a Nil UUID");
+            targets->setInnerUUID(ViewTarget::To, inner_uuid);
+        }
         if (storage)
             targets->setInnerEngine(ViewTarget::To, storage);
     }
@@ -2070,6 +2088,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto * dict_id = name->as<ASTTableIdentifier>();
+    rejectNilUUIDClause(attach, dict_id->has_uuid, dict_id->uuid);
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;

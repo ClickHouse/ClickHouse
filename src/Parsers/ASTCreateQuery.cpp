@@ -673,6 +673,9 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (has_uuid != (uuid != UUIDHelpers::Nil))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'has_uuid' must match whether a non-Nil 'uuid' is present during AST JSON deserialization");
+    if (attach && has_uuid_clause && uuid == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ATTACH queries cannot use a Nil UUID during AST JSON deserialization");
 
     /// Restore concrete-typed members with `readChildOfType` so a wrong node type from malformed
     /// `clickhouse_json` is rejected with `BAD_ARGUMENTS` here, instead of reaching `set` as a
@@ -721,6 +724,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTViewTargets>("targets");
     if (child)
         set(targets, child);
+
+    const bool has_inner_uuid = targets && targets->as<const ASTViewTargets &>().hasInnerUUID(ViewTarget::To);
+    if (has_inner_uuid_clause != has_inner_uuid)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'has_inner_uuid_clause' must match whether a non-Nil `TO INNER UUID` target is present during AST JSON deserialization");
 
     /// `comment` is parsed by `ParserStringLiteral`; `StorageFactory::get`/`DatabaseFactory::get`
     /// read `comment->as<ASTLiteral &>().value.safeGet<String>()`, so require a string literal here.
