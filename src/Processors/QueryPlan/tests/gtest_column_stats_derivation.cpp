@@ -4,6 +4,7 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -221,6 +222,30 @@ TEST(ColumnStatsDerivation, CastDroppingNullabilityAddsOneToBound)
     EXPECT_EQ(stats["n_nullable"].num_distinct_values, distinct_values);
 }
 
+/// LowCardinality(Nullable(...)) uses the same null-collapse rule as Nullable(...).
+TEST(ColumnStatsDerivation, LowCardinalityNullableAddsOneToBound)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_values = 1000;
+
+    auto low_cardinality_nullable_int_type
+        = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()));
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", low_cardinality_nullable_int_type);
+
+    /// NULL becomes a counted UInt8 value, so the bound gains one.
+    addOutputFunction(dag, "isNull", {&input}, "is_null");
+    /// Keeping the LowCardinality nullable value does not change the bound.
+    addOutputFunction(dag, "toNullable", {&input}, "nullable");
+
+    auto stats = statsOf("n", distinct_values);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["is_null"].num_distinct_values, distinct_values + 1);
+    EXPECT_EQ(stats["nullable"].num_distinct_values, distinct_values);
+}
+
 /// Two outputs consuming the same internal node both inherit the source bound: resolving one output
 /// must not stop the other from resolving through the shared node, regardless of output order.
 TEST(ColumnStatsDerivation, SharedIntermediateNodeResolvesForAllOutputs)
@@ -343,6 +368,62 @@ TEST(ColumnStatsDerivation, LineageUsesInputPositionsWithDuplicateNames)
     ASSERT_TRUE(lineage[1].input);
     EXPECT_EQ(lineage[0].input->input_position, 0u);
     EXPECT_EQ(lineage[1].input->input_position, 1u);
+}
+
+TEST(ColumnStatsDerivation, LineageUsesOutputPositionsWithDuplicateNames)
+{
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & first = dag.addInput("first", int_type);
+    const auto & second = dag.addInput("second", int_type);
+    const auto & first_output = dag.addAlias(first, "duplicate");
+    const auto & second_output = dag.addAlias(second, "duplicate");
+
+    /// addOrReplaceInOutputs de-duplicates by name, so append directly to exercise positional lineage.
+    auto & outputs = dag.getOutputs();
+    outputs.push_back(&first_output);
+    outputs.push_back(&second_output);
+
+    const auto lineage = traceActionsDAGLineage(dag);
+    ASSERT_EQ(lineage.size(), 2u);
+    ASSERT_EQ(outputs.size(), 2u);
+    EXPECT_EQ(outputs[0]->result_name, outputs[1]->result_name);
+    EXPECT_EQ(lineage[0].output_position, 0u);
+    EXPECT_EQ(lineage[1].output_position, 1u);
+    ASSERT_TRUE(lineage[0].input);
+    ASSERT_TRUE(lineage[1].input);
+    EXPECT_EQ(lineage[0].input->input_position, 0u);
+    EXPECT_EQ(lineage[1].input->input_position, 1u);
+}
+
+TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputNames)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & first = dag.addInput("first", int_type);
+    const auto & second = dag.addInput("second", int_type);
+    const auto & first_output
+        = dag.addFunction(FunctionFactory::instance().get("materialize", getContext().context), {&first}, "duplicate");
+    const auto & second_output = dag.addFunction(FunctionFactory::instance().get("abs", getContext().context), {&second}, "duplicate");
+
+    auto & outputs = dag.getOutputs();
+    outputs.push_back(&first_output);
+    outputs.push_back(&second_output);
+
+    const auto lineage = traceActionsDAGLineage(dag);
+    ASSERT_EQ(lineage.size(), 2u);
+    ASSERT_EQ(outputs.size(), 2u);
+    EXPECT_EQ(outputs[0]->result_name, outputs[1]->result_name);
+    EXPECT_EQ(lineage[0].output_position, 0u);
+    EXPECT_EQ(lineage[1].output_position, 1u);
+    ASSERT_TRUE(lineage[0].input);
+    ASSERT_TRUE(lineage[1].input);
+    EXPECT_EQ(lineage[0].input->input_position, 0u);
+    EXPECT_EQ(lineage[1].input->input_position, 1u);
+    EXPECT_EQ(lineage[0].input->kind, ActionsDAGLineageKind::ValuePreserving);
+    EXPECT_EQ(lineage[1].input->kind, ActionsDAGLineageKind::DistinctValuesBound);
 }
 
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
