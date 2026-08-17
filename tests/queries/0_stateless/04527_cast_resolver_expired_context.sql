@@ -8,7 +8,11 @@ SELECT s, ip FROM t_cast_expired_insert ORDER BY s;
 
 SELECT '-- MATERIALIZED default whose cast overflows';
 DROP TABLE IF EXISTS t_cast_expired_overflow;
-CREATE TABLE t_cast_expired_overflow (d Date, dt DateTime('UTC') MATERIALIZED toDateTimeOrDefault(d, 'UTC')) ENGINE = MergeTree ORDER BY tuple();
+-- Spell the conversion as an explicit `CAST` rather than `toDateTimeOrDefault`. Whether a
+-- `to<Type>OrDefault` function reads `date_time_overflow_behavior` from the query context at all
+-- depends on #109946, which is currently reverted on master and re-landed by #114912, so an
+-- `OrDefault` spelling would make the expected value of this arm swing with that revert.
+CREATE TABLE t_cast_expired_overflow (d Date, dt DateTime('UTC') MATERIALIZED CAST(d AS DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_cast_expired_overflow (d) VALUES ('2149-06-07'), ('2020-01-01');
 SELECT d, dt FROM t_cast_expired_overflow ORDER BY d;
 
