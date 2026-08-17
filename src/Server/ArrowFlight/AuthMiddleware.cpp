@@ -127,6 +127,11 @@ namespace
         return std::string(auth_str.substr(bearer_prefix.size()));
     }
 
+    bool hasAuthorizationHeader(const arrow::flight::CallHeaders & headers)
+    {
+        return std::ranges::any_of(headers, [](const auto & p) { return Poco::toLower(std::string(p.first)) == "authorization"; });
+    }
+
     /// Extracts the client's address from the call context.
     Poco::Net::SocketAddress getClientAddress(const arrow::flight::ServerCallContext & context)
     {
@@ -220,14 +225,21 @@ arrow::Status AuthMiddlewareFactory::StartCall(
             auth = true;
             std::tie(username, password) = *credentials;
         }
-        else if (auto token_opt = getTokenFromBearerHeader(headers); token_opt && *token_opt != "None")
+        else if (auto token_opt = getTokenFromBearerHeader(headers); token_opt)
         {
-            token = *token_opt;
-            credentials = token_storage.getCredentials(token);
-            if (!credentials)
-                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
+            if (*token_opt != "None")
+            {
+                token = *token_opt;
+                credentials = token_storage.getCredentials(token);
+                if (!credentials)
+                    return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
 
-            std::tie(username, password) = *credentials;
+                std::tie(username, password) = *credentials;
+            }
+        }
+        else if (hasAuthorizationHeader(headers))
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Unsupported 'authorization' header");
         }
         session->authenticate(username, password, getClientAddress(context));
     }
