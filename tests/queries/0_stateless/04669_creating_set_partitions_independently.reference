@@ -224,6 +224,21 @@ SELECT (SELECT count() FROM numbers(200000) WHERE number IN (SELECT a FROM test_
 SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 12900000, set_overflow_mode = 'throw';
 100
 DROP TABLE test_in_dup_head_unique_tail;
+-- Mostly-unique wide String keys: the observation retains every unique key it sees, so for wide keys
+-- the byte cap ends the observation before the chunk window does and the deduplication abandons after
+-- fewer chunks. The duplicates inserted second arrive after that point and reach the set fill, which
+-- deduplicates them anyway.
+DROP TABLE IF EXISTS test_in_wide_keys;
+CREATE TABLE test_in_wide_keys (a String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 8;
+SYSTEM STOP MERGES test_in_wide_keys;
+INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(3200000);
+INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(1000);
+SELECT (SELECT count() FROM numbers(3200100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(3200100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1);
+1
+-- the set stores exactly the unique keys even though the pre-deduplication stopped removing rows
+SELECT count() FROM numbers(100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 3200000, set_overflow_mode = 'throw';
+100
+DROP TABLE test_in_wide_keys;
 -- A small duplicate head: once the unique tail outweighs it, the cumulative unique rate crosses the
 -- threshold and the deduplication abandons mid-stream. The duplicates inserted last arrive after that
 -- point and reach the set fill, which deduplicates them anyway.
