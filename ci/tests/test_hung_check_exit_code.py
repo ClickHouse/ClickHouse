@@ -24,6 +24,7 @@ import http.client
 import io
 import multiprocessing
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -527,16 +528,32 @@ class _EventVisibleOnFirstCheck:
         return True
 
 
-def _drive_parent_monitor_loop(worker, stop_testing, raise_sites=None):
+def _drive_parent_monitor_loop(
+    worker, stop_testing, raise_sites=None, args=None, clock=None
+):
     """Run the parent monitor loop against a fake worker.
 
     `raise_sites` collects the line number each `raise_stop_from_carrier` call was
     made from, which is what distinguishes the in-loop consumer from the post-loop
     one. The teardown banner cannot: it is printed before the in-loop raise, so it
     still appears when that raise is deleted.
+
+    `clock` replaces the runner's `time`, which is how an arm can decide when the
+    global time limit reads as expired instead of depending on how long the fixture
+    took to get here.
     """
-    saved = (_runner.run_tests_process, _runner.raise_stop_from_carrier)
+    saved = (
+        _runner.run_tests_process,
+        _runner.raise_stop_from_carrier,
+        _runner.time,
+    )
     _runner.run_tests_process = worker
+    if clock is not None:
+        _runner.time = clock
+    # The time-limit branch installs SIG_IGN for the rest of the run. In-process
+    # that would outlive the test and leave the whole pytest session unable to be
+    # terminated.
+    saved_sigterm = signal.getsignal(signal.SIGTERM)
 
     if raise_sites is not None:
         real_raise = _runner.raise_stop_from_carrier
@@ -553,7 +570,7 @@ def _drive_parent_monitor_loop(worker, stop_testing, raise_sites=None):
             _runner.do_run_tests(
                 1,
                 _StubSuite(),
-                _runner_args(),
+                args if args is not None else _runner_args(),
                 multiprocessing.Value("i", 0),
                 [],
                 stop_testing,
@@ -563,7 +580,12 @@ def _drive_parent_monitor_loop(worker, stop_testing, raise_sites=None):
     except _runner.StopTesting as e:
         exit_code = e.exit_code
     finally:
-        _runner.run_tests_process, _runner.raise_stop_from_carrier = saved
+        (
+            _runner.run_tests_process,
+            _runner.raise_stop_from_carrier,
+            _runner.time,
+        ) = saved
+        signal.signal(signal.SIGTERM, saved_sigterm)
     took_teardown_path = "terminating all processes" in output.getvalue()
     return exit_code, took_teardown_path
 
@@ -662,6 +684,156 @@ def test_the_in_loop_handshake_is_not_vacuous():
         assert "no worker signalled a stop" in str(e), e
     else:
         raise AssertionError("the driver accepted a run nothing signalled in")
+
+
+# --- Cause selection against an expired time limit ----------------------------
+#
+# The time limit is the one cause whose trigger is a clock, so end to end it can
+# only be ordered against another cause by a budget that is wide enough to reach
+# and narrow enough to lose - and process startup, including the manager and worker
+# forks, happens inside it. These arms own the clock instead, so the ordering does
+# not depend on how fast the runner is. The exit code still needs an e2e arm, which
+# is the only layer that can see `killpg` clobbering it.
+
+
+_DEADLINE = 1.0
+_PAST_THE_DEADLINE = 2.0
+
+
+class _ClockReadAfterAWorkerSignals:
+    """A clock whose every reading is past `_DEADLINE`, taken only once a worker has
+    signalled a stop.
+
+    Every detector claims its cause before setting `stop_testing`, so a set event
+    means the claim is already visible. Gating the reading on it puts the parent's
+    time-limit evaluation after the worker's claim on every run, with no sleep on
+    either side and no elapsed real time in the comparison: the deadline and the
+    reading are both constants. A missed handshake raises instead of hanging.
+    """
+
+    def __init__(self, signalled, timeout=30.0):
+        self._signalled = signalled
+        self._timeout = timeout
+
+    def __call__(self):
+        if not self._signalled.wait(timeout=self._timeout):
+            raise RuntimeError(
+                f"handshake missed: no worker signalled a stop within {self._timeout}s"
+            )
+        return _PAST_THE_DEADLINE
+
+
+def _stop_code_against_an_expired_deadline(worker, handshake_timeout=30.0):
+    stop_testing = multiprocessing.Event()
+    exit_code, _ = _drive_parent_monitor_loop(
+        worker,
+        stop_testing,
+        args=_runner_args(stop_time=_DEADLINE),
+        clock=_ClockReadAfterAWorkerSignals(stop_testing, handshake_timeout),
+    )
+    return exit_code
+
+
+def test_time_limit_does_not_displace_a_cause_claimed_before_it():
+    """A worker claims the probe verdict, and only then is the parent's expired time
+    limit evaluated. The parent must report 5, not 3.
+
+    Master loses the verdict here and reports the benign `Global time limit
+    reached`.
+    """
+    assert (
+        _stop_code_against_an_expired_deadline(_worker_claiming(HUNG_CHECK_EXIT_CODE))
+        == HUNG_CHECK_EXIT_CODE
+    )
+
+
+def test_an_expired_time_limit_still_claims_a_run_with_no_other_cause():
+    """Mirror arm. Without it the test above also passes on an implementation that
+    never claims the time limit at all, and the #106183 contract - a plain timeout is
+    the benign stop condition - would go unpinned at this layer."""
+    assert (
+        _stop_code_against_an_expired_deadline(_worker_claiming_nothing)
+        == GLOBAL_TIME_LIMIT_EXIT_CODE
+    )
+
+
+def test_the_deadline_handshake_is_not_vacuous():
+    """The clock above is only a forcing mechanism if an unmet handshake fails
+    loudly. With a worker that never signals a stop it must raise, not pass and not
+    hang - otherwise the two arms above could be reading the clock before the claim
+    and would be racing after all."""
+    try:
+        _stop_code_against_an_expired_deadline(
+            _worker_signalling_nothing, handshake_timeout=1.0
+        )
+    except RuntimeError as e:
+        assert "no worker signalled a stop" in str(e), e
+    else:
+        raise AssertionError("the driver accepted a run nothing signalled in")
+
+
+# --- Not starting the probe once a stop is already pending --------------------
+#
+# The probe takes 65-165 s to conclude and drags a stacktrace sweep (up to 30 s
+# per server process) behind it, so a run that is already tearing down must not
+# start one. Whether it ran is not visible in the exit code - a second claim loses
+# to the first either way - so the observable is the call count.
+
+
+def _probe_calls(stop_testing, worker, hung_check=True):
+    calls = []
+
+    saved = (_runner.check_server_liveness, _runner.print_c_stacktraces)
+
+    def counting_probe(*a, **k):
+        calls.append(1)
+        return False  # so a run that does probe still terminates
+
+    _runner.check_server_liveness = counting_probe
+    _runner.print_c_stacktraces = lambda *a, **k: None
+    try:
+        exit_code, _ = _drive_parent_monitor_loop(
+            worker, stop_testing, args=_runner_args(hung_check=hung_check)
+        )
+    finally:
+        _runner.check_server_liveness, _runner.print_c_stacktraces = saved
+    return len(calls), exit_code
+
+
+def test_a_pending_stop_prevents_a_new_liveness_probe():
+    """A worker has claimed and signalled before the parent reaches the probe.
+
+    `_EventVisibleOnFirstCheck` makes the guard's own `is_set()` wait for that
+    signal, so the ordering is forced rather than raced. The claimed cause also has
+    to survive, which is why the exit code is asserted too.
+    """
+    calls, exit_code = _probe_calls(
+        _EventVisibleOnFirstCheck(), _worker_claiming(MAX_FAILURES_EXIT_CODE)
+    )
+    assert calls == 0, "a probe was started on a run that was already stopping"
+    assert exit_code == MAX_FAILURES_EXIT_CODE
+
+
+def test_the_probe_runs_while_no_stop_is_pending():
+    """Positive control, mandatory: 0 calls is also what a run that never reached
+    the probe produces, so the arm above proves nothing without this one."""
+    calls, exit_code = _probe_calls(
+        multiprocessing.Event(), _worker_signalling_nothing
+    )
+    assert calls >= 1
+    assert exit_code == HUNG_CHECK_EXIT_CODE
+
+
+def test_the_probe_is_gated_on_the_hung_check_flag():
+    """The other half of the guard, and a second reason the counter is not
+    vacuous: without `--hung-check` the probe is never started."""
+    calls, exit_code = _probe_calls(
+        _EventVisibleOnFirstCheck(),
+        _worker_claiming(MAX_FAILURES_EXIT_CODE),
+        hung_check=False,
+    )
+    assert calls == 0
+    assert exit_code == MAX_FAILURES_EXIT_CODE
 
 
 # --- Claiming before collecting -----------------------------------------------
@@ -799,6 +971,22 @@ def test_the_competitor_handshake_is_not_vacuous():
         raise AssertionError("the driver accepted a window nothing competed in")
 
 
+def test_the_time_limit_does_not_win_the_liveness_collection_window():
+    """The competitor is the global time limit, which is the cause that can fire on
+    a clock while the worker is still collecting.
+
+    The e2e arm for this shape has to make the run outlast a deadline to get here,
+    which puts process startup inside the budget. Here the window is opened and
+    closed by a handshake, so the interleaving holds however slow the runner is.
+    """
+    assert (
+        _drive_abort_site_with_a_competitor(
+            FailureReason.LIVENESS_CHECK_FAILED, GLOBAL_TIME_LIMIT_EXIT_CODE
+        )
+        == HUNG_CHECK_EXIT_CODE
+    )
+
+
 def test_liveness_claims_its_cause_before_collecting_stacktraces():
     """The same invariant on the liveness path, with the causes swapped so the
     test above cannot pass merely because the death code is also the default."""
@@ -899,6 +1087,17 @@ def _stub_stacktraces(*a, **k):
         import time as _time
         _time.sleep(_stacktrace_seconds)
 ns["print_c_stacktraces"] = _stub_stacktraces
+# Prints one line per claim attempt. A denied attempt is otherwise invisible - the
+# "Global time limit reached" banner sits inside the granted branch - so an arm
+# asserting that one cause beat another cannot tell "the loser lost" from "the loser
+# never tried", and passes on a run where the two never competed.
+if os.environ.get("STUB_TRACE_CLAIMS") == "1":
+    _real_claim = ns["try_claim_stop_cause"]
+    def _traced_claim(carrier, code):
+        granted = _real_claim(carrier, code)
+        print("stub: claim code=%d granted=%s" % (code, granted))
+        return granted
+    ns["try_claim_stop_cause"] = _traced_claim
 # Re-arms the deadline on entry to the monitor loop, so the budget measures that
 # loop rather than also covering database creation and worker startup.
 _stop_time_after_setup = float(os.environ.get("STUB_STOP_TIME_AFTER_SETUP", "0"))
@@ -935,6 +1134,7 @@ def _run_runner(
     stub_health_check_raises=False,
     stacktrace_seconds=0,
     stop_time_after_setup=0,
+    trace_claims=False,
     jobs=2,
     timeout=300,
 ):
@@ -945,6 +1145,7 @@ def _run_runner(
     env["STUB_HEALTH_CHECK_RAISES"] = "1" if stub_health_check_raises else "0"
     env["STUB_STACKTRACE_SECONDS"] = str(stacktrace_seconds)
     env["STUB_STOP_TIME_AFTER_SETUP"] = str(stop_time_after_setup)
+    env["STUB_TRACE_CLAIMS"] = "1" if trace_claims else "0"
     return subprocess.run(
         [
             sys.executable,
@@ -970,6 +1171,10 @@ def _run_runner(
 # between the time limit and another cause must check it: without the re-arm the
 # budget also covers setup, and a slow runner then exits 3 on correct code.
 _STOP_TIME_REARMED = "stub: re-armed stop_time on entry to do_run_tests"
+
+# Printed by the shim's claim tracer under `trace_claims`.
+_CLAIM_DENIED_TIME_LIMIT = f"stub: claim code={GLOBAL_TIME_LIMIT_EXIT_CODE} granted=False"
+_CLAIM_GRANTED_HUNG_CHECK = f"stub: claim code={HUNG_CHECK_EXIT_CODE} granted=True"
 
 
 def _assert_exit_code(proc, expected):
@@ -1092,13 +1297,19 @@ def test_max_failures_is_not_conflated_with_the_hung_check(tmp_path):
 
 
 def test_time_limit_does_not_steal_a_cause_recorded_during_collection(tmp_path):
-    """Both causes fire in one run, and the window between them is real.
+    """Both causes fire in one run, end to end, and the process exits 5.
 
-    A worker records the probe verdict and then collects stacktraces, which blocks
-    (lldb over every server process, up to 30 s each). `stacktrace_seconds` makes
-    that window wide enough for the parent's time limit to expire inside it, which
-    is the only shape where the two claims genuinely compete. Master loses the
-    verdict here and reports the benign `Global time limit reached` at OK.
+    The ordering itself is asserted without a clock by
+    `test_the_time_limit_does_not_win_the_liveness_collection_window`; this arm
+    exists for the exit code, which is the only layer that can see `killpg`
+    clobbering it. A worker records the probe verdict and then collects stacktraces,
+    which blocks (lldb over every server process, up to 30 s each);
+    `stacktrace_seconds` holds that window open so the deadline expires inside it.
+    Master loses the verdict here and reports the benign `Global time limit reached`
+    at OK.
+
+    The budget below is generous because it no longer carries the ordering: all that
+    has to fit inside it is the worker's claim, ~20 ms against 4 s.
     """
     _make_suite(tmp_path, count=4, seconds=1)
     proc = _run_runner(
@@ -1108,22 +1319,39 @@ def test_time_limit_does_not_steal_a_cause_recorded_during_collection(tmp_path):
         stub_health_check_raises=True,
         stacktrace_seconds=8,
         stop_time_after_setup=4,
+        trace_claims=True,
     )
     _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
     assert _STOP_TIME_REARMED in proc.stdout, proc.stdout[-2000:]
+    # The time limit has to have tried and been refused. Its banner sits inside the
+    # granted branch, so the exit code alone cannot tell a refused claim from one
+    # that was never attempted, and a run whose deadline never expires exits 5
+    # without the two causes ever competing.
+    assert _CLAIM_DENIED_TIME_LIMIT in proc.stdout, (
+        "the time limit never contested the claim, so this run proves nothing about"
+        f" ordering\nstdout:\n{proc.stdout[-3000:]}"
+    )
+    assert _CLAIM_GRANTED_HUNG_CHECK in proc.stdout, proc.stdout[-3000:]
 
 
-def test_parent_time_limit_does_not_steal_a_worker_cause(tmp_path):
-    """The parent's own periodic probe against the same expiring time limit."""
+def test_the_claim_tracer_sees_a_time_limit_that_wins(tmp_path):
+    """Positive control for the tracer assertion above.
+
+    `granted=False` for the time limit is the interesting outcome, so the tracer has
+    to be able to report `granted=True` for it as well - otherwise the assertion
+    could be reading a tracer that is simply broken for that code.
+    """
     _make_suite(tmp_path, count=2, seconds=8)
     proc = _run_runner(
         tmp_path,
-        ["--hung-check", "--global_time_limit", "3"],
-        stub_liveness_fails=True,
-        stop_time_after_setup=3,
+        ["--global_time_limit", "3"],
+        stub_liveness_fails=False,
+        trace_claims=True,
     )
-    _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
-    assert _STOP_TIME_REARMED in proc.stdout, proc.stdout[-2000:]
+    _assert_exit_code(proc, GLOBAL_TIME_LIMIT_EXIT_CODE)
+    assert (
+        f"stub: claim code={GLOBAL_TIME_LIMIT_EXIT_CODE} granted=True" in proc.stdout
+    ), proc.stdout[-3000:]
 
 
 def test_time_limit_still_claims_a_run_with_no_other_cause(tmp_path):

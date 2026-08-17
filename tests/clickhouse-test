@@ -1277,7 +1277,7 @@ def print_c_stacktraces(args) -> None:
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, liveness check, hung-check, check_server_started)
     or terminating the one wedged test (timeout_handler).  lldb's "thread
-    backtrace all" pause is on the order of seconds — acceptable in both
+    backtrace all" pause is on the order of seconds - acceptable in both
     cases against the diagnostic value.
 
     Skipped under ASan, where attaching a debugger disables
