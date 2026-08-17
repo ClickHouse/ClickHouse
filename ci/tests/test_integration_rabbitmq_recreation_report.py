@@ -25,6 +25,8 @@ import ast
 import json
 import os
 import sys
+import tracemalloc
+from pathlib import Path
 
 import pytest
 
@@ -156,6 +158,40 @@ def test_non_pytest_logs_are_not_scanned(temp_path):
     assert job.report_rabbitmq_recreations(_result(children=[Result.Status.OK])) == 0
 
 
+def test_scan_peak_memory_does_not_grow_with_log_size(temp_path):
+    """The scan runs on every integration job, and a per-worker log is tens of MB, so
+    peak memory must be bounded by the longest line rather than by the file.
+
+    A token sits on either side of the filler: a scan that buys its memory bound by
+    reading only the tail would still see the last one, and must not pass here."""
+    first = _snapshot(temp_path, "gw0-attempt1.log")
+    last = _snapshot(temp_path, "gw0-attempt2.log")
+    filler = "x" * 4096
+    body = "".join(f"{filler} line {i}\n" for i in range(6000))
+    big = temp_path / "pytest_parallel-gw0.log"
+    big.write_text(
+        _token_line(attempt=1, snapshot=first)
+        + "\n"
+        + body
+        + _token_line(attempt=2, snapshot=last)
+        + "\n"
+    )
+    size = big.stat().st_size
+    assert size > 8 * 1024 * 1024, size
+    result = _result(children=[Result.Status.OK])
+
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        assert job.report_rabbitmq_recreations(result) == 2
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert result.files == [first, last]
+    assert peak < size // 8, f"peak {peak} against a {size}-byte log"
+
+
 # --- attaching the preserved broker logs ----------------------------------------------
 
 
@@ -211,7 +247,7 @@ def test_preexisting_attachments_are_kept(temp_path):
 def test_unreadable_log_is_skipped_and_others_still_counted(temp_path):
     """One unreadable log must not lose the whole report."""
     bad = temp_path / "pytest_parallel-gw0.log"
-    bad.mkdir()  # a directory raises OSError on read_text
+    bad.mkdir()  # a directory raises OSError on open
     _write_log(
         temp_path,
         "pytest_parallel-gw1.log",
@@ -223,17 +259,58 @@ def test_unreadable_log_is_skipped_and_others_still_counted(temp_path):
     assert len(result.files) == 1
 
 
+def test_log_that_fails_mid_read_contributes_nothing(temp_path, monkeypatch):
+    """A file is scanned line by line, so a read that dies part way through has already
+    seen some of its tokens. Publishing those would report an undercount of that file as
+    if it were the whole truth, so the file must contribute nothing at all."""
+    _write_log(
+        temp_path,
+        "pytest_parallel-gw0.log",
+        [_token_line(snapshot=_snapshot(temp_path, "gw0-attempt1.log"))],
+    )
+    doomed = temp_path / "pytest_parallel-gw1.log"
+    doomed_lines = [
+        _token_line(attempt=n, snapshot=_snapshot(temp_path, f"gw1-attempt{n}.log"))
+        for n in (1, 2)
+    ]
+    _write_log(temp_path, doomed.name, doomed_lines)
+
+    real_open = Path.open
+
+    class _DiesAfterFirstLine:
+        """A handle that yields one token line, then fails like a read error would."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        def __iter__(self):
+            yield doomed_lines[0] + "\n"
+            raise OSError("simulated read error mid-file")
+
+    def _open(self, *args, **kwargs):
+        if self.name == doomed.name:
+            return _DiesAfterFirstLine()
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _open)
+    result = _result(children=[Result.Status.OK])
+
+    # Only the intact log counts, and the doomed log's snapshot is not attached.
+    assert job.report_rabbitmq_recreations(result) == 1
+    assert result.files == [_snapshot(temp_path, "gw0-attempt1.log")]
+
+
 # --- the report must not displace the job summary, or claim recovery ------------------
 
 
 def test_red_job_keeps_its_failure_count(temp_path):
     """`complete_job` adds `Failures: N/M` only while `info` is empty and runs after
     this, so the reporter must emit the summary itself or the count is lost."""
-    _write_log(
-        temp_path,
-        "pytest_parallel-gw0.log",
-        [_token_line(snapshot=_snapshot(temp_path, "attempt1.log"))],
-    )
+    snapshot = _snapshot(temp_path, "attempt1.log")
+    _write_log(temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=snapshot)])
     result = _result(
         status=Result.Status.FAIL,
         children=[Result.Status.OK, Result.Status.FAIL, Result.Status.OK],
@@ -242,6 +319,7 @@ def test_red_job_keeps_its_failure_count(temp_path):
     assert job.report_rabbitmq_recreations(result) == 1
     assert "Failures: 1/3" in result.info
     assert "recreation was attempted 1 time(s)" in result.info
+    assert result.files == [snapshot]
 
 
 def test_green_job_keeps_its_failure_count(temp_path):
@@ -304,11 +382,8 @@ def test_report_does_not_claim_recovery(temp_path, capsys):
 def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
     """An earlier writer's `info` is what suppresses `complete_job`'s summary, so the
     reporter must append to it rather than add a second summary of its own."""
-    _write_log(
-        temp_path,
-        "pytest_parallel-gw0.log",
-        [_token_line(snapshot=_snapshot(temp_path, "attempt1.log"))],
-    )
+    snapshot = _snapshot(temp_path, "attempt1.log")
+    _write_log(temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=snapshot)])
     result = _result(status=Result.Status.ERROR, children=[Result.Status.FAIL])
     result.set_info("Session-level error from another writer")
 
@@ -316,6 +391,7 @@ def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
     assert "Session-level error from another writer" in result.info
     assert "recreation was attempted 1 time(s)" in result.info
     assert "Failures:" not in result.info
+    assert result.files == [snapshot]
 
 
 # --- the report is not a verdict ------------------------------------------------------
@@ -323,20 +399,20 @@ def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
 
 def test_status_and_labels_are_untouched(temp_path):
     """A recreation is not itself a verdict: the reporter only appends to `info` and
-    `files`. In particular no INFRA label is added."""
-    _write_log(
-        temp_path,
-        "pytest_parallel-gw0.log",
-        [_token_line(snapshot=_snapshot(temp_path, "attempt1.log"))],
-    )
+    `files`. In particular no INFRA label is added, and the preserved broker log is
+    attached whatever the outcome was - a red job is when it is most wanted."""
+    snapshot = _snapshot(temp_path, "attempt1.log")
+    _write_log(temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=snapshot)])
     for status in (Result.Status.OK, Result.Status.FAIL, Result.Status.ERROR):
-        result = _result(status=status, children=[Result.Status.OK])
-        labels_before = list(result.get_labels())
+        for children in ([Result.Status.OK], [Result.Status.FAIL]):
+            result = _result(status=status, children=children)
+            labels_before = list(result.get_labels())
 
-        job.report_rabbitmq_recreations(result)
-        assert result.status == status
-        assert list(result.get_labels()) == labels_before
-        assert not result.has_label(Result.Label.INFRA)
+            job.report_rabbitmq_recreations(result)
+            assert result.status == status
+            assert list(result.get_labels()) == labels_before
+            assert not result.has_label(Result.Label.INFRA)
+            assert result.files == [snapshot], (status, children)
 
 
 def test_report_survives_serialization(temp_path):

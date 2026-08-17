@@ -109,7 +109,7 @@ def _mark_infrastructure_errors(results: list) -> int:
 def clear_rabbitmq_recreation_scan_inputs() -> None:
     """Delete everything `report_rabbitmq_recreations` scans, before the first batch.
 
-    The reporter reads whole files and the log handlers append, so anything left in
+    The reporter scans every line and the log handlers append, so anything left in
     `temp_path` by an earlier job counts as an event of this one. Best effort: a job
     must never fail because a stale file could not be removed.
     """
@@ -137,18 +137,24 @@ def report_rabbitmq_recreations(result: Result) -> int:
     snapshots = []
     count = 0
     for log_file in sorted(Path(temp_path).glob("pytest_*.log")):
+        # Streamed: these are the full per-worker integration logs, tens of MB each.
+        # A file contributes only once read to the end, so a partial read is no count.
+        file_count = 0
+        file_snapshots = []
         try:
-            text = log_file.read_text(encoding="utf-8", errors="replace")
+            with log_file.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if RABBITMQ_RECREATE_TOKEN not in line:
+                        continue
+                    file_count += 1
+                    match = re.search(r"snapshot=(\S+)", line)
+                    if match and os.path.exists(match.group(1)):
+                        file_snapshots.append(match.group(1))
         except OSError as ex:
             print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
             continue
-        for line in text.splitlines():
-            if RABBITMQ_RECREATE_TOKEN not in line:
-                continue
-            count += 1
-            match = re.search(r"snapshot=(\S+)", line)
-            if match and os.path.exists(match.group(1)):
-                snapshots.append(match.group(1))
+        count += file_count
+        snapshots.extend(file_snapshots)
     if not count:
         return 0
     # Only `info` and `files` are touched; status and labels stay as the results left them.
