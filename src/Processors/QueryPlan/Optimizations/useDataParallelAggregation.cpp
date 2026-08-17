@@ -65,13 +65,7 @@ void buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
     else if (const auto * filter = typeid_cast<const FilterStep *>(step))
         appendExpression(dag, filter->getExpression());
     else if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
-    {
-        if (dag)
-        {
-            const auto & cols = array_join->getColumns();
-            dag->removeFromOutputs(NameSet(cols.begin(), cols.end()));
-        }
-    }
+        appendExpression(dag, DB::QueryPlanOptimizations::buildArrayJoinDAG(*array_join));
 }
 
 }
@@ -84,14 +78,23 @@ namespace DB::QueryPlanOptimizations
 /// 2. To find col1, ..., coln we apply removeInjectiveFunctionsFromResultsRecursively to the key actions.
 /// 3. We match partition key actions with the key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
-bool isPartitionKeyFunctionOfKeys(const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names)
+bool isPartitionKeyFunctionOfKeys(
+    const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names)
 {
-    if (key_actions.hasArrayJoin() || key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
+    if (key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
         return false;
 
     /// We are interested only in calculations required to obtain the keys (and not aggregate function arguments for example).
     auto key_nodes = key_actions.findInOutputs(key_names);
     auto key_dag = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/true);
+
+    /// A key tracing to an `ARRAY_JOIN` node (see `buildArrayJoinDAG`) is an exploded array element, and
+    /// for such a key the guarantee this function establishes cannot hold: equal key values may come from
+    /// unrelated source rows lying in different partitions. E.g. with `PARTITION BY length(arr)` and the
+    /// key being the element of `ARRAY JOIN arr`, the arrays `[1]` and `[1, 2]` lie in different
+    /// partitions but both produce the key value `1`.
+    if (key_dag.hasArrayJoin())
+        return false;
 
     const auto & key_required_columns = key_dag.getRequiredColumnsNames();
 
@@ -117,6 +120,18 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
 {
     return isPartitionKeyFunctionOfKeys(
         partition_key.expression->getActionsDAG(), partition_key.column_names, key_actions, key_names);
+}
+
+ActionsDAG buildArrayJoinDAG(const ArrayJoinStep & array_join)
+{
+    const auto & columns = array_join.getColumns();
+    const NameSet joined(columns.begin(), columns.end());
+
+    ActionsDAG dag(array_join.getInputHeaders().front()->getColumnsWithTypeAndName());
+    for (auto & output : dag.getOutputs())
+        if (joined.contains(output->result_name))
+            output = &dag.addArrayJoin(*output, output->result_name);
+    return dag;
 }
 
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)

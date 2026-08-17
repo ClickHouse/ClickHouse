@@ -86,12 +86,11 @@ static StreamDisjointnessProperty applyStreamDisjointness(
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// ARRAY JOIN keeps every output row in its input stream and does not change the partition
-        /// columns, so disjointness survives.
-        if (property.isDisjoint() && property.column_actions)
-        {
-            const auto & cols = array_join->getColumns();
-            property.column_actions->removeFromOutputs(NameSet(cols.begin(), cols.end()));
-        }
+        /// columns, so disjointness survives. The exploded columns enter the pass-through expressions as
+        /// `ARRAY_JOIN` nodes (see `buildArrayJoinDAG`), so a key tracing to one is rejected instead of
+        /// being confused with the source array column of the same name.
+        if (property.isDisjoint())
+            appendExpression(property.column_actions, buildArrayJoinDAG(*array_join));
         return property;
     }
 

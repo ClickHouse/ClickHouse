@@ -6,6 +6,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class ArrayJoinStep;
 struct KeyDescription;
 
 namespace QueryPlanOptimizations
@@ -37,6 +38,17 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
 /// those columns).
 bool isPartitionKeyFunctionOfKeys(
     const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names);
+
+/// Returns the transformation applied by an `ArrayJoinStep` as an `ActionsDAG`: every column of the
+/// step's input passes through unchanged, and each array-joined column becomes an `ARRAY_JOIN` node
+/// over its source array.
+///
+/// The passes above compose this DAG into `key_actions` when they look through an ARRAY JOIN. An
+/// exploded column can carry the very name of its source array (`ARRAY JOIN arr`, or any alias under
+/// the old analyzer), so without the node a key referencing it would be mistaken for the source column
+/// and matched against the partition key. With the node the explosion is part of the key's lineage,
+/// and `isPartitionKeyFunctionOfKeys` rejects the key.
+ActionsDAG buildArrayJoinDAG(const ArrayJoinStep & array_join);
 
 }
 
