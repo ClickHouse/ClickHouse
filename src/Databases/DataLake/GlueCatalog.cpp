@@ -62,6 +62,7 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
     extern const int NOT_IMPLEMENTED;
+    extern const int S3_ERROR;
 }
 
 namespace DB::FailPoints
@@ -653,7 +654,8 @@ void GlueCatalog::createTable(
     const String & table_name,
     const String & new_metadata_path,
     Poco::JSON::Object::Ptr metadata_content,
-    DB::CompressionMethod metadata_compression_method) const
+    DB::CompressionMethod metadata_compression_method,
+    bool if_not_exists) const
 {
     String effective_metadata_path = new_metadata_path;
 
@@ -681,7 +683,18 @@ void GlueCatalog::createTable(
         Poco::JSON::Stringifier::stringify(metadata_content, oss, 4);
         String metadata_str = DB::removeEscapedSlashes(oss.str());
 
-        DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "", metadata_compression_method);
+        try
+        {
+            DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "", metadata_compression_method);
+        }
+        catch (const DB::Exception & e)
+        {
+            /// The write is guarded by `If-None-Match: *`, so S3 answers `PreconditionFailed` once the
+            /// initial metadata file is there - someone else created this table first.
+            if (if_not_exists && e.code() == DB::ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+                return;
+            throw;
+        }
 
         written_metadata_storage = object_storage;
         written_metadata_file = metadata_filename;
@@ -721,7 +734,9 @@ void GlueCatalog::createTable(
 
         auto response = glue_client->CreateTable(request);
 
-        if (!response.IsSuccess())
+        /// `AlreadyExistsException` means someone else registered the table first.
+        if (!response.IsSuccess()
+            && !(if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS))
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
     }
     catch (...)

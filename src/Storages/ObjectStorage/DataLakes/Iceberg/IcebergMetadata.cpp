@@ -887,7 +887,7 @@ void IcebergMetadata::createInitial(
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
             + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method);
+        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists);
     }
 
     success = true;

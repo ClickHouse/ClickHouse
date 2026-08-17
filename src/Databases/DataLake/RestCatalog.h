@@ -80,7 +80,8 @@ public:
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr metadata_content,
-        DB::CompressionMethod metadata_compression_method) const override;
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 

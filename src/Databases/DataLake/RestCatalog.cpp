@@ -1749,7 +1749,8 @@ void RestCatalog::createTable(
     const String & table_name,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr metadata_content,
-    DB::CompressionMethod /*metadata_compression_method*/) const
+    DB::CompressionMethod /*metadata_compression_method*/,
+    bool if_not_exists) const
 {
     const String location = metadata_content->getValue<String>("location");
 
@@ -1796,6 +1797,9 @@ void RestCatalog::createTable(
     }
     catch (const DB::HTTPException & ex)
     {
+        /// The catalog answers `409` when someone else created the table first.
+        if (if_not_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            return;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
     }
 }

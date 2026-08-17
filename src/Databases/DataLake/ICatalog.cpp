@@ -419,7 +419,8 @@ void ICatalog::createTable(
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr /*metadata_content*/,
-    DB::CompressionMethod /*metadata_compression_method*/) const
+    DB::CompressionMethod /*metadata_compression_method*/,
+    bool /*if_not_exists*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
         "CREATE TABLE is not supported for this DataLakeCatalog catalog type; "

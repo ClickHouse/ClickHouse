@@ -1185,7 +1185,7 @@ void DatabaseDataLake::createTable(
         namespace_location.resize(namespace_location.size() - table_suffix.size());
     catalog->createNamespaceIfNotExists(namespace_name, namespace_location);
 
-    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method);
+    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method, create.if_not_exists);
 
     LOG_INFO(log, "Created table {}.{}", namespace_name, table_name);
 }
