@@ -6,7 +6,7 @@ SET dictionary_validate_primary_key_type = 1;
 CREATE DICTIONARY dict_lc_uint64 (`k` LowCardinality(UInt64), `v` UInt32)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'src'))
-LIFETIME(MIN 1 MAX 10)
+LIFETIME(0)
 LAYOUT(FLAT());
 
 DESCRIBE dict_lc_uint64;
@@ -51,3 +51,20 @@ LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
 DESCRIBE dict_lc_uint64_unvalidated;
+
+SET dictionary_validate_primary_key_type = 1;
+SET allow_suspicious_low_cardinality_types = 1;
+
+CREATE TABLE src_lc (k LowCardinality(UInt64), v UInt32) ENGINE = Memory;
+INSERT INTO src_lc VALUES (3, 300), (4, 400);
+
+CREATE DICTIONARY dict_lc_source (`k` LowCardinality(UInt64), `v` UInt32)
+PRIMARY KEY k
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'src_lc'))
+LIFETIME(0)
+LAYOUT(FLAT());
+
+SELECT dictGet(currentDatabase() || '.dict_lc_source', 'v', toUInt64(3));
+SELECT dictHas(currentDatabase() || '.dict_lc_source', toUInt64(4));
+SELECT dictHas(currentDatabase() || '.dict_lc_source', toUInt64(99));
+SELECT * FROM dict_lc_source ORDER BY k;
