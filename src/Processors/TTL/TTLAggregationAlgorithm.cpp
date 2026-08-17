@@ -360,7 +360,8 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             std::unordered_set<String> columns_added;
             for (const auto & it : description.set_parts)
             {
-                const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
+                /// insertRangeFrom requires the source to be of the same class as the destination.
+                auto values_column = agg_block.getByName(it.expression_result_column_name).column->convertToFullIfWrapped();
                 auto & result_column = result_columns[header.getPositionByName(it.column_name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
                 columns_added.emplace(it.column_name);

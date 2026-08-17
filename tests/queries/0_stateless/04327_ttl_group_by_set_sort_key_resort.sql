@@ -365,3 +365,16 @@ OPTIMIZE TABLE t_const_folded_mat FINAL;
 SELECT 'const folded mat set fired', countIf(toYear(x) = 2050) FROM t_const_folded_mat;
 SELECT 'const folded mat recomputed', count(), countIf(m = 0) FROM t_const_folded_mat;
 DROP TABLE t_const_folded_mat;
+
+-- A SET expression whose arguments are all constant is const-folded, so the result arrives
+-- as a ColumnConst while the destination is a ColumnTuple.
+CREATE TABLE t_const_folded_tuple (k UInt32, ts DateTime, tup Tuple(ts DateTime))
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k
+SET tup = tuple(defaultValueOfArgumentType(toDateTime('2200-01-01') + toIntervalSecond(max(k))))
+SETTINGS remove_empty_parts = 0;
+INSERT INTO t_const_folded_tuple VALUES (1, '2020-01-01 00:00:00', ('2020-01-01 00:00:00')), (1, '2020-01-02 00:00:00', ('2020-01-02 00:00:00'));
+OPTIMIZE TABLE t_const_folded_tuple FINAL;
+SELECT 'const folded tuple rows', count() FROM t_const_folded_tuple;
+SELECT 'const folded tuple value', tup.ts = toDateTime(0) FROM t_const_folded_tuple;
+DROP TABLE t_const_folded_tuple;
