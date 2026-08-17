@@ -10,13 +10,13 @@ using namespace DB;
 namespace
 {
 
-static void setRange(IColumn::Filter & filter, size_t begin, size_t end)
+void setRange(IColumn::Filter & filter, size_t begin, size_t end)
 {
     for (size_t i = begin; i < end; ++i)
         filter[i] = 1;
 }
 
-static IColumn::Filter createClusteredFilter()
+IColumn::Filter createClusteredFilter()
 {
     IColumn::Filter filter;
     filter.resize_fill(4 * 64 + 7, 0);
@@ -46,7 +46,7 @@ static IColumn::Filter createClusteredFilter()
     return filter;
 }
 
-static ColumnFixedString::MutablePtr createColumn(size_t width, size_t rows)
+ColumnFixedString::MutablePtr createColumn(size_t width, size_t rows)
 {
     auto column = ColumnFixedString::create(width);
     std::string value(width, '\0');
@@ -61,7 +61,7 @@ static ColumnFixedString::MutablePtr createColumn(size_t width, size_t rows)
     return column;
 }
 
-static void expectFiltered(const IColumn & source, const IColumn::Filter & filter, const IColumn & filtered)
+void expectFiltered(const IColumn & source, const IColumn::Filter & filter, const IColumn & filtered)
 {
     size_t expected_size = 0;
     for (UInt8 value : filter)
@@ -80,7 +80,7 @@ static void expectFiltered(const IColumn & source, const IColumn::Filter & filte
     }
 }
 
-static void expectFilterResult(const IColumn::Filter & filter, size_t width)
+void expectFilterResult(const IColumn::Filter & filter, size_t width)
 {
     auto source = createColumn(width, filter.size());
 

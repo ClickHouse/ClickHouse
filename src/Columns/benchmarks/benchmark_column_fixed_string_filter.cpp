@@ -3,9 +3,9 @@
 
 #include <benchmark/benchmark.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 using namespace DB;
 
@@ -20,7 +20,7 @@ enum class FilterPattern
     DenseWithHole,
 };
 
-static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
+IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
 {
     IColumn::Filter filter;
     filter.resize_fill(rows, 0);
@@ -38,8 +38,7 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
                     filter[i] = 1;
             }
             break;
-        case FilterPattern::Random:
-        {
+        case FilterPattern::Random: {
             UInt64 state = 0x9e3779b97f4a7c15ULL;
             for (size_t i = 0; i < rows; ++i)
             {
@@ -64,11 +63,10 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
     return filter;
 }
 
-static ColumnFixedString::MutablePtr createColumn(size_t rows)
+ColumnFixedString::MutablePtr createColumn(size_t rows, size_t width)
 {
-    constexpr size_t width = 16;
     auto column = ColumnFixedString::create(width);
-    std::array<char, width> value{};
+    std::string value(width, '\0');
 
     for (size_t row = 0; row < rows; ++row)
     {
@@ -81,10 +79,11 @@ static ColumnFixedString::MutablePtr createColumn(size_t rows)
 }
 
 template <FilterPattern pattern>
-static void BM_filter(benchmark::State & state)
+void BM_filter(benchmark::State & state)
 {
     const size_t rows = state.range(0);
-    auto column = createColumn(rows);
+    const size_t width = state.range(1);
+    auto column = createColumn(rows, width);
     auto filter = createFilter(rows, pattern);
 
     for (auto _ : state)
@@ -97,10 +96,11 @@ static void BM_filter(benchmark::State & state)
 }
 
 template <FilterPattern pattern>
-static void BM_filterInPlace(benchmark::State & state)
+void BM_filterInPlace(benchmark::State & state)
 {
     const size_t rows = state.range(0);
-    auto source = createColumn(rows);
+    const size_t width = state.range(1);
+    auto source = createColumn(rows, width);
     auto filter = createFilter(rows, pattern);
 
     for (auto _ : state)
@@ -118,12 +118,12 @@ static void BM_filterInPlace(benchmark::State & state)
 
 }
 
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Clustered)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Random)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Alternating)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseWithHole)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Clustered)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Random)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Alternating)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseWithHole)->Args({1 << 20, 1})->Args({1 << 20, 16});
 
-BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Clustered)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Random)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Alternating)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::DenseWithHole)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Clustered)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Random)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::Alternating)->Args({1 << 20, 1})->Args({1 << 20, 16});
+BENCHMARK_TEMPLATE(BM_filterInPlace, FilterPattern::DenseWithHole)->Args({1 << 20, 1})->Args({1 << 20, 16});
