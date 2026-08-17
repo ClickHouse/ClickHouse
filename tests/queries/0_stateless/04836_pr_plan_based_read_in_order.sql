@@ -47,8 +47,8 @@ SELECT a, b FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS parallel_re
 SELECT '--- ORDER BY a DESC LIMIT 5, plan_based = 1 ---';
 SELECT a, b FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
--- An OFFSET deep into the data: a per-replica range assignment that silently dropped or duplicated a range
--- shifts these rows even when the first page still looks right.
+-- A deep OFFSET checks the bound shipped with the fragment: a replica may stop at `limit` + `offset` rows,
+-- but not at `limit` - the OFFSET applies once, above the merge, not on each replica.
 SELECT '--- ORDER BY a, deep OFFSET, plan_based = 0 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 0;
 SELECT '--- ORDER BY a, deep OFFSET, plan_based = 1 ---';
