@@ -1398,7 +1398,9 @@ private:
             // value cost below.
             if (row_count == 0)
                 return header_bytes;
-            const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
+            // getNestedNotNullableColumn, not getNestedColumn: see the matching comment on the
+            // non-const path below.
+            const IColumn & dict_col = *lc.getDictionary().getNestedNotNullableColumn();
             // A materializing format expands the single constant value row_count times; the
             // dictionary then holds just that one distinct value, and the index array is
             // row_count entries all pointing at it.
@@ -1413,7 +1415,16 @@ private:
         // how many rows that particular batch has. Treating it as zero at row_count == 0 (as
         // an earlier version of this function did) undercounted the fixed per-batch
         // reservation for a large shared dictionary.
-        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
+        //
+        // getNestedNotNullableColumn, not getNestedColumn: for a LowCardinality(Nullable(T))
+        // the latter hands back the ColumnUnique's ColumnNullable wrapper, which
+        // estimateAggregateColumnBytes would charge one null-map byte per dictionary row for.
+        // COL_LOWCARD writes no dictionary null map — buildColDescriptor's top-level unwrap
+        // strips that wrapper and passes is_nullable=false, so nullability travels in
+        // ColumnUnique's reserved slot layout instead — and over-reserving here would make a
+        // large shared dictionary trip the dynamic splitter's byte-budget exception on batches
+        // that actually fit.
+        const IColumn & dict_col = *lc.getDictionary().getNestedNotNullableColumn();
         size_t dict_bytes = estimateAggregateColumnBytes(dict_col);
         if (row_count == 0)
             return header_bytes + dict_bytes;
