@@ -162,10 +162,17 @@ namespace ExportPartitionUtils
         context_copy->setCurrentQueryId(manifest.query_id);
         context_copy->setSetting("output_format_parallel_formatting", manifest.parallel_formatting);
         context_copy->setSetting("output_format_parquet_parallel_encoding", manifest.parquet_parallel_encoding);
-        context_copy->setSetting("output_format_parquet_compression_method", manifest.parquet_compression_method);
-        context_copy->setSetting("output_format_compression_level", manifest.output_format_compression_level);
-        context_copy->setSetting("output_format_parquet_row_group_size", manifest.parquet_row_group_size);
-        context_copy->setSetting("output_format_parquet_row_group_size_bytes", manifest.parquet_row_group_size_bytes);
+
+        /// Backwards compatibility
+        if (manifest.parquet_compression_method)
+            context_copy->setSetting("output_format_parquet_compression_method", *manifest.parquet_compression_method);
+        if (manifest.output_format_compression_level)
+            context_copy->setSetting("output_format_compression_level", *manifest.output_format_compression_level);
+        if (manifest.parquet_row_group_size)
+            context_copy->setSetting("output_format_parquet_row_group_size", *manifest.parquet_row_group_size);
+        if (manifest.parquet_row_group_size_bytes)
+            context_copy->setSetting("output_format_parquet_row_group_size_bytes", *manifest.parquet_row_group_size_bytes);
+
         context_copy->setSetting("max_threads", manifest.max_threads);
         context_copy->setSetting("export_merge_tree_part_file_already_exists_policy", String(magic_enum::enum_name(manifest.file_already_exists_policy)));
         context_copy->setSetting("export_merge_tree_part_max_bytes_per_file", manifest.max_bytes_per_file);
@@ -321,7 +328,8 @@ namespace ExportPartitionUtils
                     getPartitionSourceBlockForIcebergCommit(source_storage, manifest.partition_id);
         }
 
-        destination_storage->commitExportPartitionTransaction(manifest.transaction_id, manifest.partition_id, exported_paths, iceberg_args, context);
+        const auto destination_commit_info = destination_storage->commitExportPartitionTransaction(
+            manifest.transaction_id, manifest.partition_id, exported_paths, iceberg_args, context);
 
         /// Failpoint to simulate a crash after the Iceberg commit succeeds but before
         /// ZooKeeper is updated to COMPLETED. Used by idempotency integration tests.
@@ -334,16 +342,41 @@ namespace ExportPartitionUtils
         });
 
         LOG_INFO(log, "ExportPartition: Committed export, mark as completed");
+
+        const std::string status_path = fs::path(entry_path) / "status";
+        const std::string completed_name = String(magic_enum::enum_name(ExportReplicatedMergeTreePartitionTaskEntry::Status::COMPLETED)).data();
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(status_path, completed_name, -1));
+
+        ExportReplicatedMergeTreePartitionCommitInfoEntry commit_info_entry {
+            destination_commit_info.iceberg_metadata_file,
+            destination_commit_info.iceberg_manifest_list,
+            destination_commit_info.iceberg_manifest_file,
+            destination_commit_info.commit_marker_file};
+
+        const std::string commit_info_path = fs::path(entry_path) / "commit_info";
+        ops.emplace_back(zkutil::makeCreateRequest(commit_info_path, commit_info_entry.toJsonString(), zkutil::CreateMode::Persistent));
+
         ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperSet);
-        if (Coordination::Error::ZOK == zk->trySet(fs::path(entry_path) / "status", String(magic_enum::enum_name(ExportReplicatedMergeTreePartitionTaskEntry::Status::COMPLETED)).data(), -1))
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperMulti);
+
+        Coordination::Responses responses;
+        const auto rc = zk->tryMulti(ops, responses);
+
+        if (rc == Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "ExportPartition: Marked export as completed");
+            LOG_INFO(log, "ExportPartition: Marked export as completed and persisted commit_info");
+            return;
         }
-        else
+
+        if (rc == Coordination::Error::ZNODEEXISTS)
         {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "ExportPartition: Failed to mark export as completed, will not try to fix it");
+            LOG_INFO(log, "ExportPartition: commit_info already present (peer wrote it first); task already COMPLETED");
+            return;
         }
+
+        throw Exception(ErrorCodes::NETWORK_ERROR, "ExportPartition: Failed to mark export as completed (rc={}), will not try to fix it", rc);
     }
 
     bool handleCommitFailure(

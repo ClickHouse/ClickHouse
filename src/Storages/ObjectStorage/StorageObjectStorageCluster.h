@@ -44,7 +44,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context) override;
 
-    void commitExportPartitionTransaction(
+    ExportPartitionCommitInfo commitExportPartitionTransaction(
         const String & transaction_id,
         const String & partition_id,
         const Strings & exported_paths,
