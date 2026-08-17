@@ -4208,24 +4208,20 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
             settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         validateReadOnlyQueryForAIAgent(*ast, allow_schema_access);
 
+        /// `readonly = 1` prevents all per-query setting changes. The server's read-only
+        /// restriction alone does not enforce the advertised execution-time and memory
+        /// limits, so do not run an unconfirmed query when the sandbox cannot be installed.
+        if (!can_change_settings)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
+                "does not allow changing settings. Use the run_query tool for this query");
+
         /// The format-schema settings are interpreted after this validation: with
         /// `format_schema_source = 'query'` the schema is another query, executed through a FORMAT
         /// clause. They are normally neutralized below; when they cannot be, a session that left
         /// them set is refused instead - the client only sees its own settings, so this covers the
         /// values it knows about.
-        if (!can_change_settings)
-        {
-            for (const auto * name : {"format_schema", "format_schema_source", "format_schema_message_name", "output_format_schema", "format_template_resultset", "format_template_row"})
-            {
-                if (settings.isChanged(name))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The session sets `{}` and `readonly = 1` does not allow overriding it for the query, "
-                        "while the format schema can execute another query. Use the run_query tool for this query",
-                        name);
-            }
-        }
-
         /// Queries going through the confirmation prompt were already shown there.
         echoQueryForAI(query);
     }
