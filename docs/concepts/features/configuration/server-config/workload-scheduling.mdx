@@ -444,7 +444,7 @@ To restore workloads and resources from a backup:
 RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
 ```
 
-Restore requires `CREATE WORKLOAD` and `CREATE RESOURCE` privileges. Entities are restored using `CREATE IF NOT EXISTS` semantics — existing entities are preserved unchanged. If the server uses ZooKeeper storage (`workload_zookeeper_path`), only one replica in the cluster will create each entity; the other replicas pick up the change through the normal replication mechanism.
+Restore requires the `CREATE WORKLOAD` and `CREATE RESOURCE` privileges. By default existing entities are preserved unchanged (`if not exists` semantics); the `create_workloads_and_resources` setting below selects how an entity that already exists is handled. If the server uses ZooKeeper storage (`workload_zookeeper_path`), only one replica in the cluster will create each entity; the other replicas pick up the change through the normal replication mechanism.
 
 For replicated setups, both tables can be backed up and restored with `ON CLUSTER`:
 
@@ -454,7 +454,10 @@ RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FR
 ```
 
 :::note
-The `create_workloads_and_resources` restore setting controls whether workload and resource entities are restored when restoring a full database or cluster backup. It is enabled by default.
+The `create_workloads_and_resources` restore setting selects how a workload or resource that already exists is handled while it is being restored (it does not turn restoring these entities on or off). Like the related `create_function` setting, it accepts:
+- `if not exists` (default) — keep an existing entity unchanged and create only the ones that are missing;
+- `create` — fail the restore if any entity being restored already exists;
+- `replace` — overwrite an existing entity with the definition from the backup (this additionally requires the `DROP WORKLOAD` / `DROP RESOURCE` privilege).
 :::
 
 ## Deprecated XML configuration {#deprecated-configuration}

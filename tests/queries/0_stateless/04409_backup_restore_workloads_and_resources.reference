@@ -36,3 +36,8 @@ CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 5
 RESTORED
 --- development after replace-restore (weight back to 1) ---
 CREATE WORKLOAD development IN `all` SETTINGS priority = 1, weight = 1
+--- replace-restore without DROP WORKLOAD/RESOURCE is denied (missing grants reported) ---
+DROP RESOURCE
+DROP WORKLOAD
+--- after granting DROP WORKLOAD and DROP RESOURCE, replace-restore succeeds ---
+RESTORED

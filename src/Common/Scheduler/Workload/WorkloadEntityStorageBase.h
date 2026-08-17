@@ -133,10 +133,14 @@ private:
     std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
     std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
 
-    // Workload entities collected from a backup before being restored together in a single data restore task (see restore()).
+    // Workload entities collected from a backup before being restored together (see restore()).
     // Keyed by the restore operation's UUID so concurrent restores do not share or overwrite each other's accumulated entities.
     std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_restore;
-    std::unordered_set<UUID> restore_tasks_added;
+
+    // A single consistent snapshot of local_entities taken once per backup operation (keyed by the backup UUID),
+    // so that system.workloads and system.resources -- backed up via two separate backup() calls on this shared
+    // storage -- are captured from the same view (see backup()).
+    mutable std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_backup;
 
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources

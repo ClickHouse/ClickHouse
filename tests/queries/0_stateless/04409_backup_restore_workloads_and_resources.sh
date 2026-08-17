@@ -109,4 +109,18 @@ $CLICKHOUSE_CLIENT -q "RESTORE TABLE system.workloads, TABLE system.resources FR
 echo '--- development after replace-restore (weight back to 1) ---'
 $CLICKHOUSE_CLIENT -q "SELECT create_query FROM system.workloads WHERE name = 'development'"
 
+# 'replace' mode overwrites an existing entity (a DROP followed by a CREATE), so it additionally requires
+# DROP WORKLOAD / DROP RESOURCE, mirroring the access required by CREATE OR REPLACE WORKLOAD / RESOURCE.
+user_replace="user04409_replace_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user_replace}"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${user_replace} NOT IDENTIFIED"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE WORKLOAD, CREATE RESOURCE ON *.* TO ${user_replace}"
+echo '--- replace-restore without DROP WORKLOAD/RESOURCE is denied (missing grants reported) ---'
+$CLICKHOUSE_CLIENT --user "${user_replace}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'replace'" 2>&1 \
+    | grep -o -E "DROP WORKLOAD|DROP RESOURCE" | sort -u
+echo '--- after granting DROP WORKLOAD and DROP RESOURCE, replace-restore succeeds ---'
+$CLICKHOUSE_CLIENT -q "GRANT DROP WORKLOAD, DROP RESOURCE ON *.* TO ${user_replace}"
+$CLICKHOUSE_CLIENT --user "${user_replace}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'replace'" | cut -f2
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user_replace}"
+
 cleanup

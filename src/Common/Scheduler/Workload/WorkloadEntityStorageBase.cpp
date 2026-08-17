@@ -1003,8 +1003,19 @@ void WorkloadEntityStorageBase::backup(
     const String & data_path_in_backup,
     WorkloadEntityType entity_type) const
 {
+    /// system.workloads and system.resources are backed up via two separate backup() calls on this shared storage.
+    /// Take a single consistent snapshot of all local entities for the whole backup operation (keyed by the backup
+    /// UUID) and serve both calls from it, so that a DDL committing between the two calls cannot split an
+    /// interdependent pair across the snapshot. Otherwise "CREATE RESOURCE r; CREATE WORKLOAD w SETTINGS ... FOR r"
+    /// committing between a resources snapshot and a workloads snapshot could put w.sql in the backup without r.sql,
+    /// producing a backup that fails to restore on the "FOR r" reference. For replicated storage the coordination
+    /// elects one host to write both entity types, so a per-host consistent snapshot is sufficient.
+    const UUID backup_id = backup_entries_collector.getBackupSettings().backup_uuid.value();
+
     std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
     {
+        std::lock_guard lock{mutex};
+
         /// Back up only entities defined via SQL and stored in this storage (`local_entities`).
         /// Entities provided through the server configuration are kept in the next storage in the
         /// chain (WorkloadEntityConfigStorage) and must NOT be backed up: the configuration is
@@ -1012,8 +1023,20 @@ void WorkloadEntityStorageBase::backup(
         /// Re-creating a config entity from a backup would persist it as a SQL entity, which is not
         /// equivalent. Note `getAllEntities()` returns the merged view (including config entities),
         /// so it must not be used here.
-        std::lock_guard lock{mutex};
-        for (const auto & [entity_name, ast] : local_entities)
+        auto [it, inserted] = entities_to_backup.try_emplace(backup_id);
+        if (inserted)
+        {
+            it->second = local_entities;
+            /// Drop the snapshot once the backup operation has collected all its entries (post tasks run at the
+            /// end of collection), so repeated backups do not accumulate snapshots on the storage.
+            backup_entries_collector.addPostTask([this, backup_id]
+            {
+                std::lock_guard cleanup_lock{mutex};
+                entities_to_backup.erase(backup_id);
+            });
+        }
+
+        for (const auto & [entity_name, ast] : it->second)
         {
             if (getEntityType(ast) != entity_type)
                 continue;
@@ -1059,7 +1082,7 @@ void WorkloadEntityStorageBase::backup(
 void WorkloadEntityStorageBase::restore(
     RestorerFromBackup & restorer,
     const String & data_path_in_backup,
-    WorkloadEntityType /*entity_type*/)
+    WorkloadEntityType entity_type)
 {
     if (isReplicated()
         && !restorer.getRestoreCoordination()->acquireReplicatedWorkloadEntities(getReplicationID()))
@@ -1090,17 +1113,28 @@ void WorkloadEntityStorageBase::restore(
         readStringUntilEOF(statement_def, *in);
 
         for (auto & name_and_ast : parseEntitiesFromString(statement_def, log))
+        {
+            /// Reject a definition whose kind does not match the system table being restored. The two system
+            /// tables carry independent access checks (system.workloads requires CREATE_WORKLOAD, system.resources
+            /// requires CREATE_RESOURCE; see RestorerFromBackup::checkAccessForObjectsFoundInBackup), so accepting
+            /// a WORKLOAD from the resources directory (or vice versa) would bypass the access gate of the other
+            /// kind and violate the system-table backup contract.
+            if (getEntityType(name_and_ast.second) != entity_type)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: file {} defines an entity of a kind that does not match the "
+                    "system table being restored",
+                    String{data_path_in_backup_fs / filename});
             parsed_entities.push_back(std::move(name_and_ast));
+        }
     }
 
     /// WORKLOADs and RESOURCEs are backed up (and restored) via two separate system tables (system.workloads and
     /// system.resources), so their restore tasks are scheduled independently. We accumulate the parsed entities of
-    /// both types and create them all together in a single task, in an order that keeps every reference valid
-    /// (resources first, then workloads parent-first). Concurrent restores are allowed
-    /// (backups.allow_concurrent_restores), so the accumulator and the "task added" guard are keyed by the unique
-    /// restore UUID instead of being kept as shared storage state; otherwise two concurrent restores would mix
-    /// their entities or drop one another's task. Adding the task only once per restore operation is enough: by the
-    /// time data restore tasks run, restore() has already been called for both tables of that operation.
+    /// both types and create them all together, in an order that keeps every reference valid (resources first, then
+    /// workloads parent-first). Concurrent restores are allowed (backups.allow_concurrent_restores), so the
+    /// accumulator is keyed by the unique restore UUID instead of being kept as shared storage state; otherwise two
+    /// concurrent restores would mix their entities.
     const auto & restore_settings = restorer.getRestoreSettings();
     const UUID restore_id = restore_settings.restore_uuid.value();
     /// WORKLOAD and RESOURCE entities share a single creation mode (create_workloads_and_resources): they are
@@ -1108,23 +1142,25 @@ void WorkloadEntityStorageBase::restore(
     /// sense. kCreateIfNotExists (default) skips existing entities, kCreate fails the RESTORE, kReplace overwrites.
     const bool throw_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kCreate);
     const bool replace_if_exists = (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace);
-    bool should_add_restore_task = false;
+
     {
         std::lock_guard lock{mutex};
         auto & accumulated = entities_to_restore[restore_id];
         for (auto & [name, ast] : parsed_entities)
             accumulated.emplace(name, ast);
-        if (restore_tasks_added.emplace(restore_id).second)
-            should_add_restore_task = true;
     }
 
-    if (should_add_restore_task)
-    {
-        auto restore_context = restorer.getContext();
-        restorer.addDataRestoreTask(
-            [this, restore_context, restore_id, throw_if_exists, replace_if_exists]
-            { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id, throw_if_exists, replace_if_exists); });
-    }
+    /// Register the deferred restore task on every restore() call (i.e. once for each of the two system tables).
+    /// The task is idempotent: the first one to run swaps out and creates all entities accumulated for this restore
+    /// operation, and any later task finds the accumulator already drained and does nothing. Registering it
+    /// unconditionally (instead of guarding "added once" via shared storage state) keeps no state that could
+    /// survive a failed restore: an aborted restore retried with the same restore UUID simply re-accumulates its
+    /// entities and restores them normally. Data restore tasks run only after restore() has been called for both
+    /// tables of the operation, so every referenced entity is present by the time entities are created.
+    auto restore_context = restorer.getContext();
+    restorer.addDataRestoreTask(
+        [this, restore_context, restore_id, throw_if_exists, replace_if_exists]
+        { restoreEntitiesAccumulatedFromBackup(restore_context, restore_id, throw_if_exists, replace_if_exists); });
 }
 
 void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
@@ -1138,7 +1174,6 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
             to_restore.swap(it->second);
             entities_to_restore.erase(it);
         }
-        restore_tasks_added.erase(restore_id);
     }
 
     if (to_restore.empty())

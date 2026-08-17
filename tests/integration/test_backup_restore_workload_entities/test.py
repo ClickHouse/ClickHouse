@@ -4,12 +4,38 @@ import os.path
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml", "configs/entities.xml"],
     external_dirs=["/backups/"],
+)
+
+# A second, replicated (Keeper-backed) cluster of two nodes sharing a single workload entity storage,
+# used by the ON CLUSTER round-trip test below.
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=[
+        "configs/backups_disk.xml",
+        "configs/cluster.xml",
+        "configs/replicated_workloads.xml",
+    ],
+    external_dirs=["/backups/"],
+    macros={"replica": "node1", "shard": "shard1"},
+    with_zookeeper=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/backups_disk.xml",
+        "configs/cluster.xml",
+        "configs/replicated_workloads.xml",
+    ],
+    external_dirs=["/backups/"],
+    macros={"replica": "node2", "shard": "shard1"},
+    with_zookeeper=True,
 )
 
 
@@ -101,3 +127,47 @@ def test_backup_excludes_config_defined_entities():
     assert workloads.count("all") == 1
     assert workloads.count("cfg_wl") == 1
     assert resources.count("cfg_res") == 1
+
+
+def test_backup_restore_on_cluster():
+    # node1 and node2 share a single Keeper-backed workload entity storage (configs/replicated_workloads.xml),
+    # so an entity created on one node replicates to the other. This exercises the ON CLUSTER coordination
+    # (a single elected writer per replication id, other replicas picking the change up through replication)
+    # that a single-node test cannot reach.
+    node1.query("CREATE RESOURCE sql_res (WRITE DISK sql_disk, READ DISK sql_disk)")
+    node1.query("CREATE WORKLOAD all")
+    node1.query("CREATE WORKLOAD sql_wl IN all SETTINGS priority = 3")
+
+    # The entities replicate to node2 through the shared storage.
+    assert_eq_with_retry(
+        node2, "SELECT name FROM system.workloads ORDER BY name", "all\nsql_wl\n"
+    )
+    assert_eq_with_retry(node2, "SELECT name FROM system.resources", "sql_res\n")
+
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER 'workloads_cluster' TO {backup_name}"
+    )
+
+    # Drop every entity across the cluster; the drop replicates to node2 as well.
+    node1.query("DROP WORKLOAD sql_wl")
+    node1.query("DROP WORKLOAD all")
+    node1.query("DROP RESOURCE sql_res")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.workloads", "0\n")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.resources", "0\n")
+
+    node1.query(
+        f"RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER 'workloads_cluster' FROM {backup_name}"
+    )
+
+    # The SQL entities are restored and visible on BOTH replicas.
+    for node in (node1, node2):
+        assert_eq_with_retry(
+            node, "SELECT name FROM system.workloads ORDER BY name", "all\nsql_wl\n"
+        )
+        assert_eq_with_retry(node, "SELECT name FROM system.resources", "sql_res\n")
+
+    # Clean up so module teardown (and any re-run) starts from empty storage.
+    node1.query("DROP WORKLOAD IF EXISTS sql_wl")
+    node1.query("DROP WORKLOAD IF EXISTS all")
+    node1.query("DROP RESOURCE IF EXISTS sql_res")
