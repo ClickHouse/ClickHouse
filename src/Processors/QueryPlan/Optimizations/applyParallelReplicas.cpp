@@ -365,9 +365,18 @@ private:
     /// before `optimizeReadInOrder` and `applyOrder` convert sorts to `FinishSorting`. A sort feeding a full
     /// sorting merge join is excluded separately: its output is consumed by a join on the initiator rather
     /// than merged, so replacing it with a merge of per-replica sorts would change what the join sees.
+    ///
+    /// A partitioned sort is a window pre-sort, and it is serializable, but its contract is one stream per
+    /// PARTITION BY group rather than one sorted stream: it scatters by the partition keys and skips the final
+    /// merge, so `WindowStep` above it runs one `WindowTransform` per stream. The `MergingSorted` step put on
+    /// the initiator cannot express that, so shipping such a sort collapses both the sort and the window to a
+    /// single stream. Keeping the split below it loses nothing - read-in-order does not apply to a partitioned
+    /// sort unless `query_plan_reuse_storage_ordering_for_window_functions` is enabled - and matches classic
+    /// parallel replicas, which computes windows on the initiator. See
+    /// https://github.com/ClickHouse/ClickHouse/issues/115174
     static bool sortingCanBeShipped(const SortingStep & sorting_step)
     {
-        return sorting_step.isSerializable() && !sorting_step.isSortingForMergeJoin();
+        return sorting_step.isSerializable() && !sorting_step.isSortingForMergeJoin() && !sorting_step.hasPartitions();
     }
 };
 
