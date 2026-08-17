@@ -1,10 +1,4 @@
 export const Glossary = ({ children, metadata = {} }) => {
-  const normalizeSearchText = value => value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
   const nodeText = (node) => {
     if (node === null || node === undefined || typeof node === 'boolean') return '';
     if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -32,48 +26,11 @@ export const Glossary = ({ children, metadata = {} }) => {
   });
 
   const [query, setQuery] = useState('');
-  const [activeId, setActiveId] = useState('');
-  useEffect(() => {
-    const syncHash = () => {
-      const id = window.location.hash.slice(1);
-      setActiveId(id);
 
-      if (id) {
-        setQuery('');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            document.getElementById(id)?.scrollIntoView({ block: 'start' });
-          });
-        });
-      }
-    };
-
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
-  }, []);
-
-  const normalizedQuery = normalizeSearchText(query);
+  const normalizedQuery = query.trim().toLowerCase();
   const visibleEntries = normalizedQuery
-    ? entries
-        .map((entry, index) => {
-          const term = normalizeSearchText(entry.term);
-          const aliases = (entry.aliases || []).map(normalizeSearchText);
-          const description = normalizeSearchText(nodeText(entry.content));
-          let rank;
-
-          if (term === normalizedQuery) rank = 0;
-          else if (term.includes(normalizedQuery)) rank = 1;
-          else if (aliases.some(alias => alias === normalizedQuery)) rank = 2;
-          else if (aliases.some(alias => alias.includes(normalizedQuery))) rank = 3;
-          else if (` ${description} `.includes(` ${normalizedQuery} `)) rank = 4;
-          else return null;
-
-          return { entry, index, rank };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.rank - b.rank || a.index - b.index)
-        .map(result => result.entry)
+    ? entries.filter(entry => [entry.term, ...(entry.aliases || []), nodeText(entry.content)]
+        .some(value => value.toLowerCase().includes(normalizedQuery)))
     : entries;
 
   return (
@@ -103,7 +60,7 @@ export const Glossary = ({ children, metadata = {} }) => {
           {visibleEntries.map(entry => (
             <article
               key={entry.id}
-              className={`glossary-entry${activeId === entry.id ? ' glossary-entry--target' : ''}`}
+              className="glossary-entry"
             >
               <h2 className="glossary-entry-title">
                 {entry.code ? <code>{entry.term}</code> : entry.term}
@@ -139,7 +96,6 @@ export const Glossary = ({ children, metadata = {} }) => {
         .glossary-entry { position: relative; padding: 1.15rem 1.25rem; background: var(--background-light, #fff); border: 1px solid rgb(156 163 175 / .3); border-radius: .65rem; }
         .glossary-entry-anchor { position: absolute; top: -6rem; }
         .dark .glossary-entry { background: var(--background-dark, #151515); border-color: rgb(107 114 128 / .35); }
-        .glossary-entry--target { border-color: #eab308; box-shadow: 0 0 0 3px rgb(253 255 117 / .3); }
         .glossary-entry-title { margin: 0 0 .55rem; font-size: 1.05rem; line-height: 1.35; }
         .glossary-entry-title code { font-size: .95em; }
         .glossary-entry-description { color: #4b5563; font-size: .9rem; line-height: 1.55; }
