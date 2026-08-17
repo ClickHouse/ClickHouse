@@ -5004,11 +5004,13 @@ def run_tests_array(
 
 
 def check_server_liveness(args, max_retries=10) -> bool:
-    """Check if server is responding, with retries and exponential back-off.
+    """Run a trivial query, with retries and exponential back-off.
 
-    Used to distinguish a real server death from a transient network failure
-    (e.g. the server being briefly unresponsive due to memory pressure).
-    Returns True if the server responds within the retry window, False otherwise.
+    True means the query completed within the retry window. False establishes
+    only that it did not: every exception counts, including a non-200 response,
+    so the server may be alive and refusing. Retrying is what keeps a transient
+    failure (e.g. brief unresponsiveness under memory pressure) out of the
+    False case.
     """
     for attempt in range(max_retries):
         try:

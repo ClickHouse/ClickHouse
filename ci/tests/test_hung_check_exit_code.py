@@ -837,6 +837,90 @@ def test_the_probe_runs_while_no_stop_is_pending():
     assert exit_code == HUNG_CHECK_EXIT_CODE
 
 
+def _parent_probe_carrier_with_a_competitor(competitor_code, handshake_timeout=30.0):
+    """Drive the parent's probe site with a competitor claiming inside its sweep.
+
+    The parent's carrier is created inside `do_run_tests`, so it is captured from
+    the first claim rather than injected. The competitor is then given that same
+    object, which is what makes the two claims genuinely compete.
+
+    The interleaving is a two-way handshake for the same reason as
+    `_drive_abort_site_with_a_competitor`: a pair of sleeps would let a claim moved
+    below the sweep win anyway on a slow run, and the arm would pass on the defect.
+    """
+    collection_started = threading.Event()
+    competitor_claimed = threading.Event()
+    carrier_seen = threading.Event()
+    carriers = []
+    saved = (
+        _runner.check_server_liveness,
+        _runner.print_c_stacktraces,
+        _runner.try_claim_stop_cause,
+    )
+    real_claim = _runner.try_claim_stop_cause
+
+    def capturing_claim(carrier, exit_code):
+        carriers.append(carrier)
+        carrier_seen.set()
+        return real_claim(carrier, exit_code)
+
+    def fake_collect(*a, **k):
+        collection_started.set()
+        if not carriers:
+            raise AssertionError(
+                "the sweep opened with no cause claimed, so the claim is below it"
+            )
+        if not competitor_claimed.wait(timeout=handshake_timeout):
+            raise RuntimeError(
+                "handshake missed: the competitor did not claim inside the"
+                f" sweep within {handshake_timeout}s"
+            )
+
+    def competitor():
+        if not collection_started.wait(timeout=handshake_timeout):
+            return
+        if not carrier_seen.is_set():
+            return
+        real_claim(carriers[0], competitor_code)
+        competitor_claimed.set()
+
+    _runner.check_server_liveness = lambda *a, **k: False
+    _runner.print_c_stacktraces = fake_collect
+    _runner.try_claim_stop_cause = capturing_claim
+    thread = threading.Thread(target=competitor, daemon=True)
+    thread.start()
+    try:
+        _drive_parent_monitor_loop(
+            _worker_signalling_nothing,
+            multiprocessing.Event(),
+            args=_runner_args(hung_check=True),
+        )
+    finally:
+        (
+            _runner.check_server_liveness,
+            _runner.print_c_stacktraces,
+            _runner.try_claim_stop_cause,
+        ) = saved
+        thread.join(timeout=handshake_timeout)
+    assert collection_started.is_set(), "the sweep never ran, so nothing competed"
+    assert competitor_claimed.is_set(), "the competitor never claimed in the sweep"
+    return carriers[0].value
+
+
+def test_the_parent_probe_claims_its_cause_before_collecting_stacktraces():
+    """The same claim-before-collect invariant at the parent's probe site.
+
+    The exit code cannot see this: under first-writer-wins a second claim loses
+    either way, so the observable is which cause the carrier holds. The competitor
+    uses the death code so the arm cannot pass merely because the hung-check code
+    is also what an uncontested run produces.
+    """
+    assert (
+        _parent_probe_carrier_with_a_competitor(STOP_TESTING_EXIT_CODE)
+        == HUNG_CHECK_EXIT_CODE
+    )
+
+
 def test_the_probe_is_gated_on_the_hung_check_flag():
     """The other half of the guard, and a second reason the counter is not
     vacuous: without `--hung-check` the probe is never started."""
