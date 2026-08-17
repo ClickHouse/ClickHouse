@@ -1070,7 +1070,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
             continue;
         }
 
-        /// Inject-only rewrite: preserves output names and inputs, so we reuse the step's input header.
+        /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
         ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
         if (!applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos))
             continue;
