@@ -6935,13 +6935,7 @@ size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
 
 std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const
 {
-    /// Take a snapshot of parts under the shared lock, then compute outside the lock
-    /// to reduce lock hold time under high-concurrency inserts.
-    DataPartsVector parts_snapshot;
-    {
-        auto lock = readLockParts();
-        parts_snapshot = getDataPartsVectorForInternalUsage({state}, lock);
-    }
+    auto lock = readLockParts();
 
     size_t cur_parts_count = 0;
     size_t cur_parts_size = 0;
@@ -6950,7 +6944,7 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWith
 
     const String * cur_partition_id = nullptr;
 
-    for (const auto & part : parts_snapshot)
+    for (const auto & part : getDataPartsStateRange(state))
     {
         if (!cur_partition_id || part->info.getPartitionId() != *cur_partition_id)
         {
