@@ -630,6 +630,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
     /// remove the expired index files. It must not continue into the row-rewriting merge code.
     if (global_ctx->future_part->merge_type != MergeType::TTLClearIndex
         || global_ctx->parent_part
+        || ctx->force_ttl
         || !canPreserveFilesForIndexClear(*global_ctx->future_part)
         || global_ctx->new_data_part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot preserve files for `TTLClearIndex` merge of part {}", global_ctx->future_part->name);
