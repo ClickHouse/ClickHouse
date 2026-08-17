@@ -698,7 +698,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append, /* sync= */ false);
         }
 
         /// Append the index.
@@ -771,9 +771,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](/reference/engines/table-engines/log-family/log) when a high number of tables are required. This is at the expense of read efficiency.
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
 
 ## Creating a table {#table_engines-stripelog-creating-a-table}
 

@@ -605,9 +605,9 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
-Neither the string nor the numeric value in an `Enum` can be [NULL](/reference/syntax).
+Neither the string nor the numeric value in an `Enum` can be [NULL](../../sql-reference/syntax.md).
 
-An `Enum` can be contained in [Nullable](/reference/data-types/nullable) type. So if you create a table using the query
+An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable.md) type. So if you create a table using the query
 
 ```sql
 CREATE TABLE t_enum_nullable
@@ -640,29 +640,6 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
-
-## ADD ENUM VALUES {#add-enum-values}
-
-There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/sql-reference/statements/alter/column#modify-column-add-enum-values)
-
-```sql
-CREATE TABLE enum
-(
-    x Enum('One' = 1, 'Two', 'Three')
-) ENGINE = Memory;
-ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
-SHOW CREATE TABLE enum;
-```
-
-```text
-┌─statement────────────────────────────────────────────────────────────────┐
-│CREATE TABLE default.enum                                                 │
-│(                                                                         │
-│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
-│)                                                                         │
-│ENGINE = Memory                                                           │
-└──────────────────────────────────────────────────────────────────────────┘
-```
 )DOCS_MD",
             .syntax = "Enum(...)",
             .related = {"Enum8", "Enum16"},

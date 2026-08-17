@@ -1180,26 +1180,6 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
-TEST(PromQLParser, ErrorPosition)
-{
-    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
-             {"$metric", 0},
-             {"up\n$down", 3},
-             {R"("é"$)", 4},
-             {R"("é" "x")", 5},
-             {R"(label_join(up, "dst", "é", "src", "\q"))", 36},
-         })
-    {
-        PrometheusQueryTree query_tree;
-        String error_message;
-        size_t error_pos = String::npos;
-
-        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
-        EXPECT_EQ(error_pos, expected_error_pos);
-    }
-}
-
-
 TEST(PromQLParser, ParseStringLiterals)
 {
     EXPECT_EQ(parse(R"(

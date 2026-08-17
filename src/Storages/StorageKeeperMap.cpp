@@ -92,7 +92,6 @@ namespace Setting
 namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
-    extern const char keeper_map_delete_pause_before_multi[];
 }
 
 namespace ErrorCodes
@@ -1457,26 +1456,13 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
 
 Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getByKeys");
-
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
 
-    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
-    /// `operator->` is deleted on a temporary.
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
-    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
-    /// pre-existing values if the caller passed an already sized array.
-    null_map.clear();
-    null_map.resize_fill(keys[0].column->size(), 1);
-    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
+    auto raw_keys = serializeKeysToRawString(keys[0]);
 
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
-
-    for (auto & raw_key : raw_keys)
-        raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
     return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
@@ -1494,24 +1480,17 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
-    if (null_map && null_map->size() != keys.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "StorageKeeperMap::getBySerializedKeys: null_map size {} does not match keys size {}",
-            null_map->size(), keys.size());
+    if (null_map)
+    {
+        null_map->clear();
+        null_map->resize_fill(keys.size(), 1);
+    }
 
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
-    for (size_t i = 0; i < keys.size(); ++i)
-    {
-        if (null_map && !(*null_map)[i])
-        {
-            /// Use a placeholder path; the result will be discarded below.
-            full_key_paths.emplace_back(fullPathForKey({}));
-            continue;
-        }
-        full_key_paths.emplace_back(fullPathForKey(keys[i]));
-    }
+    for (const auto & key : keys)
+        full_key_paths.emplace_back(fullPathForKey(key));
 
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -1531,16 +1510,6 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
-        if (null_map && !(*null_map)[i])
-        {
-            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
-                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
-
-            if (version_column)
-                version_column->insert(-1);
-            continue;
-        }
-
         auto response = values[i];
 
         Coordination::Error code = response.error;
@@ -1648,18 +1617,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto primary_key_pos = header.getPositionByName(primary_key);
         auto version_position = header.getPositionByName(std::string{version_column_name});
 
-        const auto & settings = local_context->getSettingsRef();
-        ZooKeeperRetriesInfo retries_info{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            local_context->getProcessListElement()};
-
-        /// In strict mode the delete has to be atomic with respect to the versions read by the mutation scan, so the
-        /// requests of every block are accumulated here and sent as a single `multi` request once the scan is over.
-        /// Committing block by block would leave the earlier blocks deleted when a later block hits a conflict.
-        Coordination::Requests strict_delete_requests;
-
         Block block;
         while (executor.pull(block))
         {
@@ -1686,23 +1643,19 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), version));
             }
 
-            if (strict)
-            {
-                strict_delete_requests.insert(
-                    strict_delete_requests.end(),
-                    std::make_move_iterator(delete_requests.begin()),
-                    std::make_move_iterator(delete_requests.end()));
-                continue;
-            }
-
             Coordination::Responses responses;
-            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
+
+            const auto & settings = local_context->getSettingsRef();
+            ZooKeeperRetriesControl zk_retry{
+                getName(),
+                getLogger(getName()),
+                ZooKeeperRetriesInfo{
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             Coordination::Error status = {};
-
-            /// Lets a test modify the keys behind our back after the block has been read.
-            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
-
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1710,7 +1663,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             });
 
             if (status == Coordination::Error::ZOK)
-                continue;
+                return;
 
             if (status != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperMultiException(status, delete_requests, responses);
@@ -1728,29 +1681,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNONODE)
                     throw zkutil::KeeperException::fromPath(status, delete_request->getPath());
             }
-        }
-
-        if (!strict_delete_requests.empty())
-        {
-            Coordination::Responses responses;
-            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
-
-            Coordination::Error status = {};
-
-            /// Lets a test modify the keys behind our back after every block (and its versions) has been read.
-            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
-
-            zk_retry.retryLoop([&]
-            {
-                auto client = getClient();
-                status = client->tryMulti(strict_delete_requests, responses, /* check_session_valid */ true);
-            });
-
-            /// Any failure, including `ZNONODE`, is surfaced as is. Retrying key by key would drop the version checks
-            /// and could remove a row that another session has updated in the meantime, and skipping the failed keys
-            /// would apply the delete partially - both contradict the documented strict mode guarantee.
-            if (status != Coordination::Error::ZOK)
-                throw zkutil::KeeperMultiException(status, strict_delete_requests, responses);
         }
 
         return;

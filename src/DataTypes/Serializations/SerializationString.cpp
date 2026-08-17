@@ -523,7 +523,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         readJSONField(field, istr, settings.json);
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -568,7 +568,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
+        if (tryReadFloatText(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;
@@ -753,12 +753,6 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
         res->size_column = size_column;
         return res;
     }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (size_column)
-            callback(size_column);
-    }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
@@ -866,10 +860,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
     data.resize(initial_size + bytes_to_read);
     column = std::move(mutable_column);
-    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
-    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
-    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
     settings.path.pop_back();
 }
 

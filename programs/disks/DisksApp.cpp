@@ -334,11 +334,11 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
-    command_descriptions.emplace("du", makeCommandDiskUsage());
-    command_descriptions.emplace("wc", makeCommandWordCount());
     command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
+#if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
+#endif
     for (const auto & [command_name, command_ptr] : command_descriptions)
     {
         if (command_name != command_ptr->command_name)

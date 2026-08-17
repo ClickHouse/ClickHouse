@@ -174,10 +174,6 @@ target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
-    if (USE_MUSL)
-        # musl does not implement the ucontext functions.
-        target_link_libraries(_boost_context PUBLIC ch_contrib::ucontext)
-    endif()
 endif()
 
 if (SANITIZE MATCHES "address")

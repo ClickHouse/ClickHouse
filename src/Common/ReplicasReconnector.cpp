@@ -8,8 +8,6 @@
 namespace DB
 {
 
-ReplicasReconnector * ReplicasReconnector::instance_ptr = nullptr;
-
 namespace ErrorCodes
 {
     extern const int NOT_INITIALIZED;

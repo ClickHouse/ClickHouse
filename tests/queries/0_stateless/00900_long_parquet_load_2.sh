@@ -37,7 +37,6 @@ EXCLUDE=(
     # GeoParquet files with Geometry (Variant) columns tested separately.
     03600_geoparquet_multi_geometry_empty_types.parquet
     03600_geoparquet_multi_geometry_explicit_types.parquet
-    04614_geoparquet_multipoint_mixed.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
@@ -49,6 +48,8 @@ EXCLUDE=(
     04065_optional_map_wrapper_required_value.parquet
     04065_optional_struct_under_list.parquet
     04065_optional_struct_nullable_leaf_under_list.parquet
+    # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
+    04654_bloom_filter_bitset_out_of_bounds.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

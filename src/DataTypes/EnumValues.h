@@ -88,7 +88,7 @@ public:
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 
     std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
 

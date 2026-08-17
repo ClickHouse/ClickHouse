@@ -1,6 +1,4 @@
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <iomanip>
@@ -9,11 +7,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 ASTPtr ASTShowColumnsQuery::clone() const
 {
@@ -57,63 +50,6 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
         ostr << " LIMIT ";
         limit_length->format(ostr, settings, state, frame);
     }
-}
-
-void ASTShowColumnsQuery::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "ShowColumnsQuery");
-    if (extended)
-        w.writeBool("extended", true);
-    if (full)
-        w.writeBool("full", true);
-    if (!database.empty())
-        w.writeString("database", database);
-    w.writeString("table", table);
-    if (!like.empty())
-        w.writeString("like", like);
-    if (not_like)
-        w.writeBool("not_like", true);
-    if (case_insensitive_like)
-        w.writeBool("case_insensitive_like", true);
-    w.writeChild("where_expression", where_expression);
-    w.writeChild("limit_length", limit_length);
-    writeOutputOptionsJSON(w);
-}
-
-void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    extended = r.getBool("extended");
-    full = r.getBool("full");
-    database = r.getString("database");
-    table = r.getString("table");
-    if (table.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW COLUMNS requires a non-empty 'table' field during AST JSON deserialization");
-    like = r.getString("like");
-    not_like = r.getBool("not_like");
-    case_insensitive_like = r.getBool("case_insensitive_like");
-    where_expression = r.readChild("where_expression");
-    if (where_expression)
-        children.push_back(where_expression);
-    limit_length = r.readChild("limit_length");
-    if (limit_length)
-        children.push_back(limit_length);
-
-    /// `ParserShowColumnsQuery` consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
-    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
-    if (like.empty() && (not_like || case_insensitive_like))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
-
-    /// The parser accepts either a LIKE clause or a WHERE clause, never both, and
-    /// `InterpreterShowColumnsQuery` ignores 'where_expression' whenever 'like' is set, so the
-    /// formatted SQL and the executed query would diverge.
-    if (where_expression && !like.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'like' and 'where_expression' are mutually exclusive in `ShowColumnsQuery` "
-            "during AST JSON deserialization");
-
-    readOutputOptionsJSON(r);
 }
 
 }

@@ -114,14 +114,15 @@ void MergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
-    auto process_list_element = context->getProcessListElement();
+    std::vector<UInt128> all_partwriter_hashes;
+    all_partwriter_hashes.reserve(part_blocks.size());
 
     if (deduplication_info && deduplicate && !deduplication_info->isDisabled())
     {
         /// Preserve the pre-loop interrupt point that used to be the first checkTimeLimit()
         /// inside the partition loop: a killed or timed-out insert should be noticed before
         /// the full O(N) prewarm hash pass, not after it.
-        if (process_list_element)
+        if (auto process_list_element = context->getProcessListElement())
             process_list_element->checkTimeLimit();
 
         /// Warm the data hashes once here: the per-partition infos produced by filterToPartition
@@ -136,11 +137,6 @@ void MergeTreeSink::consume(Chunk & chunk)
     for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
     {
         auto & current_block = part_blocks[part_index];
-
-        /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
-        /// max_partitions_per_insert_block); honor cancellation/timeout between them.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
 
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
@@ -185,12 +181,20 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!temp_part->part)
             continue;
 
+        auto hash = temp_part->part->getPartBlockIDHash();
+        current_deduplication_info->setPartWriterHashForPartition(hash, current_block.block->rows());
+        all_partwriter_hashes.push_back(hash);
+
         LOG_DEBUG(
             storage.log,
             "Wrote block with {} rows and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(),
             fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
+
+
+        // if the token is already defined, it would not be owerrided again
+        /// TODO: set part writer hashes for multiple partitions in one chunk
 
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
@@ -236,6 +240,7 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         total_streams += current_streams;
     }
+    deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
     finishDelayedChunk();
 
@@ -258,15 +263,8 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
-    auto process_list_element = context->getProcessListElement();
-
     for (auto & partition : delayed_chunk->partitions)
     {
-        /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.
-        /// onFinish() skips finishDelayedChunk() when cancelled, so a normal finish never throws here.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
-
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
@@ -274,7 +272,6 @@ void MergeTreeSink::finishDelayedChunk()
         while (true)
         {
             partition.temp_part->finalize();
-            partition.temp_part->part->getDataPartStorage().commitTransaction();
 
             auto & part = partition.temp_part->part;
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
@@ -351,9 +348,6 @@ void MergeTreeSink::finishDelayedChunk()
             partition.block_with_partition.block = result.filtered_block;
             partition.deduplication_info = std::move(result.deduplication_info);
 
-            /// writeTempPart moves the partition value out of block_with_partition into the part,
-            /// so restore it from the just-written part before rewriting the filtered block.
-            partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
             partition.temp_part = writeNewTempPart(partition.block_with_partition);
 
             /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition

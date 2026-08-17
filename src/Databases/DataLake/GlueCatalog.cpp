@@ -92,27 +92,11 @@ namespace CurrentMetrics
 namespace DataLake
 {
 
-namespace
-{
-
-/// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
-/// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
-bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
-{
-    const auto & parameters = table.GetParameters();
-    auto it = parameters.find("table_type");
-    const std::string table_type = it != parameters.end() ? it->second : "";
-    return Poco::toUpper(table_type) == "ICEBERG";
-}
-
-}
-
 GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_,
-    bool allow_server_credentials_in_user_queries_)
+    DB::ASTPtr table_engine_definition_)
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
@@ -126,11 +110,6 @@ GlueCatalog::GlueCatalog(
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
     creds_config.external_id = settings.aws_external_id;
-
-    /// A Glue catalog is created by user SQL, so it must not reuse the server's credentials unless allowed at
-    /// CREATE time. The cached catalog uses the global context, so pass the value captured then, not the live setting.
-    creds_config.forbid_implicit_credentials
-        = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -176,10 +155,10 @@ GlueCatalog::GlueCatalog(
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
 
-        if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
+        if (credentials.IsEmpty())
         {
-            /// Placeholder key for mocked moto glue (must be non-empty). Skipped under the restriction with no
-            /// explicit credentials, so it does not mask the refusal that the test exercises.
+            /// You can specify any key for fake moto glue, it's just important
+            /// for it not to be empty.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }
@@ -243,10 +222,10 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     return result;
 }
 
-CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
+DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
 {
     LOG_TEST(log, "Getting tables for database '{}' with limit {}", db_name, limit);
-    CatalogTables result;
+    DB::Names result;
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
     if (limit != 0)
@@ -277,10 +256,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
 
                 if (limit != 0 && result.size() >= limit)
                     break;
-                result.push_back(CatalogTable{
-                    .name = db_name + "." + table.GetName(),
-                    .is_readable = isReadableGlueTable(table),
-                });
+                result.push_back(db_name + "." + table.GetName());
             }
             next_token = tables_result.GetNextToken();
         }
@@ -296,27 +272,16 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
     return result;
 }
 
-CatalogTables GlueCatalog::getTables() const
+DB::Names GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-    CatalogTables result;
+    DB::Names result;
     for (const auto & database : databases)
     {
         auto tables_in_database = getTablesForDatabase(database);
         result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
     }
     return result;
-}
-
-DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
-{
-    /// Glue databases are flat — they cannot contain nested namespaces.
-    return getDatabases("");
-}
-
-CatalogTables GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    return getTablesForDatabase(namespace_name);
 }
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
@@ -349,7 +314,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (!isReadableGlueTable(table_outcome))
+        if (Poco::toUpper(table_type) != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())

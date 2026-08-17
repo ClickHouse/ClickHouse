@@ -272,24 +272,11 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 6:** Reusing a common scalar expression in a subquery
+**Example 6:** Reusing expression in a subquery
 
 ```sql
-WITH (value) -> value + 1 AS increment
-SELECT increment(first_increment) AS second_increment
-FROM
-(
-    SELECT increment(number) AS first_increment
-    FROM numbers(3)
-);
-```
-
-```response
-┌─second_increment─┐
-│                2 │
-│                3 │
-│                4 │
-└──────────────────┘
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
+SELECT * FROM test1;
 ```
 
 ## Recursive Queries {#recursive-queries}

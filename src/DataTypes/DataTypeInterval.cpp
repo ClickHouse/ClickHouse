@@ -95,7 +95,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 
 ## Usage Remarks {#usage-remarks}
 
-You can use `Interval`-type values in arithmetical operations with [Date](/reference/data-types/date) and [DateTime](/reference/data-types/datetime)-type values. For example, you can add 4 days to the current time:
+You can use `Interval`-type values in arithmetical operations with [Date](../../../sql-reference/data-types/date.md) and [DateTime](../../../sql-reference/data-types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
 ```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY

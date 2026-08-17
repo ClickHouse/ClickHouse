@@ -25,7 +25,11 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         buffer << ", sample_offset: " << ASTSampleRatio::toString(*sample_offset_ratio);
 
     if (stream_settings)
+    {
         buffer << ", stream";
+        if (stream_settings->cursor_tree)
+            buffer << " cursor";
+    }
 }
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
@@ -49,21 +53,14 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 
     if (stream_settings.has_value())
     {
-        if (stream_settings->cursor)
+        if (stream_settings->cursor_tree)
         {
-            for (const auto & entry : cursorTreeToMap(stream_settings->cursor))
+            for (const auto & entry : cursorTreeToMap(stream_settings->cursor_tree))
             {
                 const auto & tuple = entry.safeGet<Tuple>();
                 hash_state.update(tuple.at(0).safeGet<String>());
                 hash_state.update(tuple.at(1).safeGet<Int64>());
             }
-        }
-
-        if (stream_settings->watermark)
-        {
-            hash_state.update(stream_settings->watermark->column);
-            hash_state.update(stream_settings->watermark->idle_timeout.count());
-            stream_settings->watermark->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
         }
     }
 }
@@ -107,6 +104,8 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (has_final || sample_size_ratio || sample_offset_ratio)
             buffer << ' ';
         buffer << "STREAM";
+        if (stream_settings->cursor_tree)
+            buffer << " CURSOR";
     }
 
     return buffer.str();

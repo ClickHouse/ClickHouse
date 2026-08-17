@@ -511,7 +511,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
         {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Enum"}},
         {"scale", "Optional. Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true.", {"Bool"}},
         {"partial_offsets", R"(
-- An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](/reference/data-types/int-uint). Optional.
+- An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.

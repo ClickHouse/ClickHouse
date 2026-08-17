@@ -11,17 +11,17 @@ doc_type: 'reference'
 
 Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Table function `remoteSecure` is same as `remote` but over a secure connection.
 
-Both functions can be used in `SELECT` and `INSERT` queries when the target is an ordinary `db`/`table`. When the target is itself a table function (for example `remote('127.0.0.1', numbers(10))`), the table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception.
+Both functions can be used in `SELECT` and `INSERT` queries.
 
 ## Syntax {#syntax}
 
 ```sql
-remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remote(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remote(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
-remoteSecure(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
 ```
 
 ## Parameters {#parameters}
@@ -34,7 +34,6 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 | `user`         | User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                         |
 | `password`     | User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                             |
 | `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).                                                                                                                                                 |
-| `SETTINGS name = value, ...` | [Settings of the Distributed table](../../engines/table-engines/special/distributed.md#distributed-settings) created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. This clause is accepted only inside the table function; the `Remote` and `RemoteSecure` table engines take the same settings after the engine definition, see [Remote and RemoteSecure engines](../../engines/table-engines/special/distributed.md#distributed-remote-engines). |
 
 Arguments also can be passed using [named collections](/operations/named-collections.md).
 
@@ -53,8 +52,6 @@ The `remote` table function can be useful in the following cases:
 - Queries between various ClickHouse clusters for research purposes.
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
-
-The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](../../engines/table-engines/special/distributed.md#distributed-remote-engines). The only difference is the `SETTINGS` clause: the engines take it after the engine definition, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, not among the arguments.
 
 ### Addresses {#addresses}
 

@@ -39,7 +39,6 @@ on l.key = r.key order by l.key limit 10 offset 10000
 SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
-grep -v -E "#split_[1-9]" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
 sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
 
@@ -62,7 +61,6 @@ on l.key = r.key order by l.key limit 10 offset 10000
 SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
-grep -v -E "#split_[1-9]" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
 sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
 
@@ -86,7 +84,6 @@ on l.key = r.key order by l.key limit 10 offset 10000
 SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
-grep -v -E "#split_[1-9]" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
 sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
 
@@ -109,7 +106,6 @@ on l.key = r.key order by l.key limit 10 offset 10000
 SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
-grep -v -E "#split_[1-9]" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
 sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'
 
@@ -132,6 +128,5 @@ on l.key = r.key order by l.key limit 10 offset 10000
 SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='hash'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
-grep -v -E "#split_[1-9]" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
 sed -re 's/Coordinator\([^.)]*\.\s*/Coordinator(/g'

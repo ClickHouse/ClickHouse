@@ -1,5 +1,4 @@
 #include <Server/WebTerminalRequestHandler.h>
-#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPResponseHeaderWriter.h>
@@ -339,9 +338,9 @@ void WebTerminalRequestHandler::serveHTML(HTTPServerRequest & request, HTTPServe
     setResponseDefaultHeaders(response);
 
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto buf = responseWriteBuffer(request, response);
-    buf.get()->write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
-    buf.get()->finalize();
+    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+    wb.write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
+    wb.finalize();
 }
 
 

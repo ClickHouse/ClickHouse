@@ -25,7 +25,6 @@ enum class GeoEncoding : uint8_t
 enum class GeoType : uint8_t
 {
     Point,
-    MultiPoint,
     LineString,
     Polygon,
     MultiLineString,
@@ -52,6 +51,6 @@ DataTypePtr getGeoDataType(GeoType type);
 /// `col` must match getGeoDataType(type). Create it using getGeoDataType(type)->createColumn().
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col);
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing);
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer);
 
 }
