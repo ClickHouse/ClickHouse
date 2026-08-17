@@ -879,58 +879,43 @@ def test_the_probe_runs_while_no_stop_is_pending():
     assert exit_code == HUNG_CHECK_EXIT_CODE
 
 
-def _parent_probe_carrier_with_a_competitor(competitor_code, handshake_timeout=30.0):
+def _parent_probe_carrier_with_a_competitor(competitor_code):
     """Drive the parent's probe site with a competitor claiming inside its sweep.
 
     The parent's carrier is created inside `do_run_tests`, so it is captured from
     the first claim rather than injected. The competitor is then given that same
     object, which is what makes the two claims genuinely compete.
 
-    The interleaving is a two-way handshake for the same reason as
-    `_drive_abort_site_with_a_competitor`: a pair of sleeps would let a claim moved
-    below the sweep win anyway on a slow run, and the arm would pass on the defect.
+    The competitor claims from inside the stubbed sweep rather than from a thread
+    racing it. That is deterministic where a race is not, and it keeps the driver
+    single-threaded: `do_run_tests` forks its workers, and forking a process that
+    has started a thread is a documented deadlock hazard.
     """
-    collection_started = threading.Event()
-    competitor_claimed = threading.Event()
-    carrier_seen = threading.Event()
-    carriers = []
+    collected = []
     saved = (
         _runner.check_server_liveness,
         _runner.print_c_stacktraces,
         _runner.try_claim_stop_cause,
     )
     real_claim = _runner.try_claim_stop_cause
+    carriers = []
 
     def capturing_claim(carrier, exit_code):
         carriers.append(carrier)
-        carrier_seen.set()
         return real_claim(carrier, exit_code)
 
     def fake_collect(*a, **k):
-        collection_started.set()
-        if not carriers:
-            raise AssertionError(
-                "the sweep opened with no cause claimed, so the claim is below it"
-            )
-        if not competitor_claimed.wait(timeout=handshake_timeout):
-            raise RuntimeError(
-                "handshake missed: the competitor did not claim inside the"
-                f" sweep within {handshake_timeout}s"
-            )
-
-    def competitor():
-        if not collection_started.wait(timeout=handshake_timeout):
-            return
-        if not carrier_seen.is_set():
-            return
+        # Reached only from inside the probe's abort block, which is the window
+        # the competing claim has to land in.
+        assert carriers, (
+            "the sweep opened with no cause claimed, so the claim is below it"
+        )
         real_claim(carriers[0], competitor_code)
-        competitor_claimed.set()
+        collected.append(1)
 
     _runner.check_server_liveness = lambda *a, **k: False
     _runner.print_c_stacktraces = fake_collect
     _runner.try_claim_stop_cause = capturing_claim
-    thread = threading.Thread(target=competitor, daemon=True)
-    thread.start()
     try:
         _drive_parent_monitor_loop(
             _worker_signalling_nothing,
@@ -943,9 +928,7 @@ def _parent_probe_carrier_with_a_competitor(competitor_code, handshake_timeout=3
             _runner.print_c_stacktraces,
             _runner.try_claim_stop_cause,
         ) = saved
-        thread.join(timeout=handshake_timeout)
-    assert collection_started.is_set(), "the sweep never ran, so nothing competed"
-    assert competitor_claimed.is_set(), "the competitor never claimed in the sweep"
+    assert collected, "the sweep never ran, so nothing competed"
     return carriers[0].value
 
 
