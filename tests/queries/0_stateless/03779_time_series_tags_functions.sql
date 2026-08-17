@@ -381,3 +381,79 @@ FROM
     SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_group
     FROM numbers(5)
 );
+
+SELECT '';
+SELECT 'timeSeriesCopyTag vectorized two groups:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+            FROM numbers(3)
+            ORDER BY number
+        )
+    ) AS dest_groups,
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('src', toString(number + 10))]) AS group
+            FROM numbers(3)
+            ORDER BY number
+        )
+    ) AS src_groups
+SELECT count(),
+       uniqExact(new_group),
+       groupUniqArray(timeSeriesGroupToTags(new_group))
+FROM
+(
+    SELECT timeSeriesCopyTag(dest_group, src_group, 'src') AS new_group
+    FROM
+    (
+        SELECT dest_groups[[1, 2, 1, 3, 2, 1]] AS dests,
+               src_groups[[1, 2, 1, 3, 2, 1]] AS srcs
+    )
+    ARRAY JOIN dests AS dest_group, srcs AS src_group
+);
+
+SELECT '';
+SELECT 'timeSeriesCopyTags vectorized two groups with collapsed outputs:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('dest', toString(number))]) AS group
+            FROM numbers(2)
+            ORDER BY number
+        )
+    ) AS dest_groups,
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('src', 'same'), ('ignored', toString(number))]) AS group
+            FROM numbers(2)
+            ORDER BY number
+        )
+    ) AS src_groups
+SELECT count(),
+       uniqExact(new_group),
+       groupUniqArray(timeSeriesGroupToTags(new_group))
+FROM
+(
+    SELECT timeSeriesCopyTags(dest_group, src_group, ['src']) AS new_group
+    FROM
+    (
+        SELECT dest_groups[[1, 2, 1, 2]] AS dests,
+               src_groups[[1, 2, 2, 1]] AS srcs
+    )
+    ARRAY JOIN dests AS dest_group, srcs AS src_group
+);

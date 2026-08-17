@@ -1553,37 +1553,35 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     chassert(tags_vector2.size() == groups2.size());
 
     std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
+    indices_in_result_vector.reserve(groups1.size());
+
+    VectorWithMemoryTracking<Group> res;
+    res.resize(groups1.size());
+
     size_t num_new_tags = 0;
 
     for (size_t i = 0; i != groups1.size(); ++i)
     {
         Group group1 = groups1[i];
         Group group2 = groups2[i];
-        auto it = indices_in_result_vector.find(std::make_pair(group1, group2));
-        if (it == indices_in_result_vector.end())
+        auto [it, inserted] = indices_in_result_vector.try_emplace(std::make_pair(group1, group2), num_new_tags);
+        if (inserted)
         {
             const auto & tags1 = tags_vector1[i];
             const auto & tags2 = tags_vector2[i];
             auto new_tags = transform_func(tags1, tags2);
-            indices_in_result_vector[std::make_pair(group1, group2)] = num_new_tags;
             tags_vector1[num_new_tags++] = new_tags;
         }
+
+        res[i] = it->second;
     }
 
     tags_vector1.resize(num_new_tags);
 
     auto new_groups = getGroupForTags(tags_vector1);
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(groups1.size());
-
-    for (size_t i = 0; i != groups1.size(); ++i)
-    {
-        Group group1 = groups1[i];
-        Group group2 = groups2[i];
-        auto new_group = new_groups.at(indices_in_result_vector.at(std::make_pair(group1, group2)));
-        res.push_back(new_group);
-    }
+    for (auto & index : res)
+        index = new_groups.at(index);
 
     return res;
 }
