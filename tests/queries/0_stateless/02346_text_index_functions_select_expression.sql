@@ -64,6 +64,18 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
     SELECT hasAnyTokens(tags, ['make-payment-check']) FROM tab ORDER BY id LIMIT -10
 ) WHERE explain ILIKE '%hasAnyTokens%';
 
+SELECT '-- LIMIT -N BY: tokenizer injected above the negative-limit-by step';
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
+    EXPLAIN actions = 1
+    SELECT hasAnyTokens(tags, ['make-payment-check']) FROM tab ORDER BY id LIMIT -5 BY id
+) WHERE explain ILIKE '%hasAnyTokens%';
+
+SELECT '-- window function / QUALIFY: projection above the window still gets the tokenizer';
+
+SELECT count() FROM (SELECT hasAnyTokens(tags, ['make-payment-check']) AS h, row_number() OVER (ORDER BY id) AS rn FROM tab) WHERE h;
+SELECT count() FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM tab QUALIFY hasAnyTokens(tags, ['make-payment-check']));
+
 DROP TABLE tab;
 
 SELECT 'preprocessor is applied only on the index path';

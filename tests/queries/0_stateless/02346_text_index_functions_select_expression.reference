@@ -14,6 +14,11 @@ Filter column: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
 47
 -- ORDER BY ... LIMIT -10: tokenizer injected above the negative-limit step
 Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- LIMIT -N BY: tokenizer injected above the negative-limit-by step
+Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
+-- window function / QUALIFY: projection above the window still gets the tokenizer
+47
+47
 preprocessor is applied only on the index path
 -- SELECT-list position: preprocessor not applied
 0

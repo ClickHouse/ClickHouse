@@ -24,10 +24,12 @@
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -692,7 +694,10 @@ private:
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (apply_postprocessor)
         {
-            auto haystack_name = getNameWithoutAliases(new_children[0]);
+            /// Name the postprocessor's haystack input after the haystack node's actual result_name so
+            /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
+            /// an ALIAS/expression haystack (e.g. `ifNull(str, 'default')`), leaving a dangling input.
+            const auto & haystack_name = new_children[0]->result_name;
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
                 postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
@@ -967,7 +972,8 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     return true;
 }
 
-/// Row-preserving steps that keep the indexed column intact, so the injection walk can traverse past them.
+/// Steps that keep the indexed column intact (WindowStep only appends columns), so the injection walk can
+/// traverse past them to reach a projection/filter lifted above them.
 static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 {
     return typeid_cast<const SortingStep *>(step)
@@ -978,7 +984,9 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
         || typeid_cast<const NegativeOffsetStep *>(step)
         || typeid_cast<const FractionalOffsetStep *>(step)
         || typeid_cast<const LimitByStep *>(step)
-        || typeid_cast<const DistinctStep *>(step);
+        || typeid_cast<const NegativeLimitByStep *>(step)
+        || typeid_cast<const DistinctStep *>(step)
+        || typeid_cast<const WindowStep *>(step);
 }
 
 /// Applies text index optimizations to the query plan.
