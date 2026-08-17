@@ -6,7 +6,8 @@ USER root
 
 RUN apt-get update \
     && apt-get install -y iptables iproute2 curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/mysql_ssl_rsa_setup
 
 
 

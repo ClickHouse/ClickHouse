@@ -16,6 +16,35 @@ integration:
 
 是的，MySQL ClickPipe 支持 MariaDB 10.0 及更高版本。其配置与 MySQL 非常相似，默认使用 GTID 复制。
 
+<div id="mariadb-partial-row-event-unsupported">
+  ### 为什么我的管道因不支持的 MariaDB 部分行事件而失败？
+</div>
+
+MariaDB 12.3 及更高版本可在 binlog 中生成[部分行事件](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event)，我们目前尚不支持此事件。
+
+若要恢复，请重新同步管道。为降低再次遇到此问题的可能性，您还可以增大源端的 `binlog_row_event_fragment_threshold` 设置，以减少被分片的行更改——请将其保持在 `max_allowed_packet` 以下，因为单个未分片的 binlog 事件若超过 `max_allowed_packet`，将导致复制 stream 失败 (请参阅[为什么我的管道因 max&#95;allowed&#95;packet binlog 错误而失败？](#binlog-event-exceeded-max-allowed-packet)) 。
+
+<div id="mariadb-compressed-column-unsupported">
+  ### 为什么我的管道会因不受支持的 MariaDB COMPRESSED 列而失败？
+</div>
+
+如果您的管道失败，并出现了类似以下内容的错误：
+
+```text
+table <database>.<table> has MariaDB COMPRESSED column(s) [<columns>], which cannot be replicated via CDC;
+convert them to a non-compressed type or remove the table from the mirror
+```
+
+这意味着该表中有一个或多个列使用了 MariaDB 的[列压缩](https://mariadb.com/kb/en/storage-engine-independent-column-compression/) (`COLUMN_FORMAT COMPRESSED`) 。我们无法从 binlog 中解压这些值，因此受影响的表无法通过 CDC (变更数据捕获) 复制。
+
+要解决此问题：
+
+* 在源端**将压缩列改为非压缩类型** (或从管道中移除某个表) ：
+  ```sql
+  ALTER TABLE <table> MODIFY <column> <type>; -- 不使用 COLUMN_FORMAT COMPRESSED
+  ```
+* 重新同步该表或管道
+
 <div id="does-the-clickpipe-support-planetscale-vitess">
   ### MySQL ClickPipe 是否支持 PlanetScale、Vitess 或 TiDB？
 </div>
@@ -53,6 +82,47 @@ Increase max_allowed_packet on source
   ```
   还要在服务器配置 (例如 `my.cnf` 或 DB 参数组) 中一并设置，这样重启后也能保持生效。
 * **如果单行大小超过 1G：** 重新同步该管道。
+
+<div id="binlog-partial-json-unsupported">
+  ### 为什么我的管道因 JSON binlog 不完整而失败？
+</div>
+
+如果您的管道因类似以下的错误而失败：
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+这表示源 MySQL 服务器的 [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) 被设置为 `PARTIAL_JSON`。启用此选项后，MySQL 会将对 `JSON` 列的更新记录为部分差异 (仅包含发生更改的路径) ，而非完整文档。ClickPipes 无法应用这些部分差异，因此 CDC 无法继续。
+
+要解决此问题：
+
+* **在源端禁用 `PARTIAL_JSON`。** 将该值恢复为空：
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  还需在服务器配置 (例如 `my.cnf` 或 DB Parameter Group) 中清除此设置，以确保重启后该设置仍然有效。
+* **重新同步管道**，使复制从干净的偏移量恢复。
+
+<div id="secure-transport-required">
+  ### 为什么我的管道因 require_secure_transport 错误而失败？
+</div>
+
+如果您的管道出现类似以下的错误：
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+这意味着源服务器已启用 [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport)——它会拒绝所有未加密连接——而 ClickPipe 已关闭 TLS。对于 RDS for MySQL，此设置来自实例的 [DB parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html)。对于 Aurora MySQL，此设置属于 [DB cluster parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL)，实例 parameter group 中完全没有该设置。两者均无需重启即可生效；Aurora MySQL 8.4 默认将其设为 `ON`，而版本 2 和 3 默认设为 `OFF`。因此，原本复制正常的管道可能会在参数变更或版本升级后开始失败，即使管道端没有任何变更。
+
+要解决此问题：
+
+* **在管道上重新启用 TLS。** 在管道的 **设置** 中，打开连接设置并关闭 **Disable TLS** 开关。如果保存时出现证书错误，请参阅[连接 MySQL 时为何会收到 TLS 证书验证错误？](#tls-certificate-validation-error)，了解如何设置 TLS 主机、上传 Root CA 或跳过证书验证。
+* **或者在源端关闭 `require_secure_transport`**——在 RDS 的 DB parameter group 中，或在 Aurora 的 DB cluster parameter group 中——前提是您的环境允许使用未加密连接。
+
+连接成功后，复制会从中断处恢复。如果管道失败的时间超过 binlog 保留期 (请参阅[如何管理复制？](#how-is-replication-managed)) ，则需要重新同步。
 
 <div id="tls-certificate-validation-error">
   ### 连接到 MySQL 时，为什么会出现 TLS 证书验证错误？

@@ -555,7 +555,7 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
   ### 비동기 삽입 사용
 </div>
 
-일반적으로 collector의 처리량이 낮은데도 데이터가 최소한의 end-to-end 지연 시간 내에 ClickHouse에 도달해야 한다면, 더 작은 배치를 전송할 수밖에 없습니다. 이 경우 `timeout`이 만료되면 batch processor가 작은 배치를 전송합니다. 이로 인해 문제가 발생할 수 있으며, 이런 경우 비동기 삽입이 필요합니다. 다만 Gateway 역할을 하는 ClickStack collector로 데이터를 전송하는 경우에는 이 문제가 드뭅니다. 이들이 집계기 역할을 하며 이 문제를 완화하기 때문입니다. 자세한 내용은 [Collector roles](#collector-roles)를 참조하십시오.
+일반적으로 collector의 처리량이 낮은데도 데이터가 최소한의 엔드투엔드 지연 시간 내에 ClickHouse에 도달해야 한다면, 더 작은 배치를 전송할 수밖에 없습니다. 이 경우 `timeout`이 만료되면 batch processor가 작은 배치를 전송합니다. 이로 인해 문제가 발생할 수 있으며, 이런 경우 비동기 삽입이 필요합니다. 다만 Gateway 역할을 하는 ClickStack collector로 데이터를 전송하는 경우에는 이 문제가 드뭅니다. 이들이 집계기 역할을 하며 이 문제를 완화하기 때문입니다. 자세한 내용은 [Collector roles](#collector-roles)를 참조하십시오.
 
 큰 배치를 보장할 수 없다면 [Asynchronous Inserts](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)를 사용해 ClickHouse에 배칭을 맡길 수 있습니다. 비동기 삽입을 사용하면 데이터는 먼저 버퍼에 삽입되고, 이후 나중에 또는 비동기적으로 데이터베이스 저장소에 기록됩니다.
 
@@ -565,15 +565,15 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
 
 collector에 비동기 삽입을 활성화하려면 connection string에 `async_insert=1`을 추가하십시오. 전달 보장을 위해 `wait_for_async_insert=1`(기본값)을 사용하는 것을 권장합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)를 참조하십시오.
 
-async insert의 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size)를 초과한 후 또는 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_max_data_size)밀리초가 지나면 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정된 경우, 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 end-to-end 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings#async_insert)에 설명되어 있습니다. 일반적으로는 기본값이 적절합니다.
+async insert의 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings/async-insert#async_insert_max_data_size)를 초과한 후 또는 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)밀리초가 지나면 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정된 경우, 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 엔드투엔드 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings/async-insert#async_insert)에 설명되어 있습니다. 일반적으로는 기본값이 적절합니다.
 
 <Info>
   **적응형 비동기 삽입 고려**
 
-  사용 중인 agent 수가 적고 처리량은 낮지만 엄격한 end-to-end 지연 시간 요구 사항이 있는 경우, [adaptive asynchronous inserts](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)가 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적합하지 않습니다.
+  사용 중인 agent 수가 적고 처리량은 낮지만 엄격한 엔드투엔드 지연 시간 요구 사항이 있는 경우, [adaptive asynchronous inserts](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)가 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적합하지 않습니다.
 </Info>
 
-마지막으로, ClickHouse에 대한 동기 삽입과 관련된 이전 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings#async_insert_deduplicate) 설정을 참조하십시오.
+마지막으로, ClickHouse에 대한 동기 삽입과 관련된 이전 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings/async-insert#async_insert_deduplicate) 설정을 참조하십시오.
 
 이 기능 구성에 대한 자세한 내용은 이 [docs page](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) 또는 심층 설명이 담긴 [blog post](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
 
@@ -629,6 +629,6 @@ OTel collector의 리소스 요구 사항은 이벤트 처리량, 메시지 크�
   ## 스키마 선택: Map vs JSON
 </div>
 
-ClickStack collector는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장하는 테이블을 생성합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. `JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다.
+ClickStack collector는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼으로 저장하는 테이블을 생성합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. `JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다.
 
-전체 비교, 각각이 적합한 경우, JSON 타입 스키마를 활성화하는 데 필요한 환경 변수, 그리고 마이그레이션 절차는 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.
+전체 비교, 각각이 적합한 경우, JSON 타입 스키마를 활성화하는 데 필요한 환경 변수, 그리고 migration 안내는 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)를 참조하십시오.

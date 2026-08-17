@@ -58,5 +58,5 @@ Actions: INPUT : 0 -> id UInt32 : 0
          ALIAS cosineDistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), 4_UInt8) :: 4 -> dist Float64 : 3
 Positions: 1 3
   ReadFromMemoryStorage
-1	2
-1	2
+1	0
+1	0

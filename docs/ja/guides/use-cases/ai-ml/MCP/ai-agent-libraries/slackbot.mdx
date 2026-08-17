@@ -27,25 +27,19 @@ doc_type: 'guide'
 * Anthropic の API key、または別の LLM プロバイダーの API key が必要です
 
 <Steps>
-  <Step>
-    ## Slack App を作成する
-
+  <Step title="Slack App を作成する" id="create-a-slack-app">
     1. [slack.com/apps](https://slack.com/apps) にアクセスし、`Create New App` をクリックします。
     2. `From scratch` を選択し、アプリに名前を付けます。
     3. 使用する Slack ワークスペースを選択します。
   </Step>
 
-  <Step>
-    ## アプリをワークスペースにインストールする
-
+  <Step title="アプリをワークスペースにインストールする" id="install-the-app-to-your-workspace">
     次に、前のステップで作成したアプリをワークスペースに追加します。
     Slack のドキュメントにある [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     の手順に従ってください。
   </Step>
 
-  <Step>
-    ## Slack アプリを設定する
-
+  <Step title="Slack アプリを設定する" id="configure-slack-app-settings">
     * `App Home` に移動します
       * `Show Tabs` → `Messages Tab` で、`Allow users to send Slash commands and messages from the messages tab` を有効にします
       * `Socket Mode` に移動します
@@ -70,9 +64,7 @@ doc_type: 'guide'
         * Save Changes
   </Step>
 
-  <Step>
-    ## 環境変数 (`.env`) を追加する
-
+  <Step title={<>環境変数 (<code>.env</code>) を追加する</>} id="add-env-vars">
     プロジェクトのルートに `.env` ファイルを作成し、以下の環境変数を設定します。
     これにより、アプリが [ClickHouse の SQL playground](https://sql.clickhouse.com/) に接続できるようになります。
 
@@ -91,9 +83,7 @@ doc_type: 'guide'
     または Cloud インスタンスを使うように変更できます。
   </Step>
 
-  <Step>
-    ## ボットを使う
-
+  <Step title="ボットを使う" id="using-the-bot">
     1. **ボットを起動します:**
 
        ```sh

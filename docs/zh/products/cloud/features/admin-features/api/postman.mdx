@@ -50,11 +50,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ### 使用 ClickHouse Cloud API 规范
 </div>
 
-* “ClickHouse Cloud 的 API 规范”现在会显示在“Collections” (左侧导航) 中。
+* “ClickHouse Cloud 的 API 规范”现在会显示在“集合” (左侧导航) 中。
 
 <Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="导入 API" border />
 
-* 点击“ClickHouse Cloud 的 API 规范”，然后在中间面板中选择“Authorization”选项卡：
+* 点击“ClickHouse Cloud 的 API 规范”。然后在中间面板中选择“Authorization”选项卡：
 
 <Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="导入完成" border />
 
@@ -80,7 +80,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   #### 设置 Organization ID 和 Service ID
 </div>
 
-* 在“Collection”中，点击中间窗格里的“Variable”选项卡 (Base URL 已在之前导入 API 时设置) ：
+* 在“集合”中，点击中间窗格里的“变量”选项卡 (Base URL 已在之前导入 API 时设置) ：
 * 在 `baseURL` 下方，点击空白字段“Add new value”，然后填入你的 Organization ID 和 Service ID：
 
 <Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="Organization ID 和 Service ID" border />
@@ -119,7 +119,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="返回值" border />
 
-* 返回结果应包含你的组织详细信息，且 &quot;status&quot;: 200。 (如果返回的是 &quot;status&quot; 400 且没有组织信息，则说明你的配置不正确) 。
+* 返回结果应包含你的组织详细信息，且 &quot;status&quot;: 200。 (如果返回的是 &quot;status&quot; 400，且没有组织信息，则说明你的配置不正确。)
 
 <div id="test-get-service-details">
   ### 测试“GET service details”

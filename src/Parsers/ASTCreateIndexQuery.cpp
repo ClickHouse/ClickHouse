@@ -1,12 +1,20 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /** Get the text that identifies this element. */
 String ASTCreateIndexQuery::getID(char delim) const
@@ -28,6 +36,94 @@ ASTPtr ASTCreateIndexQuery::clone() const
     cloneTableOptions(*res);
 
     return res;
+}
+
+void ASTCreateIndexQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateIndexQuery");
+
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("unique", unique);
+
+    /// The plain database/table names. These are sufficient for ordinary
+    /// (non-parameterized) identifiers.
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    /// Serialize the index name and declaration ASTs (required by `formatQueryImpl`).
+    w.writeChild("index_name", index_name);
+    w.writeChild("index_decl", index_decl);
+
+    /// Serialize the database/table identifier ASTs as well, so that parameterized
+    /// names like `{tbl:Identifier}` survive the round-trip. The plain `database`/`table`
+    /// strings above cannot represent query parameters.
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+    /// `CREATE INDEX` is parsed by `ParserCreateIndexQuery`, not `ParserQueryWithOutput`,
+    /// and supports no output-suffix clause at all (not even `SETTINGS`). Do not serialize
+    /// the output options, which the SQL parser can never produce for this query.
+}
+
+void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    if_not_exists = r.getBool("if_not_exists");
+    unique = r.getBool("unique");
+
+    cluster = r.getString("cluster");
+
+    /// `index_name` is parser-produced as an `ASTIdentifier`; `convertToASTAlterCommand` and
+    /// `validateCreateIndexQuery` read it as one, so reject any other node type here.
+    index_name = r.readChildOfType<ASTIdentifier>("index_name");
+    if (!index_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_name' during AST JSON deserialization");
+    children.push_back(index_name);
+
+    /// `index_decl` is the parser-owned `ASTIndexDeclaration`; `validateCreateIndexQuery` and
+    /// `convertToASTAlterCommand` downcast it with `as<ASTIndexDeclaration>()`, so reject any
+    /// other node type from malformed `clickhouse_json` here.
+    index_decl = r.readChildOfType<ASTIndexDeclaration>("index_decl");
+    if (!index_decl)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_decl' during AST JSON deserialization");
+    children.push_back(index_decl);
+
+    /// The parser sets `index_decl->name = index_name->name()`, and `formatQueryImpl` prints
+    /// `index_name` while `convertToASTAlterCommand`/`validateCreateIndexQuery` operate on
+    /// `index_decl->name`. Reject malformed `clickhouse_json` whose two names disagree, so the
+    /// displayed DDL cannot name one index while the executed operation targets another.
+    if (index_name->as<ASTIdentifier &>().name() != index_decl->as<ASTIndexDeclaration &>().name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateIndexQuery` 'index_name' must match 'index_decl' name during AST JSON deserialization");
+
+    /// Prefer the parameterized identifier ASTs (which can represent query parameters);
+    /// otherwise fall back to the plain string names. `setDatabase`/`setTable` register
+    /// the created identifier in `children`, so do not push again on that path. These slots are
+    /// parser-produced identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`,
+    /// so reject other node types here.
+    if (auto database_child = r.readIdentifierChild("database_ast"))
+    {
+        database = database_child;
+        children.push_back(database);
+    }
+    else
+        setDatabase(r.getString("database"));
+
+    if (auto table_child = r.readIdentifierChild("table_ast"))
+    {
+        table = table_child;
+        children.push_back(table);
+    }
+    else
+        setTable(r.getString("table"));
+
+    /// `formatQueryImpl` always emits `ON <table>`, so a target table is mandatory.
+    /// The parser cannot produce a standalone `CREATE INDEX` without one.
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify a target table during AST JSON deserialization");
 }
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

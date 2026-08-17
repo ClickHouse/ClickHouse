@@ -1,6 +1,6 @@
 ---
 description: 'Documentation de la requête SELECT'
-sidebarTitle: 'SELECT'
+sidebarTitle: 'Vue d’ensemble'
 slug: /sql-reference/statements/select/
 title: 'Requête SELECT'
 doc_type: 'reference'
@@ -34,23 +34,26 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Toutes les clauses sont facultatives, sauf la liste obligatoire d’expressions immédiatement après `SELECT`, qui est décrite plus en détail [ci-dessous](#select-clause).
+La liste d’expressions qui suit immédiatement `SELECT` est obligatoire ; toutes les autres clauses sont facultatives.
 
-Les spécificités de chaque clause facultative sont décrites dans des sections distinctes, présentées dans le même ordre que celui de leur exécution :
+`SELECT` et ses clauses facultatives sont décrits dans des sections distinctes :
 
 * [clause WITH](/fr/reference/statements/select/with)
 * [clause SELECT](#select-clause)
+* [clause ALL](/fr/reference/statements/select/all)
 * [clause DISTINCT](/fr/reference/statements/select/distinct)
 * [clause FROM](/fr/reference/statements/select/from)
 * [clause SAMPLE](/fr/reference/statements/select/sample)
+* [clause ARRAY JOIN](/fr/reference/statements/select/array-join)
 * [clause JOIN](/fr/reference/statements/select/join)
 * [clause PREWHERE](/fr/reference/statements/select/prewhere)
 * [clause WHERE](/fr/reference/statements/select/where)
-* [clause WINDOW](/fr/reference/functions/window-functions/index)
 * [clause GROUP BY](/fr/reference/statements/select/group-by)
-* [clause LIMIT BY](/fr/reference/statements/select/limit-by)
 * [clause HAVING](/fr/reference/statements/select/having)
+* [clause WINDOW](/fr/reference/functions/window-functions/index)
 * [clause QUALIFY](/fr/reference/statements/select/qualify)
+* [clause ORDER BY](/fr/reference/statements/select/order-by)
+* [clause LIMIT BY](/fr/reference/statements/select/limit-by)
 * [clause LIMIT](/fr/reference/statements/select/limit)
 * [clause OFFSET](/fr/reference/statements/select/offset)
 * [clause UNION](/fr/reference/statements/select/union)
@@ -58,6 +61,15 @@ Les spécificités de chaque clause facultative sont décrites dans des sections
 * [clause EXCEPT](/fr/reference/statements/select/except)
 * [clause INTO OUTFILE](/fr/reference/statements/select/into-outfile)
 * [clause FORMAT](/fr/reference/statements/select/format)
+
+Une requête peut également être écrite sous la forme d’une chaîne linéaire de transformations à l’aide d’[opérateurs pipe](/fr/reference/statements/select/pipe-operators) :
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## Clause SELECT
@@ -196,7 +208,7 @@ Les valeurs extrêmes sont calculées sur les lignes avant `LIMIT`, mais après 
 
 Vous pouvez utiliser des synonymes (alias `AS`) dans n’importe quelle partie d’une requête.
 
-Les clauses `GROUP BY`, `ORDER BY` et `LIMIT BY` peuvent accepter des arguments positionnels. Pour activer cette fonctionnalité, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings#enable_positional_arguments). Ainsi, par exemple, `ORDER BY 1,2` triera les lignes de la table d’abord selon la première colonne, puis selon la deuxième.
+Les clauses `GROUP BY`, `ORDER BY` et `LIMIT BY` peuvent accepter des arguments positionnels. Pour activer cette fonctionnalité, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Ainsi, par exemple, `ORDER BY 1,2` triera les lignes de la table d’abord selon la première colonne, puis selon la deuxième.
 
 <div id="implementation-details">
   ## Détails d’implémentation

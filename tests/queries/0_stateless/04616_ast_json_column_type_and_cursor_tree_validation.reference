@@ -1,0 +1,5 @@
+CREATE TABLE t (`x` UInt8) ENGINE = Memory
+CREATE TABLE t (`x` Enum8(\'a\' = 1), `y` Tuple(UInt8, String)) ENGINE = Memory
+CREATE TABLE t (`x` DEFAULT 1) ENGINE = Memory
+SELECT * FROM t STREAM CURSOR {\'a\': {\'b\': 10}, \'c\': 20}
+SELECT * FROM t STREAM

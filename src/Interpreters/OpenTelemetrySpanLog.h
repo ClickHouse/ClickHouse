@@ -12,10 +12,6 @@ struct OpenTelemetrySpanLogElement
 {
     OpenTelemetry::Span span;
 
-    OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(OpenTelemetry::Span span_)
-        : span(std::move(span_)) {}
-
     static std::string name() { return "OpenTelemetrySpanLog"; }
 
     static ColumnsDescription getColumnsDescription();
