@@ -7,6 +7,17 @@
                 <value>100</value>
             </values>
         </substitution>
+        <substitution>
+            <name>unmatched_run</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>4</value>
+                <value>8</value>
+                <value>16</value>
+                <value>32</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <create_query>CREATE TABLE test_u64_left_{card} (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
@@ -30,6 +41,14 @@
     <fill_query>OPTIMIZE TABLE pmj_u64_mult2 FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE pmj_u64_mult3 FINAL</fill_query>
 
+    <create_query>CREATE TABLE pmj_u64_crossover_right (k UInt64, payload UInt64, text String, label LowCardinality(String)) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pmj_u64_crossover_right SELECT number, number + 1, toString(number), toLowCardinality(toString(number % 1000)) FROM numbers(1000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pmj_u64_crossover_right FINAL</fill_query>
+
+    <create_query>CREATE TABLE pmj_u64_crossover_left_{unmatched_run} (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pmj_u64_crossover_left_{unmatched_run} SELECT number FROM numbers(1000000) WHERE number % ({unmatched_run} + 1) = 0</fill_query>
+    <fill_query>OPTIMIZE TABLE pmj_u64_crossover_left_{unmatched_run} FINAL</fill_query>
+
     <query>SELECT count() FROM test_u64_left_{card} AS a JOIN test_u64_right_{card} AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 
     <query>SELECT count() FROM test_u64_left_1000000 AS a JOIN pmj_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
@@ -40,9 +59,13 @@
     <query>SELECT count(), sum(b.k), sum(b.payload), sum(length(b.text)) FROM pmj_u64_sparse_right AS a ALL RIGHT JOIN test_u64_right_1000000 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
     <query>SELECT count(), sum(b.k), sum(b.payload), sum(length(b.text)) FROM pmj_u64_sparse_right AS a ALL FULL JOIN test_u64_right_1000000 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 
+    <query>SELECT count(), sum(b.k), sum(b.payload), sum(length(b.text)), sum(length(b.label)) FROM pmj_u64_crossover_left_{unmatched_run} AS a ALL RIGHT JOIN pmj_u64_crossover_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge', partial_merge_join_rows_in_right_blocks = 65536, max_threads = 1</query>
+
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS pmj_u64_sparse_right</drop_query>
     <drop_query>DROP TABLE IF EXISTS pmj_u64_mult2</drop_query>
     <drop_query>DROP TABLE IF EXISTS pmj_u64_mult3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pmj_u64_crossover_left_{unmatched_run}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pmj_u64_crossover_right</drop_query>
 </test>
