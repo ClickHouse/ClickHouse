@@ -37,6 +37,7 @@
 #include <Common/StackTrace.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <aws/s3/model/Tag.h>
 #include <aws/s3/model/Tagging.h>
@@ -44,6 +45,7 @@
 namespace ProfileEvents
 {
     extern const Event S3ListObjects;
+    extern const Event S3ListObjectsMicroseconds;
     extern const Event DiskS3DeleteObjects;
     extern const Event DiskS3ListObjects;
 }
@@ -177,7 +179,12 @@ private:
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
-        auto outcome = client->ListObjectsV2(*request);
+        Aws::S3::Model::ListObjectsV2Outcome outcome;
+
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3ListObjectsMicroseconds);
+            outcome = client->ListObjectsV2(*request);
+        }
 
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
@@ -406,7 +413,11 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
-        outcome = client.get()->ListObjectsV2(request);
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3ListObjectsMicroseconds);
+            outcome = client.get()->ListObjectsV2(request);
+        }
+
         throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path, disk_name);
 
         auto result = outcome.GetResult();

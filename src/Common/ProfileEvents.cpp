@@ -39,6 +39,10 @@
     M(FailedInitialQuery, "Number of failed initial queries.", ValueType::Number) \
     M(FailedInitialSelectQuery, "Same as FailedInitialQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
+    M(PartsExports, "Number of successful part exports.", ValueType::Number) \
+    M(PartsExportFailures, "Number of failed part exports.", ValueType::Number) \
+    M(PartsExportDuplicated, "Number of part exports that failed because target already exists.", ValueType::Number) \
+    M(PartsExportTotalMilliseconds, "Total time spent on part export operations.", ValueType::Milliseconds) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
@@ -241,6 +245,8 @@
     M(UserThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_user' throttling.", ValueType::Microseconds) \
     M(AllUsersThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_all_users' throttler.", ValueType::Bytes) \
     M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
+    M(ExportsThrottlerBytes, "Bytes passed through 'max_exports_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(ExportsThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_exports_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
@@ -364,6 +370,19 @@
     M(ZooKeeperBytesSent, "Number of bytes send over network while communicating with ZooKeeper.", ValueType::Bytes) \
     M(ZooKeeperBytesReceived, "Number of bytes received over network while communicating with ZooKeeper.", ValueType::Bytes) \
     \
+    M(ExportPartitionZooKeeperRequests, "Total number of ZooKeeper requests made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperGet, "Number of 'get' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperGetChildren, "Number of 'getChildren' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperGetChildrenWatch, "Number of 'getChildrenWatch' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperGetWatch, "Number of 'getWatch' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperCreate, "Number of 'create' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperSet, "Number of 'set' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperRemove, "Number of 'remove' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperRemoveRecursive, "Number of 'removeRecursive' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperMulti, "Number of 'multi' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartitionZooKeeperExists, "Number of 'exists' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartsRejectedByMemoryLimit, "Number of background export part tasks rejected due to background memory limit.", ValueType::Number) \
+    \
     M(DistributedConnectionTries, "Total count of distributed connection attempts.", ValueType::Number) \
     M(DistributedConnectionUsable, "Total count of successful distributed connections to a usable server (with required table, but maybe stale).", ValueType::Number) \
     M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry.", ValueType::Number) \
@@ -404,6 +423,11 @@
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
+    M(IcebergAvroFileParsing, "Number of times avro metadata files have been parsed.", ValueType::Number) \
+    M(IcebergAvroFileParsingMicroseconds, "Time spent for parsing avro metadata files for Iceberg tables.", ValueType::Microseconds) \
+    M(IcebergJsonFileParsing, "Number of times json metadata files have been parsed.", ValueType::Number) \
+    M(IcebergJsonFileParsingMicroseconds, "Time spent for parsing json metadata files for Iceberg tables.", ValueType::Microseconds) \
+    \
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
@@ -753,6 +777,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.", ValueType::Number) \
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
+    M(S3ListObjectsMicroseconds, "Time of S3 API ListObjects execution.", ValueType::Microseconds) \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
     /* CA per-namespace S3 op instrumentation (B168 P0). 80 = 8 namespaces × 10 ops; attributes the */ \
     /* S3 op-count (PUTs/HEADs/404s/412s/LISTs) by CA operation type via the InstrumentedBackend seam. */ \
@@ -913,6 +938,7 @@ The server successfully detected this situation and will download merged part fr
     M(CASPartFolderValidateSkipped, "Number of CAS part-folder validation HEADs skipped by policy or a fresh retained view. High values reduce reads but can delay detecting external changes.", ValueType::Number) \
     M(CASBlobAdoptTrusted, "Number of CAS blob adoptions trusted through a durable manifest edge without per-file probes. Growth indicates manifest-based relinking.", ValueType::Number) \
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
+    M(S3HeadObjectMicroseconds,  "Time of S3 API HeadObject execution.", ValueType::Microseconds) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
@@ -969,6 +995,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls", ValueType::Number) \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
+    M(AzureListObjectsMicroseconds, "Time of Azure blob storage API ListObjects execution.", ValueType::Microseconds) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
     M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.", ValueType::Number) \
     \
@@ -1260,6 +1287,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1662,6 +1691,62 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(ObjectStorageListObjectsCacheHits, "Number of times object storage list objects operation hit the cache.", ValueType::Number) \
+    M(ObjectStorageListObjectsCacheMisses, "Number of times object storage list objects operation miss the cache.", ValueType::Number) \
+    M(ObjectStorageListObjectsCacheExactMatchHits, "Number of times object storage list objects operation hit the cache with an exact match.", ValueType::Number) \
+    M(ObjectStorageListObjectsCachePrefixMatchHits, "Number of times object storage list objects operation miss the cache using prefix matching.", ValueType::Number) \
+    M(DataLakeRestCatalogCredentialsVended, "Number of table metadata requests to REST catalog asking to vend storage credentials.", ValueType::Number) \
+    M(DataLakeRestCatalogCredentialsCacheHits, "Number of table metadata requests to REST catalog reusing cached storage credentials.", ValueType::Number) \
+    \
+    M(DataLakeRestCatalogLoadConfig, "Number of 'load config' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogLoadConfigMicroseconds, "Total time of 'load config' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetNamespaces, "Number of 'get namespaces' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetNamespacesMicroseconds, "Total time of 'get namespaces' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetTables, "Number of 'get tables' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetTableMetadata, "Number of 'get table metadata' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogCreateNamespace, "Number of 'create namespace' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogCreateNamespaceMicroseconds, "Total time of 'create namespace' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogCreateTable, "Number of 'create table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogCreateTableMicroseconds, "Total time of 'create table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogUpdateTable, "Number of 'update table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogUpdateTableMicroseconds, "Total time of 'update table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogDropTable, "Number of 'drop table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    \
+    M(DataLakeGlueCatalogGetDatabases, "Number of 'get databases' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetDatabasesMicroseconds, "Total time of 'get databases' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogGetTables, "Number of 'get tables' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogGetTable, "Number of 'get table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetTableMicroseconds, "Total time of 'get table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogCreateDatabase, "Number of 'create database' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogCreateDatabaseMicroseconds, "Total time of 'create database' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogCreateTable, "Number of 'create table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogCreateTableMicroseconds, "Total time of 'create table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogUpdateTable, "Number of 'update table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogUpdateTableMicroseconds, "Total time of 'update table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogDropTable, "Number of 'drop table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    \
+    M(DataLakeUnityCatalogGetTables, "Number of 'get tables' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTable, "Number of 'get table' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMicroseconds, "Total time of 'get table' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTableMetadata, "Number of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetSchemas, "Number of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetSchemasMicroseconds, "Total time of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    \
+    M(ObjectStorageClusterSentToMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to matched replica.", ValueType::Number) \
+    M(ObjectStorageClusterSentToNonMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to non-matched replica.", ValueType::Number) \
+    M(ObjectStorageClusterProcessedTasks, "Number of processed tasks in ObjectStorageCluster request.", ValueType::Number) \
+    M(ObjectStorageClusterWaitingMicroseconds, "Time of waiting for tasks in ObjectStorageCluster request.", ValueType::Microseconds) \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

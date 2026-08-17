@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -46,6 +47,15 @@ public:
 
             return false;
         }
+        bool tryGetLiteralText(String * res) const override
+        {
+            const auto * literal = argument->as<ASTLiteral>();
+            if (!literal)
+                return false;
+            if (res)
+                *res = applyVisitor(FieldVisitorToString(), literal->value);
+            return true;
+        }
     private:
         const IAST * argument = nullptr;
     };
@@ -54,10 +64,13 @@ public:
     {
     public:
         explicit ArgumentsAST(const ASTs * arguments_) : arguments(arguments_) {}
-        size_t size() const override { return arguments ? arguments->size() : 0; }
+        size_t size() const override
+        { /// size withous skipped indexes
+            return arguments ? arguments->size() - skippedSize() : 0;
+        }
         std::unique_ptr<Argument> at(size_t n) const override
-        {
-            return std::make_unique<ArgumentAST>(arguments->at(n).get());
+        { /// n is relative index, some can be skipped
+            return std::make_unique<ArgumentAST>(arguments->at(getRealIndex(n)).get());
         }
     private:
         const ASTs * arguments = nullptr;

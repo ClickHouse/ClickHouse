@@ -18,6 +18,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
+#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -351,7 +352,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function)
+    bool is_remote_function,
+    std::span<const SelectQueryInfo> additional_query_infos)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -395,6 +397,8 @@ void executeQuery(
                 unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
     }
+
+    const bool has_additional_query_infos = !additional_query_infos.empty();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -501,9 +505,38 @@ void executeQuery(
             std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
+        /// The remote node is allowed to act as an initiator (and distribute the query further, e.g. over a swarm)
+        /// only when `remote()` wraps a table function, like `remote(host, s3Cluster(...))`.
+        /// For `remote(host, db, table)` the remote node must stay a secondary query: for intermediate processing
+        /// stages it returns a header made of internal column identifiers which the initiator matches by name,
+        /// and query tree optimizations enabled for initial queries change those names (see
+        /// 04045_merge_function_missing_columns_remote).
+        read_from_remote->setIsRemoteFunction(is_remote_function && table_func_ptr != nullptr);
         plan->addStep(std::move(read_from_remote));
         plan->addInterpreterContext(new_context);
         plans.emplace_back(std::move(plan));
+    }
+
+    if (has_additional_query_infos)
+    {
+        if (!header)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is not initialized for local hybrid plan creation");
+
+        const Block & header_block = *header;
+        for (const auto & additional_query_info : additional_query_infos)
+        {
+            auto additional_plan = createLocalPlan(
+                additional_query_info.query,
+                header_block,
+                context,
+                processed_stage,
+                0,  /// shard_num is not applicable for local hybrid plans
+                1,  /// shard_count is not applicable for local hybrid plans
+                false,
+                "");
+
+            plans.emplace_back(std::move(additional_plan));
+        }
     }
 
     if (plans.empty())
@@ -521,6 +554,8 @@ void executeQuery(
         input_headers.emplace_back(plan->getCurrentHeader());
 
     auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+    if (has_additional_query_infos)
+        union_step->setStepDescription("Hybrid");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 

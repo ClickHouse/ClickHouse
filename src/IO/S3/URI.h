@@ -41,16 +41,25 @@ struct URI
         const std::string & uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
-        S3UriStyle uri_style = S3UriStyle::AUTO);
+        S3UriStyle uri_style = S3UriStyle::AUTO,
+        bool enable_url_encoding = true);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
 
+    /// Returns true if 'region' string is an AWS S3 region
+    /// https://docs.aws.amazon.com/general/latest/gr/s3.html
+    static bool isAWSRegion(std::string_view region);
+
 private:
     bool tryInitPathStyle();
     bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
+
+/// Resolve the S3 endpoint URL for a given AWS region using the SDK's
+/// Smithy endpoint rules (handles all partitions: standard, China, GovCloud, etc.).
+std::string resolveS3Endpoint(const std::string & region);
 
 }
 

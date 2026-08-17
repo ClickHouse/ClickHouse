@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -9,6 +10,14 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 #include <Poco/JSON/Object.h>
+
+namespace DB
+{
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+
+}
 
 namespace DataLake
 {
@@ -38,7 +47,6 @@ public:
     bool hasLocation() const;
     bool hasSchema() const;
     bool hasStorageCredentials() const;
-    bool hasDataLakeSpecificProperties() const;
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
@@ -128,6 +136,7 @@ struct CatalogSettings
     String aws_access_key_id;
     String aws_secret_access_key;
     String region;
+    String namespaces;
     String aws_role_arn;
     String aws_role_session_name;
     String aws_external_id;
@@ -165,6 +174,7 @@ public:
     virtual void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context,
         TableMetadata & result) const = 0;
 
     /// Get table metadata in the given namespace.
@@ -172,6 +182,7 @@ public:
     virtual bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context,
         TableMetadata & result) const = 0;
 
     /// Get storage type, where Iceberg tables' data is stored.
@@ -211,6 +222,8 @@ public:
     {
         return std::nullopt;
     }
+
+    virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
 
 protected:
     /// Name of the warehouse,

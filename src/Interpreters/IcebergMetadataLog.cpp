@@ -12,6 +12,7 @@
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
 #include <base/getFQDNOrHostName.h>
@@ -84,7 +85,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 
 void insertRowToLogTable(
     const ContextPtr & local_context,
-    String row,
+    std::function<String()> get_row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const Iceberg::IcebergPathFromMetadata & file_path,
@@ -105,14 +106,18 @@ void insertRowToLogTable(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
+    String normalized_table_path = table_path;
+    while (normalized_table_path.size() > 1 && normalized_table_path.back() == '/')
+        normalized_table_path.pop_back();
+
     iceberg_metadata_log->add(
         DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
-            .table_path = table_path,
+            .table_path = normalized_table_path,
             .file_path = file_path.serialize(),
-            .metadata_content = row,
+            .metadata_content = get_row(),
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});
 }

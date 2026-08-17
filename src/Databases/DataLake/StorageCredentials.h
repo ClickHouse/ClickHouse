@@ -18,6 +18,9 @@ public:
     virtual ~IStorageCredentials() = default;
 
     virtual void addCredentialsToEngineArgs(DB::ASTs & engine_args) const = 0;
+
+    /// True when the credentials are unusable (mandatory fields empty); such credentials are not cached.
+    virtual bool isEmpty() const = 0;
 };
 
 class S3Credentials final : public IStorageCredentials
@@ -31,6 +34,8 @@ public:
         , secret_access_key(secret_access_key_)
         , session_token(session_token_)
     {}
+
+    bool isEmpty() const override { return access_key_id.empty() || secret_access_key.empty(); }
 
     void addCredentialsToEngineArgs(DB::ASTs & engine_args) const override
     {
@@ -87,6 +92,8 @@ public:
                     DB::make_intrusive<DB::ASTLiteral>("Bearer " + oauth_token))));
     }
 
+    bool isEmpty() const override { return oauth_token.empty(); }
+
     const std::string & getToken() const { return oauth_token; }
 
 private:
@@ -108,6 +115,10 @@ public:
 
         engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(sas_token));
     }
+
+    bool isEmpty() const override { return sas_token.empty(); }
+
+    const std::string & getToken() const { return sas_token; }
 
 private:
     std::string sas_token;

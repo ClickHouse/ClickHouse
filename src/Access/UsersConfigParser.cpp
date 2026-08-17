@@ -182,8 +182,11 @@ namespace
         const auto http_auth_config = auth_method_path + ".http_authentication";
         bool has_http_auth = config.has(http_auth_config);
 
+        const auto jwt_config = auth_method_path + ".jwt";
+        bool has_jwt = config.has(jwt_config);
+
         size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex + has_jwt;
 
         if (num_authentication_types > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -193,7 +196,7 @@ namespace
         if (num_authentication_types < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one authentication type (one of 'password', "
                 "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
-                "'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.", user_name, auth_method_path);
+                "'ssl_certificates', 'ssh_keys', 'http_authentication', 'jwt') must be specified for user {} in path {}.", user_name, auth_method_path);
 
         AuthenticationData auth_data;
 
@@ -350,6 +353,14 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Missing mandatory 'server' and 'scheme' in 'http_authentication' for user {}.", user_name);
             }
+        }
+        else if (has_jwt)
+        {
+            auth_data = AuthenticationData(AuthenticationType::JWT);
+            if (config.has(jwt_config + ".processor"))
+                auth_data.setTokenProcessorName(config.getString(jwt_config + ".processor"));
+            if (config.has(jwt_config + ".claims"))
+                auth_data.setJWTClaims(config.getString(jwt_config + ".claims"));
         }
 
         return auth_data;

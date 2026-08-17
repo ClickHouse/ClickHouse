@@ -63,6 +63,8 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 
 
 namespace ProfileEvents
@@ -147,6 +149,7 @@ namespace ErrorCodes
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int FAULT_INJECTED;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace ActionLocks
@@ -251,7 +254,7 @@ void StorageMergeTree::startup()
         cleanup_thread.start();
         background_operations_assignee.start();
         background_streaming_assignee.start();
-        startBackgroundMovesIfNeeded();
+        startBackgroundMoves();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
     }
@@ -316,6 +319,11 @@ void StorageMergeTree::shutdown(bool)
 
     if (deduplication_log)
         deduplication_log->shutdown();
+
+    {
+        std::lock_guard lock(export_manifests_mutex);
+        export_manifests.clear();
+    }
 }
 
 
@@ -492,14 +500,22 @@ void StorageMergeTree::alter(
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
+        }
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else if (commands.isCommentAlter())
     {
-        setInMemoryMetadata(new_metadata);
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(new_metadata);
+        }
         /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
@@ -3521,12 +3537,6 @@ MutationCounters StorageMergeTree::getMutationCounters() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
     return mutation_counters;
-}
-
-void StorageMergeTree::startBackgroundMovesIfNeeded()
-{
-    if (areBackgroundMovesNeeded())
-        background_moves_assignee.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

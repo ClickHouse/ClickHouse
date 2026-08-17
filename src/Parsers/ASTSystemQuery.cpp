@@ -644,6 +644,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
+        case Type::DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
@@ -672,6 +673,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::STOP_SWARM_MODE:
+        case Type::START_SWARM_MODE:
             break;
         case Type::SYNC_FILESYSTEM_CACHE:
         {

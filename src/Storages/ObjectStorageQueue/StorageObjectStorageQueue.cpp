@@ -327,12 +327,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     validateSettings(*queue_settings_, is_attach);
 
     object_storage = configuration->createObjectStorage(context_, /* is_readonly */true, std::nullopt);
-    FormatFactory::instance().checkFormatName(configuration->format);
+    FormatFactory::instance().checkFormatName(configuration->getFormat());
     configuration->check(context_);
 
     ColumnsDescription columns{columns_};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
+    resolveSchemaAndFormat(columns, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
     bool is_path_with_hive_partitioning = false;
@@ -389,7 +389,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path,
         *queue_settings_,
         storage_metadata.getColumns(),
-        configuration_->format,
+        configuration_->getFormat(),
         context_,
         is_attach,
         log);
@@ -540,7 +540,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->getFormat(), context_, format_settings);
 }
 
 class ReadFromObjectStorageQueue : public SourceStepWithFilter
@@ -825,6 +825,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
 
+    Stopwatch watch;
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -966,6 +968,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
+                file_iterator->refreshExpiringBucketLocks();
 
                 /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
@@ -997,11 +1000,12 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
+        file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;
     }
 
-    LOG_TEST(log, "Processed rows: {}", total_rows);
+    LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());
     return total_rows > 0;
 }
 

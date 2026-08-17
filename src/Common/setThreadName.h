@@ -176,6 +176,7 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
+    M(EXPORT_PART, "ExportPart") \
 
 
 enum class ThreadName : uint8_t

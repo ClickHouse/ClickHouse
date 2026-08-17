@@ -1,11 +1,12 @@
 #include <Storages/System/StorageSystemKeywords.h>
+#include <Storages/System/StorageSystemReplicatedPartitionExports.h>
 #include "config.h"
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
-
+#include <Core/ServerSettings.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
@@ -40,6 +41,7 @@
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
 #include <Storages/System/StorageSystemMoves.h>
+#include <Storages/System/StorageSystemExports.h>
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
@@ -60,6 +62,7 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemHybridWatermarks.h>
 #include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
@@ -135,6 +138,7 @@
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
+#include <Storages/System/StorageSystemExports.h>
 
 #include <Interpreters/Context.h>
 
@@ -159,6 +163,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_experimental_export_merge_tree_partition;
+}
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
@@ -257,12 +266,18 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDimensionalMetrics>(context, system_database, "dimensional_metrics", "Contains dimensional metrics, which have multiple dimensions (labels) to provide more granular information. For example, counting failed merges by their error code. This table is always up to date.");
     attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
     attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
+    attach<StorageSystemExports>(context, system_database, "exports", "Contains a list of exports currently executing exports of MergeTree tables and their progress. Each export operation is represented by a single row.");
+    if (context->getServerSettings()[ServerSetting::allow_experimental_export_merge_tree_partition])
+    {
+        attach<StorageSystemReplicatedPartitionExports>(context, system_database, "replicated_partition_exports", "Contains a list of partition exports of ReplicatedMergeTree tables and their progress. Each export operation is represented by a single row.");
+    }
     attach<StorageSystemMutations>(context, system_database, "mutations", "Contains a list of mutations and their progress. Each mutation command is represented by a single row.");
     attachNoDescription<StorageSystemReplicas>(context, system_database, "replicas", "Contains information and status of all table replicas on current server. Each replica is represented by a single row.");
     attachNoDescription<StorageSystemDatabaseReplicas>(context, system_database, "database_replicas", "Contains information and status of all database replicas on current server. Each database replica is represented by a single row.");
     attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", "Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for each table replica.");
     attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "Contains information about distributed DDL queries (ON CLUSTER clause) that were executed on a cluster.");
     attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.");
+    attach<StorageSystemHybridWatermarks>(context, system_database, "hybrid_watermarks", "Current effective watermark values for Hybrid-engine tables. One row per declared hybridParam() name, or one diagnostic row with last_exception on read failure.");
     attach<StorageSystemDictionaries>(context, system_database, "dictionaries", "Contains information about dictionaries.");
     attach<StorageSystemModels>(context, system_database, "models", "Contains a list of CatBoost models loaded into a LibraryBridge's memory along with time when it was loaded.");
     attach<StorageSystemClusters>(context, system_database, "clusters", "Contains information about clusters defined in the configuration file or generated by a Replicated database.");

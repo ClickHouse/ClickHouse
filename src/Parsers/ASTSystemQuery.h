@@ -53,6 +53,7 @@ public:
         CLEAR_FORMAT_SCHEMA_CACHE,
         CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
+        DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE,
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -93,6 +94,8 @@ public:
         START_FETCHES,
         STOP_MOVES,
         START_MOVES,
+        STOP_SWARM_MODE,
+        START_SWARM_MODE,
         STOP_REPLICATED_SENDS,
         START_REPLICATED_SENDS,
         STOP_REPLICATION_QUEUES,
@@ -277,13 +280,12 @@ protected:
 
 }
 
-/// Type has grown past the default magic_enum range [-128, 127] (130+ entries and counting, one per
-/// SYSTEM sub-command): both the type-detection loop in ParserSystemQuery.cpp (which iterates
-/// magic_enum::enum_values<Type>() to try every command's auto-derived keyword phrase) and
-/// ASTSystemQuery::typeToString's index table silently drop/OOB-index any value past the range without
-/// this. Matches the GeometryColumnType / Coordination::OpNum precedent for a large enum.
+/// The number of SYSTEM query types exceeds the default magic_enum range [-128, 127].
+/// Without extending the range magic_enum silently ignores the types with values above 127,
+/// so such queries cannot be parsed (ParserSystemQuery iterates over magic_enum::enum_values)
+/// and cannot be formatted (ASTSystemQuery::typeToString indexes a magic_enum-sized array).
 template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
 {
     static constexpr int min = 0;
-    static constexpr int max = 255;
+    static constexpr int max = 512;
 };

@@ -1,9 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include "config.h"
-
-#if USE_AVRO
-
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -17,9 +15,23 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+
+namespace DB
+{
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
+/// These functions are always available; they return fallback values when USE_AVRO is not defined
+ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage);
+std::optional<String> getMetadataPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info);
+}
+
+#if USE_AVRO
+
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>
+#include <unordered_map>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -31,6 +43,8 @@ class GenericDatum;
 
 namespace DB::Iceberg
 {
+
+Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 void writeMessageToFile(
     const String & data,
@@ -57,9 +71,14 @@ struct TransformAndArgument
 {
     String transform_name;
     std::optional<size_t> argument;
+    /// When Iceberg table is partitioned by time, splitting by partitions can be made using different timezone
+    /// (UTC in most cases). This timezone can be set with setting `iceberg_partition_timezone`, value is in this member.
+    /// When Iceberg partition condition converted to ClickHouse function in `parseTransformAndArgument` method
+    /// `time_zone` added as second argument to functions like `toRelativeDayNum`, `toYearNumSinceEpoch`, etc.
+    std::optional<String> time_zone;
 };
 
-std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src, const String & time_zone);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
@@ -76,6 +95,14 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
+
+/// Converts a ClickHouse PARTITION BY AST into the corresponding Iceberg partition-spec JSON object.
+/// column_name_to_source_id maps each column name to the Iceberg field-id from the table schema.
+/// The returned Int32 is the last partition-field-id allocated (useful for tracking the id counter).
+/// Throws if the AST contains expressions that cannot be represented as Iceberg transforms.
+std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+    ASTPtr partition_by,
+    const std::unordered_map<String, Int32> & column_name_to_source_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

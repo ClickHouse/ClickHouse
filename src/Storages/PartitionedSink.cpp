@@ -26,10 +26,12 @@ namespace ErrorCodes
 
 PartitionedSink::PartitionedSink(
     std::shared_ptr<IPartitionStrategy> partition_strategy_,
+    std::shared_ptr<SinkCreator> sink_creator_,
     ContextPtr context_,
     SharedHeader source_header_)
     : SinkToStorage(source_header_)
     , partition_strategy(partition_strategy_)
+    , sink_creator(sink_creator_)
     , context(context_)
     , source_header(source_header_)
 {
@@ -41,7 +43,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(std::string_view partition_key)
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())
     {
-        auto sink = createSinkForPartition(std::string{partition_key});
+        auto sink = sink_creator->createSinkForPartition(std::string{partition_key});
         std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }
 

@@ -1,0 +1,20 @@
+---- Test max_bytes and max_rows per file
+---- Table function with schema inheritance (no schema specified)
+---- Table function with explicit compatible schema
+Waiting for exports to complete (timeout: 60s)...
+All exports completed.
+---- Count files in big_destination_max_bytes, should be 5 (4 parquet, 1 commit)
+5
+---- Count rows in big_table and big_destination_max_bytes
+4194304
+4194304
+---- Count files in big_destination_max_rows, should be 5 (4 parquet, 1 commit)
+5
+---- Count rows in big_table and big_destination_max_rows
+4194304
+4194304
+---- Data should be exported with inherited schema
+100	test1	2022
+101	test2	2022
+---- Data should be exported with explicit schema
+102	test3	2023
