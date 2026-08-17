@@ -1071,7 +1071,7 @@ Block buildKeptKeysSeedBlock(
         if (!rows_left)
             break;
         chassert(!agg_chunk.is_overflows);
-        size_t rows_to_take = std::min(rows_left, agg_chunk.chunk.getNumRows());
+        size_t rows_to_take = std::min(rows_left, static_cast<size_t>(agg_chunk.chunk.getNumRows()));
         const auto & columns = agg_chunk.chunk.getColumns();
         for (size_t i = 0; i < keys_size; ++i)
             seed_columns[i]->insertRangeFrom(*columns[i], 0, rows_to_take);
