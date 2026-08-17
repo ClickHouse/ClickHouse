@@ -2415,7 +2415,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesConflictingLogTail)
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2450,7 +2450,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingRemov
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2479,7 +2479,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingAnces
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2507,7 +2507,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalDetectsConflictInsideMultiR
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2547,7 +2547,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesUnparseableTailEntry
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2576,7 +2576,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignLogTailAndRepla
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2616,7 +2616,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalIgnoresSyncInLogTail)
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2645,7 +2645,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSequentialCreateTouc
     /// `/p` survives; `/p/n0000000001` is absent, so it becomes the damaged root.
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/p"}, {"/p/n0000000001/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2681,7 +2681,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSetWatchesTouchingRe
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2715,7 +2715,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSetWatches2Persisten
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2748,7 +2748,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignSetWatchesInLog
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -2780,7 +2780,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalNoConflictWhenNoLogTail)
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
 
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
