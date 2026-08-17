@@ -212,8 +212,12 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
-                # Same reason: test_fuzzer_dict_coverage_check_locale.py reads this one.
-                "./tests/fuzz/update_dict.sh",
+                # Same reason: the fuzzer-dictionary guards read the dictionary scripts and
+                # .options files, the if (FUZZER) block that generates all.dict, and the
+                # .gitignore entry that keeps it uncommitted.
+                "./tests/fuzz/",
+                "./CMakeLists.txt",
+                "./.gitignore",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],

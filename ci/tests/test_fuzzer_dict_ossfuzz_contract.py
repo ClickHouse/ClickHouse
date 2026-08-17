@@ -29,6 +29,9 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+# `ci/defs/defs.py` does `from praktika import ...`, so `ci/` itself must be on the
+# path for `import praktika` to resolve.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 _ROOT_CMAKE = os.path.join(_REPO, "CMakeLists.txt")
@@ -221,3 +224,61 @@ class TestGeneratorProducesAUsableDictionary:
         )
         assert copied.returncode != 0
         assert list(out.iterdir()) == []
+
+
+class TestSuiteInputsAreInTheJobDigest:
+    """`CI Tests` is cache-gated, so an input outside its digest is unguarded.
+
+    A commit touching only such a file takes a cache hit from an older run, and the
+    suite above never executes on the commit that broke it.
+    """
+
+    # From the module's own constants, so a new input is covered automatically.
+    _READS = [_ROOT_CMAKE, _BUILD_SH, _GENERATOR, _GITIGNORE]
+
+    @staticmethod
+    def _include_paths():
+        from ci.defs.job_configs import JobConfigs
+
+        return JobConfigs.ci_tests.digest_config.include_paths
+
+    @staticmethod
+    def _uncovered(paths, include_paths):
+        normalized = [
+            os.path.normpath(os.path.join(_REPO, p.removeprefix("./")))
+            for p in include_paths
+        ]
+        return [
+            os.path.relpath(path, _REPO)
+            for path in paths
+            if not any(
+                path == entry or path.startswith(entry + os.sep) for entry in normalized
+            )
+        ]
+
+    def _all_reads(self):
+        fuzz_dir = os.path.join(_REPO, "tests/fuzz")
+        return self._READS + [
+            os.path.join(_REPO, "tests/fuzz/dictionaries/old.dict"),
+            *(
+                os.path.join(fuzz_dir, name)
+                for name in sorted(os.listdir(fuzz_dir))
+                if name.endswith(".options")
+            ),
+        ]
+
+    def test_every_input_this_suite_reads_is_covered(self):
+        reads = self._all_reads()
+        assert len(reads) > len(self._READS), "the .options glob found nothing"
+        assert self._uncovered(reads, self._include_paths()) == []
+
+    def test_dropping_the_fuzz_directory_uncovers_them(self):
+        # Mutation arm: without it the assertion above would pass against a
+        # digest that had lost the coverage.
+        include_paths = self._include_paths()
+        reduced = [p for p in include_paths if p != "./tests/fuzz/"]
+        assert len(reduced) < len(include_paths), (
+            "'./tests/fuzz/' is not in include_paths, so this arm has nothing to "
+            f"remove and cannot prove anything: {include_paths}"
+        )
+        assert self._uncovered(self._all_reads(), reduced) != []
