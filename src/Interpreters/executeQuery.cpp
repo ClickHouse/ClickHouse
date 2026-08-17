@@ -117,7 +117,6 @@
 #include <Common/QueryFuzzer.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
-#include <Common/ThreadStatus.h>
 #include <base/getFQDNOrHostName.h>
 
 #include <Interpreters/InternalTextLogsQueue.h>
