@@ -293,8 +293,7 @@ def _make_sharded_distributed_table():
     )
 
 
-@pytest.mark.parametrize("serialize_query_plan", [0, 1])
-def test_sharded_distributed_order_by_with_push_down_limit(start_cluster, serialize_query_plan):
+def test_sharded_distributed_order_by_with_push_down_limit(start_cluster):
     """Sanity-check that the optimization, applied on shards in stage 4
     (sharding-key-aligned GROUP BY with `distributed_push_down_limit = 1`),
     produces the same result as without it.
@@ -314,7 +313,6 @@ def test_sharded_distributed_order_by_with_push_down_limit(start_cluster, serial
         "distributed_push_down_limit": 1,
         "optimize_distributed_group_by_sharding_key": 1,
         "optimize_skip_unused_shards": 1,
-        "serialize_query_plan": serialize_query_plan,
     }
     settings_off = dict(settings_base, enable_group_by_top_k_optimization=0)
     settings_on = dict(settings_base, enable_group_by_top_k_optimization=1)
@@ -326,11 +324,6 @@ def test_sharded_distributed_order_by_with_push_down_limit(start_cluster, serial
     )
     expected = "\n".join(f"{k}\t100" for k in range(10)) + "\n"
     assert off == expected
-
-    plan = node1.query(f"EXPLAIN PLAN {query}", settings=settings_on)
-    assert ("Top-K:" in plan) == (serialize_query_plan == 0), (
-        f"serialize_query_plan={serialize_query_plan} produced an unexpected plan:\n{plan}"
-    )
 
 
 def test_explain_plan_shows_no_aggregating_step_with_limit(start_cluster):

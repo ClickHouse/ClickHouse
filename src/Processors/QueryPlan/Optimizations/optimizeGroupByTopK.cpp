@@ -63,7 +63,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
 
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    if (settings.make_distributed_plan)
         return 0;
 
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());
@@ -154,9 +154,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
                 return 0;
 
             if (sort_description[i].collator)
-                return 0;
-
-            if (sort_description[i].direction != 1)
                 return 0;
 
             directions.push_back(sort_description[i].direction);

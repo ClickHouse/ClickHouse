@@ -100,7 +100,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
-        optimization_settings.serialize_query_plan,
     };
 
     while (!stack.empty())
@@ -228,7 +227,6 @@ void optimizeTreeSecondPass(
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
-        optimization_settings.serialize_query_plan,
     };
 
     Stack stack;

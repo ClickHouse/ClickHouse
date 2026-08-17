@@ -1,5 +1,7 @@
-desc_skips_top_k
-0
+desc_over_asc: unfrozen, nothing skipped, evicting throughout
+0	0	1
+arena bounded by the LIMIT
+1
 results
 499999	2	2
 499998	2	2

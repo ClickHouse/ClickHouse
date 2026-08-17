@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -245,7 +244,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
-    serialize_query_plan = from[Setting::serialize_query_plan];
 
     /// make_distributed_plan is incompatible with parallel replicas, including the automatic
     /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
