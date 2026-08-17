@@ -325,6 +325,8 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
@@ -559,7 +561,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
