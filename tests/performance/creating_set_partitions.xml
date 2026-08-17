@@ -30,6 +30,8 @@
          decision depends on the observed unique rate, not on the partition count.
          * t_all_unique: every key unique, the preliminary deduplication abandons itself after observing
            the first chunks, keeping the read locality win without a duplicated hash table.
+         * t_all_unique_str: like t_all_unique but with wide String keys, which reach the observation
+           byte cap before the chunk window ends, so the deduplication abandons after fewer chunks.
          * t_half_dup: half of the rows are duplicates, but each key's second copy is far apart in
            insertion order and arrives only after the deduplication has already abandoned, so the set
            fill removes the duplicates alone.
@@ -40,6 +42,7 @@
          * t_dup_head_uniq_tail: the heavy duplicate head anchors the cumulative unique rate below the
            abandon threshold, so the deduplication stays engaged through the unique tail. -->
     <create_query>CREATE TABLE t_all_unique (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_all_unique_str (a String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_half_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_mild_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_dup_head_uniq_tail (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
@@ -60,6 +63,9 @@
 
     <fill_query>INSERT INTO t_all_unique SELECT number FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_all_unique FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_all_unique_str SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_all_unique_str FINAL</fill_query>
 
     <fill_query>INSERT INTO t_half_dup SELECT number % 15000000 FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_half_dup FINAL</fill_query>
@@ -90,6 +96,8 @@
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_all_unique) FORMAT Null</query>
 
+    <query>SELECT count() FROM numbers_mt(100000) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM t_all_unique_str) FORMAT Null</query>
+
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_half_dup) FORMAT Null</query>
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_mild_dup) FORMAT Null</query>
@@ -101,6 +109,7 @@
     <drop_query>DROP TABLE t_skew90_uniq_{partitions}</drop_query>
     <drop_query>DROP TABLE t_skew30_dup_{partitions}</drop_query>
     <drop_query>DROP TABLE t_all_unique</drop_query>
+    <drop_query>DROP TABLE t_all_unique_str</drop_query>
     <drop_query>DROP TABLE t_half_dup</drop_query>
     <drop_query>DROP TABLE t_mild_dup</drop_query>
     <drop_query>DROP TABLE t_dup_head_uniq_tail</drop_query>
