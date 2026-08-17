@@ -5,8 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Two `clickhouse local` invocations against the same --path: the second reloads the metadata the
-# first persisted, which is the path a server takes at startup. The host is unreachable on purpose -
-# both experimental gates throw before any network access, so nothing here connects.
+# first persisted, which is the path a server takes at startup. The host is unreachable on purpose:
+# no arm needs a live server.
 WORKING_FOLDER="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${WORKING_FOLDER}"
 

@@ -277,7 +277,8 @@ StoragePtr TableFunctionURL::executeImpl(
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
 
-    /// Stored columns only ever accompany a persisted definition being replayed.
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
     const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
 
     return ITableFunctionFileLike::executeImpl(
