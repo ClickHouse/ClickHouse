@@ -1,6 +1,6 @@
 ---
 name: patch-release-check
-description: Check whether ClickHouse's supported versions (last 3 majors + latest LTS) have recent stable patch releases, diagnose why the scheduled AutoReleases pipeline failed, and identify which releases must be created manually. Use when asked "are the patch releases up to date", "why did autorelease fail", "which releases are missing", "did a release get skipped", during the bi-weekly release-health check, or when investigating create_release.yml / auto_releases.yml failures. Reproduces the full investigation: supported versions from SECURITY.md, per-version staleness, classification of the last N days of AutoReleases/CreateRelease failures (version-bump-PR guard vs missing release-maker runner vs other), the Slack cross-check that reveals the blocking PR, and gated remediation (close a stale robot bump PR, dispatch CreateRelease for a missing version).
+description: Check whether ClickHouse's supported versions (last 3 majors + latest LTS) have recent stable patch releases, diagnose why the scheduled AutoReleases pipeline failed, and identify which releases must be created manually. Use when asked "are the patch releases up to date", "why did autorelease fail", "which releases are missing", "did a release get skipped", during the bi-weekly release-health check, or when investigating create_release.yml / auto_releases.yml failures. Reproduces the full investigation: supported versions from SECURITY.md, per-version staleness, classification of the last N days of AutoReleases/CreateRelease failures (version-bump-PR guard vs missing driver runner vs other), the Slack cross-check that reveals the blocking PR, and gated remediation (close a stale robot bump PR, dispatch CreateRelease for a missing version).
 argument-hint: "[lookback-days, default 14]"
 disable-model-invocation: false
 allowed-tools: Bash, Read, Grep, Glob, Agent, WebFetch, AskUserQuestion
@@ -17,9 +17,12 @@ failed (classified), and walks gated remediation. There are two distinct failure
 modes, and they need different fixes:
 
 - **Guard failure** — `AutoReleaseInfo` aborts before releasing anything because an
-  open "version bump" PR trips a guard in `tests/ci/auto_release.py`. Repo/PR side.
-- **Runner failure** — runs can't start at all because no `[self-hosted, release-maker]`
-  runner is available. Infra side, not a repo change.
+  open "version bump" PR trips a guard in `ci/jobs/auto_release_job.py`. Repo/PR side.
+- **Runner failure** — runs can't start at all because no runner is available. Two
+  distinct pools can be at fault, and they need different escalations: the `AutoReleases`
+  driver itself runs on `[self-hosted, style-checker-aarch64]` (`config_workflow`) and
+  `[self-hosted, arm-small]` (`AutoReleaseInfo`), while the `CreateRelease` runs it
+  dispatches queue on `[self-hosted, amd-release-maker]`. Infra side, not a repo change.
 
 ## Arguments
 
@@ -59,7 +62,7 @@ It prints four blocks (each ending in a one-line verdict):
    excluded by config (`excluded`), and what is actually `analyzed`.
 2. **Per-version staleness** — latest patch tag (resolved from the complete
    `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days
-   (from the annotated tag's `tagger.date`, matching `auto_release.py`), release-worthy
+   (from the annotated tag's `tagger.date`, matching `auto_release_job.py`), release-worthy
    / first-parent-total commits (`rel/tot`, reconstructed from the first-parent chain
    like `AutoReleaseInfo`), and a `⚠️ MISSING` flag when a version is older than
    `STALE_DAYS` (default 18) *and* has release-worthy commits. A supported version with
@@ -95,19 +98,21 @@ the pipeline is unblocked, automation will release it, so it is not "missing" ye
 
 ### 4. Diagnose the failures
 
-**`GUARD`** — `AutoReleaseInfo` died in the version-bump-PR guard inside
-`_prepare` (`raise RuntimeError`), immediately after printing `Posting slack message`.
-This is the guard "check all previous version bump PRs were merged": it runs
-`gh pr list --state open --search "Update version_date.tsv"` and aborts if the result
-is non-empty. Because the matrix `Releases` job `needs` this job, a guard failure
+**`GUARD`** — `AutoReleaseInfo` died in the version-bump-PR guard
+`_assert_no_open_version_bump_prs` (`raise RuntimeError`). This is the guard "check all
+previous version bump PRs were merged": it runs
+`gh pr list --state open --search "Update version_date.tsv in:title"` and aborts if the
+result is non-empty. The guard runs before any per-branch dispatch, so a guard failure
 **skips every branch** — nothing releases.
 
-> The script classifies `GUARD` only when the failed-step log shows **both** the
-> `in _prepare` traceback frame **and** the `raise RuntimeError` source line — not a
-> line number (which drifts) and not bare `RuntimeError`. Other `_prepare` failures
-> (e.g. the `assert refs` release-candidate check, which raises `AssertionError`)
-> classify as `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump
-> PRs when the guard is actually clear.
+> The script classifies `GUARD` only when the failed-step log shows **both** a guard
+> traceback frame **and** the `raise RuntimeError` source line — not a line number
+> (which drifts) and not bare `RuntimeError`. Both frames count:
+> `in _assert_no_open_version_bump_prs` (`ci/jobs/auto_release_job.py`) and the legacy
+> `in _prepare` (`tests/ci/auto_release.py`), which the 14-day lookback still reaches
+> for two weeks after the praktika migration. Other failures — e.g. a branch reported
+> `ERROR` for having no release tag — classify as `OTHER`, so the operator is not sent
+> to hunt version-bump PRs when the guard is clear.
 
 > The GitHub Actions log does **not** name the offending PR — the list is sent to a
 > Slack alert, not stdout. Find it two ways:
@@ -123,9 +128,13 @@ is non-empty. Because the matrix `Releases` job `needs` this job, a guard failur
 
 **`RUNNER`** — a **completed**, `cancelled` run whose first job never got a runner
 (no `runner_name`, zero `steps`); it sat queued ~24h and was cancelled the instant the
-next day's cron fired. Means no `[self-hosted, release-maker]` runner picked it up.
+next day's cron fired. Means no runner picked up the *driver* — `style-checker-aarch64`
+for `config_workflow`, `arm-small` for `AutoReleaseInfo` (see
+`.github/workflows/auto_releases.yml`). Do not chase `amd-release-maker` here: that pool
+serves the dispatched `CreateRelease` runs, so it explains a release that starts and
+then never finishes, not a scheduler that never starts.
 This is **infra, not a repo change** — escalate in `#core-ci-info` and check the
-org/repo Actions runner settings. Note: clearing a `GUARD` blocker does nothing if
+org/repo Actions runner settings for the pool that actually stalled. Note: clearing a `GUARD` blocker does nothing if
 `RUNNER` is also failing, and vice versa — both must be healthy for a release to
 happen. A run that is still `queued`/`in_progress` (empty conclusion) is **not**
 `RUNNER` — the script prints its live status instead, since a queued daily run has no
@@ -134,7 +143,7 @@ runner/steps yet but is not an outage.
 **`OTHER`** — the run failed for some reason other than the guard or a missing runner.
 Any unexpected conclusion (`startup_failure`, `timed_out`, `action_required`, …) also
 counts here, so the tally never reads all-zeros while a run actually failed;
-`startup_failure`/`timed_out` usually point at the `release-maker` runner or a timeout.
+`startup_failure`/`timed_out` usually point at a driver-pool runner or a timeout.
 Read the failed step directly:
 
 ```bash
@@ -248,23 +257,28 @@ generated `auto/v<tag>` changelog PR. Track status in `#core-ci-info`.
 
 ## Known issue / hardening
 
-The guard query in `tests/ci/auto_release.py` (~line 100,
-`gh pr list --search "Update version_date.tsv"`) is a **loose full-text search**, so a
-single forgotten or unrelated PR can halt all releases. Worth a separate PR: scope it
-to genuine robot bump PRs, e.g. `--search "Update version_date.tsv in:title author:robot-clickhouse"`
-or match the `auto/v*` head branch. This skill documents the behavior; it does not
-change the code.
+The guard query in `ci/jobs/auto_release_job.py` (`_assert_no_open_version_bump_prs`)
+now scopes the search with `in:title`
+(`gh pr list --search "Update version_date.tsv in:title"`), so only PRs whose *title*
+matches — the genuine robot bump PRs `Update version_date.tsv and changelog after
+<tag>` — trip it. The legacy query (`gh pr list --search "Update version_date.tsv"`)
+was a loose full-text search that also matched any PR merely mentioning the phrase in
+its body, so a single unrelated PR could halt all releases (the praktika-migration PR
+itself hit this). If you still see a false positive, tighten further with
+`author:robot-clickhouse` or by matching the `auto/v*` head branch.
 
 ## Notes
 
-- **Cadence** is ~2 weeks; there is no explicit day-threshold in `auto_release.py` —
+- **Cadence** is ~2 weeks; there is no explicit day-threshold in `auto_release_job.py` —
   it releases a branch whenever a green commit exists among its last
-  `MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` commits.
-- The `Releases` matrix has `fail-fast: false`, so one bad release branch does not
-  cancel the others — but `AutoReleaseInfo` failing (a `GUARD` failure) skips them all.
-- `AutoReleases` runs daily on cron `45 11 * * *`; `CreateRelease` is both a
-  `workflow_dispatch` (manual) and a `workflow_call` (the matrix calls it with
-  `type: patch`).
+  `MAX_COMMITS_TO_CONSIDER = 8` commits.
+- The `AutoReleaseInfo` job dispatches each ready branch's release independently and
+  continues past a failed one (`fail-fast: false` semantics), so one bad release
+  branch does not stop the others — but the guard failing (open version-bump PR)
+  aborts the whole run before any dispatch.
+- `AutoReleases` runs daily on cron `45 11 * * *`; it dispatches `CreateRelease`
+  (`gh workflow run create_release.yml ... -f type=patch`) once per ready branch and
+  waits for each run to finish before starting the next.
 - **`EXCLUDE_VERSIONS`** currently defaults to a hardcoded skip (`25.8`) so it is left
   out of the analysis. This is intentional but goes stale — revisit it each cycle, or
   run `EXCLUDE_VERSIONS="" bash .../release_health.sh` to analyze every supported
