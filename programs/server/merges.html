@@ -435,6 +435,58 @@ function playClick(volume) {
     source.start();
 }
 
+/// The connection over `postMessage`.
+///
+/// When this page is opened from another built-in web UI page or embedded in an iframe, the host
+/// hands the connection over in a message instead of the query string, because a password in a URL
+/// leaks into browser history, referrer headers, server access logs and proxy logs. This page
+/// announces itself with `clickhouse-hello` and the host answers with `clickhouse-credentials`;
+/// see `play.html`, which documents the protocol and implements the other side of it.
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Adopt a connection handed over by the host page. Filling the inputs is all that is needed:
+/// `load` reads them when the animation is started, and nothing is queried before that.
+///
+/// `url` is optional and defaults to the one already configured; the credentials are always
+/// replaced wholesale, so that none of them can outlive the connection they belong to.
+function applyConnectionFromHost(data) {
+    if (data.url !== undefined) document.getElementById('url').value = data.url;
+    document.getElementById('user').value = data.user || '';
+    document.getElementById('password').value = data.password || '';
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window) {
+        window.addEventListener('message', event => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            applyConnectionFromHost(event.data);
+        });
+        /// Broadcast, because the host's location cannot be read cross-origin. The message carries
+        /// no secrets - only the fact that this page exists, which the host knows already.
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
+}
+
 </script>
 </body>
 </html>

@@ -4595,6 +4595,46 @@ checkURL(true);
     docs_icon.addEventListener('pointerdown', updateDocsURL);
     docs_icon.addEventListener('click', updateDocsURL);
     updateDocsURL();
+
+    /// The docs windows opened below, each with the origin it was opened at. An entry is kept
+    /// for as long as its window lives, because the page says hello again after a reload and
+    /// must receive the connection again.
+    let docs_windows = [];
+
+    /// A plain click opens the docs window here instead of letting the anchor navigate, so that
+    /// a handle on it remains and the whole connection - including the password, which must
+    /// never appear in a URL - can be handed over with `postMessage`. The anchor's `rel=noopener`
+    /// deliberately severs that handle, hence `window.open`. Modified and middle clicks keep the
+    /// anchor's native path (a new tab or window, connecting as `?user=` with no password), and
+    /// so does a click whose `window.open` the popup blocker refuses.
+    docs_icon.addEventListener('click', (event) => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        let origin;
+        try {
+            origin = new URL(docs_icon.href).origin;
+        } catch (e) {
+            return; /// Unparsable configured URL: leave the navigation to the anchor.
+        }
+        const win = window.open(docs_icon.href, '_blank');
+        if (!win) return;
+        event.preventDefault();
+        docs_windows = docs_windows.filter(entry => !entry.win.closed);
+        docs_windows.push({win, origin});
+    });
+
+    /// Answer the `clickhouse-hello` a docs page sends once it is ready for the connection (see
+    /// `sendConnectionToHostedPage` below for the protocol). Only the windows opened above are
+    /// answered, and only while they are still on the origin they were opened at: the reply is
+    /// targeted at that exact origin, so a window that has navigated elsewhere in the meantime
+    /// never receives the credentials.
+    window.addEventListener('message', (event) => {
+        if (!event.data || event.data.type !== 'clickhouse-hello') return;
+        for (const entry of docs_windows) {
+            if (event.source === entry.win && event.origin === entry.origin) {
+                sendConnectionToHostedPage(entry.win, entry.origin);
+            }
+        }
+    });
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -6005,6 +6045,96 @@ password_elem.addEventListener('input', onCredentialInput);
 /// connection dot is handled by `checkURL` independently). Marking the connection edited makes
 /// the commit re-check the credentials even when only the `url` changed.
 url_elem.addEventListener('input', onCredentialInput);
+
+
+/// The connection over `postMessage`.
+///
+/// Every built-in web UI page (`/play`, `/docs`, `/dashboard`, `/merges`, `/schema`, `/jemalloc`,
+/// `/processors-profile`, `/binary`) can be handed its connection - server URL, user and password
+/// - by the page that opened or embedded it, instead of taking it from its own query string. A
+/// password in a URL leaks into browser history, referrer headers, server access logs and proxy
+/// logs, so a URL carries at most a `user` and the password travels only in a message.
+/// `/webterminal` implements an older variant of the same exchange, where the credentials then go
+/// into the WebSocket rather than into a query string.
+///
+/// The exchange is two messages:
+///
+///     page -> host   {type: 'clickhouse-hello'}
+///     host -> page   {type: 'clickhouse-credentials', url, user, password}
+///
+/// The page announces itself as soon as it can apply a connection, and the host answers. The page
+/// has to speak first because a host that opened it with `window.open` cannot tell when its
+/// document became ready (cross-origin `load` events are not observable). The announcement is
+/// broadcast to `'*'`, because the host's location cannot be read cross-origin either; it carries
+/// no secrets - only the fact that this page exists, which the host knows already.
+///
+/// The answer is accepted only from the window that opened or embeds this page, and only from a
+/// trusted origin, so that the credentials the user works with cannot be aimed at a server chosen
+/// by a hostile page. Outbound, credentials are always sent with an exact target origin, never
+/// `'*'`.
+
+/// Hand the current connection to a page opened from, or embedded in, this one.
+function sendConnectionToHostedPage(target_window, target_origin) {
+    target_window.postMessage({
+        type: 'clickhouse-credentials',
+        url: url_elem.value,
+        user: user_elem.value,
+        password: password_elem.value,
+    }, target_origin);
+}
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Adopt a connection handed over by the host page.
+///
+/// `url` is optional and defaults to the one already configured, so a host embedding a page served
+/// by the very server it wants queried can send the credentials alone. The credentials themselves
+/// are always replaced wholesale: keeping a user or password the message did not carry would attach
+/// the credentials of one connection - possibly ones the browser's password manager filled in for
+/// this page's origin - to another server the message names through `url`.
+function applyConnectionFromHost(data) {
+    if (data.url !== undefined) url_elem.value = data.url;
+    user_elem.value = data.user || '';
+    password_elem.value = data.password || '';
+    /// Assigning `.value` fires no listeners, so replay synthetic `input` events exactly as
+    /// `onpopstate` does when a Back/Forward restores a different connection: everything that
+    /// tracks the connection (`checkURL`, `updateDocsURL`, `resetCredentialsStatus`,
+    /// `resetConnectionScopedState`) then runs as it would for a typed edit. Being untrusted,
+    /// they do not arm `connection_edited` - this is not a user edit - so the host-supplied
+    /// tuple, which is complete the moment it arrives, is committed here instead of waiting for
+    /// focus to leave the connection surface.
+    [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
+    commitConnection();
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window) {
+        window.addEventListener('message', (event) => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            applyConnectionFromHost(event.data);
+        });
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
+}
 
 
 function queryToColor(str) {

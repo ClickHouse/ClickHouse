@@ -92,19 +92,19 @@
     // and cross-origin restrictions prevent reading window.parent.location.
     var trustedParentOrigin = null;
 
+    // Origins allowed to hand credentials to this page: its own origin (`play.html` embeds the
+    // terminal) and the ClickHouse Cloud consoles. The list is exact rather than a domain suffix:
+    // every Cloud service endpoint is a `*.clickhouse.cloud` host serving content of its owner's
+    // choosing, and none of them speaks for the console. `event.origin` is normalized by the
+    // browser (lower case, default port omitted), so these can be compared literally.
+    var TRUSTED_PARENT_ORIGINS = [
+        'https://console.clickhouse.cloud',
+        'https://console.clickhouse-staging.com',
+        'https://clickhouse.com',
+    ];
+
     function isTrustedParentOrigin(origin) {
-        if (origin === window.location.origin) return true;
-        try {
-            var u = new URL(origin);
-            if (u.protocol !== 'https:') return false;
-            var h = u.hostname;
-            return h === 'clickhouse.com'
-                || h === 'clickhouse.cloud'
-                || h.endsWith('.clickhouse.com')
-                || h.endsWith('.clickhouse.cloud');
-        } catch (e) {
-            return false;
-        }
+        return origin === window.location.origin || TRUSTED_PARENT_ORIGINS.indexOf(origin) !== -1;
     }
 
     function getWebSocketURL() {
