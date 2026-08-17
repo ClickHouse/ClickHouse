@@ -101,7 +101,8 @@ using DataVersionsByPartition = std::unordered_map<String, std::vector<Int64>>;
 DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts);
 DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts);
 
-/// Returns the data version of some regular part of the partition that lies in [from, to), if there is one.
+/// Returns the data version of some regular part of the partition that lies between from and to, if there is one.
+/// The bounds are unordered because merge order is independent of data-version order.
 /// A merge of patch parts unions their ranges of data versions, and a patch part is applied to a part either
 /// wholly or not at all. Therefore a merge whose result spans the data version of an existing part produces
 /// a patch that can be neither applied nor skipped for that part. See 'patchHasHigherDataVersion'.

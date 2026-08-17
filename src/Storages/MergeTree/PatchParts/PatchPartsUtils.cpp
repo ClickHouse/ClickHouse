@@ -627,9 +627,10 @@ std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data
         return {};
 
     const auto & versions = it->second;
-    auto version_it = std::lower_bound(versions.begin(), versions.end(), from);
+    const auto [lower_bound, upper_bound] = std::minmax(from, to);
+    auto version_it = std::lower_bound(versions.begin(), versions.end(), lower_bound);
 
-    if (version_it == versions.end() || *version_it >= to)
+    if (version_it == versions.end() || *version_it >= upper_bound)
         return {};
 
     return *version_it;
