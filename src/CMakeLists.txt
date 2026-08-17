@@ -134,7 +134,6 @@ add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
-add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Memory)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata)
@@ -703,6 +702,10 @@ if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
 endif ()
 
+if (TARGET ch_contrib::jieba)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
+endif()
+
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
@@ -908,6 +911,8 @@ endif()
 if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
+
+
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)

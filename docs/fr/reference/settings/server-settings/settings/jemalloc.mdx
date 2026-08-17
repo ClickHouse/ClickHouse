@@ -24,6 +24,12 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Nombre maximal de threads d’arrière-plan jemalloc à créer ; définissez 0 pour utiliser la valeur par défaut de jemalloc
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />Nombre d&#39;arènes jemalloc dédiées aux métadonnées MergeTree persistantes, par part et par table. `0` désactive l&#39;arène dédiée (les métadonnées utilisent les arènes par CPU par défaut). `1` utilise une unique arène partagée. `N > 1` crée un pool de `N` arènes et répartit les allocations par CPU ; sur les machines disposant de nombreux cœurs, cela évite de sérialiser l&#39;allocation des métadonnées sur les verrous d&#39;une seule arène. La valeur est plafonnée au nombre de CPU sur lesquels le processus peut s&#39;exécuter (son masque d&#39;affinité) : une valeur élevée (ou le nombre de cœurs) fournit donc une arène par CPU autorisé. Appliqué au démarrage.
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>
