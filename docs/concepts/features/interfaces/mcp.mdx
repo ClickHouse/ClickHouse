@@ -29,11 +29,8 @@ You can find community-maintained collections of [MCP clients](https://github.co
 
 ## ClickHouse MCP server {#clickhouse-mcp-server}
 
-The [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) exposes tools that let an AI assistant interact with ClickHouse:
-
-- `run_query` executes SQL queries against a ClickHouse cluster.
-- `list_databases` lists the available databases.
-- `list_tables` lists the tables in a database.
+The [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) lets an AI assistant discover databases and tables, inspect schemas, and run SQL queries against a ClickHouse cluster.
+The tools exposed by the server may vary by version, so refer to the relevant integration guide for the tool names used in its examples.
 
 The server allows read-only queries by default.
 Use a dedicated ClickHouse user with only the permissions that the assistant needs.
