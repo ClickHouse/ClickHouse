@@ -2,6 +2,7 @@
 
 #include <Common/ColumnsHashing/HashMethod.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
@@ -46,6 +47,12 @@ struct SetMethodOneNumber
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
         SetMethodMapped<Data>, FieldType, set_method_use_cache<Data, use_cache>>;
+
+    /// Writes a key of the set back into the key column (see extractKeyColumns of DistinctSetFilter).
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+    }
 };
 
 /// For the case where there is one string key.
@@ -58,6 +65,11 @@ struct SetMethodString
     Data data;
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
+
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data(), key.size());
+    }
 };
 
 /// For the case when there is one fixed-length string key.
@@ -70,6 +82,11 @@ struct SetMethodFixedString
     Data data;
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
+
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data(), key.size());
+    }
 };
 
 namespace set_impl
@@ -177,6 +194,14 @@ struct SetMethodKeysFixed
 
     using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, SetMethodMapped<Data>,
         has_nullable_keys, false, set_method_use_cache<Data, true>>;
+
+    /// `unpack_order` is the order in which the columns were packed into the key, if it differs from
+    /// the original one (see HashMethodKeysFixed::packedKeysOrder).
+    static void insertKeyIntoColumns(
+        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const std::vector<size_t> * unpack_order)
+    {
+        unpackFixedKeyIntoColumns<has_nullable_keys>(key, unpack_order, key_columns, key_sizes);
+    }
 };
 
 /// For other cases. 128 bit hash from the key.
