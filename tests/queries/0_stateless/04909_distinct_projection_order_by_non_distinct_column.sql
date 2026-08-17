@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the aggregate projection optimization is declined under parallel
+-- reading, so the EXPLAIN projection-selection assertions below would not hold.
+
 -- Every result is asserted as equal to the optimize_use_projections = 0 result, so the assertion is
 -- the value set, not an ordering that SELECT DISTINCT ... ORDER BY <column outside the DISTINCT list>
 -- leaves ambiguous. Each shape that must keep using the projection also asserts its selection, so a
