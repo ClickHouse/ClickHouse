@@ -2021,22 +2021,32 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         /// Preserve exact buckets for integral inputs, but use the normal
                         /// floating path for decimal strings and typed decimal/float columns.
                         ASTPtr step_literal = make_intrusive<ASTLiteral>(Field(to_float(*step)));
-                        ASTPtr decimal_value = numericValueExpr(name);
+                        ASTPtr decimal_value = makeASTFunction("toDecimal256OrNull", makeASTFunction("toString", columnExpr(name)), makeUInt64Literal(38));
+                        ASTPtr decimal_numeric_value = numericValueExpr(name);
                         ASTPtr offset_literal;
                         if (offset_value)
                         {
                             offset_literal = make_intrusive<ASTLiteral>(Field(to_float(*offset_value)));
-                            decimal_value = makeASTFunction("minus", decimal_value, offset_literal);
+                            decimal_numeric_value = makeASTFunction("minus", decimal_numeric_value, offset_literal);
                         }
                         ASTPtr decimal_key = makeASTFunction("multiply",
-                            makeASTFunction("floor", makeASTFunction("divide", decimal_value, step_literal)), step_literal->clone());
+                            makeASTFunction("floor", makeASTFunction("divide", decimal_numeric_value, step_literal)), step_literal->clone());
                         if (offset_literal)
                             decimal_key = makeASTFunction("plus", decimal_key, offset_literal->clone());
                         /// The exact integer and decimal fallbacks have no common numeric
                         /// supertype (`if` would produce Dynamic), which cannot be a GROUP BY
                         /// key. LogsQL field values are textual, so use their canonical textual
                         /// form for the bucket key; this also preserves Int128 precision.
-                        key = makeASTFunction("toString", makeASTFunction("if", makeASTFunction("isNotNull", integer_value), integer_key, decimal_key));
+                        /// `accurateCastOrNull(..., Int128)` truncates fractional Decimal
+                        /// values. Use it only if the source either has no exact decimal
+                        /// representation or is equal to its integer conversion.
+                        ASTPtr integer_as_decimal = makeASTFunction("toDecimal256", makeASTFunction("toString", integer_value->clone()), makeUInt64Literal(38));
+                        ASTPtr is_exact_integer = makeASTFunction("and",
+                            makeASTFunction("isNotNull", integer_value),
+                            makeASTFunction("or",
+                                makeASTFunction("isNull", decimal_value->clone()),
+                                makeASTFunction("equals", decimal_value, integer_as_decimal)));
+                        key = makeASTFunction("toString", makeASTFunction("if", is_exact_integer, integer_key, decimal_key));
                         layer.numeric_bucket_fields.insert(columnName(name));
                     }
                     else

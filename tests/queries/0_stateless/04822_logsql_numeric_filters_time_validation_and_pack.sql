@@ -61,6 +61,7 @@ _time:>=2024-01-01Z _time:>=2024-01-01T06:00:00Z _time:<2024-01-02Z | stats rate
   | unpack_logfmt from packed fields (app, lvl) result_prefix 'u_'
   | fields u_app, u_lvl | sort by (u_app);
 
+SET dialect = 'clickhouse';
 DROP TABLE logs_04822;
 
 -- rate() over civil day buckets uses the real bucket length: the day of a DST
@@ -82,4 +83,5 @@ SET dialect = 'logsql';
 -- the timezone, so rate() over them is rejected.
 * | stats by (_time:week) rate(); -- { error NOT_IMPLEMENTED }
 
+SET dialect = 'clickhouse';
 DROP TABLE logs_dst_04822;

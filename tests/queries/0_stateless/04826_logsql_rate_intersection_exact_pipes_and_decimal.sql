@@ -64,4 +64,5 @@ dec:range[10.5, 10.5] | stats count() as c;
 -- `rename` overwrites an already-existing target column instead of duplicating it.
 * | math num - 9007199254740992 as a, num - 9007199254740991 as b | rename a as b | stats by (b) count() as c | sort by (b);
 
+SET dialect = 'clickhouse';
 DROP TABLE logs_04826;

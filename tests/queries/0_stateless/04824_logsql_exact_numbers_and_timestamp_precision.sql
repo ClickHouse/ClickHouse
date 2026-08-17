@@ -56,4 +56,5 @@ size:>10KiB | fields _msg;
 size:>10 | fields _msg | sort by (_msg);
 size:range(10, 30000) | fields _msg | sort by (_msg);
 
+SET dialect = 'clickhouse';
 DROP TABLE logs_04824;

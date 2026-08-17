@@ -62,10 +62,10 @@ std::optional<Float64> tryParsePlainFloat(const String & text_with_underscores)
 }
 
 /// Parses a float prefix of the string. Returns the value and the rest of the string.
-std::optional<Float64> tryParseFloatPrefix(std::string_view & text)
+std::optional<Float64> tryParseFloatPrefix(std::string_view & text, bool allow_sign)
 {
     size_t size = 0;
-    if (size < text.size() && (text[size] == '-' || text[size] == '+'))
+    if (allow_sign && size < text.size() && (text[size] == '-' || text[size] == '+'))
         ++size;
     size_t digits_begin = size;
     while (size < text.size() && (isDigit(text[size]) || text[size] == '_'))
@@ -139,9 +139,9 @@ std::optional<Float64> tryParseBytes(const String & text)
 
     std::string_view rest = text;
     bool negative = false;
-    if (rest[0] == '-')
+    if (rest[0] == '-' || rest[0] == '+')
     {
-        negative = true;
+        negative = rest[0] == '-';
         rest.remove_prefix(1);
     }
 
@@ -149,7 +149,7 @@ std::optional<Float64> tryParseBytes(const String & text)
     bool has_suffix = false;
     while (!rest.empty())
     {
-        auto value = tryParseFloatPrefix(rest);
+        auto value = tryParseFloatPrefix(rest, /*allow_sign=*/ false);
         if (!value)
             return {};
 
@@ -205,9 +205,9 @@ std::optional<Int64> tryParseDuration(const String & text)
 
     std::string_view rest = text;
     bool negative = false;
-    if (rest[0] == '-')
+    if (rest[0] == '-' || rest[0] == '+')
     {
-        negative = true;
+        negative = rest[0] == '-';
         rest.remove_prefix(1);
     }
     if (rest.empty())
@@ -216,7 +216,7 @@ std::optional<Int64> tryParseDuration(const String & text)
     Float64 total = 0;
     while (!rest.empty())
     {
-        auto value = tryParseFloatPrefix(rest);
+        auto value = tryParseFloatPrefix(rest, /*allow_sign=*/ false);
         if (!value || rest.empty())
             return {};
 

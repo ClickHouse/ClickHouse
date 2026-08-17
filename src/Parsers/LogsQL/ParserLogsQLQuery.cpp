@@ -57,12 +57,31 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         Pos set_pos(set_tokens, pos);
         ASTPtr set_node;
         ParserSetQuery set_parser;
-        if (set_parser.parse(set_pos, set_node, expected)
-            && (set_pos->isEnd() || set_pos->type == TokenType::Semicolon))
+        if (set_parser.parse(set_pos, set_node, expected))
         {
+            const char * set_end = set_pos->begin;
+            if (set_pos->type == TokenType::Semicolon)
+                ++set_end;
+
+            /// The normal SQL lexer has stricter `#` comment rules than LogsQL.
+            /// Consume a LogsQL comment suffix from the raw statement so a standalone
+            /// SET remains a valid recovery query before and after a semicolon.
+            while (set_end < raw_end)
+            {
+                if (isWhitespaceASCII(*set_end))
+                    ++set_end;
+                else if (*set_end == '#')
+                    while (set_end < raw_end && *set_end != '\n')
+                        ++set_end;
+                else
+                    break;
+            }
+
+            if (set_end != raw_end && set_pos->type != TokenType::Semicolon)
+                return false;
+
             node = std::move(set_node);
             /// Advance the original token iterator to the end of the SET statement.
-            const char * set_end = set_pos->begin;
             while (!pos->isEnd() && pos->begin < set_end)
                 ++pos;
             return true;

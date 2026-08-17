@@ -27,6 +27,10 @@ ${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "SET dialect = 'clickhouse'" &
 ${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "# switch back to SQL
 SET dialect = 'clickhouse'" && echo "SET after comment ok"
 
+# LogsQL comments are valid after the SET too, including after its semicolon.
+${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "SET dialect = 'clickhouse' #switch-back" && echo "SET before comment ok"
+${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "SET dialect = 'clickhouse'; #switch-back" && echo "SET before semicolon comment ok"
+
 # An incomplete SET (with trailing LogsQL) is not stolen by the escape: it is parsed
 # as LogsQL and hits the feature gate.
 ${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "set error | count()" |& grep -om1 "allow_experimental_logsql_dialect"
@@ -34,5 +38,9 @@ ${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "set error | count()" |& grep 
 # The client-side parser follows the same rules.
 $CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04831 --dialect logsql -q "set error | count()"
 $CLICKHOUSE_CLIENT --dialect logsql -q "SET dialect = 'clickhouse'" && echo "client standalone SET ok"
+
+# In multiquery mode a comment after the semicolon belongs to the SET statement,
+# rather than becoming the next statement after the dialect has switched to SQL.
+printf "SET dialect = 'clickhouse'; #switch-back\nSELECT 1;\n" | $CLICKHOUSE_CLIENT --multiquery --dialect logsql && echo "client SET comment multiquery ok"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE logs_04831"
