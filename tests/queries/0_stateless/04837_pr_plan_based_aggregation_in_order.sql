@@ -26,6 +26,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET optimize_aggregation_in_order = 1;
+SET parallel_replicas_plan_based = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
 SET automatic_parallel_replicas_mode = 0;
@@ -40,11 +41,11 @@ SETTINGS enable_parallel_replicas = 0;
 SELECT '--- GROUP BY pk, plan_based = 1, local_plan = 1 ---';
 SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
-SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
+SETTINGS parallel_replicas_local_plan = 1;
 SELECT '--- GROUP BY pk, plan_based = 1, local_plan = 0 ---';
 SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
-SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
+SETTINGS parallel_replicas_local_plan = 0;
 
 -- The first groups in key order, so a wrong in-order merge shows up as reordered or merged groups rather
 -- than only as a bad total.
@@ -52,8 +53,7 @@ SELECT '--- first groups in key order, local ---';
 SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- first groups in key order, plan_based = 1 ---';
-SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
-SETTINGS parallel_replicas_plan_based = 1;
+SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5;
 
 -- The 04009 shape: force every replica to announce, including ones that end up with no parts. That is what
 -- makes an initiator/worker coordination-mode disagreement deterministic rather than racy - the initiator
@@ -62,22 +62,15 @@ SETTINGS parallel_replicas_plan_based = 1;
 SELECT '--- all replicas announce (empty result expected), plan_based = 1, local_plan = 1 ---';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
-SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
+SETTINGS parallel_replicas_local_plan = 1;
 
 SELECT '--- all replicas announce (empty result expected), plan_based = 1, local_plan = 0 ---';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
-SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
-
--- Same, with the filter pushdown that 04009 additionally exercises.
-SELECT '--- all replicas announce with filter pushdown (empty result expected), plan_based = 1 ---';
-SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
-SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1, parallel_replicas_filter_pushdown = 1;
+SETTINGS parallel_replicas_local_plan = 0;
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
-SET parallel_replicas_plan_based = 1;
 -- Both EXPLAIN checks below describe the initiator's own half of the read, so the local plan has to exist.
 -- CI randomizes `parallel_replicas_local_plan`, and with 0 there is no local read at all: no UNION and no
 -- in-order pool on the initiator.

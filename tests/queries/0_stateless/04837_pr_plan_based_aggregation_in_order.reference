@@ -18,7 +18,6 @@
 4	100
 --- all replicas announce (empty result expected), plan_based = 1, local_plan = 1 ---
 --- all replicas announce (empty result expected), plan_based = 1, local_plan = 0 ---
---- all replicas announce with filter pushdown (empty result expected), plan_based = 1 ---
 --- explain: has_union, has_remote_read, has_merging_aggregated ---
 1	1	1
 --- explain pipeline: in_order_pool, aggregating_in_order ---

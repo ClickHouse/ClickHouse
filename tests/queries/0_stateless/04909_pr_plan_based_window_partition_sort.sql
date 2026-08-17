@@ -24,6 +24,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan = 1;
+SET parallel_replicas_plan_based = 1;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
 SET automatic_parallel_replicas_mode = 0;
@@ -40,7 +41,7 @@ GROUP BY p ORDER BY p SETTINGS enable_parallel_replicas = 0;
 SELECT '--- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 1 ---';
 SELECT p, count(), sum(rn), max(rn) FROM
     (SELECT p, row_number() OVER (PARTITION BY p ORDER BY a) AS rn FROM t_pr_window)
-GROUP BY p ORDER BY p SETTINGS parallel_replicas_plan_based = 1;
+GROUP BY p ORDER BY p;
 
 -- A running sum depends on the order inside each partition, not only on the set of rows.
 SELECT '--- running sum within a partition, local ---';
@@ -50,9 +51,7 @@ ORDER BY p, a LIMIT 3 BY p LIMIT 12 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- running sum within a partition, plan_based = 1 ---';
 SELECT p, a, s FROM
     (SELECT p, a, sum(v) OVER (PARTITION BY p ORDER BY a) AS s FROM t_pr_window)
-ORDER BY p, a LIMIT 3 BY p LIMIT 12 SETTINGS parallel_replicas_plan_based = 1;
-
-SET parallel_replicas_plan_based = 1;
+ORDER BY p, a LIMIT 3 BY p LIMIT 12;
 
 -- The read is still distributed, but the partitioned sort is kept above the split: no per-replica "partial"
 -- sort and no "merge sorted streams from replicas" on the initiator.
