@@ -1160,3 +1160,135 @@ def test_backup_database(started_cluster):
 
         clickhouse_node.query("DROP DATABASE backup_database")
         mysql_node.query("DROP DATABASE backup_database")
+
+
+def test_mysql_detached_table_reconciliation(started_cluster):
+    """
+    Test that detached tables are reconciled against remote MySQL schema.
+
+    Scenario:
+    1. Create MySQL database in ClickHouse pointing to remote MySQL
+    2. Create a table on remote MySQL
+    3. DETACH the table in ClickHouse (it appears in system.detached_tables)
+    4. DROP the table on remote MySQL
+    5. Trigger schema refresh in ClickHouse (any query that calls fetchTablesIntoLocalCache)
+    6. Verify the table no longer appears in system.detached_tables
+
+    This tests the reconciliation logic added in destroyLocalCacheExtraTables
+    that mirrors DatabasePostgreSQL::removeOutdatedTables behavior.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_reconcile")
+        mysql_node.query("CREATE DATABASE test_reconcile DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE test_reconcile.test_table "
+            "(id INT NOT NULL PRIMARY KEY, value VARCHAR(50)) ENGINE=InnoDB"
+        )
+        mysql_node.query("INSERT INTO test_reconcile.test_table VALUES (1, 'test')")
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_reconcile")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_reconcile ENGINE = MySQL('mysql80:3306', 'test_reconcile', 'root', '{mysql_pass}')"
+        )
+
+        assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_reconcile")
+        count = clickhouse_node.query("SELECT count() FROM test_reconcile.test_table").strip()
+        assert count == "1", f"Expected 1 row, got {count}"
+
+        clickhouse_node.query("DETACH TABLE test_reconcile.test_table")
+
+        detached_count = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert detached_count == "1", f"Expected table in detached_tables, got count {detached_count}"
+
+        is_perm = clickhouse_node.query(
+            "SELECT is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert is_perm == "0", f"Expected is_permanently=0, got {is_perm}"
+
+        mysql_node.query("DROP TABLE test_reconcile.test_table")
+
+        mysql_tables = mysql_node.query("SHOW TABLES FROM test_reconcile")
+        assert "test_table" not in mysql_tables, "Table should be dropped from MySQL"
+
+        clickhouse_node.query("SHOW TABLES FROM test_reconcile")
+
+        try:
+            clickhouse_node.query("SHOW CREATE TABLE test_reconcile.nonexistent")
+        except QueryRuntimeException:
+            pass
+
+        detached_count_after = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_reconcile' AND table = 'test_table'"
+        ).strip()
+        assert detached_count_after == "0", (
+            f"Expected table to disappear from detached_tables after reconciliation, "
+            f"but count is {detached_count_after}"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_reconcile")
+        mysql_node.query("DROP DATABASE test_reconcile")
+
+
+def test_mysql_detached_table_reconciliation_permanent(started_cluster):
+    """
+    Test reconciliation for PERMANENTLY detached tables.
+
+    Same as above but with DETACH PERMANENTLY to verify that:
+    1. The .remove_flag marker file is also cleaned up
+    2. Permanent detach shows is_permanently=1 before reconciliation
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_reconcile_perm")
+        mysql_node.query("CREATE DATABASE test_reconcile_perm DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE test_reconcile_perm.perm_table "
+            "(id INT NOT NULL PRIMARY KEY) ENGINE=InnoDB"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_reconcile_perm")
+        clickhouse_node.query(
+            f"CREATE DATABASE test_reconcile_perm ENGINE = MySQL('mysql80:3306', 'test_reconcile_perm', 'root', '{mysql_pass}')"
+        )
+
+        assert "perm_table" in clickhouse_node.query("SHOW TABLES FROM test_reconcile_perm")
+
+        clickhouse_node.query("DETACH TABLE test_reconcile_perm.perm_table PERMANENTLY")
+
+        is_perm = clickhouse_node.query(
+            "SELECT is_permanently FROM system.detached_tables "
+            "WHERE database = 'test_reconcile_perm' AND table = 'perm_table'"
+        ).strip()
+        assert is_perm == "1", f"Expected is_permanently=1 for PERMANENTLY detached, got {is_perm}"
+
+        mysql_node.query("DROP TABLE test_reconcile_perm.perm_table")
+
+        clickhouse_node.query("SHOW TABLES FROM test_reconcile_perm")
+
+        detached_count = clickhouse_node.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'test_reconcile_perm' AND table = 'perm_table'"
+        ).strip()
+        assert detached_count == "0", (
+            f"Expected permanently detached table to also disappear after remote drop, "
+            f"count={detached_count}"
+        )
+
+        clickhouse_node.query("DROP DATABASE test_reconcile_perm")
+        mysql_node.query("DROP DATABASE test_reconcile_perm")

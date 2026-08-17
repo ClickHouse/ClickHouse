@@ -308,6 +308,27 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
             iterator = local_tables_cache.erase(iterator);
         }
     }
+
+    /// Reconcile remove_or_detach_tables with the live remote schema: a table that was
+    /// DETACH'd/DROP'd locally (and thus tracked here) but has since disappeared from the
+    /// remote MySQL server has nothing left to ATTACH, so it should stop being reported by
+    /// system.detached_tables. Mirrors DatabasePostgreSQL::removeOutdatedTables.
+    auto db_disk = getDisk();
+    for (auto iterator = remove_or_detach_tables.begin(); iterator != remove_or_detach_tables.end();)
+    {
+        if (tables_with_modification_time.contains(*iterator))
+            ++iterator;
+        else
+        {
+            const auto & table_name = *iterator;
+            if (persistent)
+            {
+                fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                db_disk->removeFileIfExists(remove_flag);
+            }
+            iterator = remove_or_detach_tables.erase(iterator);
+        }
+    }
 }
 
 void DatabaseMySQL::fetchLatestTablesStructureIntoCache(

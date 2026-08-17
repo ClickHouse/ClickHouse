@@ -107,7 +107,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    std::unordered_set<String> remove_or_detach_tables;
+    mutable std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 
