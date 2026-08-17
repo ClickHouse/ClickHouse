@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/IFunction.h>
 #include <Functions/Kusto/KQLPlan.h>
 #include <Interpreters/Context.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -38,7 +40,12 @@ class FunctionKQLDateTimeBinAt final : public IFunction
 public:
     static constexpr auto name = "kqlDateTimeBinAt";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionKQLDateTimeBinAt>(); }
+    explicit FunctionKQLDateTimeBinAt(ContextPtr context_)
+        : overflow_behavior(getDateTimeOverflowBehavior(context_))
+    {
+    }
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLDateTimeBinAt>(std::move(context_)); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 3; }
@@ -117,6 +124,8 @@ public:
     }
 
 private:
+    const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
+
     static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
     {
         if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(&type))
@@ -131,7 +140,7 @@ private:
         return Int128(assert_cast<const ColumnUInt32 &>(column).getData()[row]) * 1'000'000'000;
     }
 
-    static void insertNanoseconds(IColumn & column, const IDataType & type, Int128 value)
+    void insertNanoseconds(IColumn & column, const IDataType & type, Int128 value) const
     {
         if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(&type))
         {
@@ -139,7 +148,27 @@ private:
                 value /= 10;
             for (UInt32 scale = 9; scale < datetime64->getScale(); ++scale)
                 value *= 10;
-            assert_cast<ColumnDecimal<DateTime64> &>(column).getData().push_back(DateTime64(Int64(value)));
+            const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(datetime64->getScale());
+            const Int64 min = (MIN_DATETIME64_TIMESTAMP >= std::numeric_limits<Int64>::min() / scale_multiplier)
+                ? MIN_DATETIME64_TIMESTAMP * scale_multiplier
+                : std::numeric_limits<Int64>::min();
+            const Int64 max = (MAX_DATETIME64_TIMESTAMP <= (std::numeric_limits<Int64>::max() - (scale_multiplier - 1)) / scale_multiplier)
+                ? MAX_DATETIME64_TIMESTAMP * scale_multiplier + scale_multiplier - 1
+                : std::numeric_limits<Int64>::max();
+
+            if (value < min || value > max)
+            {
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "The result of {} is out of bounds of type DateTime64({})",
+                        getName(),
+                        datetime64->getScale());
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    value = std::clamp<Int128>(value, min, max);
+            }
+
+            assert_cast<ColumnDecimal<DateTime64> &>(column).getData().push_back(DateTime64(static_cast<Int64>(value)));
             return;
         }
         assert_cast<ColumnUInt32 &>(column).getData().push_back(UInt32(value / 1'000'000'000));
