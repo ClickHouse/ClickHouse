@@ -7,10 +7,11 @@ Run from the docs root (the directory containing ``docs.json``):
 
 The translated trees are generated from the English source and have their own
 validation. Legacy content, snippets, authoring files, and other paths ignored
-by Mintlify are not pages. Quickstart guides are discovered through the
-generated quickstart explorer, while Managed ClickStack onboarding guides are
-linked from the product onboarding flow. The site-wide search page is opened
-through the search interface. None of these pages belongs in sidebar navigation.
+by Mintlify are not pages. Quickstart leaf guides are discovered through the
+generated quickstart explorer, while its landing page remains in sidebar
+navigation. Managed ClickStack onboarding guides are linked from the product
+onboarding flow, and the site-wide search page is opened through the search
+interface. Those linked pages do not belong in sidebar navigation.
 """
 
 from __future__ import annotations
@@ -42,10 +43,9 @@ IGNORED_FILENAMES = {
 }
 PAGE_SUFFIXES = {".md", ".mdx"}
 NAVIGATION_EXEMPT_FILES = {Path("search.mdx")}
-NAVIGATION_EXEMPT_DIRS = (
-    Path("clickstack/managed-onboarding"),
-    Path("get-started/quickstarts"),
-)
+NAVIGATION_EXEMPT_DIRS = (Path("clickstack/managed-onboarding"),)
+QUICKSTARTS_DIR = Path("get-started/quickstarts")
+QUICKSTARTS_HOME = QUICKSTARTS_DIR / "home.mdx"
 
 
 def is_publishable_page(relative_path: Path) -> bool:
@@ -64,6 +64,8 @@ def is_publishable_page(relative_path: Path) -> bool:
         return False
     if relative_path in NAVIGATION_EXEMPT_FILES:
         return False
+    if relative_path.is_relative_to(QUICKSTARTS_DIR):
+        return relative_path == QUICKSTARTS_HOME
     if any(
         relative_path.is_relative_to(directory)
         for directory in NAVIGATION_EXEMPT_DIRS
@@ -178,7 +180,8 @@ def main() -> int:
         print(
             "Add each page to a `pages` or `root` field in docs.json or a "
             "navigation.json file. The site-wide search page, explorer-managed "
-            "quickstarts, and Managed ClickStack onboarding guides are exempt."
+            "quickstart leaf guides, and Managed ClickStack onboarding guides "
+            "are exempt."
         )
         return 1
 
