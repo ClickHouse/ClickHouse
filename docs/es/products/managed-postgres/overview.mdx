@@ -1,19 +1,19 @@
 ---
 slug: /cloud/managed-postgres
-title: 'Managed Postgres'
+title: 'ClickHouse Managed Postgres'
 description: 'Postgres rápido, escalable y de nivel empresarial, con almacenamiento NVMe e integración nativa con ClickHouse para analítica en tiempo real'
 keywords: ['managed postgres', 'postgresql', 'base de datos en la nube', 'servicio de Postgres', 'postgres nvme', 'integración de ClickHouse']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
 ClickHouse Managed Postgres es un servicio gestionado de Postgres de nivel empresarial, diseñado para ofrecer rendimiento y escalar. Basado en almacenamiento NVMe ubicado físicamente junto al cómputo, ofrece hasta 10 veces más rendimiento para cargas de trabajo limitadas por el disco, en comparación con alternativas que usan almacenamiento conectado por red, como EBS.
 
-Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo equipo fundador cuenta con una trayectoria ofreciendo Postgres de primer nivel en Citus Data, Heroku y Microsoft, Managed Postgres resuelve los problemas de rendimiento a los que suelen enfrentarse las aplicaciones de rápido crecimiento: ingestión y actualizaciones más lentas, operaciones de vacuum lentas, mayor latencia de cola y picos de WAL provocados por IOPS de disco limitados.
+Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo equipo fundador cuenta con una trayectoria ofreciendo Postgres de primer nivel en Citus Data, Heroku y Microsoft, ClickHouse Managed Postgres resuelve los problemas de rendimiento a los que suelen enfrentarse las aplicaciones de rápido crecimiento: ingestión y actualizaciones más lentas, operaciones de vacuum lentas, mayor latencia de cola y picos de WAL provocados por IOPS de disco limitados.
 
 {/* TODO: Diagrama de arquitectura de la integración entre Postgres y ClickHouse
     Ruta: /images/cloud/managed-postgres/architecture-overview.png */}
@@ -22,9 +22,9 @@ Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo eq
   ## Rendimiento impulsado por NVMe
 </div>
 
-La mayoría de los servicios de Managed Postgres usan almacenamiento conectado por red, como Amazon EBS, que requiere un recorrido de ida y vuelta por la red para cada acceso al disco. Esto introduce una latencia medida en milisegundos y limita las IOPS, lo que genera cuellos de botella en cargas de trabajo con muchas escrituras o intensivas en E/S.
+La mayoría de los servicios gestionados de Postgres usan almacenamiento conectado por red, como Amazon EBS, que requiere un recorrido de ida y vuelta por la red para cada acceso al disco. Esto introduce una latencia medida en milisegundos y limita las IOPS, lo que genera cuellos de botella en cargas de trabajo con muchas escrituras o intensivas en E/S.
 
-Managed Postgres usa almacenamiento NVMe físicamente conectado al mismo servidor que tu base de datos. Esta diferencia arquitectónica ofrece:
+ClickHouse gestionado de Postgres usa almacenamiento NVMe físicamente conectado al mismo servidor que tu base de datos. Esta diferencia arquitectónica ofrece:
 
 * **Latencia de disco del orden de microsegundos** en lugar de milisegundos
 * **Límites sostenidos de IOPS 10 veces mayores**<sup>*</sup> sin cuellos de botella de red
@@ -42,7 +42,7 @@ Para conocer los límites locales de NVMe en AWS, consulta [Optimizada para memo
   ## Integración nativa con ClickHouse
 </div>
 
-Managed Postgres se integra de forma nativa con ClickHouse para unificar transacciones y analítica sin pipelines de ETL complejos.
+ClickHouse Managed Postgres se integra de forma nativa con ClickHouse para unificar transacciones y analítica sin pipelines de ETL complejos.
 
 <div id="postgres-replication">
   ### Replicación de Postgres a ClickHouse
@@ -54,7 +54,7 @@ Replica tus datos de Postgres a ClickHouse con el [conector Postgres CDC de Clic
   ### pg_clickhouse: capa de consulta unificada
 </div>
 
-Cada instancia de Managed Postgres incluye la extensión [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse), que permite consultar ClickHouse directamente desde Postgres. Su aplicación puede usar Postgres como una capa de consulta unificada tanto para transacciones como para análisis, sin necesidad de conectarse a varias bases de datos.
+Cada instancia de ClickHouse Managed Postgres incluye la extensión [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse), que permite consultar ClickHouse directamente desde Postgres. Su aplicación puede usar Postgres como una capa de consulta unificada tanto para transacciones como para análisis, sin necesidad de conectarse a varias bases de datos.
 
 La extensión proporciona un pushdown de consultas muy completo a ClickHouse para una ejecución eficiente, con compatibilidad con filtros, joins, semi-joins, agregaciones y funciones. Actualmente, 14 de 22 consultas TPC-H se delegan por completo, lo que proporciona mejoras del rendimiento de más de 60 veces en comparación con ejecutar esas mismas consultas en Postgres estándar.
 
@@ -62,7 +62,7 @@ La extensión proporciona un pushdown de consultas muy completo a ClickHouse par
   ## Fiabilidad de nivel empresarial
 </div>
 
-Managed Postgres ofrece las funciones de fiabilidad y seguridad que requieren las cargas de trabajo en producción.
+ClickHouse Managed Postgres ofrece las funciones de fiabilidad y seguridad que requieren las cargas de trabajo en producción.
 
 <div id="high-availability">
   ### Alta disponibilidad
@@ -80,7 +80,7 @@ Cada instancia incluye copias de seguridad automáticas que admiten forks y recu
   ### Seguridad y cumplimiento
 </div>
 
-Managed Postgres está diseñado para cumplir con los mismos estándares de seguridad que ClickHouse Cloud:
+ClickHouse Managed Postgres está diseñado para cumplir con los mismos estándares de seguridad que ClickHouse Cloud:
 
 * **Autenticación**: compatibilidad con SAML/SSO
 * **Seguridad de red**: lista de IP permitidas, cifrado en reposo y en tránsito (TLS 1.3)

@@ -7,12 +7,12 @@ keywords: ['高可用性', 'ha', '待机节点', '复制', '故障转移', 'post
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
 
-Managed Postgres 提供不同级别的高可用性，以满足您的持久性和性能需求。您可以在配置数据库时添加一个或两个待机节点，也可以稍后根据需要在**设置**页面调整此配置。
+ClickHouse Managed Postgres 提供不同级别的高可用性，以满足您的持久性和性能需求。您可以在配置数据库时添加一个或两个待机节点，也可以稍后根据需要在**设置**页面调整此配置。
 
 {/* TODO(kaushik-ubi): 高可用性配置界面的截图
     路径: /images/cloud/managed-postgres/high-availability-config.png */}
@@ -47,7 +47,7 @@ Managed Postgres 提供不同级别的高可用性，以满足您的持久性和
   ## 待机节点与只读副本
 </div>
 
-在 Managed Postgres 中，待机节点和只读副本用途不同，并且需要分别配置。
+在 ClickHouse Managed Postgres 中，待机节点和只读副本用途不同，并且需要分别配置。
 
 **待机节点** 专门用于高可用性和自动故障转移。它们通过流式复制从主节点同步数据，并始终处于就绪状态，以便在主节点发生故障时立即提升为主节点。待机节点不对外提供读查询。
 
@@ -57,7 +57,7 @@ Managed Postgres 提供不同级别的高可用性，以满足您的持久性和
   ### 为什么待机节点不提供读查询
 </div>
 
-虽然有些数据库提供商会开放热待机节点来承担读查询，但 Managed Postgres 有意不这么做。因为允许在待机节点上执行读查询，可能会影响它们最核心的作用：在主节点发生故障时立即接管。
+虽然有些数据库提供商会开放热待机节点来承担读查询，但 ClickHouse Managed Postgres 有意不这么做。因为允许在待机节点上执行读查询，可能会影响它们最核心的作用：在主节点发生故障时立即接管。
 
 主要有两个方面的顾虑：
 
@@ -65,12 +65,12 @@ Managed Postgres 提供不同级别的高可用性，以满足您的持久性和
 
 2. **VACUUM 干扰**：待机节点上的长时间运行读查询，可能会阻止主节点上的 `VACUUM` (以及 `AUTOVACUUM`) 清理死元组。PostgreSQL 无法删除任何副本上仍可能被活动查询访问的行。这会导致表膨胀，并随着时间推移造成性能下降。
 
-通过让待机节点专用于故障转移，Managed Postgres 可确保它们始终保持同步，并能在尽量减少数据丢失和停机时间的情况下完成接管。如需进行读取扩缩容，请改用[只读副本](/zh/products/managed-postgres/read-replicas)。
+通过让待机节点专用于故障转移，ClickHouse Managed Postgres 可确保它们始终保持同步，并能在尽量减少数据丢失和停机时间的情况下完成接管。如需进行读取扩缩容，请改用[只读副本](/zh/products/managed-postgres/read-replicas)。
 
 <div id="handling-failures">
   ## 故障处理
 </div>
 
-无论是否启用高可用性，系统都会持续监控所有 Managed Postgres 实例的故障情况。在所有情况下，系统都会尝试自动从故障中恢复。
+无论是否启用高可用性，系统都会持续监控所有 ClickHouse Managed Postgres 实例的故障情况。在所有情况下，系统都会尝试自动从故障中恢复。
 
 当有待机节点可用时，自动恢复会更快、更直接。系统通常会在几分钟内通过将待机节点提升为主节点来完成恢复。没有待机节点时，恢复可能需要人工干预，从而显著延长停机时间。

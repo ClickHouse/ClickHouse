@@ -1,5 +1,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -16,24 +17,36 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-SerializationNullableWithParentNullMap::SerializationNullableWithParentNullMap(const SerializationPtr & nested_)
+SerializationNullableWithParentNullMap::SerializationNullableWithParentNullMap(
+    const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
     : SerializationWrapper(nested_)
+    , on_disk_type(on_disk_type_)
 {
 }
 
-UInt128 SerializationNullableWithParentNullMap::getHash(const SerializationPtr & nested_)
+UInt128 SerializationNullableWithParentNullMap::getHash(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
 {
     SipHash hash;
     hash.update("NullableWithParentNullMap");
     hash.update(nested_->getHash());
+    /// The on-disk type decides how the deserialization buffer is built, so the two flavours must not share
+    /// a pooled instance.
+    hash.update(on_disk_type_ != nullptr);
+    if (on_disk_type_)
+    {
+        auto on_disk_type_name = on_disk_type_->getName();
+        hash.update(on_disk_type_name.size());
+        hash.update(on_disk_type_name);
+    }
     return hash.get128();
 }
 
-SerializationPtr SerializationNullableWithParentNullMap::create(const SerializationPtr & nested_)
+SerializationPtr SerializationNullableWithParentNullMap::create(const SerializationPtr & nested_, const DataTypePtr & on_disk_type_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationNullableWithParentNullMap(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationNullableWithParentNullMap(nested_); });
+        return std::shared_ptr<ISerialization>(new SerializationNullableWithParentNullMap(nested_, on_disk_type_));
+    return ISerialization::pooled(
+        getHash(nested_, on_disk_type_), [&] { return new SerializationNullableWithParentNullMap(nested_, on_disk_type_); });
 }
 
 void SerializationNullableWithParentNullMap::enumerateStreams(
@@ -88,19 +101,25 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     }
     settings.path.pop_back();
 
-    size_t prev_size = column->size();
+    /// Deserialize into a fresh per-range column instead of the accumulated result: the nested
+    /// serialization publishes this column's substreams into the shared substreams cache, and the null map
+    /// applied below physically removes the parent-NULL rows from them. A column that is published must
+    /// never be mutated afterwards, otherwise a reader of the whole parent column adopts the shortened
+    /// substream from the cache while computing its own offsets from the unfiltered row count.
+    /// For a promoted non-nullable `LowCardinality(T)` the result column is `LowCardinality(Nullable(T))`,
+    /// which is not the on-disk representation: build the buffer from the on-disk type instead, so that the
+    /// published substreams are the ones a reader of the whole parent column expects. The promotion of this
+    /// private buffer happens below, in `applyParentNullMapToExtractedSubcolumn`.
+    ColumnPtr range_column = on_disk_type ? on_disk_type->createColumn(*nested_serialization) : column->cloneEmpty();
 
-    /// The nested column (or some of its substreams) may already be in the substreams cache from
-    /// deserialization of another subcolumn, and a cached column can contain rows from multiple ranges.
-    /// Force copying only the rows of the current range from the cache, so that the number of rows appended
-    /// to `column` is exactly the size of the current range and the null representation modified below is
-    /// owned by `column` rather than shared with a column produced by another subcolumn read.
+    /// A cached column can contain rows from multiple ranges, so copy only the rows of the current range
+    /// from it, keeping `range_column` exactly the size of the current range.
     auto nested_settings = settings;
     nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
     nested_settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, nested_settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(range_column, rows_offset, limit, nested_settings, state, cache);
 
-    size_t new_rows = column->size() - prev_size;
+    size_t new_rows = range_column->size();
     if (new_rows == 0)
         return;
 
@@ -115,8 +134,11 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
+    auto mutable_range_column = IColumn::mutate(std::move(range_column));
+    applyParentNullMapToExtractedSubcolumn(mutable_range_column, parent_null_map_data, /*column_offset=*/ 0, parent_offset);
+
     auto mutable_column = IColumn::mutate(std::move(column));
-    applyParentNullMapToExtractedSubcolumn(mutable_column, parent_null_map_data, prev_size, parent_offset);
+    mutable_column->insertRangeFrom(*mutable_range_column, 0, mutable_range_column->size());
     column = std::move(mutable_column);
 }
 

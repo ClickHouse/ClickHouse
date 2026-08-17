@@ -1,0 +1,42 @@
+-- { echoOn }
+
+-- No DEFAULT: the retained column reads as the type default after the TTL fully expires.
+DROP TABLE IF EXISTS t_ttl_single_no_default;
+CREATE TABLE t_ttl_single_no_default (c0 Int32 TTL now() - INTERVAL 1 DAY)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_ttl_single_no_default VALUES (1), (2), (3);
+OPTIMIZE TABLE t_ttl_single_no_default FINAL;
+SELECT count(), groupArray(c0) FROM t_ttl_single_no_default;
+3	[0,0,0]
+SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ttl_single_no_default' AND active;
+1
+DETACH TABLE t_ttl_single_no_default;
+ATTACH TABLE t_ttl_single_no_default;
+SELECT count() FROM t_ttl_single_no_default;
+3
+DROP TABLE t_ttl_single_no_default;
+-- With DEFAULT: the retained column reads as its DDL default expression.
+DROP TABLE IF EXISTS t_ttl_single_default;
+CREATE TABLE t_ttl_single_default (c0 Int32 DEFAULT 42 TTL now() - INTERVAL 1 DAY)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_ttl_single_default VALUES (1), (2), (3);
+OPTIMIZE TABLE t_ttl_single_default FINAL;
+SELECT count(), groupArray(c0) FROM t_ttl_single_default;
+3	[42,42,42]
+DROP TABLE t_ttl_single_default;
+-- Every column of a multi-column table expires: exactly one column is retained, no exception.
+-- The physical count below is 1, not 2: it distinguishes retaining one column from declining
+-- to remove any.
+DROP TABLE IF EXISTS t_ttl_all_expired;
+CREATE TABLE t_ttl_all_expired (a Int32 TTL now() - INTERVAL 1 DAY, b String TTL now() - INTERVAL 1 DAY)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 1, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_ttl_all_expired VALUES (1, 'x'), (2, 'y');
+OPTIMIZE TABLE t_ttl_all_expired FINAL;
+SELECT count(), groupArray(a), groupArray(b) FROM t_ttl_all_expired;
+2	[0,0]	['','']
+SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ttl_all_expired' AND active;
+1
+DROP TABLE t_ttl_all_expired;

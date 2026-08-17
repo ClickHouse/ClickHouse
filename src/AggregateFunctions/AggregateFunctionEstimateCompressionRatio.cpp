@@ -290,7 +290,7 @@ Estimates the compression ratio of a given column without compressing it.
 
 :::note
 For the examples below, the result will differ based on the default compression codec of the server.
-See [Column Compression Codecs](/sql-reference/statements/create/table#column_compression_codec).
+See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
 :::
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
@@ -299,7 +299,7 @@ See [Column Compression Codecs](/sql-reference/statements/create/table#column_co
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {

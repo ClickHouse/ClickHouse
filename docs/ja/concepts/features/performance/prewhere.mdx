@@ -29,7 +29,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ② クエリを高速化するため、ClickHouse はテーブルのプライマリインデックスをメモリに読み込みます。
 
-③ インデックスエントリを走査し、`town` カラム内のどのグラニュールに条件に一致する行が含まれている可能性があるかを特定します。
+③ 索引エントリを走査し、`town` カラム内のどのグラニュールに述語に一致する行が含まれている可能性があるかを特定します。
 
 ④ こうして候補となったグラニュールが、クエリに必要な他のカラムの対応するグラニュールとあわせてメモリに読み込まれます。
 
@@ -106,7 +106,7 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
   ## PREWHERE 最適化は自動的に適用されます
 </div>
 
-PREWHERE 句は、上の例のように手動で追加できます。ただし、PREWHERE を手動で記述する必要はありません。設定 [`optimize_move_to_prewhere`](/ja/reference/settings/session-settings#optimize_move_to_prewhere) が有効な場合 (デフォルトでは true) 、ClickHouse はフィルタ条件を WHERE から PREWHERE に自動的に移動し、その際、読み取り量を最も削減できるものが優先されます。
+PREWHERE 句は、上の例のように手動で追加できます。ただし、PREWHERE を手動で記述する必要はありません。設定 [`optimize_move_to_prewhere`](/ja/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) が有効な場合 (デフォルトでは true)、ClickHouse はフィルタ条件を WHERE から PREWHERE に自動的に移動し、その際、読み取り量を最も削減できるものが優先されます。
 
 これは、小さいカラムほどスキャンが速く、大きいカラムを処理する段階では、ほとんどのグラニュールがすでに除外されているためです。すべてのカラムは同じ行数を持つため、カラムのサイズは主にデータ型によって決まります。たとえば、`UInt8` カラムは通常 `String` カラムよりかなり小さくなります。
 

@@ -443,7 +443,7 @@ RequestPage:    /filter/27|13 ,27|  5 ,p53
 SeverityText:   INFO
 SeverityNumber:  9
 
-1 linha no conjunto. Elapsed: 0.010 sec.
+1 row in set. Elapsed: 0.010 sec.
 ```
 
 Uma visão materializada equivalente, que se baseia na extração de colunas da coluna `Body` com funções JSON, é mostrada abaixo:
@@ -1555,7 +1555,7 @@ WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
 │           0 │     1   │                    │
 └─────────────┴─────────┴────────────────────┘
 
-1 linha no conjunto. Elapsed: 0.008 sec.
+1 row in set. Elapsed: 0.008 sec.
 ```
 
 Se repetirmos a consulta acima, veremos que o desempenho melhorou significativamente, em troca de armazenamento adicional (veja [&quot;Medindo o tamanho da tabela e a compressão&quot;](#measuring-table-size--compression) para ver como medir isso).
@@ -1994,6 +1994,6 @@ Se você consulta com frequência uma chave específica, considere movê-la para
 
 Um dos principais motivos pelos quais o ClickHouse é usado para observabilidade é a compressão.
 
-Além de reduzir drasticamente os custos de armazenamento, ter menos dados em disco significa menos I/O e consultas e inserções mais rápidas. A redução de I/O compensará com folga a sobrecarga de qualquer algoritmo de compressão em termos de CPU. Portanto, melhorar a compressão dos dados deve ser o primeiro foco ao buscar garantir que as consultas no ClickHouse sejam rápidas.
+Além de reduzir drasticamente os custos de armazenamento, menos dados em disco significam menos E/S e consultas e inserções mais rápidas. A redução de E/S compensará com folga a sobrecarga de qualquer algoritmo de compressão em termos de CPU. Portanto, melhorar a compressão dos dados deve ser o primeiro foco ao trabalhar para garantir que as consultas no ClickHouse sejam rápidas.
 
 Detalhes sobre como medir a compressão podem ser encontrados [aqui](/pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
