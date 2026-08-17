@@ -415,14 +415,19 @@ public:
 
             /// `dictGet` implicitly converts the key columns to the dictionary key types
             /// (`IDictionary::convertKeyColumns`, which uses `castColumnAccurate`), so e.g.
-            /// a `String` key expression is valid for a `UUID` key column. The rewrites
-            /// below compare the key expression with values of the key column type, and the
-            /// generic comparison converts via a common supertype instead. When a supertype
-            /// exists (e.g. a narrow integer column against a wide key type), the comparison
-            /// is already equivalent to the converted lookup and is left untouched, which
-            /// also keeps the key expression usable for index analysis. When there is no
-            /// supertype (e.g. `String` against `UUID`), the comparison alone throws
-            /// NO_COMMON_TYPE - mirror the `dictGet` conversion with `accurateCast` there.
+            /// a `String` key expression is valid for a `UUID` key column, and an `Int16`
+            /// expression over a `UInt8` key column throws on values outside of `UInt8`.
+            /// The rewrites below compare the key expression with values of the key column
+            /// type, and the generic comparison converts via a common supertype instead.
+            /// That is equivalent to the converted lookup only when the key column type is
+            /// itself the supertype (a total widening, e.g. a narrow integer column against
+            /// a wide key type) - keep such expressions untouched, which also keeps them
+            /// usable for index analysis (the same criterion `canReplaceWithDictGetKeys`
+            /// uses for the attribute side). Otherwise mirror the `dictGet` conversion with
+            /// `accurateCast`: it makes `String` keys comparable with e.g. `UUID` columns
+            /// (the comparison alone throws NO_COMMON_TYPE) and preserves the throwing
+            /// behavior on lossy conversions where the comparison would silently return
+            /// false (e.g. `Int16` values outside of a `UInt8` key column).
             /// For a `Nullable` expression that needs such a conversion `dictGet` itself
             /// throws whenever the nested default value does not convert (at NULL rows the
             /// nested column holds default values, and e.g. an empty string does not parse
@@ -430,7 +435,8 @@ public:
             const DataTypePtr & key_col_type = key_cols.front().type;
             const DataTypePtr stripped_key_expr_type = removeLowCardinalityAndNullable(key_expr_node->getResultType());
             const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
-            if (!tryGetLeastSupertype(DataTypes{stripped_key_expr_type, stripped_key_col_type}))
+            const DataTypePtr key_supertype = tryGetLeastSupertype(DataTypes{stripped_key_expr_type, stripped_key_col_type});
+            if (!key_supertype || !key_supertype->equals(*stripped_key_col_type))
             {
                 if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
                     return;

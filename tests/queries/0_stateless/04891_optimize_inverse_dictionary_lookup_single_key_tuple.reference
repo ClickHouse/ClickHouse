@@ -126,6 +126,18 @@ implicit key conversion, numeric widening, equals
 1
 implicit key conversion, numeric widening, equals, opt off
 1
+lossy key conversion, in-range values - plan
+SELECT count() AS `count()`
+FROM default.data_wide AS __table1
+WHERE in(accurateCast(__table1.w, \'UInt8\'), _CAST([4, 1], \'Array(UInt8)\'))
+lossy key conversion, in-range values
+2
+lossy key conversion, in-range values, opt off
+2
+lossy key conversion, wrapped, in-range values
+2
+lossy key conversion, wrapped, in-range values, opt off
+2
 bare key, equals - plan
 SELECT count() AS `count()`
 FROM default.data AS __table1

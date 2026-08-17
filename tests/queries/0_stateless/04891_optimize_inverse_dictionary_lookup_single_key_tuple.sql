@@ -254,6 +254,76 @@ SELECT 'implicit key conversion, numeric widening, equals, opt off';
 SELECT count() FROM data_n WHERE dictGet('dict_simple_key', 'attr', toUInt8(n)) = 'onboarding'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
+-- A lossy conversion (values of the expression type may not fit the key column
+-- type) must keep `dictGet` conversion semantics: `convertKeyColumns` uses an
+-- accurate cast that throws on out-of-range values, while a plain comparison in the
+-- common supertype would silently return false for them.
+DROP DICTIONARY IF EXISTS dict_narrow_key;
+DROP TABLE IF EXISTS ref_narrow;
+DROP TABLE IF EXISTS data_wide;
+DROP TABLE IF EXISTS data_wide_oor;
+
+CREATE TABLE ref_narrow
+(
+    k8 UInt8,
+    attr String
+)
+ENGINE = MergeTree
+ORDER BY k8;
+
+INSERT INTO ref_narrow VALUES (1, 'paywall'), (2, 'onboarding'), (4, 'paywall');
+
+CREATE DICTIONARY dict_narrow_key
+(
+    k8 UInt8,
+    attr String DEFAULT 'none'
+)
+PRIMARY KEY k8
+SOURCE(CLICKHOUSE(TABLE 'ref_narrow'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(0);
+
+CREATE TABLE data_wide
+(
+    w Int16
+)
+ENGINE = MergeTree
+ORDER BY w;
+
+INSERT INTO data_wide VALUES (1), (2), (3), (4);
+
+CREATE TABLE data_wide_oor
+(
+    w Int16
+)
+ENGINE = MergeTree
+ORDER BY w;
+
+INSERT INTO data_wide_oor VALUES (1), (300), (-1);
+
+SELECT 'lossy key conversion, in-range values - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_wide WHERE dictGet('dict_narrow_key', 'attr', w) = 'paywall';
+SELECT 'lossy key conversion, in-range values';
+SELECT count() FROM data_wide WHERE dictGet('dict_narrow_key', 'attr', w) = 'paywall';
+SELECT 'lossy key conversion, in-range values, opt off';
+SELECT count() FROM data_wide WHERE dictGet('dict_narrow_key', 'attr', w) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'lossy key conversion, wrapped, in-range values';
+SELECT count() FROM data_wide WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall';
+SELECT 'lossy key conversion, wrapped, in-range values, opt off';
+SELECT count() FROM data_wide WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- Out-of-range values must throw with the optimization on and off alike.
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
 -- Control: the bare key form must keep working exactly as before.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
