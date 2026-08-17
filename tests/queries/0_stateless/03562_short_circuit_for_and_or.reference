@@ -41,6 +41,7 @@ Test CTE table identifiers are not rebound to catalog tables
 Test live prefix arguments are not skipped
 Test nondeterministic functions fall back to normal analysis
 Test comparison non-placeholder expressions stay eager
+1
 Test view-backed count subqueries fall back to normal analysis
 Test disabled short-circuit evaluation is respected
 Check the read_rows of the above queries to ensure that the short circuit is working
