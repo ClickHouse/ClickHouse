@@ -22,6 +22,7 @@
 #include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessQuery.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
@@ -78,7 +79,9 @@ bool isFormatSchemaSetting(const String & name)
     return name == "format_schema"
         || name == "format_schema_source"
         || name == "format_schema_message_name"
-        || name == "output_format_schema";
+        || name == "output_format_schema"
+        || name == "format_template_resultset"
+        || name == "format_template_row";
 }
 
 void checkNoProtectedSettingChanges(const IAST & ast)
@@ -161,6 +164,8 @@ bool isDeniedScalarFunction(const String & name)
         "aigenerate",
         "aiclassify",
         "aiextract",
+        "aifilter",
+        "airedact",
         "aitranslate",
         "aiembed",
         "aisimilarity",
@@ -180,7 +185,8 @@ bool isDeniedScalarFunction(const String & name)
 /// that the unconfirmed tool cannot reach resources beyond the local server.
 bool isAllowedNamedTable(const ASTTableIdentifier & table)
 {
-    return table.getDatabaseName() == "system";
+    /// `system.zookeeper` reaches Keeper, rather than reading metadata local to the server.
+    return table.getDatabaseName() == "system" && table.getTableName() != "zookeeper";
 }
 
 /// Whether the function is a builtin known to the client. This validation runs on the raw
@@ -209,7 +215,19 @@ bool isKnownBuiltinFunction(const String & name)
 
 void checkNoExternalAccess(const IAST & ast)
 {
-    if (const auto * table_expression = ast.as<ASTTableExpression>())
+    if (const auto * query_with_table = ast.as<ASTQueryWithTableAndOutput>())
+    {
+        /// `EXISTS` and `SHOW CREATE` store their target directly on the query instead of
+        /// in an `ASTTableExpression`, so apply the same named-table boundary here.
+        if (!query_with_table->getTable().empty()
+            && !isAllowedNamedTable(ASTTableIdentifier(query_with_table->getDatabase(), query_with_table->getTable())))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The table `{}.{}` may be a view whose definition reaches resources outside of the tables of the current "
+                "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
+                query_with_table->getDatabase(), query_with_table->getTable());
+    }
+    else if (const auto * table_expression = ast.as<ASTTableExpression>())
     {
         if (table_expression->table_function)
         {
@@ -349,9 +367,6 @@ bool isReadOnlyStatementForAIAgent(const IAST & ast)
         ASTShowCreateViewQuery,
         ASTShowCreateDatabaseQuery,
         ASTShowCreateDictionaryQuery,
-        ASTCheckTableQuery,
-        ASTCheckAllTablesQuery,
-        ASTCheckDatabaseQuery,
         ASTShowAccessQuery,
         ASTShowAccessEntitiesQuery,
         ASTShowCreateAccessEntityQuery,
@@ -364,7 +379,7 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)
     if (!isReadOnlyStatementForAIAgent(ast))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Only read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS, CHECK) can be run "
+            "Only read-only statements (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS) can be run "
             "without confirmation. Use the run_query tool for this query");
 
     if (const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(&ast); with_output && with_output->out_file)

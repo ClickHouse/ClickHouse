@@ -4050,6 +4050,12 @@ bool ClientBase::processAIChat(const String & text_)
         return true;
     }
 
+    /// A known `/`-command runs as the command itself, without involving the agent (and works
+    /// even when no AI provider is configured). Anything else - including an unknown `/...` - is
+    /// a question for the agent.
+    if (isClientSlashCommand(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+        return processQueryText(text);
+
     /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
     /// pin that both visible and internal assistant queries need, so fail before probing a
     /// provider or running an internal query that the server would reject anyway.
@@ -4060,12 +4066,6 @@ bool ClientBase::processAIChat(const String & text_)
                      << std::endl;
         return true;
     }
-
-    /// A known `/`-command runs as the command itself, without involving the agent (and works
-    /// even when no AI provider is configured). Anything else - including an unknown `/...` - is
-    /// a question for the agent.
-    if (isClientSlashCommand(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
-        return processQueryText(text);
 
     try
     {
@@ -4215,7 +4215,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// values it knows about.
         if (!can_change_settings)
         {
-            for (const auto * name : {"format_schema", "format_schema_source", "format_schema_message_name", "output_format_schema"})
+            for (const auto * name : {"format_schema", "format_schema_source", "format_schema_message_name", "output_format_schema", "format_template_resultset", "format_template_row"})
             {
                 if (settings.isChanged(name))
                     throw Exception(
@@ -4284,6 +4284,8 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         client_context->setSetting("format_schema", String{});
         client_context->setSetting("format_schema_message_name", String{});
         client_context->setSetting("output_format_schema", String{});
+        client_context->setSetting("format_template_resultset", String{});
+        client_context->setSetting("format_template_row", String{});
 
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
@@ -4445,7 +4447,7 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
         /// by throwing (the message is meant for the model, and here there is nothing to report).
         try
         {
-            validateReadOnlyQueryForAIAgent(ast);
+            validateReadOnlyQueryForAIAgent(ast, ai_agent ? ai_agent->schemaAccessEnabled() : true);
         }
         catch (const Exception &)
         {
@@ -4548,16 +4550,14 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
     /// runs under the defaults of the connection, like before.
     const bool needs_clickhouse_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
-#if USE_CLIENT_AI
     /// `readonly = 1` rejects every setting change, including the dialect pin used by both the
     /// agent and `help` / `man`. Fail before sending the internal query so users get guidance
     /// instead of a server setting exception.
-    if (needs_clickhouse_dialect && aiSessionReadonly() == 1)
+    if (needs_clickhouse_dialect && client_context->getSettingsRef()[Setting::readonly] == 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
             "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
-#endif
 
     std::optional<Settings> settings_to_send;
     if (needs_clickhouse_dialect)

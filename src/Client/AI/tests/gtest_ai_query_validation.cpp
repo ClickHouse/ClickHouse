@@ -75,12 +75,14 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("SHOW TABLES FROM system"));
     EXPECT_TRUE(isAllowed("SHOW DATABASES"));
     EXPECT_TRUE(isAllowed("SHOW CREATE TABLE system.tables"));
+    EXPECT_FALSE(isAllowed("SHOW CREATE TABLE default.events"));
+    EXPECT_FALSE(isAllowed("EXISTS TABLE default.events"));
     EXPECT_TRUE(isAllowed("SHOW PROCESSLIST"));
     EXPECT_TRUE(isAllowed("DESCRIBE TABLE system.tables"));
     EXPECT_TRUE(isAllowed("EXPLAIN SELECT 1"));
     EXPECT_TRUE(isAllowed("EXPLAIN PIPELINE SELECT number FROM numbers(10)"));
     EXPECT_TRUE(isAllowed("EXISTS TABLE system.tables"));
-    EXPECT_TRUE(isAllowed("CHECK TABLE t"));
+    EXPECT_FALSE(isAllowed("CHECK TABLE t"));
     EXPECT_TRUE(isAllowed("SHOW GRANTS"));
 }
 
@@ -210,6 +212,8 @@ TEST(AIQueryValidation, RejectsAIFunctions)
     EXPECT_FALSE(isAllowed("SELECT aiTranslate('text', 'French')"));
     EXPECT_FALSE(isAllowed("SELECT aiEmbed('text')"));
     EXPECT_FALSE(isAllowed("SELECT aiSimilarity('a', 'b')"));
+    EXPECT_FALSE(isAllowed("SELECT aiFilter('text', 'filter')"));
+    EXPECT_FALSE(isAllowed("SELECT aiRedact('text', 'redact')"));
     EXPECT_FALSE(isAllowed("SELECT * FROM numbers(3) WHERE aiGenerate('x') = ''"));
 }
 
@@ -233,6 +237,8 @@ TEST(AIQueryValidation, RejectsFormatSchemaSettings)
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_message_name = 'Message'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS output_format_schema = 'x.proto'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema = DEFAULT"));
+    EXPECT_FALSE(isAllowed("SELECT 1 FORMAT Template SETTINGS format_template_resultset = 'resultset.tpl'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 FORMAT Template SETTINGS format_template_row = 'row.tpl'"));
 }
 
 TEST(AIQueryValidation, ReadOnlyStatementTypes)

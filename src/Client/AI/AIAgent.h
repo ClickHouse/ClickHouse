@@ -35,6 +35,8 @@ public:
     /// A short status line for the bare `?` command.
     String status() const;
 
+    bool schemaAccessEnabled() const { return config.enable_schema_access; }
+
 private:
     AIConfiguration config;
     std::unique_ptr<IAIAgentTransport> transport;
