@@ -50,6 +50,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -2783,6 +2784,68 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
     }
 }
 
+namespace
+{
+
+/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so the
+/// cached buffer uses it as is, without wrapping) and reports the remote object's metadata,
+/// taken from the current size of the underlying file.
+class FakeRemoteReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) { }
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
+    {
+        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
+    }
+};
+
+/// The query scope required for reading through the cache (a query id and a query context bound to
+/// the current thread).
+struct TestQueryScope
+{
+    explicit TestQueryScope(const std::string & query_id = "query_id")
+    {
+        ServerUUID::setRandomForUnitTests();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        chassert(&DB::CurrentThread::get() == &thread_status);
+        query_scope = DB::QueryScope::create(query_context);
+    }
+
+    DB::ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    DB::QueryScope query_scope;
+};
+
+void writeSourceFile(const std::string & path, const std::string & data)
+{
+    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
+    wb.write(data.data(), data.size());
+    wb.next();
+    wb.finalize();
+}
+
+std::string makeSourceData(size_t size)
+{
+    std::string data(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = 'a' + i % 26;
+    return data;
+}
+
+}
+
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
 /// prefetch in flight: the callers must not race on consuming it.
 TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
@@ -2791,7 +2854,7 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     const std::string data = makeSourceData(300);
     std::string file_path = fs::current_path() / "test_concurrent_read_big_at";
@@ -2823,16 +2886,19 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
     /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
     constexpr size_t buffer_size = 64;
 
+    /// The cached buffer takes its buffer sizes from the read settings.
+    ReadSettings cached_buffer_settings{read_settings};
+    cached_buffer_settings.remote_fs_buffer_size = buffer_size;
+    cached_buffer_settings.local_fs_buffer_size = buffer_size;
+
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
     {
         auto cached_buffer = std::make_unique<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
-            read_settings.filesystem_cache_settings, buffer_size, buffer_size,
-            "test", data.size(), false, false, std::nullopt, nullptr);
+            cached_buffer_settings, "test", data.size(), false, false, std::nullopt, nullptr);
 
         AsynchronousBoundedReadBuffer read_buffer(
-            std::move(cached_buffer), remote_fs_reader, buffer_size,
-            /* min_bytes_for_seek */ 0, Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+            std::move(cached_buffer), remote_fs_reader, read_settings, buffer_size, /* min_bytes_for_seek */ 0);
 
         read_buffer.prefetch(Priority{0});
 
@@ -2891,7 +2957,7 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     const std::string data = makeSourceData(300);
     std::string file_path = fs::current_path() / "test_concurrent_read_big_at_unknown_size";
@@ -2919,13 +2985,17 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
     constexpr size_t num_threads = 4;
     constexpr size_t num_iterations = 100;
 
+    /// The cached buffer takes its buffer sizes from the read settings.
+    ReadSettings cached_buffer_settings{read_settings};
+    cached_buffer_settings.remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    cached_buffer_settings.local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
     {
         /// Zero size is treated as unknown: the first readBigAt calls resolve it lazily.
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
-            read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-            "test", /* file_size */ 0, false, false, std::nullopt, nullptr);
+            cached_buffer_settings, "test", /* file_size */ 0, false, false, std::nullopt, nullptr);
 
         std::atomic<size_t> ready{0};
         std::array<std::string, num_threads> errors;

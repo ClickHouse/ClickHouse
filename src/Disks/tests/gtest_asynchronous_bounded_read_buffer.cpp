@@ -110,14 +110,13 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
     /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
     constexpr size_t buffer_size = 16384;
 
-    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+    const ProfileEvents::Count prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
 
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
     {
         AsynchronousBoundedReadBuffer read_buffer(
-            createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
-            buffer_size, /* min_bytes_for_seek */ 0,
-            Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+            createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader, ReadSettings{},
+            buffer_size, /* min_bytes_for_seek */ 0);
 
         read_buffer.prefetch(Priority{0});
 
@@ -187,13 +186,12 @@ TEST_F(AsynchronousBoundedReadBufferTest, readBigAtFromRetainedPrefetch)
     constexpr size_t buffer_size = 16384;
 
     AsynchronousBoundedReadBuffer read_buffer(
-        createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
-        buffer_size, /* min_bytes_for_seek */ 0,
-        Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+        createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader, ReadSettings{},
+        buffer_size, /* min_bytes_for_seek */ 0);
 
     read_buffer.prefetch(Priority{0});
 
-    const auto prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
+    const ProfileEvents::Count prefetched_reads_before = ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads];
     auto prefetched_reads = [&] { return ProfileEvents::global_counters[ProfileEvents::RemoteFSPrefetchedReads] - prefetched_reads_before; };
 
     auto read_at = [&](size_t offset, size_t count)
