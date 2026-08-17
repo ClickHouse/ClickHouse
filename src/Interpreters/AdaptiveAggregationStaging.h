@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include <base/PackedStringRef.h>
 #include <base/defines.h>
 #include <base/memcmpSmall.h>
 #include <Columns/IColumn_fwd.h>
@@ -134,6 +135,13 @@ struct IStagedChunkSink
     virtual void consume(MutableStagedChunkPtr chunk) = 0;
     virtual ~IStagedChunkSink() = default;
 };
+
+/// String-like keys stage their bytes: a packed reference copied as a plain value would
+/// carry a pointer into the source block, which dies when the build compacts the arguments
+/// and releases it. The staged form of both string kinds is the raw characters, and the
+/// drain rebuilds the table's key from them.
+template <typename Key>
+constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
 
 /// How far past a key's bytes a reader may touch. The overflow-tolerant small copy and
 /// compare primitives access up to 15 bytes past the end, which is only legal for bytes
