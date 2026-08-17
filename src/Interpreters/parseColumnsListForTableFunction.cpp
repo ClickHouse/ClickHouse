@@ -68,7 +68,12 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
             {
-                const String function_name = aggregate_function_type->getFunctionName();
+                auto * base_aggregate_function_type = aggregate_function_type;
+                while(base_aggregate_function_type->getNestedFunction() != nullptr)
+                {
+                    base_aggregate_function_type = base_aggregate_function_type->getNestedFunction()
+                }
+                const String function_name = base_aggregate_function_type->getFunctionName();
                 is_experimental_time_decay_type
                     = function_name == "exponentialTimeDecayedSum"
                     || function_name == "exponentialTimeDecayedAvg"
