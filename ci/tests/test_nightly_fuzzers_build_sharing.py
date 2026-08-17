@@ -1,0 +1,176 @@
+"""
+Regression tests for NightlyFuzzers sharing MasterCI's ARM release build.
+
+NightlyFuzzers needs the release binary to generate the fuzzer dictionary, and
+gets it by reusing the build MasterCI already ran for the same commit. Two
+things have to line up for that, and both were wrong:
+
+  - The job digest covers `command` and the `provides` artifact configs
+    (ci/praktika/digest.py drops only requires/enable_commit_status/
+    allow_failure/force_success/digest_config). MasterCI takes
+    release_build_jobs_with_examples, which appends --build-examples and
+    CLICKHOUSE_EXAMPLES to the ARM release job, so a workflow taking the plain
+    release_build_jobs variant hashes differently and rebuilds from scratch.
+
+  - The long-retention tags are part of those artifact configs, and the upload
+    path is keyed by branch and commit. An untagged upload therefore both misses
+    the cache and replaces MasterCI's long-retention binary with a
+    default-retention one.
+
+So the digest equality asserted here is the whole mechanism: it is what makes
+the workflow's own comment true, and it holds only when the job variant *and*
+the artifact tags agree with MasterCI.
+"""
+
+import dataclasses
+import hashlib
+import json
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+# `ci/defs/defs.py` does `from praktika import ...` rather than
+# `from ci.praktika import ...`, so the `ci/` directory itself must be on the
+# path for `import praktika` to resolve to `ci/praktika`.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from ci.defs.defs import (  # noqa: E402
+    BINARIES_WITH_LONG_RETENTION,
+    ArtifactConfigs,
+    with_long_retention_tags,
+)
+from ci.defs.job_configs import JobConfigs  # noqa: E402
+from ci.workflows.master import workflow as master_workflow  # noqa: E402
+from ci.workflows.nightly_fuzzers import workflow as nightly_workflow  # noqa: E402
+from ci.workflows.release_branches import (  # noqa: E402
+    workflow as release_workflow,
+)
+
+_SHARED_BUILD = "Build (arm_release)"
+
+# ci/praktika/digest.py's drop list, mirrored so a change there surfaces here.
+_DROPPED_FROM_DIGEST = [
+    "requires",
+    "enable_commit_status",
+    "allow_failure",
+    "force_success",
+    "digest_config",
+]
+
+
+def _tags(artifact):
+    # add_tags stores tags in `ext`, not in an attribute.
+    return artifact.ext.get("tags")
+
+
+def _job(workflow, name):
+    for job in workflow.jobs:
+        if job.name == name:
+            return job
+    raise AssertionError(f"{workflow.name} has no job {name!r}")
+
+
+def _config_digest(job, workflow):
+    """The job-config half of the digest, as hook_cache.py feeds it.
+
+    Reproduced rather than imported because calc_job_digest also hashes the
+    include_paths file contents and the docker digests, which are irrelevant
+    here and would make the comparison depend on the working tree.
+    """
+    artifact_configs = {a.name: a for a in workflow.artifacts}
+    job_dict = dataclasses.asdict(job)
+    filtered = {k: v for k, v in job_dict.items() if k not in _DROPPED_FROM_DIGEST}
+    filtered["provides"] = [
+        dataclasses.asdict(artifact_configs[a])
+        for a in job.provides
+        if a in artifact_configs
+    ]
+    return hashlib.md5(json.dumps(filtered, sort_keys=True).encode()).hexdigest()[:4]
+
+
+class TestBuildIsSharedWithMasterCI:
+    def test_digest_matches_master(self):
+        # The workflow comment claims a cache hit; this is that claim.
+        assert _config_digest(
+            _job(nightly_workflow, _SHARED_BUILD), nightly_workflow
+        ) == _config_digest(_job(master_workflow, _SHARED_BUILD), master_workflow)
+
+    def test_plain_release_variant_would_not_match(self):
+        # Mutation arm: the variant NightlyFuzzers used to take. Without this,
+        # the equality above could hold for reasons unrelated to the fix.
+        stale_job = next(
+            j for j in JobConfigs.release_build_jobs if "arm_release" in j.name
+        )
+        stale_workflow = dataclasses.replace(
+            nightly_workflow,
+            artifacts=[
+                *ArtifactConfigs.clickhouse_binaries,
+                *ArtifactConfigs.clickhouse_debians,
+                *ArtifactConfigs.clickhouse_rpms,
+                *ArtifactConfigs.clickhouse_tgzs,
+            ],
+        )
+        assert _config_digest(stale_job, stale_workflow) != _config_digest(
+            _job(master_workflow, _SHARED_BUILD), master_workflow
+        )
+
+    def test_shared_job_takes_the_with_examples_variant(self):
+        job = _job(nightly_workflow, _SHARED_BUILD)
+        assert "--build-examples" in job.command
+        assert "CLICKHOUSE_EXAMPLES" in job.provides
+
+    def test_examples_artifact_is_declared(self):
+        # The job provides it, so the workflow has to declare it or the upload
+        # has nowhere to go.
+        assert "CLICKHOUSE_EXAMPLES" in {a.name for a in nightly_workflow.artifacts}
+
+
+class TestLongRetentionTags:
+    @pytest.mark.parametrize(
+        "workflow",
+        [master_workflow, nightly_workflow, release_workflow],
+        ids=lambda w: w.name,
+    )
+    def test_long_retention_binaries_are_tagged(self, workflow):
+        # Every workflow uploading these has to tag them identically, otherwise
+        # one workflow's upload downgrades another's retention.
+        by_name = {a.name: a for a in workflow.artifacts}
+        untagged = [
+            name
+            for name in BINARIES_WITH_LONG_RETENTION
+            if name in by_name and _tags(by_name[name]) != {"retention": "long"}
+        ]
+        assert untagged == []
+
+    def test_helper_only_tags_the_listed_binaries(self):
+        tagged = {
+            a.name
+            for a in with_long_retention_tags(ArtifactConfigs.clickhouse_binaries)
+            if _tags(a)
+        }
+        assert tagged == set(BINARIES_WITH_LONG_RETENTION)
+
+    def test_helper_matches_the_loop_it_replaced(self):
+        # The two call sites that already had this loop must keep their exact
+        # behaviour; a positive control guards against a vacuous comparison of
+        # two untagged lists.
+        expected = []
+        for artifact in ArtifactConfigs.clickhouse_binaries:
+            if artifact.name in BINARIES_WITH_LONG_RETENTION:
+                artifact = artifact.add_tags({"retention": "long"})
+            expected.append(artifact)
+        actual = with_long_retention_tags(ArtifactConfigs.clickhouse_binaries)
+        assert [dataclasses.asdict(a) for a in actual] == [
+            dataclasses.asdict(a) for a in expected
+        ]
+        assert sum(1 for a in actual if _tags(a)) == len(BINARIES_WITH_LONG_RETENTION)
+
+    def test_helper_does_not_mutate_the_shared_configs(self):
+        # The artifact configs are module-level singletons shared by every
+        # workflow, so tagging has to copy.
+        with_long_retention_tags(ArtifactConfigs.clickhouse_binaries)
+        assert all(
+            _tags(a) is None for a in ArtifactConfigs.clickhouse_binaries
+        ), "tagging leaked into the shared ArtifactConfigs"

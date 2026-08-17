@@ -572,6 +572,23 @@ BINARIES_WITH_LONG_RETENTION = [
 ]
 
 
+def with_long_retention_tags(artifacts):
+    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
+
+    Every workflow uploading these artifacts has to apply the same tags. The
+    upload path is keyed by branch and commit, so an untagged upload replaces an
+    object another workflow tagged for long retention with a default-retention
+    one. The tags also feed the job digest, so workflows that disagree about
+    them cannot share a build cache entry.
+    """
+    return [
+        artifact.add_tags({"retention": "long"})
+        if artifact.name in BINARIES_WITH_LONG_RETENTION
+        else artifact
+        for artifact in artifacts
+    ]
+
+
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
         name="...",
