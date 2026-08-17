@@ -269,10 +269,10 @@ Expression (Project names)
           Aggregating
             Expression ((Before GROUP BY + ))
               JoinLogical (Shuffle HashJoin )
-                Expression (Change column names to column identifiers)
+                Filter ((WHERE + Change column names to column identifiers))
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.orders)
-                Expression ((WHERE + Change column names to column identifiers))
+                Filter ((WHERE + Change column names to column identifiers))
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q13
