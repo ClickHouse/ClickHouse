@@ -1630,7 +1630,7 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        String salt;
+        const AuthenticationData * scram_authentication_method = nullptr;
         const auto& access_control = session.globalContext()->getAccessControl();
         if (auto id = access_control.find<User>(user_name))
         {
@@ -1638,18 +1638,20 @@ public:
             {
                 for (const auto & auth_method : user->authentication_methods)
                 {
-                    /// The user may have several authentication methods: send the salt of the SCRAM
-                    /// one. The salt of any other method (empty for e.g. `ssh_key`, an unrelated
-                    /// random salt for `sha256_password`) would make the client derive a salted
-                    /// password that can never match the stored SCRAM verifier.
                     if (auth_method.getType() == AuthenticationType::SCRAM_SHA256_PASSWORD)
                     {
-                        salt = auth_method.getSalt();
-                        break;
+                        /// SCRAM sends one salt before the client supplies its proof, so the
+                        /// PostgreSQL protocol cannot choose between several SCRAM verifiers.
+                        if (scram_authentication_method)
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "PostgreSQL protocol does not support multiple `scram_sha256_password` authentication methods for one user");
+
+                        scram_authentication_method = &auth_method;
                     }
                 }
             }
         }
+        const String salt = scram_authentication_method ? scram_authentication_method->getSalt() : String{};
         auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
@@ -1704,10 +1706,14 @@ public:
                 }
             }
         }
-        catch (const Exception&)
+        catch (const Exception & e)
         {
-            mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
-                    true);
+            const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
+            mt.send(Messaging::ErrorOrNoticeResponse(
+                Messaging::ErrorOrNoticeResponse::ERROR,
+                unsupported_authentication_configuration ? "0A000" : "28P01",
+                unsupported_authentication_configuration ? "Authentication configuration is not supported by the PostgreSQL protocol" : "Invalid user or password"),
+                true);
 
             throw;
         }
