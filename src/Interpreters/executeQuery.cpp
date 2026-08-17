@@ -2614,10 +2614,21 @@ static BlockIO executeQueryImpl(
                 /// HTTP handler needs to know if run_query_in_background = 1 before calling executeQuery,
                 /// so it can make detached query context (which is copied from global context, not session context).
                 /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1`).
-                if (client_interface == ClientInfo::Interface::HTTP && !run_query_in_background_before_settings_from_query)
+                if (!run_query_in_background_before_settings_from_query)
+                {
+                    if (client_interface == ClientInfo::Interface::HTTP)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "run_query_in_background cannot be enabled in the SETTINGS clause of the query over HTTP. "
+                            "Pass it as an HTTP URL parameter, or set it at the user or profile level");
+
+                    /// ClickHouse Client parses the SETTINGS clause and passes the settings separately from the query for almost all queries except for:
+                    /// CREATE TABLE t (n UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS <storage_setting> = 123, run_query_in_background = 1
+                    /// So this exception should only be thrown for such CREATE (and ATTACH) queries.
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "run_query_in_background cannot be enabled in the SETTINGS clause of the query over HTTP. "
-                        "Pass it as an HTTP URL parameter, or set it at the user or profile level");
+                        "run_query_in_background cannot be enabled in the SETTINGS clause of this particular query, "
+                        "because the client sends this clause to the server unresolved. "
+                        "Pass it as a client setting, or set it at the user or profile level");
+                }
 
                 const auto * insert_query = out_ast->as<ASTInsertQuery>();
                 ASTPtr input_function;

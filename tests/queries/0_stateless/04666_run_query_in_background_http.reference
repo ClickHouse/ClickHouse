@@ -28,3 +28,7 @@ query_id header present
 BAD_ARGUMENTS
 --- a body that streams data beyond the query text is rejected synchronously
 BAD_ARGUMENTS
+--- a profile in the URL enables the setting
+no output
+--- a profile in the URL disables the setting
+2

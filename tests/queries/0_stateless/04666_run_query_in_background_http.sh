@@ -34,4 +34,26 @@ $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d "SELECT 1 SETTINGS run_query_in_back
 echo '--- a body that streams data beyond the query text is rejected synchronously'
 { echo "INSERT INTO t FORMAT TSV"; seq 1 300000; } | $CLICKHOUSE_CURL -sS -H "Expect:" "${CLICKHOUSE_URL}&run_query_in_background=1&async_insert=0" --data-binary @- | grep -o -m1 "BAD_ARGUMENTS"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t"
+background="background_${CLICKHOUSE_DATABASE}"
+foreground="foreground_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "
+    CREATE SETTINGS PROFILE ${background} SETTINGS run_query_in_background = 1;
+    CREATE SETTINGS PROFILE ${foreground} SETTINGS run_query_in_background = 0;
+"
+
+echo '--- a profile in the URL enables the setting'
+background_id="background_${CLICKHOUSE_DATABASE}"
+out=$($CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&profile=${background}&query_id=${background_id}" -d "SELECT 1")
+[[ -z "$out" ]] && echo "no output"
+wait_for_query_log "$(finished_in_query_log "$background_id")"
+
+echo '--- a profile in the URL disables the setting'
+foreground_id="foreground_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&run_query_in_background=1&profile=${foreground}&query_id=${foreground_id}" -d "SELECT 2"
+wait_for_query_log "$(finished_in_query_log "$foreground_id")"
+
+$CLICKHOUSE_CLIENT -q "
+    DROP SETTINGS PROFILE ${background};
+    DROP SETTINGS PROFILE ${foreground};
+    DROP TABLE t;
+"

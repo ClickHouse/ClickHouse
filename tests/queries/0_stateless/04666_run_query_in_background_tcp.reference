@@ -28,6 +28,8 @@ BAD_ARGUMENTS
 --- transactions are rejected synchronously
 Background queries inside transactions are not supported
 Background queries with 'implicit_transaction' are not supported
+--- the SETTINGS clause of a CREATE with a storage definition is rejected synchronously
+run_query_in_background cannot be enabled in the SETTINGS clause of this particular query
 --- a secondary query is rejected synchronously
 run_query_in_background cannot be used for a secondary query
 --- a query processing stage other than Complete is rejected synchronously
