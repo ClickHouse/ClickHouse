@@ -235,7 +235,7 @@ def test_custom_id_algorithm():
 def test_generic_id():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "TAGS INNER COLUMNS (id FixedString(10) DEFAULT toFixedString(substring(murmurHash3_128(metric_name, all_tags), 1, 10), 10))"
+        "TAGS INNER COLUMNS (id FixedString(10) DEFAULT toFixedString(substring(murmurHash3_128(tags), 1, 10), 10))"
     )
     check()
 
