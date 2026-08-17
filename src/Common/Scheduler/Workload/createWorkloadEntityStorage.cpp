@@ -39,7 +39,7 @@ std::unique_ptr<IWorkloadEntityStorage> createWorkloadEntityStorage(const Contex
     }
     else
     {
-        String default_path = pathToGenericString(std::filesystem::path{global_context->getPath()} / "workload" / "");
+        String default_path = pathToGenericString(pathFromString(global_context->getPath()) / "workload" / "");
         String path = config.getString(disk_path_key, default_path);
         return std::make_unique<WorkloadEntityDiskStorage>(global_context, path, std::move(config_storage));
     }
