@@ -151,7 +151,7 @@ private:
                 pulsar_storage.log,
                 0,
                 (*pulsar_storage.pulsar_settings)[PulsarSetting::pulsar_commit_on_select].value,
-                {},
+                std::nullopt,
                 true));
             ++sources_created;
         }
