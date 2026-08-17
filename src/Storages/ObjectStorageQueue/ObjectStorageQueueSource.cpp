@@ -117,7 +117,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
     , active_registry_id(
         track_active_registry_ && metadata->usePersistentProcessingNode()
-            ? metadata->getActiveRegistryID(storage_id_)
+            ? ObjectStorageQueueMetadata::getActiveRegistryID(storage_id_)
             : "")
     , shutdown_called(shutdown_called_)
     , log(logger_)
