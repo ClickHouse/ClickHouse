@@ -11,9 +11,9 @@ is skipped where that dependency is absent, like `test_create_release.py`.
 """
 
 import os
-import subprocess
 import sys
 import unittest
+import unittest.mock
 
 import pytest
 
@@ -171,31 +171,32 @@ class TestPackageDownloaderCoupling(unittest.TestCase):
         from ci.jobs.scripts.create_release import PackageDownloader
 
         release, version = "26.3", "26.3.9.100"
-        # A real commit, because PackageDownloader derives the signed-macOS part
-        # of the contract from the commit's own tree.
-        commit_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        pd = PackageDownloader(release=release, commit_sha=commit_sha, version=version)
-        # Rebuild PackageDownloader's S3-object view: deb/rpm/tgz files by
-        # job, plus the fixed `clickhouse` object under each darwin job.
-        pd_objects = {}  # type: dict[str, set]
-        for package_file, job in pd.file_to_job_name.items():
-            pd_objects.setdefault(job, set()).add(package_file)
-        for job in pd.macos_binary_to_job_name.values():
-            pd_objects.setdefault(job, set()).add(rp.MACOS_S3_OBJECT)
-        for job in pd.macos_signed_to_job_name.values():
-            pd_objects.setdefault(job, set()).add(rp.MACOS_SIGNED_S3_OBJECT)
-        self.assertEqual(
-            pd_objects,
-            rp.expected_s3_objects(
-                version, with_signed_macos=rp.commit_has_macos_signing(commit_sha)
-            ),
-            f"PackageDownloader vs expected_s3_objects drift for {release}",
-        )
+        # Both shapes: a commit that produces the signed zips and one that does
+        # not. `PackageDownloader` derives that from the commit's tree, which no
+        # test can do - `ci/tests/` runs where the workspace is not a usable git
+        # repository - so stub the derivation and drive both cases.
+        for with_signed_macos in (True, False):
+            with unittest.mock.patch.object(
+                rp, "commit_has_macos_signing", return_value=with_signed_macos
+            ):
+                pd = PackageDownloader(
+                    release=release, commit_sha="deadbeef", version=version
+                )
+            # Rebuild PackageDownloader's S3-object view: deb/rpm/tgz files by
+            # job, plus the fixed `clickhouse` object under each darwin job.
+            pd_objects = {}  # type: dict[str, set]
+            for package_file, job in pd.file_to_job_name.items():
+                pd_objects.setdefault(job, set()).add(package_file)
+            for job in pd.macos_binary_to_job_name.values():
+                pd_objects.setdefault(job, set()).add(rp.MACOS_S3_OBJECT)
+            for job in pd.macos_signed_to_job_name.values():
+                pd_objects.setdefault(job, set()).add(rp.MACOS_SIGNED_S3_OBJECT)
+            self.assertEqual(
+                pd_objects,
+                rp.expected_s3_objects(version, with_signed_macos=with_signed_macos),
+                f"PackageDownloader vs expected_s3_objects drift for {release}"
+                f" (with_signed_macos={with_signed_macos})",
+            )
 
 
 if __name__ == "__main__":
