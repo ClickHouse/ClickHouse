@@ -105,7 +105,7 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
     ) ENGINE = Memory;
 
     INSERT INTO test_parquet_time_date (d, d32)
-        SELECT t_late, t_late FROM file('$DATA_FILE', 'Parquet');
+        SELECT t_late AS d, t_late AS d32 FROM file('$DATA_FILE', 'Parquet');
     SELECT * FROM test_parquet_time_date;
 "
 
