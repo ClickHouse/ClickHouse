@@ -394,4 +394,54 @@ PatchInfosByPartition getPatchPartsByPartition(const std::vector<MergeTreePartIn
     return res;
 }
 
+static void sortDataVersions(DataVersionsByPartition & data_versions)
+{
+    for (auto & [_, versions] : data_versions)
+    {
+        std::sort(versions.begin(), versions.end());
+        versions.erase(std::unique(versions.begin(), versions.end()), versions.end());
+    }
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & part : parts)
+    {
+        if (!part->info.isPatch())
+            res[part->info.getPartitionId()].push_back(part->info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts)
+{
+    DataVersionsByPartition res;
+    for (const auto & info : parts)
+    {
+        if (!info.isPatch())
+            res[info.getPartitionId()].push_back(info.getDataVersion());
+    }
+
+    sortDataVersions(res);
+    return res;
+}
+
+std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data_versions, const String & partition_id, Int64 from, Int64 to)
+{
+    auto it = data_versions.find(partition_id);
+    if (it == data_versions.end())
+        return {};
+
+    const auto & versions = it->second;
+    auto version_it = std::lower_bound(versions.begin(), versions.end(), from);
+
+    if (version_it == versions.end() || *version_it >= to)
+        return {};
+
+    return *version_it;
+}
+
 }

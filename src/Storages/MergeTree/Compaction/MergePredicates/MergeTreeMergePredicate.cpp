@@ -26,6 +26,10 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(const StorageMergeTree & storag
     , min_update_block(getMinUpdateBlockNumber(committing_blocks))
 {
     auto patches_vector = getPatchPartInfos(storage);
+
+    if (!patches_vector.empty())
+        data_versions_by_partition = getDataVersionsByPartition(storage.getDataPartsVectorForInternalUsage());
+
     patches_by_partition = getPatchPartsByPartition(patches_vector, min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
 
@@ -53,6 +57,23 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
 
         if (left_mutation_version != right_mutation_version)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
+    }
+
+    if (left.info.isPatch())
+    {
+        /// The check above only sees the mutations that are still known. A mutation that is already
+        /// finished leaves no entry in 'current_mutations_by_version', while the data version it gave
+        /// to the parts stays. Merging patch parts across such a version produces a patch that neither
+        /// wholly applies nor wholly does not apply to those parts, which is a logical error.
+        auto original_partition_id = left.info.getOriginalPartitionId();
+
+        auto spanned_version = findDataVersionInRange(
+            data_versions_by_partition, original_partition_id, left.info.getDataVersion(), right.info.getDataVersion());
+
+        if (spanned_version.has_value())
+            return std::unexpected(PreformattedMessage::create(
+                "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
+                left.name, right.name, *spanned_version, original_partition_id));
     }
 
     {
