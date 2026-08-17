@@ -2,10 +2,15 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <base/defines.h>
+#include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
@@ -21,35 +26,17 @@ namespace DB
 /** A bounded heap tracking the top-K best keys by the query's `ORDER BY`.
   * Supports single-column and composite (`ColumnTuple`) keys; the worst kept
   * key sits at the front of `heap_indices`.  Trimming runs past
-  * `next_trim_size` (~1.5x K).  Boundary ties are never evicted, so a
+  * `next_trim_size` (~1.5x capacity).  Boundary ties are never evicted, so a
   * tie-set can grow the heap; past `tie_overflow_limit` the heap freezes.
   */
 template <typename Key>
 struct TopKAggregationHeap
 {
-    /// The tracked key values, one row per tracked key, in insertion order.
-    /// A plain column, or a `ColumnTuple` when ranking on more than one column.
-    /// Doubles as the initialized flag: `initIfNeeded` early-returns while it
-    /// is set, `freeze` nulls it, `shouldFreeze` treats null as "not running".
-    MutableColumnPtr heap_column;
-
-    /// `heap_column` is a `ColumnTuple`; selects the multi-column compare and
-    /// insert paths.
-    bool is_composite = false;
-
-    /// The heap ranks only a leading prefix of the `GROUP BY` keys.  A heap row
-    /// then does not identify a whole group, so the caller must not erase from
-    /// the hash table: skip-only, no pruning.
-    bool is_prefix_mode = false;
-
-    /// The heap was abandoned at runtime; `freeze` released every buffer and
-    /// aggregation proceeds as if the optimization were disabled.
-    bool frozen = false;
-
-    /// Arena slots of aggregate states destroyed during pruning, handed to the
-    /// next inserted key.  Arena memory is never returned, so recycling is what
-    /// actually bounds memory.
-    std::vector<AggregateDataPtr> free_states;
+    MutableColumnPtr heap_column;           /// the tracked key values, one row per key (`ColumnTuple` for composite); null while not running
+    bool is_composite = false;              /// `heap_column` is a `ColumnTuple`
+    bool is_prefix_mode = false;            /// ranks only a key prefix, which identifies many groups: skip-only, the caller must not erase
+    bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
+    std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
     TopKAggregationHeap() = default;
     TopKAggregationHeap(const TopKAggregationHeap &) = delete;
@@ -127,6 +114,7 @@ struct TopKAggregationHeap
         heap_column = nullptr;
         heap_indices = {};
         hash_table_keys = {};
+        key_arena.reset();
         skip_bitmap = {};
         trim_filter = {};
         trim_old_to_new = {};
@@ -185,7 +173,10 @@ struct TopKAggregationHeap
             new_idx = heap_column->size();
             heap_column->insertFrom(*source_columns[0], source_row);
         }
-        hash_table_keys.push_back(hash_table_key);
+        if constexpr (keys_hold_pointers)
+            hash_table_keys.push_back(persistHashTableKey(hash_table_key, keyArena()));
+        else
+            hash_table_keys.push_back(hash_table_key);
         heap_indices.push_back(new_idx);
 
         std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
@@ -282,6 +273,17 @@ struct TopKAggregationHeap
                 compacted_hash_table_keys.push_back(std::move(hash_table_keys[i]));
         hash_table_keys = std::move(compacted_hash_table_keys);
 
+        if constexpr (keys_hold_pointers)
+        {
+            if (key_arena)
+            {
+                auto compacted_arena = std::make_unique<Arena>();
+                for (auto & key : hash_table_keys)
+                    key = persistHashTableKey(key, *compacted_arena);
+                key_arena = std::move(compacted_arena);
+            }
+        }
+
         for (auto & idx : heap_indices)
             idx = trim_old_to_new[idx];
 
@@ -296,108 +298,88 @@ struct TopKAggregationHeap
     const Key & hashTableKeyAt(size_t heap_row) const { return hash_table_keys[heap_row]; }
 
 private:
-    /// ---- The heap proper.
+    /// The heap proper.
+    std::vector<size_t> heap_indices;       /// binary max-heap of row indices into `heap_column`; `front` is the worst kept key, i.e. the skip boundary
+    std::vector<Key> hash_table_keys;       /// per `heap_column` row: the hash-table key captured at admission, for `erase` on eviction
+    std::unique_ptr<Arena> key_arena;       /// owned bytes of pointer-bearing keys (`emplaceKey` may return a pointer into the source block); rebuilt from survivors at every trim
+    size_t k = 0;                           /// the query's `LIMIT K`; trims shrink the heap back to it
 
-    /// The actual binary max-heap.  Elements are row indices into
-    /// `heap_column`, ordered so `front` is the worst kept key, i.e. the skip
-    /// boundary.  Its size is the number of tracked keys.
-    std::vector<size_t> heap_indices;
+    /// Ranking configuration.
+    std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
+    std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
 
-    /// Parallel to `heap_column` rows (not heap positions): the hash-table key
-    /// for each tracked row, captured when the row is admitted, so eviction can
-    /// call `data.erase(key)` directly.  The stored key must stay valid until
-    /// the row is evicted or the heap is frozen.
-    std::vector<Key> hash_table_keys;
-
-    /// The query's `LIMIT K`.  Trims bring the heap back down to this.
-    size_t k = 0;
-
-    /// ---- Ranking configuration (fixed at init).
-
-    /// Per ranked column: +1/-1 for ASC/DESC, multiplied into every comparison
-    /// result, and the NULLs/NaNs placement passed to `compareAt`/`CompareHelper`.
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
-
-    /// Typed fast paths resolved once from the column's `TypeIndex` for a
-    /// single numeric key, bypassing virtual `compareAt`.  Null for composite
-    /// or non-numeric keys, which fall back to the virtual path.
+    /// Typed fast paths for a single numeric key, resolved once from the column's `TypeIndex`; null means the virtual `compareAt` path.
     using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
-    ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
-
     using NumericCmpFn = bool (*)(const TopKAggregationHeap &, size_t, size_t);
-    NumericCmpFn numeric_cmp_fn = nullptr;
-
     using FillSkipBitmapFn = void (*)(const TopKAggregationHeap &, const void *, size_t, size_t, UInt8 *);
+    NumericCmpFn numeric_cmp_fn = nullptr;
+    ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
     FillSkipBitmapFn fill_skip_bitmap_fn = nullptr;
 
-    /// Positions of `ColumnLowCardinality` columns in the heap, so
-    /// `compactDictionaries` can shrink their dictionaries after a trim;
-    /// otherwise the dictionary retains every evicted value forever.
-    std::vector<size_t> low_cardinality_columns;
+    std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
 
-    /// ---- Growth and trim control.
+    /// Growth and trim control.
+    static constexpr size_t max_preallocated_rows = 1ULL << 20;    /// caps the initial reserve for a huge `LIMIT` and sets the tie allowance
+    Float64 trim_load_factor = 1.5;         /// how far past `k` the heap may grow before a trim
+    size_t trim_slack = 0;                  /// `k * (trim_load_factor - 1)`, at least 1; amortizes the O(heap) compaction
+    size_t next_trim_size = 0;              /// the `needsTrim` threshold; raised when a tie plateau blocks trimming
+    size_t tie_overflow_limit = 0;          /// `k + max_preallocated_rows`; growing past it from an untrimmable tie-set sets `tie_overflow`
+    bool tie_overflow = false;              /// sticky; makes `shouldFreeze` true regardless of the profitability window
+    size_t tie_scan_size = 0;               /// heap size at the last failed O(heap) plateau scan; suppresses rescans until the heap ~doubles
 
-    /// Caps the initial reserve so a huge `LIMIT` cannot preallocate absurdly
-    /// (came out of a fuzzer "Too large value passed to allocator"), and sets
-    /// the tie allowance.
-    static constexpr size_t max_preallocated_rows = 1ULL << 20;
-
-    /// How far past `k` the heap may grow before a trim.
-    Float64 trim_load_factor = 1.5;
-
-    /// `k * (trim_load_factor - 1)`, at least 1.  The allowance between trims,
-    /// which amortizes the O(heap) compaction over ~`trim_slack` evictions.
-    size_t trim_slack = 0;
-
-    /// The `needsTrim` threshold: `k + trim_slack` initially, raised when a
-    /// tie plateau blocks trimming so the failed trim is not retried on every
-    /// subsequent insert.
-    size_t next_trim_size = 0;
-
-    /// `k + max_preallocated_rows`; growing past it from an untrimmable
-    /// tie-set sets `tie_overflow`.
-    size_t tie_overflow_limit = 0;
-
-    /// Sticky flag; makes `shouldFreeze` true regardless of the profitability
-    /// window.
-    bool tie_overflow = false;
-
-    /// The heap size at the last failed plateau scan.  That scan is O(heap
-    /// size), so this memo suppresses repeating it until the heap has roughly
-    /// doubled.  Reset to 0 whenever an ordinary eviction succeeds.
-    size_t tie_scan_size = 0;
-
-    /// ---- Profitability accounting.
-
-    /// Fed by `recordRows` once per batch; their ratio drives the freeze
-    /// decision (see `shouldFreeze`).
-    UInt64 observed_rows = 0;
+    /// Profitability accounting.
+    UInt64 observed_rows = 0;               /// fed by `recordRows`; the skip ratio drives the freeze decision
     UInt64 skipped_rows = 0;
+    UInt64 evicted_keys = 0;                /// with `skipped_rows` defines `everRejected`, which suppresses hash-table size statistics
+    UInt64 profitability_window = 0;        /// rows to observe before the freeze check; 0 disables it
 
-    /// Total evictions.  Together with `skipped_rows` it defines
-    /// `everRejected`, which the `Aggregator` uses to suppress hash-table size
-    /// statistics — a pruned table's size reflects the `LIMIT`, not the query's
-    /// cardinality, and recording it would gate the optimization off next time.
-    UInt64 evicted_keys = 0;
+    /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
+    std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
+    IColumn::Filter trim_filter;            /// which `heap_column` rows survive a trim
+    std::vector<size_t> trim_old_to_new;    /// old row index -> compacted row index, to remap `heap_indices`
 
-    /// Rows to observe before the freeze check:
-    /// `max(observation_rows, 2 * next_trim_size)` so the heap always gets a
-    /// chance to fill first; 0 disables the freeze.
-    UInt64 profitability_window = 0;
+    static constexpr bool keys_hold_pointers
+        = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
 
-    /// ---- Scratch buffers, members only to avoid per-batch/per-trim allocation.
+    Arena & keyArena()
+    {
+        if (!key_arena)
+            key_arena = std::make_unique<Arena>();
+        return *key_arena;
+    }
 
-    /// The precomputed per-row skip decisions for the typed batch path.
-    std::vector<UInt8> skip_bitmap;
+    /// The 8-byte padding on both sides keeps the hash table's word-sized reads in bounds.
+    static const char * copyKeyBytes(std::string_view bytes, Arena & arena)
+    {
+        char * buf = arena.alloc(bytes.size() + 16);
+        memcpy(buf + 8, bytes.data(), bytes.size());
+        return buf + 8;
+    }
 
-    /// Which `heap_column` rows survive a trim, fed to the in-place
-    /// `IColumn::filter`.
-    IColumn::Filter trim_filter;
-
-    /// Old row index -> compacted row index, used to remap `heap_indices` (and,
-    /// in the same pass, to rebuild `hash_table_keys`) after the filter.
-    std::vector<size_t> trim_old_to_new;
+    static Key persistHashTableKey(const Key & key, Arena & arena)
+    {
+        if constexpr (std::is_same_v<Key, std::string_view>)
+        {
+            if (key.empty())
+                return {};
+            return {copyKeyBytes(key, arena), key.size()};
+        }
+        else if constexpr (std::is_same_v<Key, PackedStringRef>)
+        {
+            /// Small (and empty) keys are self-contained, nothing to copy.
+            if (key.heapSize() == 0)
+                return key;
+            auto persistent_key = key;
+            const char * copy = copyKeyBytes(static_cast<std::string_view>(key), arena);
+            if (persistent_key.isMedium())
+                persistent_key.setMediumPointer(copy);
+            else
+                persistent_key.setLargePointer(copy);
+            return persistent_key;
+        }
+        else
+            return key;
+    }
 
     void compactDictionaries()
     {
@@ -472,6 +454,7 @@ private:
         heap_indices.reserve(reserve_hint);
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
+        key_arena.reset();
         findLowCardinalityColumns();
         initNumericSkipFn();
     }
@@ -506,6 +489,7 @@ private:
         heap_indices.reserve(reserve_hint);
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
+        key_arena.reset();
         findLowCardinalityColumns();
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
