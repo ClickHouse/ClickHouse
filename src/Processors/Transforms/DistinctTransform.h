@@ -96,12 +96,16 @@ public:
     /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
     /// the output is then no longer fully deduplicated, so it must only be enabled when the consumer
     /// deduplicates the output anyway.
+    /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them, mirroring a
+    /// set fill with `transform_null_in = 0`, which skips such rows; it must only be enabled when the
+    /// consumer drops them anyway.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        bool allow_abandoning_ = false);
+        bool allow_abandoning_ = false,
+        bool skip_null_keys_ = false);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -139,6 +143,8 @@ private:
     LCOptimizationController lc_optimization_controller;
 
     std::optional<DeduplicationAbandonController> abandon_controller;
+
+    bool skip_null_keys = false;
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>

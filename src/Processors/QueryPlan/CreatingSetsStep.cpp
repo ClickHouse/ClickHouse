@@ -10,6 +10,7 @@
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -62,6 +63,12 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// stream count here.
     if (preliminary_distinct && pipeline.getNumStreams() > 1)
     {
+        /// With `transform_null_in = 0` the set fill skips rows with a NULL in any key component, so
+        /// the preliminary deduplication drops them too instead of hashing and counting them.
+        const auto & input_header = *getInputHeaders().front();
+        const bool skip_null_keys = !set_and_key->set->transformNullIn()
+            && std::any_of(input_header.begin(), input_header.end(), [](const auto & col) { return col.type->isNullable(); });
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
@@ -70,7 +77,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
                 /// mostly-unique input the transform may abandon and pass rows through.
-                return std::make_shared<DistinctTransform>(header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true);
+                return std::make_shared<DistinctTransform>(
+                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys);
             });
     }
 

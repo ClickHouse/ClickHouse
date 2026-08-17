@@ -1,6 +1,8 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/NullableUtils.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -55,10 +57,12 @@ DistinctTransform::DistinctTransform(
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
     const Names & columns_,
-    bool allow_abandoning_)
+    bool allow_abandoning_,
+    bool skip_null_keys_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
+    , skip_null_keys(skip_null_keys_)
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
@@ -211,7 +215,7 @@ void DistinctTransform::transform(Chunk & chunk)
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
 
-    const auto num_rows = chunk.getNumRows();
+    auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     /// Special case, - only const columns, return single row
@@ -229,6 +233,39 @@ void DistinctTransform::transform(Chunk & chunk)
     column_ptrs.reserve(key_columns_pos.size());
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
+
+    /// The consumer skips rows with a NULL in any key component (a set fill with
+    /// `transform_null_in = 0`), so such rows carry no value downstream: drop them before
+    /// deduplication and before the abandon accounting. Keys are hashed by their nested columns,
+    /// the same way the set fill hashes them.
+    ColumnPtr null_map_holder;
+    if (skip_null_keys)
+    {
+        ConstNullMapPtr null_map = nullptr;
+        null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+        if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
+        {
+            IColumn::Filter keep(num_rows);
+            for (size_t i = 0; i < num_rows; ++i)
+                keep[i] = !(*null_map)[i];
+            const auto num_kept = countBytesInFilter(keep);
+
+            for (auto & column : columns)
+                column = column->filter(keep, num_kept);
+            num_rows = num_kept;
+
+            if (num_rows == 0)
+            {
+                chunk.setColumns(std::move(columns), 0);
+                return;
+            }
+
+            column_ptrs.clear();
+            for (auto pos : key_columns_pos)
+                column_ptrs.emplace_back(columns[pos].get());
+            null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+        }
+    }
 
     std::optional<IColumn::Filter> lc_mask;
 
