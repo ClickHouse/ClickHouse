@@ -56,7 +56,20 @@ expect -re {\x1b\[2J}
 send -- "\3\4"
 expect eof
 
-# ─── 3. With the hints disabled, Tab completes the command ───────────────────
+# ─── 3. Tab does not complete a command around text after the cursor ─────────
+# The callback receives only the prefix through the cursor. Completing `/cl|ear`
+# would otherwise insert `/clear` before the untouched suffix, producing
+# `/clearear`. The line remains `/clear`, so Enter executes it and clears the
+# terminal.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "/clear\033\[D\033\[D\t\r"
+expect -re {\x1b\[2J}
+send -- "\3\4"
+expect eof
+
+# ─── 4. With the hints disabled, Tab completes the command ───────────────────
 # The options of the harness (`--highlight 0`, `--disable_suggestion`) leave the instant hints off.
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
@@ -64,7 +77,7 @@ expect ":) "
 send -- "/hel\t\r"
 expect "Usage: help <name>"
 
-# ─── 4. A mistake in the name of a command names the similar commands ────────
+# ─── 5. A mistake in the name of a command names the similar commands ────────
 send -- "/hepl\r"
 expect -ex {Unknown command `/hepl`}
 expect -ex {Maybe you meant: ['/help']}
@@ -87,7 +100,7 @@ expect "6759"
 send -- "\3\4"
 expect eof
 
-# ─── 5. Nothing is offered where a `/` is not a command ──────────────────────
+# ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
 spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
@@ -113,7 +126,7 @@ set timeout 60
 send -- "\3\4"
 expect eof
 
-# ─── 6. `clickhouse-local` reports the mistake as well ───────────────────────
+# ─── 7. `clickhouse-local` reports the mistake as well ───────────────────────
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL -q '/hepl'"
 expect -ex {Unknown command `/hepl`}
 expect eof

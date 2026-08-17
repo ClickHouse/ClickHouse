@@ -397,7 +397,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// only way to complete them when the as-you-type hints are disabled. The whole typed prefix
         /// is replaced, including the leading `/` - replxx counts it as a word break character and
         /// would otherwise complete only the part after it.
-        if (enable_slash_commands)
+        if (enable_slash_commands && isCursorAtEndOfInput())
         {
             if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
             {
@@ -477,7 +477,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             /// The `/`-commands of the client are hinted at the beginning of the input, as soon as
             /// the `/` is typed. The hints replace the whole typed prefix including the `/`, so
             /// `context_size` is widened to it (see the completion callback).
-            if (enable_slash_commands)
+            if (enable_slash_commands && isCursorAtEndOfInput())
             {
                 if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
                 {
