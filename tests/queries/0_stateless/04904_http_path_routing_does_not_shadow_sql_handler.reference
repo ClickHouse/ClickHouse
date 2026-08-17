@@ -1,0 +1,8 @@
+=== GET reaches the SQL-defined handler, not the path-as-file router ===
+from the handler
+=== so does HEAD (it reuses the handler declared for GET) ===
+200
+=== the OPTIONS preflight is answered for the handler's own path ===
+204
+=== a path the handler does not match is still routed to the query handler ===
+(UNKNOWN_DATABASE)
