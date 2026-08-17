@@ -55,10 +55,8 @@ struct MergeTreeMutationStatus
 
     /// The on-disk bytes of `parts_to_do_names`. Derived on read, like `parts_to_do`.
     UInt64 bytes_to_do = 0;
-    /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the parts
-    /// the mutation must rewrite, including the live fraction of those being rewritten right now.
-    /// Unset when the remaining work is not known yet: no `parts_to_do_names` while `!is_done`, or a
-    /// name in there with no part on disk to size, such as one this replica has still to fetch.
+    /// Estimated finished fraction, from 0 to 1, byte-weighted against the parts to rewrite.
+    /// Unset while the remaining work is not known yet: see StorageReplicatedMergeTree.
     std::optional<Float64> progress = {};
 /// NOLINTEND(readability-redundant-string-init)
 };
@@ -71,9 +69,8 @@ using PartBlockBytes = std::vector<std::pair<Int64, UInt64>>;
 /// `getBytesBeforeBlock` can binary-search the result.
 void accumulatePartBlockBytes(PartBlockBytes & parts);
 
-/// On-disk bytes of the parts that predate `block_number`, i.e. the ones a mutation with that block
-/// number is responsible for rewriting, whether or not it has done so yet. Parts inserted after the
-/// mutation have a higher `min_block` and were never in its scope, so they must not weigh on it.
+/// On-disk bytes of the parts that predate `block_number`, i.e. the ones that mutation must rewrite,
+/// done or not. Parts inserted later have a higher `min_block` and were never in its scope.
 UInt64 getBytesBeforeBlock(const PartBlockBytes & parts, Int64 block_number);
 
 /// Check mutation status and throw exception in case of error during mutation
