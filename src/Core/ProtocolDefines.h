@@ -78,10 +78,16 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
-/// Version 6 adds the `array_join_use_nulls` flag (bit 4) on a serialized `ArrayJoinStep`. An older
-/// replica would ignore the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s, so the
-/// serializer fails closed when this flag is set below version 6.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+/// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
+/// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
+/// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
+/// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
+/// reject an unknown step name as with version 4.
+/// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
+/// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
+/// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -97,6 +103,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// First query-plan serialization version that carries the `array_join_use_nulls` flag (bit 4) on a
 /// serialized `ArrayJoinStep`. Used to fail closed against peers that are too old to honor it.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 6;
+/// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
+/// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
+/// `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
@@ -201,6 +211,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 
 /// Push the initiator's current roles to other nodes for consistent role-scoped access.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490;
+
+/// Serialize the skip degree of a `quantileDeterministic` state, so that merging states thinned out
+/// to different degrees does not depend on how the rows were distributed between them.
+static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE = 54491;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -209,5 +225,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES =
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54489;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54491;
 }
