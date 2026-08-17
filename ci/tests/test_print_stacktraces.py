@@ -24,9 +24,7 @@ Post-fix: the helpers run to completion against a live server.
 
 import argparse
 import io
-import os
 import runpy
-from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -66,10 +64,6 @@ def _make_args():
         replicated_database=False,
         shared_catalog=False,
         force_color=False,
-        binary=os.environ.get("CLICKHOUSE_BINARY", "clickhouse"),
-        # A reachable server means __main__ collected build flags at startup;
-        # a non-ASan set keeps print_c_stacktraces on its lldb path.
-        build_flags=set(),
     )
 
 
@@ -102,75 +96,3 @@ def test_print_sql_stacktraces_against_live_server():
     # output confirms the round-trip succeeded.
     assert "Collecting stacktraces from system.stack_trace table" in output, output
     assert "trace_str" in output or "thread_name" in output, output
-
-
-def test_get_stacktraces_tolerates_repeated_client_options():
-    # A setting passed via `--client-option` is also copied into
-    # `CLICKHOUSE_CLIENT_OPT` at startup, so `get_additional_client_options`
-    # returns it twice.  `add_effective_settings` adds
-    # `--allow_repeated_settings` while a test runs and
-    # `remove_settings_from_env` drops it again, so the collector must supply
-    # the flag itself or `clickhouse-client` exits 36 with
-    # `cannot be specified more than once`.
-    ct = _load_clickhouse_test()
-    args = _make_args()
-    args.client_option = [
-        "max_untracked_memory=1Gi",
-        "max_memory_usage_for_user=0",
-        "memory_profiler_step=1Gi",
-        "ast_fuzzer_runs=0",
-    ]
-
-    saved = os.environ.get("CLICKHOUSE_CLIENT_OPT")
-    try:
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = " ".join(
-            "--" + option for option in args.client_option
-        )
-
-        # Premise: without this the test would pass trivially if the duplication
-        # ever stopped happening, and would no longer cover the fix.
-        options = ct["get_additional_client_options"](args).split()
-        names = [o.split("=")[0] for o in options if o.startswith("--")]
-        repeated = sorted(n for n, count in Counter(names).items() if count > 1)
-        assert repeated == [
-            "--ast_fuzzer_runs",
-            "--max_memory_usage_for_user",
-            "--max_untracked_memory",
-            "--memory_profiler_step",
-        ], repeated
-        assert "--allow_repeated_settings" not in options, options
-
-        dump = ct["get_stacktraces_from_clickhouse"](args)
-    finally:
-        if saved is None:
-            os.environ.pop("CLICKHOUSE_CLIENT_OPT", None)
-        else:
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = saved
-
-    assert dump, "no stacktraces collected: the client rejected the command line"
-    assert "thread_name" in dump, dump[:2000]
-
-
-def test_is_asan_build_uses_collected_flags():
-    # Normal path: build flags were collected while the server was reachable,
-    # so membership in the set decides — no binary query needed.
-    ct = _load_clickhouse_test()
-    args = _make_args()
-
-    args.build_flags = {ct["BuildFlags"].ADDRESS}
-    assert ct["is_asan_build"](args) is True
-
-    args.build_flags = set()
-    assert ct["is_asan_build"](args) is False
-
-
-def test_is_asan_build_falls_back_to_binary_when_flags_missing():
-    # Startup-failure path: flags were never collected (server never served a
-    # query), so the ASan bit is read from the binary itself rather than from
-    # ASAN_OPTIONS. The CI tests job runs a master release build, not an ASan
-    # build, so this must resolve to False without raising.
-    ct = _load_clickhouse_test()
-    args = _make_args()
-    delattr(args, "build_flags")
-
-    assert ct["is_asan_build"](args) is False

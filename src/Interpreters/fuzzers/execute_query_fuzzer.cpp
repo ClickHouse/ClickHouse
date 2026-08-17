@@ -7,7 +7,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
@@ -35,8 +34,6 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
-extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
@@ -50,7 +47,7 @@ const char * config_xml = "<clickhouse></clickhouse>";
 ContextMutablePtr context;
 
 // Helper function to check if this is a merge run
-static bool isMerge(int argc, char ** argv)
+bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -64,7 +61,7 @@ static bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-static std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
+std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
 {
     std::map<std::string, std::string> settings;
     bool ignore_remaining = false;

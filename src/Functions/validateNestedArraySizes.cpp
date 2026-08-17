@@ -20,7 +20,7 @@ namespace ErrorCodes
  *     The first argument is the condition of WHERE in UPDATE operation, only when this is true, we need to check
  *     The rest arguments are the subcolumns of Nested DataType.
  */
-class FunctionValidateNestedArraySizes final : public IFunction
+class FunctionValidateNestedArraySizes : public IFunction
 {
 public:
     static constexpr auto name = "validateNestedArraySizes";

@@ -319,7 +319,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                table_name,
                 /* replace_query_ */ false,
                 /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
@@ -346,7 +346,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLStreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 
@@ -591,7 +591,6 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
-void registerDatabaseMySQL(DatabaseFactory & factory);
 void registerDatabaseMySQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -612,16 +611,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
         else
         {
-            /// The TLS credentials are trailing `key = value` arguments; the copy keeps them in the
-            /// stored `CREATE DATABASE` query, where they are masked when it is formatted.
-            ASTs positional_arguments = arguments;
-            configuration.ssl_params = StorageMySQL::extractSSLParamsFromArguments(positional_arguments, args.context);
-
-            if (positional_arguments.size() != 4)
+            if (arguments.size() != 4)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
-                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -673,197 +666,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .supports_settings = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::MYSQL,
-    }, Documentation{
-        .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# MySQL database engine
-
-<CloudNotSupportedBadge />
-
-Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
-
-The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
-
-You cannot perform the following queries:
-
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
-
-## Creating a database {#creating-a-database}
-
-```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
-[SETTINGS enable_compression=0]
-```
-
-**Engine Parameters**
-
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
-
-**Settings**
-
-### `enable_compression` {#enable-compression}
-
-Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server.
-
-Default value: `0`.
-
-Example:
-
-```sql
-CREATE DATABASE mysql_db
-ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
-SETTINGS enable_compression = 1;
-```
-
-## TLS/SSL {#tls-ssl}
-
-The credentials of an encrypted connection to MySQL are passed as [named collection](/operations/named-collections.md) keys (or as key-value arguments):
-
-| Parameter | Description |
-|-----------|-------------|
-| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
-| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
-| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
-
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
-
-The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
-
-<a id="data_types-support"></a>
-## Data types support {#data-types-support}
-
-| MySQL                            | ClickHouse                                                   |
-|----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/reference/data-types/float)           |
-| DATE                             | [Date](/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
-| POINT                            | [Point](/reference/data-types/geo#point)         |
-| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
-| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
-| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
-| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
-| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
-
-The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
-
-[Nullable](/reference/data-types/nullable) is supported.
-
-## Global variables support {#global-variables-support}
-
-For better compatibility you may address global variables in MySQL style, as `@@identifier`.
-
-These variables are supported:
-- `version`
-- `max_allowed_packet`
-
-:::note
-By now these variables are stubs and don't correspond to anything.
-:::
-
-Example:
-
-```sql
-SELECT @@version;
-```
-
-## Examples of use {#examples-of-use}
-
-Table in MySQL:
-
-```text
-mysql> USE test;
-Database changed
-
-mysql> CREATE TABLE `mysql_table` (
-    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
-    ->   `float` FLOAT NOT NULL,
-    ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
-
-mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
-
-mysql> select * from mysql_table;
-+------+-----+
-| int_id | value |
-+------+-----+
-|      1 |     2 |
-+------+-----+
-1 row in set (0,00 sec)
-```
-
-Database in ClickHouse, exchanging data with the MySQL server:
-
-```sql
-CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
-```
-
-```sql
-SHOW DATABASES
-```
-
-```text
-┌─name─────┐
-│ default  │
-│ mysql_db │
-│ system   │
-└──────────┘
-```
-
-```sql
-SHOW TABLES FROM mysql_db
-```
-
-```text
-┌─name─────────┐
-│  mysql_table │
-└──────────────┘
-```
-
-```sql
-SELECT * FROM mysql_db.mysql_table
-```
-
-```text
-┌─int_id─┬─value─┐
-│      1 │     2 │
-└────────┴───────┘
-```
-
-```sql
-INSERT INTO mysql_db.mysql_table VALUES (3,4)
-```
-
-```sql
-SELECT * FROM mysql_db.mysql_table
-```
-
-```text
-┌─int_id─┬─value─┐
-│      1 │     2 │
-│      3 │     4 │
-└────────┴───────┘
-```
-)DOCS_MD",
-        .syntax = "ENGINE = MySQL('host:port', 'database', 'user', 'password')",
-        .related = {"PostgreSQL"}});
+    });
 }
 }
 

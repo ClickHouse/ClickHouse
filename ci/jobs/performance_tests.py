@@ -2,17 +2,14 @@ import argparse
 import csv
 import os
 import re
-import shutil
 import subprocess
 import time
 import traceback
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from threading import Thread
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -26,23 +23,6 @@ perf_left = f"{perf_wd}/left"
 perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
-
-# Settings for the report-building clickhouse-local (post-processing, not the
-# measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
-# in compare.sh.
-REPORT_LOCAL_QUERY_SETTINGS = [
-    # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
-    # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
-    "--max_bytes_before_external_group_by=0",
-    "--max_bytes_ratio_before_external_group_by=0",
-    "--max_bytes_before_external_sort=0",
-    "--max_bytes_ratio_before_external_sort=0",
-]
-REPORT_LOCAL_SERVER_SETTINGS = [
-    # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
-    "--",
-    "--memory_worker_use_cgroup=0",
-]
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
@@ -111,9 +91,7 @@ FROM input(
      stat_threshold Float64,
      test String,
      query_index Int32,
-     query_display_name String,
-     changed_threshold Float64,
-     unstable_threshold Float64'
+     query_display_name String'
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
@@ -181,8 +159,8 @@ def _make_insert_query(table, table_columns, input_schema, select_exprs, where=N
     return (
         f"INSERT INTO {table}\n"
         f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
-        "SELECT\n" + select_all + "\n"
-        "FROM input('" + input_schema + "')\n"
+        f"SELECT\n" + select_all + "\n"
+        f"FROM input('" + input_schema + "')\n"
         + where_clause + "\n"
         "FORMAT TSV"
     )
@@ -494,131 +472,6 @@ def get_perf_arch():
     Utils.raise_with_error("Unknown processor architecture")
 
 
-def cpu_pinning_enabled():
-    """Pinning requires Linux (taskset, sysfs topology, sched_getaffinity),
-    not just the CPU family: a local x86_64 macOS run must not get a taskset
-    prefix it cannot execute."""
-    return Utils.is_amd() and os.uname().sysname == "Linux"
-
-
-def get_physical_core_cpu_list():
-    """Return a taskset -c CPU list with one hyperthread per physical core.
-
-    On the x86_64 perf runner (m7i.4xlarge: 8 physical cores x 2 hyperthreads)
-    both measured servers are pinned to this list so that query threads never
-    end up sharing a hyperthread sibling with each other depending on scheduler
-    mood - a top suspect for the amd-vs-arm A/A noise gap (0.51% vs 0.42%).
-
-    Parses /sys/devices/system/cpu/cpu*/topology/thread_siblings_list, keeps
-    the first ALLOWED sibling of each unique pair (intersected with the
-    process affinity mask), and falls back to all allowed cpus if the sysfs
-    topology is unavailable. Only call at runtime on the Linux CI host (there
-    is no /sys on macOS) - never at import time.
-
-    Must stay in sync with pinned_cpu_list in ci/jobs/scripts/perf/compare.sh
-    (the server restart path used by the standalone flows and the
-    confirm-changes rerun).
-    """
-    # Sysfs exposes the HOST topology: on a cpuset-limited run the process may
-    # only be allowed a subset of it, and taskset with a disallowed CPU fails
-    # to start the servers. Pick, per physical core, the first sibling the
-    # process is actually allowed to run on.
-    getaffinity = getattr(os, "sched_getaffinity", None)
-    try:
-        allowed = getaffinity(0) if getaffinity else None
-    except OSError:
-        allowed = None
-    cores = {}
-    # Per-file tolerance, matching the compare.sh copy: one unreadable or
-    # malformed sibling file must not discard the rest of the topology, or
-    # the two pinners could pin the main run and the confirm rerun to
-    # different CPU sets.
-    for path in Path("/sys/devices/system/cpu").glob(
-        "cpu[0-9]*/topology/thread_siblings_list"
-    ):
-        # Formats seen in the wild: "0,8", "0-1", "0" (no SMT).
-        try:
-            siblings = [
-                int(s) for s in re.split(r"[,-]", path.read_text().strip()) if s
-            ]
-        except (OSError, ValueError):
-            continue
-        usable = [c for c in siblings if allowed is None or c in allowed]
-        if usable:
-            cores[min(siblings)] = min(usable)
-    cpus = set(cores.values())
-    if not cpus:
-        # Without topology, halving would be a guess that drops real cores on
-        # non-SMT hosts and on masks that already expose one sibling per core
-        # (e.g. Cpus_allowed_list: 1,3). Keep every allowed CPU instead: the
-        # degraded mode allows hyperthread sharing (the pre-pinning behavior)
-        # but never skews measurements by idling half the cores.
-        print(
-            "WARNING: could not parse cpu topology from sysfs; using all "
-            "allowed cpus (sibling pairs unknown, hyperthread sharing possible)"
-        )
-        if allowed:
-            cpus = set(allowed)
-        else:
-            cpus = set(range(os.cpu_count() or 2))
-    return ",".join(str(cpu) for cpu in sorted(cpus))
-
-
-# users.d override applied only on x86_64, where both servers are pinned with
-# taskset to one hyperthread per physical core (see get_physical_core_cpu_list).
-# The static default (max_threads=12, tests/performance/scripts/config/users.d/
-# perf-comparison-tweaks-users.xml) is kept for arm (m8g.4xlarge: 16 real
-# cores). The zzz- prefix makes this file sort after (and thus override) the
-# static users.d files. Standalone compare.sh entrypoints write the same
-# override in write_max_threads_override (keep the two in sync).
-MAX_THREADS_OVERRIDE_FILE = "zzz-cpu-pinning-max-threads.xml"
-MAX_THREADS_OVERRIDE_XML = """\
-<!--
-    Written by ci/jobs/performance_tests.py at job setup, x86_64 only (arm
-    keeps max_threads=12 from perf-comparison-tweaks-users.xml).
-
-    Both servers are pinned with taskset to one hyperthread per physical core
-    and max_threads is set to the size of that CPU set (e.g. 8 on
-    m7i.4xlarge: 8 physical cores x 2 hyperthreads), one query thread per
-    pinned CPU, so whether two threads share a hyperthread sibling no longer
-    depends on the scheduler (measured A/A noise: amd 0.51% vs arm 0.42%).
--->
-<clickhouse>
-    <profiles>
-        <default>
-            <max_threads>{max_threads}</max_threads>
-        </default>
-    </profiles>
-</clickhouse>
-"""
-
-
-def write_max_threads_override():
-    """Write the x86_64 max_threads override into both servers' users.d.
-
-    max_threads is derived from the pinned CPU list, so the one-thread-per-
-    pinned-CPU invariant holds on any runner shape (smaller/larger/non-SMT
-    x86 hosts), not just the current m7i.4xlarge.
-    """
-    if not cpu_pinning_enabled():
-        print("CPU pinning disabled (needs Linux x86_64) - keeping the static max_threads")
-        # Reused workspaces (mkdir -p / cp -r) may carry an override from an
-        # earlier x86_64 run; remove it so the static value actually applies.
-        for config_dir in (perf_left_config, perf_right_config):
-            stale = Path(config_dir) / "users.d" / MAX_THREADS_OVERRIDE_FILE
-            if stale.exists():
-                print(f"Removing stale max_threads override [{stale}]")
-                stale.unlink()
-        return True
-    max_threads = len(get_physical_core_cpu_list().split(","))
-    for config_dir in (perf_left_config, perf_right_config):
-        target = Path(config_dir) / "users.d" / MAX_THREADS_OVERRIDE_FILE
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(MAX_THREADS_OVERRIDE_XML.format(max_threads=max_threads))
-        print(f"Wrote max_threads={max_threads} override to [{target}]")
-    return True
-
-
 def build_perf_query_history_link(test_name, check_name):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
@@ -661,7 +514,7 @@ def get_insert_metadata(info, compare_against_release):
 def build_raw_query_metrics_tsv():
     Path(raw_query_metrics_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -701,7 +554,7 @@ def build_flamegraph_upload_tsv():
     Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
     Path(flamegraph_upload_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -826,56 +679,17 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     return insert_ok
 
 
-def match_reference_debug_info():
-    # addressToLine resolves a frame to "file:line" only where DWARF covers
-    # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
-    # table remains (addressToSymbol works) but there is no line info, so the
-    # patched binary symbolizes differently from the reference (master) build and
-    # flamegraph tooling cannot match the frames. A ".debug_info" section is not a
-    # reliable signal (Rust crates emit one even under -g0), so probe how many
-    # system.stack_trace frames resolve to a line on each binary and strip the
-    # reference only when the patched binary resolves far fewer. Merge-to-master
-    # resolves comparably on both and is left untouched. Must match
-    # compare.sh::match_reference_debug_info.
-    left = Shell.get_output(f"readlink -f {perf_left}/clickhouse-server", strict=True)
-    right = Shell.get_output(f"readlink -f {perf_right}/clickhouse-server", strict=True)
-    probe = (
-        "select countIf(addressToLine(arrayJoin(trace)) like '%:%') "
-        "from system.stack_trace"
-    )
-
-    def resolved_lines(binary):
-        # Running clickhouse also decompresses the self-extracting binary in place.
-        out = Shell.get_output(
-            f'{binary} local --allow_introspection_functions=1 --query "{probe}"'
-        )
-        return int(out) if out and out.strip().isdigit() else 0
-
-    if resolved_lines(right) * 4 < resolved_lines(left):
-        Shell.check(f"strip --strip-debug {left}", verbose=True)
-    else:
-        print("Patched binary has comparable line info, leaving reference as-is")
-
-
 class CHServer:
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
     LEFT_SERVER_KEEPER_RAFT_PORT = 9234
     LEFT_SERVER_INTERSERVER_PORT = 9009
-    LEFT_SERVER_HTTP_PORT = 8123
     # patched version
     RIGHT_SERVER_PORT = 19001
     RIGHT_SERVER_KEEPER_PORT = 19181
     RIGHT_SERVER_KEEPER_RAFT_PORT = 19234
     RIGHT_SERVER_INTERSERVER_PORT = 19009
-    RIGHT_SERVER_HTTP_PORT = 18123
-
-    # lg2 of the average byte interval between jemalloc allocation samples.
-    # Denser than the 512 KiB (19) default: we profile single queries in
-    # isolation, so the profile needs to be dense to yield useful
-    # JemallocSample flamegraphs. Must match compare.sh.
-    JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
     def __init__(self, is_left=False):
         if is_left:
@@ -883,7 +697,6 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
-            http_port = self.LEFT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
@@ -891,48 +704,56 @@ class CHServer:
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
-            http_port = self.RIGHT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
+        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path {db_path} --user_files_path {db_path}/user_files --top_level_domains_path {perf_wd}/top_level_domains --keeper_server.storage_path {temp_dir}/coordination0 --tcp_port {server_port}"
         self.log_fd = None
         self.log_file = log_file
         self.port = server_port
         self.server_path = serever_path
         self.name = "Reference" if is_left else "Patched"
 
-        # On x86_64 pin both servers to one hyperthread per physical core (the
-        # same list for both: they are measured alternately, not concurrently).
-        # Together with the max_threads=8 users.d override this keeps one query
-        # thread per physical core and removes scheduler-dependent hyperthread
-        # sibling sharing. arm (real cores only) is unchanged.
-        taskset_prefix = (
-            f"taskset -c {get_physical_core_cpu_list()} "
-            if cpu_pinning_enabled()
-            else ""
-        )
-
-        # The perf-comparison config removes <http_port>; re-enable it on the
-        # command line (a documented config override, see Server.cpp) with a
-        # distinct port per server, so that shell-script tests can talk to the
-        # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
+        self.start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
-            --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
-            --interserver_http_port {inter_server_port} \
-            --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
+            --interserver_http_port {inter_server_port}"
+
+    def start_preconfig(self):
+        print("Starting ClickHouse server")
+        print("Command: ", self.preconfig_start_cmd)
+        self.log_fd = open(self.log_file, "w")
+        self.proc = subprocess.Popen(
+            self.preconfig_start_cmd,
+            stderr=subprocess.STDOUT,
+            stdout=self.log_fd,
+            shell=True,
+            start_new_session=True,
+        )
+        time.sleep(2)
+        retcode = self.proc.poll()
+        if retcode is not None:
+            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
+            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
+            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            return False
+        print(f"ClickHouse server process started -> wait ready")
+        res = self.wait_ready()
+        if res:
+            print(f"ClickHouse server ready")
+        else:
+            print(f"ClickHouse server NOT ready")
+
+        Shell.check(
+            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
+            verbose=True,
+        )
+        return res
 
     def start(self):
         print(f"Starting [{self.name}] ClickHouse server")
-        # Rewrite the max_threads override right before starting: praktika
-        # stages can be re-entered by a fresh process whose affinity mask may
-        # differ from the one CONFIGURE saw, and taskset (start_cmd) is
-        # computed at construction time - the override must match it.
-        # Idempotent; compare.sh::restart does the same for its flows.
-        write_max_threads_override()
         print("Command: ", self.start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
@@ -949,12 +770,12 @@ class CHServer:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print("ClickHouse server process started -> wait ready")
+        print(f"ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print("ClickHouse server ready")
+            print(f"ClickHouse server ready")
         else:
-            print("ClickHouse server NOT ready")
+            print(f"ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -963,13 +784,13 @@ class CHServer:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
                 break
             else:
-                print("Server not ready, wait")
+                print(f"Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -985,19 +806,14 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
+        cls, test_file, runs=7, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
-        # --runs ("at least N runs per query") is passed only when explicitly
-        # requested; by default the adaptive run policy decides the counts.
-        runs_arg = f"--runs {runs}" if runs is not None else ""
         res, out, err = Shell.get_res_stdout_stderr(
             f"./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
-                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
-                --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
-                {runs_arg} --max-queries {max_queries} \
+                --runs {runs} --max-queries {max_queries} \
                 --profile-seconds 10 \
                 {test_file}",
             verbose=True,
@@ -1065,218 +881,6 @@ def find_base_release_build(info, build_type):
     return None
 
 
-# The number of distinct "slower" queries that fails the whole performance
-# check. This is the gate that actually decides the Praktika `Check Results`
-# status: `report.py` embeds a status into `report.html`, but `main` below
-# discards it ("always green mode") and recomputes the final status by
-# reparsing the "N slower" message, so the effective gate lives here. The value
-# must stay synchronized with the slower-queries threshold in
-# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
-# "slower" queries is dominated by CI noise (a single bad shard run, frequency
-# scaling, or code-layout artifacts can push several unrelated micro benchmarks
-# over their per-query thresholds at once), while a genuine regression shows up
-# as a small cluster of related queries with large magnitudes that the
-# per-query thresholds catch on their own.
-SLOWER_QUERIES_FAIL_THRESHOLD = 10
-
-
-def too_many_slow(message):
-    match = re.search(r"(|.* )(\d+) slower.*", message)
-    return (
-        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
-    )
-
-
-def read_ci_checks_results(path):
-    """Parse `ci-checks.tsv` (TSVWithNamesAndTypes).
-
-    Returns `(results, malformed, complete)`:
-      - `results`: valid `Result` rows;
-      - `malformed`: number of rows skipped because they were cut short;
-      - `complete`: whether both header lines AND at least one data row were
-        present, i.e. whether the file is worth importing at all. A file with no
-        data row is necessarily truncated: compare.sh's `upload_results` unions
-        an unconditional single-row summary select into every `ci-checks.tsv`,
-        so a run that legitimately produced only the two header lines does not
-        exist.
-
-    Never raises. compare.sh writes this file last, so a failure there (most
-    often a full disk) leaves an arbitrary byte prefix. Raising here would kill
-    the job before praktika uploads the artifacts, which is the failure this
-    parser exists to remove, so every shape of prefix is tolerated: a cut inside
-    a multi-byte character (hence the lenient decode, as in
-    `stress_job.read_test_results`), a cut header line (fewer field names than a
-    data row has cells), and a cut data row (`csv.DictReader` fills the missing
-    fields with `restval`, i.e. `None`).
-    """
-    results = []
-    malformed = 0
-    # Decode leniently: a byte prefix of a UTF-8 file can end inside a
-    # multi-byte sequence, which a strict decode rejects.
-    with open(path, "rb") as descriptor:
-        content = descriptor.read().decode("utf-8", errors="replace")
-    lines = content.split("\n")
-    # A complete file is newline-terminated: compare.sh writes it through a
-    # ClickHouse `File(TSVWithNamesAndTypes)` table, which terminates every row.
-    # So a non-empty trailing fragment is a line cut mid-write, and nothing in
-    # it can be trusted - not even the fields that happen to be present, since a
-    # number cut after its first digits still parses.
-    cut_line = lines.pop()
-    # Column names, column types, and at least the summary row compare.sh always
-    # emits: anything shorter is a prefix, not a completed run.
-    if len(lines) < 3:
-        return results, malformed, False
-    if cut_line:
-        malformed += 1
-    header = lines[0].strip().split("\t")
-    reader = csv.DictReader(lines[2:], delimiter="\t", fieldnames=header)
-    for row in reader:
-        name = row.get("test_name")
-        if name == "":
-            # The summary row carries the report message, not a test case.
-            continue
-        if (
-            name is None
-            or row.get("test_status") is None
-            or row.get("test_duration_ms") is None
-            # Require every column, not only the three consumed ones: a row
-            # missing any field was cut short.
-            or any(row.get(field) is None for field in header)
-        ):
-            malformed += 1
-            continue
-        try:
-            duration = float(row["test_duration_ms"]) / 1000
-        except (TypeError, ValueError):
-            malformed += 1
-            continue
-        results.append(
-            Result(name=name, status=row["test_status"], duration=duration)
-        )
-    return results, malformed, True
-
-
-def import_ci_checks_results(path, results):
-    """Import `ci-checks.tsv` rows into the previous subtask's results.
-
-    Returns True when the file was importable. A file with no data row at all -
-    empty, or only the header lines - is reported and left unimported. That
-    distinction is a diagnostic one, not a data-preserving one: every subtask
-    `main()` appends before this call is built without a `results=` argument, so
-    the assignment target's row list is empty either way and there is nothing an
-    empty assignment could destroy. A file that lost individual rows still
-    imports the intact ones and reports how many it skipped, because degrading
-    beats dying. An absent file is the atomic publish's own failure signal -
-    `upload_results` deliberately leaves the final path missing when the write
-    fails - so it must warn here rather than reach `open`, whose
-    `FileNotFoundError` would escape `main()` and kill the job before praktika
-    uploads the artifacts.
-    """
-    if not Path(path).is_file():
-        print("WARNING: compare.sh did not generate ci-checks.tsv file")
-        return False
-    test_results, malformed, complete = read_ci_checks_results(path)
-    if not complete:
-        print("WARNING: ci-checks.tsv is empty or truncated - skipping test case import")
-        return False
-    if malformed:
-        print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
-    # results[-2] is a previuos subtask
-    results[-2].results = test_results
-    return True
-
-
-def _perf_client(port):
-    return (
-        f"clickhouse-client --port {port} "
-        "--max_memory_usage 30G --max_memory_usage_for_user 30G "
-        "--max_estimated_execution_time 0 --max_execution_time 1800 --receive_timeout 1800"
-    )
-
-
-def rebuild_table(port, source, destination):
-    # Re-insert an attached dataset through the running server so its parts are
-    # written by that server's own binary and settings (sparse columns,
-    # statistics, mark format) instead of the frozen tarball format, then
-    # OPTIMIZE FINAL back to a single part matching the original layout. INSERT
-    # is what recomputes serialization from the data; a bare OPTIMIZE would
-    # inherit the source parts' serialization, so it cannot replace the insert.
-    # For an in-place rebuild the fresh copy is built under a temporary name and
-    # swapped in with RENAME (the datasets live in Ordinary databases, so
-    # EXCHANGE TABLES is not available).
-    client = _perf_client(port)
-    if Shell.get_output(f'{client} --query "EXISTS TABLE {source}"').strip() != "1":
-        # A missing source is only expected for the cross-name rebuild
-        # (datasets.hits_v1 -> test.hits) retried after a previous run already
-        # built the destination and dropped the source. Everywhere else a
-        # missing source means the dataset failed to attach: fail closed, so the
-        # completion marker is never written for a table that was not rebuilt.
-        if source != destination and Shell.get_output(f'{client} --query "EXISTS TABLE {destination}"').strip() == "1":
-            print(f"rebuild_table: {source} already consumed into {destination}, skipping")
-            return
-        raise RuntimeError(f"rebuild_table: source {source} is not attached")
-    insert_settings = "enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-    target = f"{destination}_rebuild" if source == destination else destination
-    # Drop any leftover target from an interrupted previous run before rebuilding.
-    Shell.check(f'{client} --query "DROP TABLE IF EXISTS {target} SYNC"', strict=True, verbose=True)
-    Shell.check(f'{client} --query "CREATE TABLE {target} AS {source}"', strict=True, verbose=True)
-    Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
-    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL"', strict=True, verbose=True)
-    if target != destination:
-        old = f"{destination}_old"
-        Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
-        Shell.check(f'{client} --query "RENAME TABLE {destination} TO {old}, {target} TO {destination}"', strict=True, verbose=True)
-        Shell.check(f'{client} --query "DROP TABLE {old} SYNC"', strict=True, verbose=True)
-    else:
-        Shell.check(f'{client} --query "DROP TABLE {source} SYNC"', strict=True, verbose=True)
-
-
-POPULATE_DONE_MARKER = "test._populate_done"
-
-
-def populate_data(port):
-    # Rebuild the hits datasets on one server, sequentially. The three inserts
-    # share the per-user memory limit (~28GiB) and hits_100m_single alone uses
-    # ~21GiB, so running them in parallel is killed by the OvercommitTracker.
-    # A dedicated marker table is created only after all three tables are
-    # rebuilt: it is the "done" signal for the re-entrant restart() skip. Table
-    # existence cannot serve as the marker, because the in-place *_single tables
-    # already exist (attached from the tarball) before they are rebuilt.
-    client = f"clickhouse-client --port {port}"
-    if Shell.get_output(f'{client} --query "EXISTS TABLE {POPULATE_DONE_MARKER}"').strip() == "1":
-        print(f"populate_data: server {port} already populated, skipping")
-        return
-    Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS test"', strict=True, verbose=True)
-    # Scope: only the hits datasets are rebuilt (they back the bulk of the
-    # suite, including clickbench). The other attached datasets (tpch, tpcds,
-    # values) still read their frozen tarball parts, so write-time defaults are
-    # not yet exercised on those workloads.
-    rebuild_table(port, "default.hits_10m_single", "default.hits_10m_single")
-    rebuild_table(port, "default.hits_100m_single", "default.hits_100m_single")
-    rebuild_table(port, "datasets.hits_v1", "test.hits")
-    Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
-
-
-def populate_data_both(left_port, right_port):
-    # Populate both servers in parallel. Each writes its own parts, so a PR that
-    # changes a write-time default is reflected only on the right (patched) side.
-    errors = []
-
-    def run(port):
-        try:
-            populate_data(port)
-        except Exception as e:  # noqa: BLE001
-            print(f"populate_data failed on port {port}: {e}")
-            errors.append(e)
-
-    threads = [Thread(target=run, args=(p,)) for p in (left_port, right_port)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    return not errors
-
-
 def main():
 
     args = parse_args()
@@ -1299,7 +903,7 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
 
-    # release_version = CHVersion.get_release_version()
+    # release_version = CHVersion.get_release_version_as_dict()
     info = Info()
 
     if Utils.is_arm():
@@ -1325,7 +929,7 @@ def main():
         else:
             assert False
     else:
-        Utils.raise_with_error("Unknown processor architecture")
+        Utils.raise_with_error(f"Unknown processor architecture")
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -1389,16 +993,6 @@ def main():
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
             f"chmod +x {ch_path}/clickhouse",
-            # The reference build (left) is downloaded as a bare `clickhouse`
-            # binary, but the patched build (right) was only symlinked under its
-            # subcommand names below. Shell-script perf queries
-            # (<query type="shell">) invoke the multi-call binary directly via
-            # $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL / $CLICKHOUSE_CLIENT, which
-            # compare.sh builds from `right/clickhouse`; without this symlink
-            # `right/clickhouse local` fails with "No such file or directory" and
-            # the query is dropped from the comparison. Mirror the reference
-            # layout so `right/clickhouse` exists too.
-            f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-local",
             f"ln -sf {ch_path}/clickhouse {perf_right}/clickhouse-client",
@@ -1489,16 +1083,16 @@ def main():
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
-            stop_watch = Utils.Stopwatch()
-            errors = download_and_extract_datasets(dataset_paths.values(), db_path)
-            res = not errors
+            cmds = []
+            for dataset_path in dataset_paths.values():
+                cmds.append(
+                    f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
+                )
+            res = Shell.check_parallel(cmds, verbose=True)
             results.append(
                 Result(
                     name="Download datasets",
                     status=Result.Status.OK if res else Result.Status.ERROR,
-                    start_time=stop_watch.start_time,
-                    duration=stop_watch.duration,
-                    info="\n".join(errors),
                 )
             )
             if res:
@@ -1506,6 +1100,16 @@ def main():
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")
+
+        leftCH = CHServer(is_left=True)
+
+        def restart_ch():
+            res_ = leftCH.start_preconfig()
+            leftCH.terminate()
+            # wait for termination
+            time.sleep(5)
+            Shell.check("ps -ef | grep clickhouse", verbose=True)
+            return res_
 
         commands = [
             f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
@@ -1522,23 +1126,19 @@ def main():
             # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
             f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
+            restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead
-            # of copying to save space. The datasets are attached as-is; each
-            # server re-inserts them into its final tables on startup (see
-            # populate_data), so the parts are written by that server's own
-            # binary and settings instead of the frozen tarball format.
+            # of copying to save space. Before that, remove preprocessed configs and
+            # system tables, because sharing them between servers with hardlinks may
+            # lead to weird effects
             f"rm -rf {perf_left}/db {perf_right}/db",
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
             f"cp -al {db_path} {perf_left}/db ||:",
             f"cp -al {db_path} {perf_right}/db ||:",
-            # Each server bootstraps its own (embedded, non-replicated) keeper, so
-            # an empty storage dir is enough.
-            f"mkdir -p {perf_left}/coordination {perf_right}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
             # Symlink user_files from the repository into both servers' user_files directories
             f'for f in ./tests/performance/user_files/*; do [ -e "$f" ] || continue; ln -sf "$(readlink -f "$f")" {perf_left}/db/user_files/; ln -sf "$(readlink -f "$f")" {perf_right}/db/user_files/; done',
-            # On x86_64, cap max_threads at the number of pinned physical
-            # cores (must run after the right->left config copy above).
-            write_max_threads_override,
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
@@ -1548,8 +1148,6 @@ def main():
 
     if res and JobStages.RESTART in stages:
         print("Start Servers")
-
-        match_reference_debug_info()
 
         def restart_ch1():
             res_ = leftCH.start()
@@ -1586,17 +1184,6 @@ def main():
                 logs.append(leftCH.log_file)
             results[-1].set_files(logs)
 
-    if res and JobStages.RESTART in stages:
-        print("Populate datasets")
-
-        def populate():
-            return populate_data_both(
-                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT
-            )
-
-        results.append(Result.from_commands_run(name="Populate", command=[populate]))
-        res = results[-1].is_ok()
-
     if res and JobStages.TEST in stages:
         print("Tests")
         test_files = [
@@ -1612,21 +1199,6 @@ def main():
         print(f"Test Files ({len(test_files)}): [{test_files}]")
         assert test_files
 
-        def cleanup_user_files():
-            # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
-            # drop_query only drops tables. Keep the symlinks made in Configure, remove everything else.
-            for server_path in (perf_left, perf_right):
-                user_files = Path(server_path) / "db" / "user_files"
-                if not user_files.is_dir():
-                    continue
-                for entry in user_files.iterdir():
-                    if entry.is_symlink():
-                        continue
-                    if entry.is_dir():
-                        shutil.rmtree(entry)
-                    else:
-                        entry.unlink()
-
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
             benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
@@ -1634,10 +1206,10 @@ def main():
                 max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
+                    runs=7,
                     max_queries=max_queries,
                     results_path=perf_wd,
                 )
-                cleanup_user_files()
             return True
 
         commands = [
@@ -1676,8 +1248,27 @@ def main():
             )
         )
 
-        # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
-        import_ci_checks_results(f"{perf_wd}/ci-checks.tsv", results)
+        if Path(f"{perf_wd}/ci-checks.tsv").is_file():
+            # insert test cases result generated by legacy script as tsv file into praktika Result object - so that they are written into DB later
+            test_results = []
+            with open(f"{perf_wd}/ci-checks.tsv", "r", encoding="utf-8") as f:
+                header = next(f).strip().split("\t")  # Read actual column headers
+                next(f)  # Skip type line (e.g. UInt32, String...)
+                reader = csv.DictReader(f, delimiter="\t", fieldnames=header)
+                for row in reader:
+                    if not row["test_name"]:
+                        continue
+                    test_results.append(
+                        Result(
+                            name=row["test_name"],
+                            status=row["test_status"],
+                            duration=float(row["test_duration_ms"]) / 1000,
+                        )
+                    )
+            # results[-2] is a previuos subtask
+            results[-2].results = test_results
+        else:
+            print("WARNING: compare.sh did not generate ci-checks.tsv file")
 
         res = results[-1].is_ok()
 
@@ -1685,13 +1276,7 @@ def main():
 
         def insert_raw_query_metrics_data():
             cidb = CIDBCluster()
-            # Metrics insertion is a reporting side-effect, not the perf
-            # verdict. A transient LogCluster (play.clickhouse.com) timeout
-            # must not fail the whole job - skip and warn, like
-            # insert_report_aggregates() and prepare_historical_data() do.
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping raw query metrics insert")
-                return True
+            assert cidb.is_ready()
 
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
@@ -1753,12 +1338,7 @@ def main():
 
         def insert_historical_data():
             cidb = CIDBCluster()
-            # Reporting side-effect, not the perf verdict - a transient
-            # LogCluster timeout must not fail the job (see
-            # insert_raw_query_metrics_data / insert_report_aggregates).
-            if not cidb.is_ready():
-                print("WARNING: CIDB not ready - skipping historical data insert")
-                return True
+            assert cidb.is_ready()
 
             now = datetime.now()
             date = now.date().isoformat()
@@ -1854,6 +1434,11 @@ def main():
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
 
+        def too_many_slow(msg):
+            match = re.search(r"(|.* )(\d+) slower.*", msg)
+            threshold = 5
+            return int(match.group(2).strip()) > threshold if match else False
+
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
@@ -1934,32 +1519,18 @@ def main():
     # attach all logs with errors
     Shell.check(f"rm -f {perf_wd}/logs.tar.zst")
     Shell.check(
-        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" ! -name "*-trace-log.tsv" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
+        f'cd {perf_wd} && find . -type f \( -name "*.log" -o -name "*.tsv" -o -name "*.txt" -o -name "*.rep" -o -name "*.svg" \) ! -path "*/db/*" !  -path "*/db0/*" -print0 | tar --null -T - -cf - | zstd -o ./logs.tar.zst',
         verbose=True,
     )
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
         files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
-    result = Result.create_from(
+    Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
         info=message,
-    )
-    if info.pr_number:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?q={info.pr_number}"
-        )
-    else:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?scope=master&q={(info.sha or '')[:12]}"
-        )
-    result.set_label(
-        "Performance dashboard",
-        link=dashboard_link,
-        hint="Combined performance dashboard for this run (all shards, amd + arm)",
-    )
-    result.complete_job()
+    ).complete_job()
 
 
 if __name__ == "__main__":
