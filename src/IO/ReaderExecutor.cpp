@@ -381,8 +381,8 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
 
-    /// A populating miss carries its own open writer; a bypass tier's miss is writer-less. `claim` is
-    /// filled by the claim loop below (empty for a bypass tier or a tail a concurrent downloader leads).
+    /// A miss to be populated carries its own open writer; any other miss is writer-less. `claim` is
+    /// filled by the claim loop below (empty for a writer-less miss, or a tail another reader leads).
     struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
@@ -410,7 +410,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     for (auto & miss_tier : miss_tiers)
     {
         if (!miss_tier.writer)
-            continue;  /// a bypass tier populates nothing
+            continue;  /// nothing will be populated here
         auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
         miss_tier.claim = std::move(lead.claim);
         any_writer = true;
