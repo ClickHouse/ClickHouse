@@ -70,6 +70,45 @@ fi
 
 rm -f "$CLIENT_ERR"
 
+# A nested `IN` makes the outer set source non-clonable because it contains a
+# `DelayedCreatingSetsStep`. This takes the destructive ordered-set build path used for key analysis.
+QUERY_ID="${CLICKHOUSE_DATABASE}_first_cancel_ordered_set_build"
+CLIENT_ERR="${CLICKHOUSE_TMP}/first_cancel_ordered_set_build.err"
+
+$CLICKHOUSE_CLIENT --query_id="$QUERY_ID" -q "
+    SELECT count() FROM t_first_cancel_set_build WHERE a IN (
+        SELECT number * 3 FROM numbers(10000000) WHERE number IN (
+            SELECT number FROM numbers(10000000) WHERE sleep(1) = 0
+        )
+    ) SETTINGS partial_result_on_first_cancel = 1, $PINNED_SETTINGS" > /dev/null 2> "$CLIENT_ERR" &
+client_pid=$!
+
+i=0
+while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID' AND elapsed > 1")" -lt 1 ]; do
+    sleep 0.3
+    i=$((i + 1))
+    if [ "$i" -gt 200 ]; then
+        echo "Ordered-set query did not start in time" >&2
+        kill -9 $client_pid 2>/dev/null
+        exit 1
+    fi
+done
+
+kill -INT $client_pid
+wait $client_pid
+
+if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
+    echo "FAIL: an unbuilt ordered set reached the filter"
+    cat "$CLIENT_ERR"
+elif grep -q -F "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
+    echo "the ordered-set cancellation is reported"
+else
+    echo "FAIL: neither the ordered-set cancellation nor the unbuilt set was reported"
+    cat "$CLIENT_ERR"
+fi
+
+rm -f "$CLIENT_ERR"
+
 # The cancellation must not leave the table unreadable, and a set for the same subquery shape must still
 # be buildable afterwards.
 $CLICKHOUSE_CLIENT -q "
