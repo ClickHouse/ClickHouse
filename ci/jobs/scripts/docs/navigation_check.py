@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that every publishable English docs page appears in navigation.
+"""Check that every publishable English docs page appears in live navigation.
 
 Run from the docs root (the directory containing ``docs.json``):
 
@@ -132,20 +132,58 @@ def collect_navigation_references(node: object) -> set[str]:
     return references
 
 
-def navigation_files(docs_root: Path) -> list[Path]:
-    files = [docs_root / "docs.json"]
-    for path in docs_root.rglob("navigation.json"):
-        relative_path = path.relative_to(docs_root)
-        if relative_path.parts[0] not in LOCALE_DIRS:
-            files.append(path)
-    return sorted(files)
+def collect_navigation_file_references(node: object) -> set[str]:
+    """Collect navigation fragment paths from ``$ref`` fields."""
+    references = set()
+
+    def visit(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if key == "$ref" and isinstance(item, str):
+                    references.add(item)
+                elif isinstance(item, (dict, list)):
+                    visit(item)
+
+    visit(node)
+    return references
 
 
 def discover_navigation_references(docs_root: Path) -> set[str]:
+    docs_root = docs_root.resolve()
     references = set()
-    for path in navigation_files(docs_root):
+    pending = [docs_root / "docs.json"]
+    visited = set()
+
+    while pending:
+        path = pending.pop()
+        if path in visited:
+            continue
+        visited.add(path)
+
         navigation = json.loads(path.read_text(encoding="utf-8"))
         references.update(collect_navigation_references(navigation))
+
+        for reference in sorted(collect_navigation_file_references(navigation)):
+            file_reference = reference.partition("#")[0]
+            if not file_reference or file_reference.startswith(
+                ("/", "http://", "https://")
+            ):
+                continue
+
+            referenced_path = (path.parent / file_reference).resolve()
+            try:
+                relative_path = referenced_path.relative_to(docs_root)
+            except ValueError as error:
+                raise ValueError(
+                    f"{path}: $ref target {reference!r} escapes the docs root"
+                ) from error
+
+            if not relative_path.parts or relative_path.parts[0] not in LOCALE_DIRS:
+                pending.append(referenced_path)
+
     return references
 
 
@@ -166,7 +204,7 @@ def main() -> int:
 
     try:
         unlisted_pages = find_unlisted_pages(docs_root)
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"Error: could not inspect the docs navigation: {error}")
         return 2
 
