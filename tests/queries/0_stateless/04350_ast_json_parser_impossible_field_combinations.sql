@@ -199,7 +199,7 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTI
 -- requires a column-list declaration, so the `ALL` forms (null `statistics_decl`) never carry
 -- `if_exists`. `MATERIALIZE STATISTICS` has nowhere to print the clause, and `CLEAR STATISTICS`
 -- would print `CLEAR STATISTICS IF EXISTS ALL`, which reparses as the statistic on a column named
--- `ALL` — a different command than the payload requested. The `ALL` forms round-trip without it:
+-- `ALL`, a different command than the payload requested. The `ALL` forms round-trip without it:
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'));
