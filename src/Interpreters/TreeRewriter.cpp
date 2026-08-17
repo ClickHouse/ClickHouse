@@ -1559,10 +1559,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.ast_join = select_query->join();
 
+    /// `arrayJoin` in an expression multiplies rows, so the stored row count is not the answer.
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings[Setting::optimize_trivial_count_query] && !select_query->groupBy() && !select_query->having()
             && !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final()
-            && (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
+            && (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()))
+            && !hasArrayJoin(select_query->select());
 
     // remove outer braces in order by
     RewriteOrderByVisitor::Data data;

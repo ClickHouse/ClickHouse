@@ -71,3 +71,34 @@ SETTINGS optimize_trivial_count_query = 1, optimize_count_from_files = 1;
 "
 
 rm -rf "${tmp_dir:?}"
+
+# The old analyzer decides trivial count in TreeRewriter. A column argument is already refused there
+# because it makes the column required; a constant argument requires no column, so it needs the guard.
+# Per-query SETTINGS enable_analyzer = 0 so these arms run in every CI configuration.
+${CLICKHOUSE_CLIENT} -q "
+DROP TABLE IF EXISTS t_04743_old;
+DROP TABLE IF EXISTS p_04743_old;
+CREATE TABLE t_04743_old (A Array(UInt32), n UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04743_old VALUES ([1,2,3],1), ([4,5],2), ([6],3);
+CREATE TABLE p_04743_old (n UInt32) ENGINE = MergeTree PARTITION BY n ORDER BY tuple();
+INSERT INTO p_04743_old VALUES (1), (2), (3);
+
+SELECT count(arrayJoin([10, 20])) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count(arrayJoin([10, 20])) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 0;
+-- normalize_function_names is randomized in CI; the alias reaches TreeRewriter as arrayJoin only when it is on
+SELECT count(unnest([10, 20])) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1, normalize_function_names = 1;
+SELECT count(arrayJoin(A)) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+
+-- the partition-predicate path decides trivial count separately, so it needs the guard too
+SELECT count(arrayJoin([n, n])) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count(arrayJoin([n, n])) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 0;
+
+-- aggregates without arrayJoin keep the optimization on both paths
+SELECT count() FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count(n) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count() FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count(n) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+
+DROP TABLE t_04743_old;
+DROP TABLE p_04743_old;
+"
