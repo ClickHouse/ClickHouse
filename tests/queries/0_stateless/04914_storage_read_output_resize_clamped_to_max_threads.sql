@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
--- A storage read must not build more output ports than there are threads to consume them.
+-- A post-read resize must not widen a storage read's output beyond the thread budget.
 -- `max_memory_usage` keeps a regression a loud query error instead of an OOM-killed server.
 -- `max_threads_min_free_memory_per_thread = 0` pins the adaptive thread cap so the widths
 -- asserted below do not drop under memory pressure.
@@ -27,6 +27,15 @@ INSERT INTO t_resize_join VALUES (1, 10), (2, 20);
 SELECT sum(v) FROM t_resize_join
 SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 1000000,
          max_threads_min_free_memory_per_thread = 0;
+
+-- A bare SELECT * leaves the storage read as the only resize producer, and the width must
+-- still reach max_threads even though the Join source ignores num_streams.
+SELECT match(arrayStringConcat(groupArray(explain), ''), '.*Resize 1 → 2 *Join 0 → 1 *$')
+FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_resize_join
+    SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 1000000,
+             max_threads_min_free_memory_per_thread = 0
+);
 
 -- The resize itself must survive: the output is still widened to max_threads, so a fix that
 -- clamped all the way down to the source count would fail here. A bare SELECT * has exactly
