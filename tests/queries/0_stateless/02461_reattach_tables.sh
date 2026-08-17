@@ -818,7 +818,7 @@ check_fails_kind_without_detach "CREATE TEMPORARY TABLE ${CLICKHOUSE_DATABASE}.t
 check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ON CLUSTER test_shard_localhost ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
 # An explicitly forbidden temporary-table engine is rejected by `setEngine` before it analyzes the
 # populating `SELECT` too.
-check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_reattach_tmp', '{replica}') ORDER BY tuple() AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
+check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_reattach_tmp', '{replica}') ORDER BY tuple() AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
 
 check_if_detached "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src"
 

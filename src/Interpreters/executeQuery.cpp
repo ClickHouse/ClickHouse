@@ -15,7 +15,6 @@
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
-#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Common/atomicRename.h>
 
