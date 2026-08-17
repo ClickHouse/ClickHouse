@@ -169,7 +169,9 @@ static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
-    if (tokens.empty() || tmp_arg != "~")
+    /// The operator arrives either as a trailing `~` token (`=~` is lexed as `=` and `~`)
+    /// or as the single `!~` token.
+    if (tokens.empty() || (tmp_arg != "~" && tmp_arg != "!~"))
         return tmp_arg;
 
     String new_expr;

@@ -928,7 +928,8 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     {
         is_like = true;
     }
-    else if (func->name == "match"
+    else if (func->name == "match" || func->name == "notMatch"
+             || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
              || func->name == "extract" || func->name == "extractAll"
              || func->name == "extractGroups" || func->name == "extractAllGroups"
              || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
@@ -3239,6 +3240,10 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
     {toStringView(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
     {toStringView(Keyword::REGEXP),        Operator("match",           9,  2)},
+    {"~",             Operator("match",           9,  2)},
+    {"~*",            Operator("matchCaseInsensitive", 9, 2)},
+    {"!~",            Operator("notMatch",        9,  2)},
+    {"!~*",           Operator("notMatchCaseInsensitive", 9, 2)},
     {toStringView(Keyword::IN),            Operator("in",              9,  2)},
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
@@ -3284,7 +3289,8 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::StartNotBetween
                 || op.type == OperatorType::Cast)
                 return;
-            if (op.function_name == "match")
+            if (op.function_name == "match" || op.function_name == "matchCaseInsensitive"
+                || op.function_name == "notMatch" || op.function_name == "notMatchCaseInsensitive")
                 return;
             /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
             /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
