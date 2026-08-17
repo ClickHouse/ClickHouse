@@ -99,7 +99,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) est une plateforme d&#39;intégration managée qui simplifie l&#39;ingestion de données provenant de sources variées en quelques clics. Conçue pour les charges de travail les plus exigeantes, l&#39;architecture robuste et évolutive de ClickPipes garantit des performances et une fiabilité constantes. ClickPipes peut être utilisé pour des besoins de streaming à long terme ou pour un chargement de données ponctuel.
+    [ClickPipes](/fr/integrations/clickpipes/home) est une plateforme d&#39;intégration gérée qui rend l&#39;ingestion de données depuis un ensemble diversifié de sources aussi simple que de cliquer sur quelques boutons. Conçue pour les charges de travail les plus exigeantes, l&#39;architecture robuste et évolutive de ClickPipes assure des performances et une fiabilité constantes. ClickPipes peut être utilisé pour des besoins de streaming à long terme ou pour un chargement de données ponctuel.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="Sélectionner la source de données" border />
 
@@ -163,10 +163,10 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     La clé primaire peut être définie à l&#39;aide du paramètre `PRIMARY KEY`. Si vous définissez une table sans `PRIMARY KEY`,
     la clé devient alors le tuple spécifié dans la clause `ORDER BY`. Si vous spécifiez à la fois un `PRIMARY KEY` et un `ORDER BY`, la clé primaire doit être un sous-ensemble de l&#39;ordre de tri.
 
-    La clé primaire est également la clé de tri, qui est un tuple de `(user_id, timestamp)`.  Par conséquent, les données stockées dans chaque
+    La clé primaire est également la clé de tri, qui est un tuple `(user_id, timestamp)`. Par conséquent, les données stockées dans chaque
     fichier de colonne seront triées par `user_id`, puis par `timestamp`.
 
-    Pour une présentation approfondie des concepts fondamentaux de ClickHouse, consultez [&quot;Core Concepts&quot;](/fr/concepts/core-concepts/index).
+    Pour une présentation approfondie des concepts fondamentaux de ClickHouse, consultez [&quot;Concepts fondamentaux&quot;](/fr/concepts/core-concepts/index).
 
     #### Insérer des données dans votre table
 
@@ -283,7 +283,9 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     ### Téléverser un fichier
 
-    Une tâche courante lors de la prise en main d&#39;une base de données consiste à insérer des données que vous avez déjà dans des fichiers. Nous proposons des données d&#39;exemple en ligne que vous pouvez insérer, représentant des données de flux de clics — elles comprennent un identifiant utilisateur, une URL visitée et le timestamp de l&#39;événement.
+    Une tâche courante lorsque l&#39;on commence à utiliser une base de données consiste à insérer des données que vous avez déjà dans des fichiers. Nous proposons des données
+    d&#39;exemple en ligne que vous pouvez insérer, représentant des données de clickstream : elles comprennent un identifiant utilisateur, une URL visitée et
+    l&#39;horodatage de l&#39;événement.
 
     Supposons que nous ayons le texte suivant dans un fichier CSV nommé `data.csv` :
 
@@ -326,7 +328,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   ## Et ensuite ?
 </div>
 
-* Le [Tutoriel](/get-started/quickstarts/tutorial) vous explique comment insérer 2 millions de lignes dans une table et écrire quelques requêtes analytiques
+* Le [Tutoriel](/fr/get-started/quickstarts/tutorial) vous explique comment insérer 2 millions de lignes dans une table et écrire quelques requêtes analytiques
 * Nous proposons une liste de [jeux de données d’exemple](/fr/get-started/sample-datasets/index) avec des instructions pour les insérer
 * Consultez notre vidéo de 12 minutes sur les [premiers pas avec ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
 * Si vos données proviennent d’une source externe, consultez notre [collection de guides d’intégration](/fr/integrations/home) pour vous connecter à des files de messages, des bases de données, des pipelines, etc.

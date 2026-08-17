@@ -498,14 +498,8 @@ def main():
                 with open(RELEASE_INFO_FILE) as f:
                     release_info = json.load(f)
                 release_tag = release_info["release_tag"]
-                # not is_late_recovery: this release is the latest on its branch →
-                # publish the floating minor/major tags. is_latest: its branch is
-                # the latest release branch → additionally publish `latest`. These
-                # decide the floating tags by whether the release is current, so
-                # recovery of the current release re-applies them while recovery of
-                # a superseded one (a late recovery) only re-publishes its exact
-                # version tag.
-                is_late_recovery = release_info["is_late_recovery"]
+                # Branch head (bump not landed) → move the floating minor/major tags; is_latest also moves `latest`. A superseded release (bump landed) only re-publishes its exact version tag.
+                is_bump_landed = release_info["is_bump_landed"]
                 is_latest = release_info["latest"]
                 Shell.check(f"git checkout {release_tag}", strict=True)
 
@@ -527,13 +521,8 @@ def main():
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
-                    # Floating minor/major tags must point at the latest release
-                    # on the branch, so move them only when this release is that
-                    # latest one (not a late recovery) — true for a normal release
-                    # and for recovery of the current release, false for recovery
-                    # of a superseded tag (which would otherwise move them back to
-                    # an older image).
-                    if not is_late_recovery:
+                    # Move the floating minor/major tags only for the branch head (bump not landed), so a later recovery does not point them back at an older image.
+                    if not is_bump_landed:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
