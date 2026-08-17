@@ -161,6 +161,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <absl/container/inlined_vector.h>
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
@@ -10368,6 +10369,84 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
+namespace
+{
+
+/// NULL and NaN sort above every ordinary value in a key while min/max skip them, so a bound
+/// holding one at any depth does not answer the aggregate.
+/// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
+bool containsOrderInconsistentValue(const Field & field)
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (current->isNull() || isNaNField(*current))
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+/// Both ends the same degenerate value means the part holds no ordinary comparable value for that
+/// column, and skipping it is then the correct contribution. Matched by exact value, because the
+/// whole-universe pair [-Inf, +Inf] means "nothing is known" and must not qualify.
+bool isRepeatedDegenerateBound(const Field & left, const Field & right)
+{
+    auto is_plain_null = [](const Field & f) { return f.isNull() && !f.isPositiveInfinity() && !f.isNegativeInfinity(); };
+
+    if (is_plain_null(left) && is_plain_null(right))
+        return true;
+    if (left.isPositiveInfinity() && right.isPositiveInfinity())
+        return true;
+    return isNaNField(left) && isNaNField(right);
+}
+
+/// A minmax column's bounds are computed per column, so a Tuple bound is a component-wise
+/// envelope that need not be any row. The other composites select a real row and stay usable.
+bool isUnusableComputedBound(const Field & left, const Field & right, const Field & value)
+{
+    if (isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value) || value.getType() == Field::Types::Tuple;
+}
+
+/// The primary key's bounds are stored index rows, so a composite is a genuine value here and only
+/// order-inconsistent leaves break the equivalence.
+bool isUnusableIndexBound(const Field & left, const Field & right, const Field & value)
+{
+    if (isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value);
+}
+
+}
+
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -10547,6 +10626,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.left))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -10558,6 +10639,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.right))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -10573,8 +10656,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, lowest))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(min_column, primary_key_column[0]);
+                insert(min_column, lowest);
             }
         }
         ++pos;
@@ -10585,8 +10672,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, highest))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(max_column, primary_key_column[primary_key_column.size() - 1]);
+                insert(max_column, highest);
             }
         }
         ++pos;
