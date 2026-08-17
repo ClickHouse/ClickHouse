@@ -588,6 +588,11 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     if (this == &to_database)
         createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        /// The destination was checked before moving table data above. Do not repeat the
+        /// check here: a concurrent INSERT could otherwise turn a successful move into a
+        /// partial rename after the source table has already been detached.
+        target_db->createTableImpl(local_context, to_table_name, table, attach_query, false);
     else
         to_database.createTable(local_context, to_table_name, table, attach_query);
 

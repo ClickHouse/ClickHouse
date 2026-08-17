@@ -7511,7 +7511,12 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     UInt64 incoming_rows = 0;
     for (const auto & part : loaded_parts)
         incoming_rows += part->rows_count;
-    checkDatabaseRowsLimit(incoming_rows);
+
+    /// `SYSTEM RESTORE REPLICA` reattaches the first replica's existing parts while
+    /// readonly. Those parts are already accounted for, so an over-limit database must
+    /// not prevent metadata recovery. User-issued ATTACH commands still enforce the limit.
+    if (!allow_attach_while_readonly)
+        checkDatabaseRowsLimit(incoming_rows);
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
