@@ -251,12 +251,19 @@ public:
 
     /// The reader stopped and does not need more data, e.g. its pipeline finished early.
     /// Wakes a blocked `getChunk`; chunks appended after this are dropped. Unlike `cancel`,
-    /// this is not a failure: the producer continues.
+    /// this is not a failure: the producer stops this stream but finishes successfully.
     void detachReader()
     {
         std::lock_guard lock(mutex);
         reader_detached = true;
         has_data.notify_all();
+    }
+
+    /// True after `detachReader`: the reader is gone and appended chunks are dropped.
+    bool isReaderDetached()
+    {
+        std::lock_guard lock(mutex);
+        return reader_detached;
     }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
@@ -403,6 +410,19 @@ private:
 
         String getName() const override { return "SinkFromInMemoryExchange"; }
 
+        Status prepare() override
+        {
+            /// The reader detached, so appended chunks would be dropped. Close the input so the
+            /// stop propagates to the upstream stages; without this they would keep computing
+            /// data that nobody reads.
+            if (exchange->isReaderDetached())
+            {
+                input.close();
+                return Status::Finished;
+            }
+            return ISink::prepare();
+        }
+
         void consume(Chunk chunk) override
         {
             /// Zero-row chunks are scheduling ticks from an upstream `SourceFromInMemoryExchange`;
@@ -431,6 +451,19 @@ private:
         }
 
         String getName() const override { return "SourceFromInMemoryExchange"; }
+
+        Status prepare() override
+        {
+            /// The output port is closed, for example by a satisfied LIMIT downstream. Tell the
+            /// exchange, so the producer's sink stops instead of queueing chunks that nobody
+            /// reads. `onCancel` covers the cancellation path in the same way.
+            if (!detach_notified && getPort().isFinished())
+            {
+                detach_notified = true;
+                exchange->detachReader();
+            }
+            return ISource::prepare();
+        }
 
         std::optional<Chunk> tryGenerate() override
         {
@@ -466,6 +499,7 @@ private:
         }
 
         InMemoryExchangePtr exchange;
+        bool detach_notified = false;
     };
 
     const String query_id;
