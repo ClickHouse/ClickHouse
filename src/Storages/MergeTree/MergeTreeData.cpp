@@ -927,11 +927,11 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         cached = cached_estimator;
     }
 
-    /// The cached estimator is built by refreshStatistics() over all active parts.
-    /// Return it only if the query reads exactly that part set; a query pruned by
-    /// partition/PK analysis must compose statistics over the surviving parts
-    /// (issue #110281). The estimator is immutable once published, so the comparison
-    /// can run outside the mutex.
+    /// The cache contains statistics for the active-part snapshot seen by the last refresh.
+    /// Reuse it only when the query reads the same ordered parts. Otherwise load and merge
+    /// statistics for the parts left after partition and primary-key pruning. A changed active-part
+    /// sequence invalidates the full-set cache until a refresh publishes the new active snapshot.
+    /// The copied shared pointer keeps the cached snapshot alive after the mutex is released.
     if (cached && !cached->isStale(parts))
         return cached;
 
