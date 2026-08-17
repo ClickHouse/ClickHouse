@@ -506,7 +506,8 @@ REGISTER_FUNCTION(ArrayAUC)
     FunctionDocumentation::Description description_roc = R"(
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from zero to one, with a higher value indicating better model performance, unless a score is `NaN`, in which case the result is `NaN`.
+With `scale` set to true, the default, the resulting value ranges from zero to one, with a higher value indicating better model performance, and the result is `NaN` when the ROC AUC is undefined, for example if there are no positive or no negative labels.
+A `NaN` score always produces a `NaN` result.
 
 The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
@@ -532,7 +533,7 @@ For example:
 :::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve, or `NaN` if any score is `NaN`.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels.", {"Float64"}};
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
