@@ -7,6 +7,9 @@
 SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
+-- The abandon cases below intentionally read multi-million-row tables, and the on/off comparisons read
+-- them twice within one query; the stateless test profile caps `max_rows_to_read` at 20 million.
+SET max_rows_to_read = 0;
 
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Pre-distinct: 1` lines.
