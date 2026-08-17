@@ -76,8 +76,8 @@ def get_previous_release(
         response.raise_for_status()
 
     releases = response.json()
-    # Page 1 holds the 100 most recently created releases, a window far wider than the
-    # gap between releases, so a complete page always contains the newest one below.
+    # Later pages hold only older releases, so a short page 1 is a degraded response
+    # rather than the whole feed, and answering from it would pick a stale baseline.
     if len(releases) < RELEASES_PER_PAGE:
         raise ReleaseNotFoundException(
             f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
@@ -101,6 +101,16 @@ def get_previous_release(
             f"{len(release_infos)} most recent releases "
             f"(newest: {release_infos[0] if release_infos else 'none'}, "
             f"oldest: {release_infos[-1] if release_infos else 'none'})"
+        )
+
+    # Only releases the page itself sorts below the answer show that the page reaches
+    # past it; without any, an even newer eligible release could sit off the page.
+    older_on_page = [r for r in release_infos if r.version < previous_release.version]
+    if not older_on_page:
+        raise ReleaseNotFoundException(
+            f"Resolved {previous_release} as the release before {server_version}, but "
+            f"it is the oldest of the {len(release_infos)} releases on the first page "
+            f"of {CLICKHOUSE_TAGS_URL}, which cannot show that no newer one precedes it"
         )
 
     return previous_release

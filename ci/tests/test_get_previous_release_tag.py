@@ -9,12 +9,14 @@ These tests pin three properties:
     still being published is skipped rather than failing the download later;
   * only the first page is consulted, and it must be a complete page, so a
     degraded response fails loudly instead of answering from an older page;
-  * selection is by version, not by the `created_at` order the endpoint uses.
+  * selection is by version, not by the position the endpoint returns entries in,
+    which is roughly newest-created first and so not version order.
 
 See https://github.com/ClickHouse/ClickHouse/pull/114376 (Upgrade check on
 `e1cb0dee5e9` resolved `v25.1.4.53-stable` as the baseline for a 26.8.1.1 build).
 """
 
+import logging
 import os
 import sys
 
@@ -109,8 +111,14 @@ def test_degraded_first_page_does_not_fall_through_to_a_stale_release(monkeypatc
     assert requested == [1]
 
 
-def test_assetless_newest_below_is_skipped_for_the_next_newest_with_assets(monkeypatch):
-    """The release publish window: the newest release below has no package yet."""
+def test_assetless_newest_below_is_skipped_for_the_next_newest_with_assets(
+    monkeypatch, caplog
+):
+    """The release publish window: the newest release below has no package yet.
+
+    The skip has to be visible in the job log: `main` configures logging at INFO,
+    so a lower level leaves the substitution silent.
+    """
     _install_pager(
         monkeypatch,
         {
@@ -118,14 +126,23 @@ def test_assetless_newest_below_is_skipped_for_the_next_newest_with_assets(monke
                 [
                     _release("v26.7.3.19-stable", with_assets=False),
                     _release("v26.7.2.59-stable"),
+                    # A page always carries releases older than the answer as well.
+                    _release("v26.6.2.160-stable"),
                 ]
             )
         },
     )
 
-    resolved = gprt.get_previous_release(get_version_from_string("26.8.1.1"))
+    with caplog.at_level(logging.INFO, logger=gprt.logger.name):
+        resolved = gprt.get_previous_release(get_version_from_string("26.8.1.1"))
 
     assert str(resolved) == "v26.7.2.59-stable"
+    skips = [
+        r
+        for r in caplog.records
+        if r.levelno >= logging.WARNING and "26.7.3.19" in r.getMessage()
+    ]
+    assert skips, f"the skipped release was not reported: {caplog.text!r}"
 
 
 def test_happy_path(monkeypatch):
@@ -147,8 +164,8 @@ def test_happy_path(monkeypatch):
     assert str(resolved) == "v26.7.3.19-stable"
 
 
-def test_selection_is_by_version_not_by_creation_order(monkeypatch):
-    """The endpoint orders by `created_at`: an LTS patch is published after 26.7.3."""
+def test_selection_is_by_version_not_by_feed_position(monkeypatch):
+    """An LTS patch for an older branch can be returned ahead of a newer release."""
     _install_pager(
         monkeypatch,
         {
@@ -293,6 +310,26 @@ def test_a_full_page_entirely_older_than_the_build_still_answers_from_page_one(
     assert requested == [1]
 
 
+def test_an_answer_at_the_pages_version_floor_raises(monkeypatch):
+    """A complete page whose only eligible entry is its own oldest one.
+
+    Nothing on the page sorts below the answer, so the page gives no evidence that
+    it reaches past it and an even newer eligible release may sit off it. That is
+    the one shape a complete page cannot vouch for, so it must raise rather than
+    return a baseline it cannot justify.
+    """
+    page = _full_page([_release("v25.3.24.11-lts")])
+    requested = _install_pager(
+        monkeypatch,
+        {1: page, 2: _full_page([_release("v26.7.3.19-stable")])},
+    )
+
+    with pytest.raises(gprt.ReleaseNotFoundException):
+        gprt.get_previous_release(get_version_from_string("26.8.1.1"))
+
+    assert requested == [1]
+
+
 def test_none_server_version_resolves_the_newest_release(monkeypatch):
     """`download_last_release` passes None and expects the newest release."""
     _install_pager(
@@ -333,19 +370,14 @@ def test_find_previous_release_reports_not_found_for_no_releases():
     assert gprt.find_previous_release(None, []) == (False, None)
 
 
-def test_the_resolver_is_in_this_jobs_cache_digest():
-    """The guards above only stay live while their subject is digested.
+def _job_configs():
+    """`JobConfigs` plus praktika's path helper, imported lazily.
 
-    `Digest.calc_job_digest` hashes the files `traverse_paths` yields for
-    `include_paths`, and `hook_cache` reuses a cached success while the digest is
-    unchanged. The resolver lives under `tests/ci`, which `./ci` does not cover,
-    so without an explicit entry a change to it leaves this job cache-skippable
-    and the cases above never run against it.
+    `ci/defs/job_configs.py` does `from praktika import ...`, so `ci/` itself has
+    to be importable for `import praktika` to resolve to `ci/praktika`.
     """
     # pylint: disable=import-outside-toplevel
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    # `ci/defs/job_configs.py` does `from praktika import ...`, so `ci/` itself
-    # has to be importable for `import praktika` to resolve to `ci/praktika`.
     for path in (root, os.path.join(root, "ci")):
         if path not in sys.path:
             sys.path.insert(0, path)
@@ -353,12 +385,31 @@ def test_the_resolver_is_in_this_jobs_cache_digest():
     from ci.defs.job_configs import JobConfigs
     from ci.praktika.utils import Utils
 
-    digest_config = JobConfigs.ci_tests.digest_config
-    digested = Utils.traverse_paths(digest_config.include_paths, [])
+    return JobConfigs, Utils
+
+
+@pytest.mark.parametrize("job_attr", ["ci_tests", "upgrade_test_jobs"])
+def test_the_resolver_is_in_its_consumers_cache_digests(job_attr):
+    """Both jobs that depend on the resolver must digest it.
+
+    `Digest.calc_job_digest` hashes the files `traverse_paths` yields for
+    `include_paths`, and `hook_cache` reuses a cached success while the digest is
+    unchanged. The resolver lives under `tests/ci`, which `./ci` does not cover,
+    so without an explicit entry a change to it leaves the job cache-skippable:
+    for `ci_tests` the cases above never run against it, and for the Upgrade
+    check the production consumer is never exercised.
+    """
+    job_configs, utils = _job_configs()
+
+    job = getattr(job_configs, job_attr)
+    if isinstance(job, list):  # parametrize() yields a list of param sets
+        job = job[0]
+    digested = utils.traverse_paths(job.digest_config.include_paths, [])
 
     assert "./tests/ci/get_previous_release_tag.py" in digested, (
-        "The Upgrade check baseline resolver is not in the CI Tests cache digest, "
-        f"so these guards can be skipped when it changes: {digest_config.include_paths}"
+        f"The Upgrade check baseline resolver is not in {job.name}'s cache digest, "
+        f"so that job can be skipped when it changes: "
+        f"{job.digest_config.include_paths}"
     )
 
 

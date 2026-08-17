@@ -1099,6 +1099,9 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh runs this resolver to pick the baseline release,
+                # and ./ci does not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
             ]
         ),
         timeout=3600 * 2,
