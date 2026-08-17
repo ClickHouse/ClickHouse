@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Builds a probabilistic [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) from column values and returns it as an aggregate state.
 
-The Bloom filter can be used with [`bloomFilterContains`](/reference/functions/regular-functions/other-functions#bloomFilterContains) to efficiently check whether a value was present in the aggregated dataset.
+The Bloom filter can be used with `bloomFilterContains` to efficiently check whether a value was present in the aggregated dataset.
 
 This is useful for finding new values that appeared in one time interval but were absent in another, with low memory usage compared to exact methods like `NOT IN` or `EXCEPT`.
 
@@ -186,6 +186,6 @@ WHERE number >= 100
 
 ### See Also {#see-also}
 
-- [bloomFilterContains](/reference/functions/regular-functions/other-functions#bloomFilterContains) — checks whether a value is present in a Bloom filter state
+- `bloomFilterContains` — checks whether a value is present in a Bloom filter state
 - [AggregateFunction data type](/reference/data-types/aggregatefunction)
 - [Aggregate function combinators](/reference/functions/aggregate-functions/combinators)
