@@ -538,7 +538,7 @@ bool cachedLocationMatchesTableRoot(
     /// an absolute/relative filesystem-style path, as written natively by ClickHouse for
     /// namespace-less backends (HDFS/Local).
     const Poco::URI uri{std::string(cached_location)};
-    const std::string scheme = uri.getScheme();
+    const std::string & scheme = uri.getScheme();
     const std::string authority = uri.getAuthority();
     std::string_view path = uri.getPath();
 
