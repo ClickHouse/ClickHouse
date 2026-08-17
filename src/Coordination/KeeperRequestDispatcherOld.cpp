@@ -84,7 +84,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
-    extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_read_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
@@ -107,6 +107,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateContainer
         || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
@@ -124,6 +125,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateContainer:
                 case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
@@ -161,12 +163,16 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 
 }
 
-KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_)
+KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : responses_queue(std::numeric_limits<size_t>::max())
     , server(server_)
     , log(getLogger("KeeperRequestDispatcherOld"))
     , keeper_context(server->getKeeperContext())
+    , special_response_router(std::move(special_response_router_))
 {
+    if (!special_response_router)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcherOld requires a special response router");
+
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
@@ -935,7 +941,9 @@ void KeeperRequestDispatcherOld::addErrorResponses(const KeeperRequestsForSessio
         response->zxid = 0;
         response->error = error;
         response->enqueue_ts = std::chrono::steady_clock::now();
-        if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
+        DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
+        if (!special_response_router(response_for_session)
+            && !responses_queue.push(std::move(response_for_session)))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,

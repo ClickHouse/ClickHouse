@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 Dans cet exemple, nous définissons le partitionnement en fonction des types d’événements survenus pendant la semaine en cours.
 
-Par défaut, la clé de partitionnement à virgule flottante n’est pas prise en charge. Pour l’utiliser, activez le paramètre [allow&#95;floating&#95;point&#95;partition&#95;key](/fr/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+Par défaut, la clé de partitionnement à virgule flottante n’est pas prise en charge. Pour l’utiliser, activez le paramètre [allow&#95;floating&#95;point&#95;partition&#95;key](/fr/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
 Lors de l’insertion de nouvelles données dans une table, celles-ci sont stockées dans une partie distincte (fragment), triée selon la clé primaire. Dans les 10 à 15 minutes qui suivent l’insertion, les parties de la même partition fusionnent en une seule partie.
 
@@ -162,7 +162,7 @@ GROUP BY UserID;
 ```
 
 <Note>
-  Les performances d’une telle requête dépendent fortement de la structure de la table. C’est pourquoi cette optimisation n’est pas activée par défaut.
+  Les performances d’une telle requête dépendent de la structure de la table. L’optimisation est activée par défaut depuis la version 26.7 ; les heuristiques d’exécution l’ignorent automatiquement lorsque la structure des partitions est défavorable — plus précisément, lorsqu’il y a trop peu de partitions (moins de `max_threads / 2`), trop de partitions (plus de `max_number_of_partitions_for_independent_aggregation`) ou lorsque la taille des partitions est très déséquilibrée (la plus grande partition contient plus de lignes que deux fois le nombre total de lignes divisé par `max_threads`). La liste ci-dessous décrit les facteurs de structure qui favorisent de bonnes performances de manière générale ; parmi eux, seuls le nombre de partitions et le déséquilibre des tailles sont pris en compte par les heuristiques d’exécution.
 </Note>
 
 Les facteurs clés pour obtenir de bonnes performances sont les suivants :

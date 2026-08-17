@@ -19,7 +19,7 @@ ClickHouse [is fast](/get-started/about/why-clickhouse-is-so-fast) not just for 
 
 This makes data writes lightweight and [highly efficient](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
 
-To control the number of parts per table and implement ② above, ClickHouse continuously merges ([per partition](/concepts/core-concepts/partitions#per-partition-merges)) smaller parts into larger ones in the background until they reach a compressed size of approximately [~150 GB](/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+To control the number of parts per table and implement ② above, ClickHouse continuously merges ([per partition](/concepts/core-concepts/partitions#per-partition-merges)) smaller parts into larger ones in the background until they reach a compressed size of approximately [~150 GB](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool).
 
 The following diagram sketches this background merge process:
 
@@ -27,7 +27,7 @@ The following diagram sketches this background merge process:
 
 <br/>
 
-The `merge level` of a part is incremented by one with each additional merge. A level of `0` means the part is new and hasn't been merged yet. Parts that were merged into larger parts are marked as [inactive](/reference/system-tables/parts) and finally deleted after a [configurable](/reference/settings/merge-tree-settings#old_parts_lifetime) time (8 minutes by default). Over time, this creates a **tree** of merged parts. Hence the name [merge tree](/reference/engines/table-engines/mergetree-family/index) table.
+The `merge level` of a part is incremented by one with each additional merge. A level of `0` means the part is new and hasn't been merged yet. Parts that were merged into larger parts are marked as [inactive](/reference/system-tables/parts) and finally deleted after a [configurable](/reference/settings/merge-tree-settings/other#old_parts_lifetime) time (8 minutes by default). Over time, this creates a **tree** of merged parts. Hence the name [merge tree](/reference/engines/table-engines/mergetree-family/index) table.
 
 ## Monitoring merges {#monitoring-merges}
 In the [what are table parts](/concepts/core-concepts/parts) example, we [showed](/concepts/core-concepts/parts#monitoring-table-parts) that ClickHouse tracks all table parts in the [parts](/reference/system-tables/parts) system table. We used the following query to retrieve the merge level and the number of stored rows per active part of the example table:
@@ -74,7 +74,7 @@ The recorded dashboard above captures the entire process, from the initial data 
 ③ [Write amplification](https://en.wikipedia.org/wiki/Write_amplification).
 
 ## Concurrent merges {#concurrent-merges}
-A single ClickHouse server uses several background [merge threads](/reference/settings/server-settings/settings#background_pool_size) to execute concurrent part merges:
+A single ClickHouse server uses several background [merge threads](/reference/settings/server-settings/settings/background#background_pool_size) to execute concurrent part merges:
 
 <Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt='PART MERGES'/>
 
@@ -110,7 +110,7 @@ The part merging is performed in several steps:
 
 **③ Indexing**: A new [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the merged column files.
 
-**④ Compression & Storage**: The new column files and index are [compressed](/reference/statements/create/table#column_compression_codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
+**④ Compression & Storage**: The new column files and index are [compressed](/reference/statements/create/table/codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
 
 Additional [metadata in data parts](/concepts/core-concepts/parts), such as secondary data skipping indexes, column statistics, checksums, and min-max indexes, is also recreated based on the merged column files. We omitted these details for simplicity.
 

@@ -8,7 +8,7 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3",])
+@pytest.mark.parametrize("storage_type", ["s3", "local",])
 def test_writes_multiple_threads(started_cluster_iceberg_no_spark, format_version, storage_type):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     r1 = instance.is_built_with_llvm_coverage()

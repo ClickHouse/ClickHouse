@@ -3,6 +3,8 @@
 
 #include <Server/HTTP/HTTPRequestHandler.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -144,7 +146,8 @@ public:
 private:
     /// Overrides for response headers.
     std::unordered_map<String, String> http_response_headers_override;
-    std::string getResourcePath(const std::string & uri) const;
+    /// Returning std::nullopt means the handler should reject the request.
+    std::optional<std::string> getResourcePath(const std::string & uri) const;
 };
 
 class ProcessorsProfileWebUIRequestHandler : public HTTPRequestHandler
