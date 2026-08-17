@@ -81,6 +81,15 @@ fi
 grep -q 'path exists but is not a registered worktree' "$scratch/unregistered-worktree.log"
 rmdir "${worktree_base}-0"
 
+# A superseding PR creates a replacement branch on origin. The worker hook must
+# allow that new ref while still enforcing ancestry for existing refs.
+git -C "$repo" rev-parse HEAD > "$scratch/local-oid"
+local_oid=$(<"$scratch/local-oid")
+printf 'refs/heads/continue-pr-1-replacement %s refs/heads/continue-pr-1-replacement 0000000000000000000000000000000000000000\n' "$local_oid" |
+    "$repo/utils/continue-all-prs-hooks/pre-push"
+grep -q 'PUSH_MODE=supersede' "$repo/.claude/skills/continue-pr-auto/SKILL.md"
+grep -q 'PUSH_BRANCH="continue-pr-${PR_NUMBER}-<short-desc>"' "$repo/.claude/skills/continue-pr-auto/SKILL.md"
+
 PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=30 \
     CODEX_TEST_READY="$scratch/login-ready" "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key \
         --timeout 60 --once --skip-submodules --no-status --worktree-base "$worktree_base" --color never \

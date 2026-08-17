@@ -164,9 +164,26 @@ Resolving merge markers is not always enough. If the branch is long-stale, the m
   3. Only for a cross-repository fork owned by someone else, use `maintainerCanModify`: true means push to the fork remote; false means the branch is not pushable by the authenticated user.
 - For every pushable PR above, push the resolved branch — to `origin` for same-repository PRs and to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
 - **If you cannot push** — specifically, another author's cross-repository fork with `maintainerCanModify=false`, or a push actually fails for lack of permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
-  1. You already have the resolved + reworked branch in the worktree. Push it to the **main repo** (`origin`) under a new name (e.g. `continue-pr-<N>-<short-desc>`), then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
-  2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), the superseding PR must consist of your own commits — re-create the change under your authorship — and credit the author in the PR description prose; do **not** carry their unsigned commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too.
-  3. Close the original with `gh pr close <N> --repo ClickHouse/ClickHouse --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
+  1. Switch explicitly to supersede mode before creating the replacement target; do not reuse the original fork remote or branch name:
+     ```bash
+     PUSH_MODE=supersede
+     PUSH_REMOTE=origin
+     PUSH_BRANCH="continue-pr-${PR_NUMBER}-<short-desc>"
+     SUPERSEDE_REASON="maintainer edits are disabled on the original fork"
+     SUPERSEDE_REAUTHORED_UNSIGNED_CLA=false
+     git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH" && exit 1 || true
+     ```
+     The branch name must be new. Never update, delete, or force-push an existing replacement branch.
+  2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), create a new branch from the fetched base and re-create the intended change under your own authorship. Do not carry the original commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too:
+     ```bash
+     git checkout --detach "origin/$BASE_BRANCH"
+     git switch -c "$PUSH_BRANCH"
+     SUPERSEDE_REAUTHORED_UNSIGNED_CLA=true
+     # Re-create and test the intended change, then commit it under the current user.
+     ```
+     Record the reason for using supersede mode and whether the replacement is a re-authored unsigned-CLA change before passing the step-7 gate.
+  3. Push the replacement to the **main repo** (`origin`) under `$PUSH_BRANCH`, then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
+  4. Close the original with `gh pr close <N> --repo ClickHouse/ClickHouse --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
   If the change is genuinely not worth superseding, resolve locally if useful and report the **specific** blocker (e.g. "resolved locally but the fork has maintainer edits disabled") — not a bare "needs attention".
 - Check push access up front with `gh api user --jq .login` and `gh pr view <n> --json author,isCrossRepository,maintainerCanModify,headRepositoryOwner,headRepository`. Never infer that a same-repository PR or the authenticated user's own PR is unpushable from `maintainerCanModify=false`.
 
@@ -318,14 +335,20 @@ Report your assessment to the user.
 
 Determine where to push based on step 2:
 
+For an ordinary update, set `PUSH_MODE=update` and select the original PR target:
+
 **If the branch is in the main repository:**
 ```bash
+PUSH_MODE=update
 PUSH_REMOTE=origin
+PUSH_BRANCH="$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
 ```bash
+PUSH_MODE=update
 PUSH_REMOTE="$REMOTE_NAME"
+PUSH_BRANCH="$HEAD_BRANCH"
 ```
 
 Before every commit and push, run this safety gate. It is a hard stop and overrides the general requirement to push:
@@ -339,17 +362,30 @@ Before every commit and push, run this safety gate. It is a hard stop and overri
    INITIAL_BASE_HEAD=${BASELINE_STATE[1]}
    git cat-file -e "$INITIAL_PR_HEAD^{commit}"
    git cat-file -e "$INITIAL_BASE_HEAD^{commit}"
-   git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   if [ "$PUSH_MODE" = update ]; then
+       git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+   elif [ "$PUSH_MODE" = supersede ]; then
+       test "$PUSH_REMOTE" = origin
+       test "$PUSH_BRANCH" != "$HEAD_BRANCH"
+       test -n "${SUPERSEDE_REASON:-}"
+       git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH" && exit 1 || true
+       if [ "${SUPERSEDE_REAUTHORED_UNSIGNED_CLA:-false}" = true ]; then
+           ! git merge-base --is-ancestor "$INITIAL_PR_HEAD" HEAD
+       fi
+   else
+       echo "unknown push mode: $PUSH_MODE" >&2
+       exit 1
+   fi
    ```
-   Preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+   In `update` mode, preserve `INITIAL_PR_HEAD` as an ancestor: only add commits on top of the existing PR history. In `supersede` mode, publish only the new `$PUSH_BRANCH`; a re-authored unsigned-CLA replacement must not have `INITIAL_PR_HEAD` in its ancestry. In either mode, never rebase, reset a published branch onto another commit, amend published commits, delete a remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
 2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
-3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
+3. Before pushing in `update` mode, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
    ```bash
-   git fetch "$PUSH_REMOTE" "$HEAD_BRANCH"
-   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$HEAD_BRANCH")
+   git fetch "$PUSH_REMOTE" "$PUSH_BRANCH"
+   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$PUSH_BRANCH")
    git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
    ```
-   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
+   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history. In `supersede` mode, require instead that `git ls-remote --exit-code "$PUSH_REMOTE" "refs/heads/$PUSH_BRANCH"` remains nonzero immediately before pushing: the target must still be a new branch.
 4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`, then compare both against the immutable checkout baseline:
    ```bash
    diff -u "$PR_BASELINE_DIR/name-status" <(git diff --name-status "origin/$BASE_BRANCH"...HEAD)
@@ -362,7 +398,7 @@ The automation additionally installs a `pre-push` hook that rejects non-fast-for
 After the gate succeeds, push with:
 
 ```bash
-git push "$PUSH_REMOTE" HEAD:"$HEAD_BRANCH"
+git push "$PUSH_REMOTE" HEAD:"$PUSH_BRANCH"
 ```
 
 Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.
