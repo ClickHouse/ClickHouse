@@ -589,11 +589,11 @@ ensure_worktree()
     fi
 }
 
-# Return the available space, in KiB, on the filesystem containing the main
-# repository. `df -P` keeps the available-space column stable across platforms.
+# Return the available space, in KiB, on the filesystem containing the worker
+# pool. `df -P` keeps the available-space column stable across platforms.
 free_space_kib()
 {
-    df -Pk "$MAIN_REPO" | awk 'NR == 2 { print $4 }'
+    df -Pk "$(dirname "$WORKTREE_BASE")" | awk 'NR == 2 { print $4 }'
 }
 
 is_registered_worktree()
@@ -606,7 +606,8 @@ is_registered_worktree()
 is_managed_worktree()
 {
     local candidate="$1"
-    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]]
+    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]] \
+        && [[ "${candidate#"$WORKTREE_BASE"-}" =~ ^[0-9]+$ ]]
 }
 
 is_active_worker_worktree()
@@ -638,7 +639,10 @@ remove_registered_descendants()
             echo "Refusing to remove unmanaged nested worktree: $candidate" >&2
             return 1
         }
-        git -C "$MAIN_REPO" worktree remove --force "$candidate"
+        if ! git -C "$MAIN_REPO" worktree remove --force "$candidate"; then
+            echo "Retrying worktree removal with elevated permissions: $candidate" >&2
+            sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$candidate"
+        fi
     done
 }
 
@@ -653,12 +657,15 @@ prepare_worktree_for_task()
         return 1
     fi
 
-    remove_registered_descendants "$wt"
-    git -C "$wt" checkout --detach -q
     git -C "$wt" reset --hard -q HEAD
-    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
-    git -C "$wt" submodule foreach --quiet --recursive \
-        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+    git -C "$wt" checkout --detach -q HEAD
+    remove_registered_descendants "$wt"
+    if (( ! SKIP_SUBMODULES )); then
+        # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
     if ! git -C "$wt" clean -ffdx -e '/build*/'; then
         # Integration tests run services in containers and can leave
         # root-owned untracked files behind. Retry the identical, path-scoped
@@ -683,7 +690,10 @@ remove_managed_cache_dir()
 
     banner "Low disk space: removing $candidate"
     remove_registered_descendants "$candidate"
-    rm -rf -- "$candidate"
+    if ! rm -rf -- "$candidate"; then
+        echo "Retrying cleanup with elevated permissions: $candidate" >&2
+        sudo -n rm -rf -- "$candidate"
+    fi
 }
 
 # Run only while the worker pool is idle. First discard old `tmp` and `build*`
@@ -749,7 +759,10 @@ cleanup_worktrees_if_disk_low()
             fi
             banner "Low disk space: removing stale worktree $wt"
             remove_registered_descendants "$wt"
-            git -C "$MAIN_REPO" worktree remove --force "$wt"
+            if ! git -C "$MAIN_REPO" worktree remove --force "$wt"; then
+                echo "Retrying worktree removal with elevated permissions: $wt" >&2
+                sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$wt"
+            fi
             available=$(free_space_kib)
             (( available >= minimum_kib )) && return 0
         done
