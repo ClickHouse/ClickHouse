@@ -54,6 +54,7 @@ class MySQLNodeInstance:
                 password=self.password,
                 host=self.hostname,
                 port=self.port,
+                autocommit=True,
             )
         with self.mysql_connection.cursor() as cursor:
 
