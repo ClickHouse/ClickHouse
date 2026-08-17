@@ -152,6 +152,7 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/change_stream.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_bulk_write.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_encryption.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/client_session.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/collection.cpp
@@ -203,6 +204,9 @@ set(MONGOCXX_SOURCES
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/insert_one_result.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/instance.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/logger.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_callback.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_callback_params.cpp
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/oidc_credential.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pipeline.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/pool.cpp
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v1/range_options.cpp
