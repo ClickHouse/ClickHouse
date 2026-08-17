@@ -99,7 +99,13 @@ DistinctTransform::DistinctTransform(
         pool = nullptr;
         /// With a LIMIT below the activation threshold reading stops before the set can ever
         /// grow large enough for the bloom filter to be initialized, so don't even try.
-        try_init_bf = !((limit_hint_ && limit_hint_ < set_limit_for_enabling_bloom_filter_) || set_limit_for_enabling_bloom_filter_ == 0);
+        /// Bloom-filter-only keys cannot be counted exactly without retaining their full keys.
+        /// Keep the regular set path when an exact row limit is configured, so
+        /// `max_rows_in_distinct` retains its usual exact-cardinality contract.
+        try_init_bf = !(
+            (limit_hint_ && limit_hint_ < set_limit_for_enabling_bloom_filter_)
+            || set_limit_for_enabling_bloom_filter_ == 0
+            || set_size_limits.max_rows != 0);
     }
     else
     {
@@ -506,7 +512,11 @@ void DistinctTransform::transform(Chunk & chunk)
     if ((total_passed_bf - bf_worthless_last_bf_pass)*2 > (bf_worthless_total_set_bits - bf_worthless_last_set_bits))
         checkBloomFilterWorthiness();
 
-    auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
+    /// As with the bloom-filter path, `check_only` does not retain every new key. Do not use it
+    /// when an exact row limit is configured.
+    auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2)
+        && set_limit_for_enabling_bloom_filter > 0
+        && set_size_limits.max_rows == 0;
     auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
 
     IColumn::Filter filter(num_rows);
@@ -558,10 +568,9 @@ void DistinctTransform::transform(Chunk & chunk)
     if (!rows_passed)
         return;
 
-    /// The bloom filter holds a part of the state that would otherwise live in the hash set, so it
-    /// has to be accounted for by the size limits too: its keys towards `max_rows_in_distinct` and
-    /// its allocation towards `max_bytes_in_distinct`. Otherwise a stream could keep the whole
-    /// filter (and every key it absorbed) without the limits ever firing.
+    /// The bloom filter allocation is resident state and must be accounted for by
+    /// `max_bytes_in_distinct`. The optimization is disabled when `max_rows_in_distinct` is set,
+    /// because the Bloom filter alone cannot provide an exact distinct-key count.
     size_t new_set_bytes = data.getTotalByteCount();
     if (bloom_filter)
         new_set_bytes += bloom_filter->getFilterSizeBytes();
@@ -570,7 +579,7 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Stop reading, but still emit the new rows from the current chunk (their keys are
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size + total_passed_bf, new_set_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(new_set_size, new_set_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
     if (rows_passed != num_rows)
