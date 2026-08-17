@@ -3762,11 +3762,14 @@ bool ClientBase::processQueryText(const String & text)
                     insert = explain->getExplainedQuery()->as<ASTInsertQuery>();
             }
 
-            if (insert && insert->data && insert->format != "Values")
+            if (insert && insert->format != "Values")
             {
                 /// Generic inline INSERT data ends at the first empty line. If the accumulated SQL
                 /// chunk reaches its end first, the following physical line is still data, not a
                 /// client meta-command.
+                if (!insert->data)
+                    return true;
+
                 const auto data_end = String(insert->data, queries_end).find("\n\n");
                 if (data_end == std::string::npos)
                     return true;
