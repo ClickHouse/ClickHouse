@@ -49,6 +49,10 @@ SHOW CREATE TABLE non_metadata_alters;
 -- Commands that reach the storage as explicit mutations rather than as alter commands.
 -- They rewrite parts too, so the same setting must refuse them.
 
+-- Both modes decide whether a statement below is a heavyweight mutation at all, so pin them.
+SET alter_update_mode = 'heavy';
+SET lightweight_delete_mode = 'alter_update';
+
 -- Lightweight updates need materialized _block_number and _block_offset columns.
 ALTER TABLE non_metadata_alters MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1;
 
@@ -84,8 +88,8 @@ ALTER TABLE non_metadata_alters REWRITE PARTS; --{serverError ALTER_OF_COLUMN_IS
 -- granted by the interpreter that synthesizes the rewrite rather than by the statement shape.
 ALTER TABLE non_metadata_alters UPDATE `_row_exists` = 0 WHERE key = 1; --{serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 
--- Lightweight writes produce patch parts instead of rewriting existing ones, so they stay
--- permitted. The projection has to go first: lightweight_mutation_projection_mode refuses
+-- The setting governs ALTER DDL, so the dedicated delete and update statements stay permitted
+-- in every mode. The projection has to go first: lightweight_mutation_projection_mode refuses
 -- them on a table that has one.
 ALTER TABLE non_metadata_alters DROP PROJECTION proj_key SETTINGS allow_non_metadata_alters = 1;
 
@@ -94,6 +98,10 @@ DELETE FROM non_metadata_alters WHERE key = 999;
 DELETE FROM non_metadata_alters WHERE key = 998 SETTINGS lightweight_delete_mode = 'lightweight_update';
 
 UPDATE non_metadata_alters SET value7 = 2 WHERE key = 1;
+
+-- An ALTER UPDATE that runs as a lightweight update never reaches the mutation path, so it is
+-- permitted even though the same statement is refused under the default 'heavy' mode above.
+ALTER TABLE non_metadata_alters UPDATE value7 = 4 WHERE key = 1 SETTINGS alter_update_mode = 'lightweight';
 
 -- Every command refused above runs when the setting is enabled, which is the default.
 

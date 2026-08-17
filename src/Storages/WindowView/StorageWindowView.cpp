@@ -1055,6 +1055,9 @@ void StorageWindowView::cleanup()
     cleanup_context->makeQueryContext();
     cleanup_context->setCurrentQueryId("");
     cleanup_context->setQueryKindReplicatedDatabaseInternal();
+    /// Dropping the windows that fell out of the watermark is internal housekeeping rather than
+    /// user DDL, so the user's `allow_non_metadata_alters` does not govern it.
+    cleanup_context->setSetting("allow_non_metadata_alters", true);
     InterpreterAlterQuery interpreter_alter(alter_query, cleanup_context);
     interpreter_alter.execute();
 

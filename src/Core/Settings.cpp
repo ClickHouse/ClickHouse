@@ -5515,17 +5515,19 @@ When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejecte
 `ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
 scheduling a mutation (see `system.mutations`). This covers:
 
-- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` and
-  `RENAME COLUMN` of a physical column, `CLEAR COLUMN`, `DROP INDEX`, `DROP PROJECTION`,
-  `DROP STATISTICS`, and `MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
-- `UPDATE`, `DELETE WHERE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`,
-  `MATERIALIZE STATISTICS`, `MATERIALIZE COLUMN`, `MATERIALIZE TTL`, `APPLY DELETED MASK`,
-  `APPLY PATCHES` and `REWRITE PARTS`.
+- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` of a physical
+  column, `RENAME COLUMN` of any column including an `ALIAS`, `CLEAR COLUMN`, `DROP INDEX`,
+  `DROP PROJECTION`, `DROP STATISTICS`, and `MODIFY TTL` when `materialize_ttl_after_modify`
+  is enabled.
+- `UPDATE` under the default `alter_update_mode = 'heavy'`, `DELETE WHERE`,
+  `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE STATISTICS`,
+  `MATERIALIZE COLUMN`, `MATERIALIZE TTL`, `APPLY DELETED MASK`, `APPLY PATCHES` and
+  `REWRITE PARTS`.
 
-Statements that only change metadata are always allowed, including `ADD COLUMN`,
-`COMMENT COLUMN`, `MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS`
-column. Lightweight `DELETE FROM` and `UPDATE` are also allowed: they write patch parts
-instead of rewriting existing ones.
+Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
+`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column. The
+`DELETE FROM` and `UPDATE` statements are allowed in every mode they support: the setting
+governs `ALTER` DDL, not the dedicated delete and update statements.
 
 The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
 `Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.

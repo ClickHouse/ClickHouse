@@ -6,12 +6,14 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -147,6 +149,25 @@ BlockIO InterpreterDeleteQuery::execute()
                         table_id.getFullTableName());
         }
 
+        /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host
+        /// derives its delete mode and its own storage-check relaxation from its own settings.
+        if (!delete_query.cluster.empty())
+        {
+            /// Substitute the database into table functions that use the current database implicitly, e.g.
+            /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
+            /// the database of the session. The table identifiers are qualified on each host instead.
+            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+            auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
+            if (mutable_delete_query.predicate)
+                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
+            if (mutable_delete_query.partition)
+                visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.partition);
+
+            DDLQueryOnClusterParams params;
+            params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        }
+
         using enum LightweightDeleteMode;
         auto lightweight_delete_mode = settings[Setting::lightweight_delete_mode];
 
@@ -213,10 +234,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
             auto context = Context::createCopy(getContext());
             context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
-            /// This ALTER is a lightweight delete, not a user-issued one, so the storage-side
-            /// `allow_non_metadata_alters` check must not see it. The relaxation lives on this
-            /// private copy because the storage cannot tell the two apart: a user-written
-            /// `ALTER TABLE ... UPDATE _row_exists = 0` produces an identical command.
+            /// A user-written `ALTER TABLE ... UPDATE _row_exists = 0` reaches the storage as an
+            /// identical command, so `allow_non_metadata_alters` can only be relaxed here.
             context->setSetting("allow_non_metadata_alters", true);
             InterpreterAlterQuery alter_interpreter(alter_ast, context);
             return alter_interpreter.execute();
