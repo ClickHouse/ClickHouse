@@ -1,8 +1,13 @@
 --- The default identity file in ~/.ssh
 Using the SSH key from $HOME/.ssh/id_ed25519.
 1
+--- A dead ssh-agent socket does not prevent an explicit key file from being used
+1
 --- The ed25519 key in the ssh-agent
 Using the SSH key 'the ed25519 key' from the ssh-agent.
+1
+--- IdentityAgent none disables an available ssh-agent
+Using the SSH key from $HOME/.ssh/id_rsa.
 1
 --- The rsa key in the ssh-agent, with nothing in ~/.ssh
 Using the SSH key 'the rsa key' from the ssh-agent.

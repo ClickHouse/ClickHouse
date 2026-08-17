@@ -7,7 +7,10 @@
 
 #    include <cstdlib>
 #    include <cstring>
+#    include <fstream>
+#    include <fnmatch.h>
 #    include <pwd.h>
+#    include <sstream>
 #    include <unistd.h>
 
 #    pragma clang diagnostic push
@@ -111,6 +114,61 @@ String expandIdentityFileName(std::string_view pattern, const String & home_dire
     return result;
 }
 
+bool matchesHostPattern(const String & patterns, const String & host)
+{
+    std::istringstream input(patterns);
+    String pattern;
+    bool matched = false;
+    while (input >> pattern)
+    {
+        if (pattern.starts_with('!'))
+        {
+            if (fnmatch(pattern.c_str() + 1, host.c_str(), 0) == 0)
+                return false;
+            continue;
+        }
+
+        matched |= fnmatch(pattern.c_str(), host.c_str(), 0) == 0;
+    }
+    return matched;
+}
+
+std::optional<String> findSSHAgentSocketPathInConfig(const String & config_file, const String & host, const String & home_directory)
+{
+    std::ifstream input(config_file);
+    if (!input)
+        return std::nullopt;
+
+    bool applies = false;
+    String line;
+    while (std::getline(input, line))
+    {
+        size_t comment = line.find('#');
+        if (comment != String::npos)
+            line.resize(comment);
+
+        std::istringstream line_input(line);
+        String keyword;
+        line_input >> keyword;
+        if (keyword.empty())
+            continue;
+
+        String argument;
+        std::getline(line_input >> std::ws, argument);
+        if (keyword == "Host")
+        {
+            applies = matchesHostPattern(argument, host);
+        }
+        else if (applies && keyword == "IdentityAgent")
+        {
+            if (argument == "none")
+                return String{};
+            return expandIdentityFileName(argument, home_directory, host);
+        }
+    }
+    return std::nullopt;
+}
+
 /// Passed to libssh, which calls it only if the private key turns out to be encrypted.
 int askPassphrase(const char * /*prompt*/, char * buf, size_t len, int /*echo*/, int /*verify*/, void * userdata)
 {
@@ -160,10 +218,11 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
     return SSHKey(key);
 }
 
-SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob)
+SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob, String agent_socket_path)
 {
     SSHKey key;
     key.agent_key_blob = std::move(key_blob);
+    key.agent_socket_path = std::move(agent_socket_path);
     return key;
 }
 
@@ -171,6 +230,7 @@ SSHKey::SSHKey(const SSHKey & other)
 {
     key = ssh_key_dup(other.key);
     agent_key_blob = other.agent_key_blob;
+    agent_socket_path = other.agent_socket_path;
 }
 
 SSHKey::SSHKey(SSHKey && other) noexcept
@@ -178,6 +238,7 @@ SSHKey::SSHKey(SSHKey && other) noexcept
     key = other.key;
     other.key = nullptr;
     agent_key_blob = std::move(other.agent_key_blob);
+    agent_socket_path = std::move(other.agent_socket_path);
 }
 
 SSHKey & SSHKey::operator=(const SSHKey & other)
@@ -187,6 +248,7 @@ SSHKey & SSHKey::operator=(const SSHKey & other)
     ssh_key_free(key);
     key = ssh_key_dup(other.key);
     agent_key_blob = other.agent_key_blob;
+    agent_socket_path = other.agent_socket_path;
     return *this;
 }
 
@@ -196,6 +258,7 @@ SSHKey & SSHKey::operator=(SSHKey && other) noexcept
     key = other.key;
     other.key = nullptr;
     agent_key_blob = std::move(other.agent_key_blob);
+    agent_socket_path = std::move(other.agent_socket_path);
     return *this;
 }
 
@@ -213,7 +276,7 @@ bool SSHKey::isEqual(const SSHKey & other) const
 String SSHKey::signString(std::string_view input) const
 {
     if (!agent_key_blob.empty())
-        return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE);
+        return SSHAgent::signString(agent_key_blob, input, SIGNATURE_NAMESPACE, agent_socket_path);
 
     char * signature = nullptr;
     if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, SIGNATURE_NAMESPACE, SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)
@@ -309,6 +372,15 @@ std::vector<String> getSSHIdentityFiles(const String & host)
     }
 
     return result;
+}
+
+std::optional<String> getSSHAgentSocketPath(const String & host)
+{
+    String home_directory = getHomeDirectory();
+    for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
+        if (auto socket_path = findSSHAgentSocketPathInConfig(config_file, host, home_directory))
+            return socket_path;
+    return std::nullopt;
 }
 
 }

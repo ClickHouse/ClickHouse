@@ -51,6 +51,7 @@ private:
     /// If set, the private key is not available here, and the signing is delegated to the ssh-agent.
     /// It is the public key of the key held by the agent, in the SSH wire format.
     String agent_key_blob;
+    String agent_socket_path;
     bool needs_deallocation = true;
 };
 
@@ -71,7 +72,7 @@ public:
 
     /// A key that is held by the ssh-agent: only the public key `key_blob` (in the SSH wire format) is known here,
     /// and every signature is made by the agent.
-    static SSHKey makeKeyFromSSHAgent(String key_blob);
+    static SSHKey makeKeyFromSSHAgent(String key_blob, String agent_socket_path);
 };
 
 /// The private key files that `ssh` would try when connecting to `host`:
@@ -79,6 +80,11 @@ public:
 /// followed by the default identity files, such as `~/.ssh/id_ed25519`.
 /// The files do not necessarily exist.
 std::vector<String> getSSHIdentityFiles(const String & host);
+
+/// The socket configured by `IdentityAgent` for `host`. `nullopt` means that the
+/// configuration did not specify an agent and the `SSH_AUTH_SOCK` environment variable is used.
+/// An empty string means that `IdentityAgent none` disables use of the agent.
+std::optional<String> getSSHAgentSocketPath(const String & host);
 
 }
 

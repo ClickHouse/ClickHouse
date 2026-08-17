@@ -123,11 +123,10 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
 }
 
 /// Sends one message to the agent and returns its response.
-String talkToAgent(std::string_view request)
+String talkToAgent(std::string_view request, const String & socket_path)
 {
-    String socket_path = SSHAgent::getSocketPath();
     if (socket_path.empty())
-        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "There is no ssh-agent: the SSH_AUTH_SOCK environment variable is not set");
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "There is no ssh-agent socket configured");
 
     Poco::Net::StreamSocket socket(Poco::Net::SocketAddress(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path));
 
@@ -179,12 +178,12 @@ String SSHAgent::getSocketPath()
     return socket_path ? socket_path : "";
 }
 
-std::vector<SSHAgent::Identity> SSHAgent::listIdentities()
+std::vector<SSHAgent::Identity> SSHAgent::listIdentities(const String & socket_path)
 {
     String request;
     request.push_back(SSH_AGENTC_REQUEST_IDENTITIES);
 
-    String response = talkToAgent(request);
+    String response = talkToAgent(request, socket_path);
     MessageReader reader(response);
 
     UInt8 type = reader.readUInt8();
@@ -204,7 +203,7 @@ std::vector<SSHAgent::Identity> SSHAgent::listIdentities()
     return identities;
 }
 
-String SSHAgent::signString(const String & key_blob, std::string_view data, std::string_view sig_namespace)
+String SSHAgent::signString(const String & key_blob, std::string_view data, std::string_view sig_namespace, const String & socket_path)
 {
     unsigned char hash[32];
     encodeSHA256(data, hash);
@@ -227,7 +226,7 @@ String SSHAgent::signString(const String & key_blob, std::string_view data, std:
     appendString(request, data_to_sign);
     appendUInt32(request, flags);
 
-    String response = talkToAgent(request);
+    String response = talkToAgent(request, socket_path);
     MessageReader reader(response);
 
     UInt8 type = reader.readUInt8();

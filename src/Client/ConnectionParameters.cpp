@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SSH_AGENT_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -96,12 +97,22 @@ SSHKey loadPrivateKey(const String & filename, const std::optional<String> & pas
 }
 
 /// The key held by the ssh-agent that corresponds to one of the identity files, if any.
-std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<String> & identity_files)
+std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<String> & identity_files, const String & agent_socket_path)
 {
-    if (!SSHAgent::isAvailable())
+    if (!SSHAgent::isAvailable(agent_socket_path))
         return {};
 
-    std::vector<SSHAgent::Identity> identities = SSHAgent::listIdentities();
+    std::vector<SSHAgent::Identity> identities;
+    try
+    {
+        identities = SSHAgent::listIdentities(agent_socket_path);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::SSH_AGENT_ERROR)
+            throw;
+        return {};
+    }
     for (const String & identity_file : identity_files)
     {
         String key_blob = readPublicKeyBlob(identity_file);
@@ -121,15 +132,17 @@ std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<Strin
 SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
 {
     std::vector<String> identity_files = getSSHIdentityFiles(host);
+    std::optional<String> configured_agent_socket_path = getSSHAgentSocketPath(host);
+    String agent_socket_path = configured_agent_socket_path.value_or(SSHAgent::getSocketPath());
 
     /// A key held by the ssh-agent is preferred: it does not need a passphrase.
     /// But if the passphrase is specified, the user obviously wants the key file to be used.
     if (!passphrase.has_value())
     {
-        if (auto identity = findIdentityInSSHAgent(identity_files))
+        if (auto identity = findIdentityInSSHAgent(identity_files, agent_socket_path))
         {
             fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity->comment);
-            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob);
+            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
         }
     }
 
@@ -143,9 +156,18 @@ SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
     }
 
     /// There are no identity files, but the agent may still hold a key that the server knows about.
-    if (!passphrase.has_value() && SSHAgent::isAvailable())
+    if (!passphrase.has_value() && SSHAgent::isAvailable(agent_socket_path))
     {
-        std::vector<SSHAgent::Identity> identities = SSHAgent::listIdentities();
+        std::vector<SSHAgent::Identity> identities;
+        try
+        {
+            identities = SSHAgent::listIdentities(agent_socket_path);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::SSH_AGENT_ERROR)
+                throw;
+        }
         if (!identities.empty())
         {
             fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identities.front().comment);
@@ -167,8 +189,10 @@ SSHKey getSSHKey(const String & host, const String & filename, const std::option
     /// If the key is also held by the ssh-agent, use the agent: this way the passphrase is not needed.
     if (!passphrase.has_value())
     {
-        if (auto identity = findIdentityInSSHAgent({filename}))
-            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob);
+        std::optional<String> configured_agent_socket_path = getSSHAgentSocketPath(host);
+        String agent_socket_path = configured_agent_socket_path.value_or(SSHAgent::getSocketPath());
+        if (auto identity = findIdentityInSSHAgent({filename}, agent_socket_path))
+            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
     }
 
     return loadPrivateKey(filename, passphrase);

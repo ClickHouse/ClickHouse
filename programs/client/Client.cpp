@@ -1122,7 +1122,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
         ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key to authenticate with the server. "
-            "If the file name is omitted, the key is looked up the same way as `ssh` does it: "
+            "If the file name is omitted, the key is looked up using SSH configuration: "
             "the identity files configured for this host in `~/.ssh/config`, the default identity files, such as `~/.ssh/id_ed25519`, "
             "and the keys held by the ssh-agent.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")

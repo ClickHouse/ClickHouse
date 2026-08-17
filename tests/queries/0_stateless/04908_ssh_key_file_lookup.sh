@@ -36,6 +36,10 @@ function run_client()
 echo '--- The default identity file in ~/.ssh'
 run_client
 
+echo '--- A dead ssh-agent socket does not prevent an explicit key file from being used'
+SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
+    --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"
+
 echo '--- The ed25519 key in the ssh-agent'
 eval "$(ssh-agent -s)" > /dev/null
 trap 'ssh-agent -k > /dev/null 2>&1' EXIT
@@ -47,6 +51,13 @@ run_client
 echo '--- The rsa key in the ssh-agent, with nothing in ~/.ssh'
 ssh-add -qD 2>/dev/null
 ssh-add -q "${SSH_HOME}/.ssh/id_rsa" 2>/dev/null
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+Host *
+    IdentityAgent none
+EOF
+echo '--- IdentityAgent none disables an available ssh-agent'
+run_client
+rm "${SSH_HOME}/.ssh/config"
 rm "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_rsa" "${SSH_HOME}/.ssh/id_rsa.pub"
 run_client
 
