@@ -49,8 +49,8 @@ SYSTEM START TTL MERGES ttl_clear_index_recompression_metadata;
 OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL
 SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
 
--- Missing recompression metadata must force a regular rewrite that recalculates all TTL
--- metadata and clears the expired index instead of preserving files.
+-- Explicit `OPTIMIZE FINAL` performs a regular rewrite that recalculates all TTL metadata
+-- and clears the expired index instead of preserving files.
 SELECT notEmpty(recompression_ttl_info.expression), secondary_indices_compressed_bytes
 FROM system.parts
 WHERE database = currentDatabase()

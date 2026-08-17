@@ -65,7 +65,9 @@ def create_table(node, replica):
     )
 
 
-def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluster):
+def test_alter_ttl_uses_explicit_materialization_for_missing_metadata(
+    started_cluster,
+):
     node1.query("SYSTEM STOP TTL MERGES")
     node1.query(
         """
@@ -104,40 +106,28 @@ def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluste
     file_preserving_merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
 
     node1.query("SYSTEM START TTL MERGES")
-    assert_eq_with_retry(
-        node1,
-        "SELECT count() FROM ttl_clear_index_stale",
-        "1",
-        retry_count=60,
+    node1.query(
+        "ALTER TABLE ttl_clear_index_stale MATERIALIZE TTL "
+        "SETTINGS mutations_sync = 2"
     )
+
     assert node1.query("SELECT k FROM ttl_clear_index_stale") == "2\n"
     assert (
         node1.query(
             """
-            SELECT sum(secondary_indices_compressed_bytes) > 0
+            SELECT
+                length(index_clear_ttl_info.expression),
+                secondary_indices_compressed_bytes > 0
             FROM system.parts
             WHERE database = currentDatabase()
               AND table = 'ttl_clear_index_stale'
               AND active
             """
         )
-        == "1\n"
+        == "1\t1\n"
     )
 
     node1.query("SYSTEM FLUSH LOGS")
-    assert_eq_with_retry(
-        node1,
-        """
-        SELECT count() > 0
-        FROM system.part_log
-        WHERE database = currentDatabase()
-          AND table = 'ttl_clear_index_stale'
-          AND event_type = 'MergeParts'
-          AND merge_reason = 'RegularMerge'
-          AND error = 0
-        """,
-        "1",
-    )
     assert (
         node1.query(
             """
@@ -146,7 +136,7 @@ def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluste
             WHERE database = currentDatabase()
               AND table = 'ttl_clear_index_stale'
               AND event_type = 'MergeParts'
-              AND merge_reason = 'TTLClearIndexMerge'
+              AND merge_reason IN ('RegularMerge', 'TTLClearIndexMerge')
             """
         )
         == "0\n"
@@ -156,6 +146,103 @@ def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluste
         == file_preserving_merges_before
     )
     node1.query("DROP TABLE ttl_clear_index_stale SYNC")
+
+
+def test_ttl_clear_index_leaves_patches_pending(started_cluster):
+    node1.query(
+        """
+        CREATE TABLE ttl_clear_index_patches
+        (
+            d Date,
+            k UInt64,
+            v UInt64,
+            INDEX idx v TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL d + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            apply_patches_on_merge = 1,
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            index_granularity = 2,
+            index_granularity_bytes = '10Mi',
+            merge_with_ttl_timeout = 1,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+        """
+    )
+    node1.query("SYSTEM STOP TTL MERGES ttl_clear_index_patches")
+    node1.query(
+        "INSERT INTO ttl_clear_index_patches VALUES "
+        "('2000-01-01', 1, 1), ('2000-01-01', 2, 2)"
+    )
+    node1.query(
+        """
+        ALTER TABLE ttl_clear_index_patches UPDATE v = 100 WHERE k = 1
+        SETTINGS
+            alter_update_mode = 'lightweight_force',
+            enable_lightweight_update = 1,
+            mutations_sync = 2
+        """
+    )
+
+    index_size_query = """
+        SELECT sum(secondary_indices_compressed_bytes) > 0
+        FROM system.parts
+        WHERE database = currentDatabase()
+          AND table = 'ttl_clear_index_patches'
+          AND active
+          AND name NOT LIKE 'patch-%'
+    """
+    patch_count_query = """
+        SELECT count()
+        FROM system.parts
+        WHERE database = currentDatabase()
+          AND table = 'ttl_clear_index_patches'
+          AND active
+          AND name LIKE 'patch-%'
+    """
+    assert node1.query(index_size_query) == "1\n"
+    assert node1.query(patch_count_query) == "1\n"
+    assert (
+        node1.query(
+            "SELECT v FROM ttl_clear_index_patches ORDER BY k "
+            "SETTINGS apply_patch_parts = 0"
+        )
+        == "1\n2\n"
+    )
+    assert (
+        node1.query("SELECT v FROM ttl_clear_index_patches ORDER BY k")
+        == "100\n2\n"
+    )
+
+    file_preserving_merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+    node1.query("SYSTEM START TTL MERGES ttl_clear_index_patches")
+    assert_eq_with_retry(node1, index_size_query, "0", retry_count=60)
+    assert_eq_with_retry(
+        node1,
+        "SELECT sum(value) > {} FROM system.events "
+        "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(
+            file_preserving_merges_before
+        ),
+        "1",
+        retry_count=60,
+    )
+
+    assert node1.query(patch_count_query) == "1\n"
+    assert (
+        node1.query(
+            "SELECT v FROM ttl_clear_index_patches ORDER BY k "
+            "SETTINGS apply_patch_parts = 0"
+        )
+        == "1\n2\n"
+    )
+    assert (
+        node1.query("SELECT v FROM ttl_clear_index_patches ORDER BY k")
+        == "100\n2\n"
+    )
+    node1.query("DROP TABLE ttl_clear_index_patches SYNC")
 
 
 def test_source_replica_produces_ttl_clear_index_merge(started_cluster):

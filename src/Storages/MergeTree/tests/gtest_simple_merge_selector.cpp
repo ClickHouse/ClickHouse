@@ -57,7 +57,7 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
 }
 
 
-TEST(TTLIndexClearMergeSelector, IncompleteTTLMetadataIsImmediatelyDue)
+TEST(TTLIndexClearMergeSelector, SkipsIncompleteTTLMetadata)
 {
     const time_t current_time = 100;
     TTLIndexClearMergeSelector selector(current_time);
@@ -68,16 +68,14 @@ TEST(TTLIndexClearMergeSelector, IncompleteTTLMetadataIsImmediatelyDue)
         .all_ttl_calculated_if_any = false,
         .size = 100,
         .rows = 100,
-        .next_index_clear_ttl = 0,
+        .next_index_clear_ttl = current_time,
         .can_preserve_files_for_index_clear = false,
     };
 
     std::vector<MergeConstraint> constraints{{1000, 1000}};
     auto selected = selector.select({PartsRange{part}}, constraints, nullptr);
 
-    ASSERT_EQ(selected.size(), 1);
-    ASSERT_EQ(selected.front().size(), 1);
-    EXPECT_EQ(selected.front().front().name, part.name);
+    EXPECT_TRUE(selected.empty());
 }
 
 TEST(TTLIndexClearMergeSelector, TestRowsConstraint)

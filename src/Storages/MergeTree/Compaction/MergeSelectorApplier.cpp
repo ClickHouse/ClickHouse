@@ -18,10 +18,12 @@ static MergeSelectorChoice makeTTLIndexClearMergeChoice(PartsRange range, PartsR
 {
     chassert(range.size() == 1);
 
-    /// A `TTLClearIndex` entry always preserves source files and never applies patches.
-    /// A subsequent `Regular` selection recalculates stale TTL metadata.
-    if (range.front().can_preserve_files_for_index_clear && patch_parts.empty())
+    if (range.front().can_preserve_files_for_index_clear)
+    {
+        /// A `TTLClearIndex` entry preserves source files and leaves patch parts pending.
+        /// TODO: Track the history of rewritten parts with no changes to row offsets, so patch parts do not have to fall back to joining on block columns.
         return MergeSelectorChoice{std::move(range), {}, MergeType::TTLClearIndex};
+    }
 
     return MergeSelectorChoice{std::move(range), std::move(patch_parts), MergeType::Regular};
 }
@@ -138,9 +140,11 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             choices.reserve(merge_ranges.size());
             for (auto & range : merge_ranges)
             {
-                const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
-                /// Pending patches remain pending unless this merge applies them. Only applied patches require `Regular`.
-                PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
+                const bool apply_patches_in_regular_fallback
+                    = !range.front().can_preserve_files_for_index_clear
+                    && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+                PartsRange patch_parts
+                    = apply_patches_in_regular_fallback ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
                 choices.push_back(makeTTLIndexClearMergeChoice(std::move(range), std::move(patch_parts)));
             }
             return choices;
