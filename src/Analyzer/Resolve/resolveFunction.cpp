@@ -336,6 +336,13 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 {
     auto in_second_argument_type = in_second_argument->getNodeType();
     auto in_first_argument_result_type = in_first_argument->getResultType();
+    /// A `NULL` literal is resolved as `Nullable(Nothing)`. It has no concrete key shape to
+    /// validate, and its `IN` result is determined by null semantics rather than a set-key cast.
+    /// In particular, probing a cast to a tuple would reject otherwise valid expressions such as
+    /// `NULL IN (SELECT (NULL, '-1'))` during analysis.
+    if (in_first_argument_result_type && isNullable(in_first_argument_result_type) && isNothing(removeNullable(in_first_argument_result_type)))
+        return;
+
     if ((in_second_argument_type == QueryTreeNodeType::QUERY
             || in_second_argument_type == QueryTreeNodeType::UNION
             || in_second_argument_type == QueryTreeNodeType::TABLE)
