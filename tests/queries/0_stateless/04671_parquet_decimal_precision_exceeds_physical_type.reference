@@ -1,0 +1,4 @@
+-- INT32 physical with declared precision 18 (exceeds 9): rejected
+precision or scale is too big
+-- INT64 physical with declared precision 38 (exceeds 18): rejected
+precision or scale is too big

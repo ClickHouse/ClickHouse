@@ -31,6 +31,7 @@ namespace Setting
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsBool merge_tree_prefetch_json_shared_data_substreams;
     extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
@@ -127,9 +128,15 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
-    result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::allow_experimental_analyzer];
+    /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
+    /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
+    /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
+    result.use_query_condition_cache = settings[Setting::use_query_condition_cache]
+        && settings[Setting::allow_experimental_analyzer]
+        && settings[Setting::apply_deleted_mask];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
+    result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
