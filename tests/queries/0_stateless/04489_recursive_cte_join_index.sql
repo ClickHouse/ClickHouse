@@ -832,18 +832,18 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- `FINAL` on a view is an outer `TableNode` modifier. It disqualifies parallel replicas
--- in the ordinary planner, so the recursive-step preflight must preserve that guard too
--- rather than rejecting the forced mode before the plain read can run.
+-- in the ordinary planner, so the recursive-step preflight must preserve that guard and
+-- let the ordinary forced-mode validation report the unsupported `FINAL` modifier.
 WITH RECURSIVE view_final_pr AS
 (
     SELECT 1 AS n
   UNION ALL
-    SELECT n + 1 FROM view_final_pr AS t INNER JOIN edges_view FINAL AS e ON e.from_id = t.n WHERE n < 10
+    SELECT n + 1 FROM view_final_pr AS t INNER JOIN edges_view AS e FINAL ON e.from_id = t.n WHERE n < 10
 )
 SELECT sum(n) FROM view_final_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
-    automatic_parallel_replicas_mode = 0;
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP VIEW edges_view;
 
