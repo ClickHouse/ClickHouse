@@ -1,6 +1,7 @@
 -- Every result is asserted as equal to the optimize_use_projections = 0 result, so the assertion is
 -- the value set, not an ordering that SELECT DISTINCT ... ORDER BY <column outside the DISTINCT list>
--- leaves ambiguous.
+-- leaves ambiguous. Each shape that must keep using the projection also asserts its selection, so a
+-- silent fallback to the ordinary read cannot pass as a correct result.
 
 DROP TABLE IF EXISTS t_distinct_proj;
 
@@ -48,6 +49,8 @@ SELECT
 -- The projection is still selected where it can produce the whole header, and declined where it cannot.
 SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT v * 2 FROM t_distinct_proj ORDER BY v SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
 SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT v FROM t_distinct_proj ORDER BY w SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT v * 2 FROM t_distinct_proj WHERE v > 2 ORDER BY v SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT v * 2 AS a, v * 2 AS b FROM t_distinct_proj ORDER BY v SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
 
 DROP TABLE t_distinct_proj;
 
@@ -77,6 +80,9 @@ DROP TABLE IF EXISTS t_distinct_proj_partial;
 
 CREATE TABLE t_distinct_proj_partial (a Int64) ENGINE = MergeTree ORDER BY a;
 
+-- A merge would materialize projection data for the older part and collapse the union.
+SYSTEM STOP MERGES t_distinct_proj_partial;
+
 INSERT INTO t_distinct_proj_partial SELECT number FROM numbers(5);
 ALTER TABLE t_distinct_proj_partial ADD PROJECTION p (SELECT a, count() GROUP BY a);
 INSERT INTO t_distinct_proj_partial SELECT number FROM numbers(5, 5);
@@ -84,6 +90,10 @@ INSERT INTO t_distinct_proj_partial SELECT number FROM numbers(5, 5);
 SELECT
     (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT a * 2 AS x FROM t_distinct_proj_partial ORDER BY a SETTINGS optimize_use_projections = 1))
   = (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT a * 2 AS x FROM t_distinct_proj_partial ORDER BY a SETTINGS optimize_use_projections = 0));
+
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p)%') > 0
+   AND countIf(explain ILIKE '%ReadFromMergeTree (%t_distinct_proj_partial)%') > 0
+FROM (EXPLAIN SELECT DISTINCT a * 2 FROM t_distinct_proj_partial ORDER BY a SETTINGS optimize_use_projections = 1);
 
 DROP TABLE t_distinct_proj_partial;
 
@@ -103,9 +113,12 @@ SELECT
     (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT concat(s, 'x') AS x FROM t_distinct_proj_lc ORDER BY s SETTINGS optimize_use_projections = 1))
   = (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT concat(s, 'x') AS x FROM t_distinct_proj_lc ORDER BY s SETTINGS optimize_use_projections = 0));
 
+SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT concat(s, 'x') FROM t_distinct_proj_lc ORDER BY s SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+
 DROP TABLE t_distinct_proj_lc;
 
--- Nullable ORDER BY column, including a NULL.
+-- Nullable ORDER BY column, including a NULL. groupArray drops NULLs, so the compared value wraps
+-- each row in a tuple to keep the NULL row observable.
 DROP TABLE IF EXISTS t_distinct_proj_nullable;
 
 CREATE TABLE t_distinct_proj_nullable
@@ -119,7 +132,12 @@ INSERT INTO t_distinct_proj_nullable SELECT number FROM numbers(5);
 INSERT INTO t_distinct_proj_nullable VALUES (NULL);
 
 SELECT
-    (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT n * 2 AS x FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 1))
-  = (SELECT arraySort(groupArray(x)) FROM (SELECT DISTINCT n * 2 AS x FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 0));
+    (SELECT arraySort(groupArray(tuple(isNull(x), x))) FROM (SELECT DISTINCT n * 2 AS x FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 1))
+  = (SELECT arraySort(groupArray(tuple(isNull(x), x))) FROM (SELECT DISTINCT n * 2 AS x FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 0));
+
+-- The NULL row survives the comparison: 5 values plus the NULL.
+SELECT length(arraySort(groupArray(tuple(isNull(x), x)))) FROM (SELECT DISTINCT n * 2 AS x FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 1);
+
+SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT n * 2 FROM t_distinct_proj_nullable ORDER BY n SETTINGS optimize_use_projections = 1) WHERE explain ILIKE '%ReadFromMergeTree (p)%';
 
 DROP TABLE t_distinct_proj_nullable;
