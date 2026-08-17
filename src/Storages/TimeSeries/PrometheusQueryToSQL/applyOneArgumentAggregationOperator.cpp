@@ -48,11 +48,9 @@ namespace
         }
     }
 
-    using TransformASTFunc = ASTPtr (*)(ASTPtr && v, const DataTypePtr & scalar_data_type);
-
     struct ImplInfo
     {
-        TransformASTFunc transform_ast;
+        OneArgumentAggregationTransform transform_ast;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -147,6 +145,13 @@ namespace
 bool isOneArgumentAggregationOperator(std::string_view operator_name)
 {
     return getImplInfo(operator_name) != nullptr;
+}
+
+
+OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name)
+{
+    const auto * impl_info = getImplInfo(operator_name);
+    return impl_info ? impl_info->transform_ast : nullptr;
 }
 
 
