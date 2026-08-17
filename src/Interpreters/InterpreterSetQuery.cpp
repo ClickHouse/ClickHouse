@@ -69,11 +69,6 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
 }
 }
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
