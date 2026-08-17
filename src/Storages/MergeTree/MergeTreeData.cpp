@@ -10413,9 +10413,9 @@ bool containsOrderInconsistentValue(const Field & field)
     return false;
 }
 
-/// Both ends the same degenerate value means the part holds no ordinary comparable value for that
-/// column, and skipping it is then the correct contribution. Matched by exact value, because the
-/// whole-universe pair [-Inf, +Inf] means "nothing is known" and must not qualify.
+/// Both ends the same degenerate value means the part holds no ordinary comparable value, which only
+/// follows when the pair samples both physical ends. Matched by exact value, because the whole-universe
+/// pair [-Inf, +Inf] means "nothing is known" and must not qualify.
 bool isRepeatedDegenerateBound(const Field & left, const Field & right)
 {
     auto is_plain_null = [](const Field & f) { return f.isNull() && !f.isPositiveInfinity() && !f.isNegativeInfinity(); };
@@ -10437,10 +10437,11 @@ bool isUnusableComputedBound(const Field & left, const Field & right, const Fiel
 }
 
 /// The primary key's bounds are stored index rows, so a composite is a genuine value here and only
-/// order-inconsistent leaves break the equivalence.
-bool isUnusableIndexBound(const Field & left, const Field & right, const Field & value)
+/// order-inconsistent leaves break the equivalence. Without a final mark the index samples granule
+/// starts only, so its last entry is not the part's last row and the pair proves nothing.
+bool isUnusableIndexBound(const Field & left, const Field & right, const Field & value, bool bounds_sample_both_ends)
 {
-    if (isRepeatedDegenerateBound(left, right))
+    if (bounds_sample_both_ends && isRepeatedDegenerateBound(left, right))
         return false;
     return containsOrderInconsistentValue(value);
 }
@@ -10658,7 +10659,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 const auto & primary_key_column = *index->at(0);
                 Field lowest = primary_key_column[0];
                 Field highest = primary_key_column[primary_key_column.size() - 1];
-                if (isUnusableIndexBound(lowest, highest, lowest))
+                if (isUnusableIndexBound(lowest, highest, lowest, part->index_granularity->hasFinalMark()))
                     return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, lowest);
@@ -10674,7 +10675,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 const auto & primary_key_column = *index->at(0);
                 Field lowest = primary_key_column[0];
                 Field highest = primary_key_column[primary_key_column.size() - 1];
-                if (isUnusableIndexBound(lowest, highest, highest))
+                if (isUnusableIndexBound(lowest, highest, highest, part->index_granularity->hasFinalMark()))
                     return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, highest);

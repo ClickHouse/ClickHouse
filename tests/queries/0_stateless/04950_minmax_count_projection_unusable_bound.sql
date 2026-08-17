@@ -87,6 +87,23 @@ CREATE TABLE pk_tuple_nan (k Tuple(Float64, Int64)) ENGINE = MergeTree ORDER BY 
 INSERT INTO pk_tuple_nan VALUES ((200,2)),((1,5)),((nan,3));
 SELECT toString(max(k)), toString((SELECT max(k) FROM pk_tuple_nan SETTINGS optimize_use_implicit_projections = 0)) FROM pk_tuple_nan;
 
+SELECT '--- a part whose index samples only granule starts';
+
+-- Without a final mark the index holds granule starts only, so the last entry is not the part's last
+-- row and a repeated pair does not mean the part is free of ordinary values.
+CREATE TABLE pk_null_no_final_mark (k Nullable(Int64)) ENGINE = MergeTree ORDER BY k DESC
+    SETTINGS allow_nullable_key = 1, index_granularity_bytes = 0,
+             enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0;
+INSERT INTO pk_null_no_final_mark VALUES (1),(200),(NULL);
+SELECT part_type, marks FROM system.parts WHERE table = 'pk_null_no_final_mark' AND database = currentDatabase() AND active;
+SELECT toString(max(k)), toString((SELECT max(k) FROM pk_null_no_final_mark SETTINGS optimize_use_implicit_projections = 0)) FROM pk_null_no_final_mark;
+
+CREATE TABLE pk_nan_no_final_mark (k Float64) ENGINE = MergeTree ORDER BY k DESC
+    SETTINGS index_granularity_bytes = 0, enable_mixed_granularity_parts = 0, min_bytes_for_wide_part = 0;
+INSERT INTO pk_nan_no_final_mark VALUES (1),(200),(nan);
+SELECT part_type, marks FROM system.parts WHERE table = 'pk_nan_no_final_mark' AND database = currentDatabase() AND active;
+SELECT toString(max(k)), toString((SELECT max(k) FROM pk_nan_no_final_mark SETTINGS optimize_use_implicit_projections = 0)) FROM pk_nan_no_final_mark;
+
 SELECT '--- computed bounds of a minmax column';
 
 CREATE TABLE mm_null (p Nullable(Int64), v Int64)
