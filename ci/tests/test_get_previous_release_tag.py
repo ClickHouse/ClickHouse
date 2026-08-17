@@ -4,13 +4,18 @@ Upgrade check installs and starts before upgrading to the build under test.
 
 These tests pin three properties:
 
-  * the resolved baseline is the newest release strictly below the version under
-    test that already has an uploaded package, so a release whose packages are
-    still being published is skipped rather than failing the download later;
+  * the resolved baseline is the newest release on the first page strictly below
+    the version under test that already has an uploaded package, so a release
+    whose packages are still being published is skipped rather than failing the
+    download later;
   * only the first page is consulted, and it must be a complete page, so a
     degraded response fails loudly instead of answering from an older page;
   * selection is by version, not by the position the endpoint returns entries in,
     which is roughly newest-created first and so not version order.
+
+The page scope is sound because a complete page spans far more releases than are
+published between two minor bumps, and it fails closed: the resolver raises rather
+than answering when the page cannot show that it reaches past its own answer.
 
 See https://github.com/ClickHouse/ClickHouse/pull/114376 (Upgrade check on
 `e1cb0dee5e9` resolved `v25.1.4.53-stable` as the baseline for a 26.8.1.1 build).

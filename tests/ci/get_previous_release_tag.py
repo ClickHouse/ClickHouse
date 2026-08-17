@@ -76,8 +76,8 @@ def get_previous_release(
         response.raise_for_status()
 
     releases = response.json()
-    # Later pages hold only older releases, so a short page 1 is a degraded response
-    # rather than the whole feed, and answering from it would pick a stale baseline.
+    # The first page carries the newest releases, so a page shorter than requested is a
+    # degraded response rather than the end of the feed.
     if len(releases) < RELEASES_PER_PAGE:
         raise ReleaseNotFoundException(
             f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
