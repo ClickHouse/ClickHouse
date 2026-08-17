@@ -340,6 +340,7 @@ class PullRequestPushYamlGen:
             normalized_needs = sorted(
                 map(Utils.normalize_string, _all_needs(job.name))
             )
+            # Keep an empty sequence compact, but render dependencies one per line.
             needs = (
                 "\n" + "\n".join(f"    - {need}" for need in normalized_needs)
                 if normalized_needs
