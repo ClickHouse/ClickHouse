@@ -73,6 +73,14 @@ FROM
 )
 WHERE explain LIKE '%GradualResize%';
 
+-- Execute the bytes-threshold path over the same MergeTree source. This covers
+-- `Chunk::bytes` accounting and byte-threshold activation, rather than merely
+-- checking that the planner inserted `GradualResize`.
+SELECT k, count() AS c
+FROM test_gradual_resize
+GROUP BY k
+ORDER BY k;
+
 -- Verify split-resize is actually applied to the gradual path (regression guard for the interaction
 -- between `min_rows_per_stream_for_gradual_resize` and `min_outstreams_per_resize_after_split`).
 -- With split-resize active and enough upstream streams, `Pipe::resizeGradual` builds one
