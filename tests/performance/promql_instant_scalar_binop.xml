@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+    </settings>
+
+    <!-- Benchmarks tiny instant PromQL stat queries of the shape sum(a)/sum(b): their server-side time is
+         dominated by the compilation (analysis/planning) of the transpiled SQL, not by execution,
+         so this measures the size/cost of the WITH chain emitted by the PromQL-to-SQL transpiler. -->
+
+    <create_query>
+        CREATE TABLE promql_scalar_binop_ts ENGINE = TimeSeries
+    </create_query>
+
+    <!-- 2 metrics x 100 series x 30 samples: small on purpose, the compilation cost is data-independent. -->
+    <fill_query>
+        INSERT INTO promql_scalar_binop_ts (metric_name, tags, time_series)
+        SELECT
+            'requests_total',
+            map('instance', toString(number)),
+            arrayMap(step -> (toDateTime64(100 + step * 10, 3), number + step), range(30))
+        FROM numbers(100)
+    </fill_query>
+    <fill_query>
+        INSERT INTO promql_scalar_binop_ts (metric_name, tags, time_series)
+        SELECT
+            'capacity_total',
+            map('instance', toString(number)),
+            arrayMap(step -> (toDateTime64(100 + step * 10, 3), number * 2 + 1), range(30))
+        FROM numbers(100)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQuery('promql_scalar_binop_ts', 'sum(requests_total) / sum(capacity_total)', 400) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_scalar_binop_ts', '1 - sum(requests_total) / sum(capacity_total)', 400) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_scalar_binop_ts</drop_query>
+</test>
