@@ -1855,6 +1855,9 @@ public:
     String getDefaultProfileName() const;
     String getSystemProfileName() const;
 
+    /// The server-level policy for settings inherited from configuration is governed by the live default profile.
+    bool getDefaultProfileAllowExperimentalCodecs();
+
     /// Base path for format schemas
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);

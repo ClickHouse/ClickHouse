@@ -924,7 +924,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             const bool session_allows = local_settings[Setting::allow_experimental_codecs];
             const bool default_profile_allows
-                = context->getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
+                = context->getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
 
             const auto is_stored_in_definition = [&](std::string_view name)
             {

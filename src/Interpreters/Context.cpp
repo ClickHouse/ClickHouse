@@ -7056,7 +7056,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     /// The selector is built once and shared, so the experimental-codec gate must come from the
     /// server-level policy (the default profile), not from the settings of whichever query happens
     /// to construct it first. Read it before taking the lock.
-    const bool allow_experimental_codecs = getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
+    const bool allow_experimental_codecs = getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
 
     std::lock_guard lock(shared->mutex);
 
@@ -7625,6 +7625,17 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 String Context::getDefaultProfileName() const
 {
     return shared->default_profile_name;
+}
+
+bool Context::getDefaultProfileAllowExperimentalCodecs()
+{
+    /// `getSettingsRef` on the global context contains the `system_profile` snapshot. Construct
+    /// the effective settings from the current `default_profile` instead, so `SYSTEM RELOAD USERS`
+    /// changes this server-level policy without restarting the server.
+    Settings default_profile_settings;
+    default_profile_settings.applyChanges(
+        getAccessControl().getSettingsProfileInfo(getAccessControl().getID<SettingsProfile>(getDefaultProfileName()))->settings);
+    return default_profile_settings[Setting::allow_experimental_codecs];
 }
 
 String Context::getSystemProfileName() const
