@@ -38,7 +38,7 @@ fi
 
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
-    SELECT 1 OR notEmpty(encrypt('aes-128-ecb', 'x', concat('SE', 'CRET012345678901')))
+    SELECT 1 OR notEmpty(encrypt('aes-128-ecb', 'x', concat('KEYPART1', 'KEYPART2')))
     SETTINGS enable_analyzer = 1,
              enable_function_early_short_circuit = 1,
              format_display_secrets_in_show_and_select = 0
@@ -46,8 +46,8 @@ secret_output=$($CLICKHOUSE_CLIENT -q "
 
 # A folded secret constant must also hide the literals in its stored source expression.
 if grep -qF '[HIDDEN' <<< "$secret_output" \
-    && ! grep -qF 'SE' <<< "$secret_output" \
-    && ! grep -qF 'CRET' <<< "$secret_output"; then
+    && ! grep -qF 'KEYPART1' <<< "$secret_output" \
+    && ! grep -qF 'KEYPART2' <<< "$secret_output"; then
     echo "secret_mask_ok"
 else
     echo "secret_mask_failed"
