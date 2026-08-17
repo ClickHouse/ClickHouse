@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## データ型の扱い
 </div>
 
-配列をその場で作成する場合、ClickHouse は、指定されたすべての引数を格納できる最も狭いデータ型を、引数の型として自動的に決定します。[Nullable](/ja/reference/data-types/nullable) またはリテラルの [NULL](/ja/reference/settings/formats#input_format_null_as_default) 値が含まれている場合、配列要素の型も [Nullable](/ja/reference/data-types/nullable) になります。
+配列をその場で作成する場合、ClickHouse は、指定されたすべての引数を格納できる最も狭いデータ型を、引数の型として自動的に決定します。[Nullable](/ja/reference/data-types/nullable) またはリテラルの [NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) 値が含まれている場合、配列要素の型も [Nullable](/ja/reference/data-types/nullable) になります。
 
 ClickHouse がデータ型を判定できない場合は、例外を返します。たとえば、文字列と数値を同時に含むArrayを作成しようとした場合に発生します (`SELECT array(1, 'a')`) 。
 
