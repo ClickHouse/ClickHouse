@@ -96,15 +96,9 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
-    /// Finalizing the sketch is a pure function of the state, so it can be memoized.
-    if (const UInt64 cached = cached_cardinality_plus_one.load(std::memory_order_relaxed))
-        return cached - 1;
-
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
-    const UInt64 cardinality = column->getUInt(0);
-    cached_cardinality_plus_one.store(cardinality + 1, std::memory_order_relaxed);
-    return cardinality;
+    return column->getUInt(0);
 }
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

@@ -2,17 +2,13 @@
     <!--
         Plan-time cost of uniq statistics, which no other performance test covers.
 
-        Join order optimization asks every relation for the cardinality of each of
-        its statistics-carrying columns, so the cost scales with columns per
+        Join order optimization asks every relation for the cardinality of each
+        column with statistics, so the cost scales with columns per
         relation times relations, not with rows. The fixtures are therefore wide
         (400 statistics-carrying columns) and short (3000 rows in two parts), and
         the measured queries are EXPLAIN PLAN so that plan time dominates instead
         of being hidden behind execution, the same way
         analyzer_nested_function_resolution.xml uses EXPLAIN QUERY TREE.
-
-        Both uniq implementations are measured: uniq_v2 is in the default
-        auto_statistics_types, and uniq is preferred over uniq_v2 when a column
-        carries both.
     -->
 
     <settings>
@@ -22,7 +18,7 @@
     </settings>
 
     <create_query>
-        CREATE TABLE t_plan_uniq_v2_0 (
+        CREATE TABLE tab (
             k UInt64,
             c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64,
             c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64,
@@ -93,28 +89,13 @@
         ENGINE = MergeTree ORDER BY k
         SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 0
     </create_query>
-
-    <create_query>CREATE TABLE t_plan_uniq_v2_1 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_2 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_3 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_4 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_5 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_6 AS t_plan_uniq_v2_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v2_7 AS t_plan_uniq_v2_0</create_query>
-
-    <!-- Same shape with the v1 sketch, which is preferred when a column carries both. -->
-    <create_query>
-        CREATE TABLE t_plan_uniq_v1_0 AS t_plan_uniq_v2_0
-        ENGINE = MergeTree ORDER BY k
-        SETTINGS auto_statistics_types = 'basic, uniq', min_bytes_for_wide_part = 0
-    </create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_1 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_2 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_3 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_4 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_5 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_6 AS t_plan_uniq_v1_0</create_query>
-    <create_query>CREATE TABLE t_plan_uniq_v1_7 AS t_plan_uniq_v1_0</create_query>
+    <create_query>CREATE TABLE tab_1 AS tab</create_query>
+    <create_query>CREATE TABLE tab_2 AS tab</create_query>
+    <create_query>CREATE TABLE tab_3 AS tab</create_query>
+    <create_query>CREATE TABLE tab_4 AS tab</create_query>
+    <create_query>CREATE TABLE tab_5 AS tab</create_query>
+    <create_query>CREATE TABLE tab_6 AS tab</create_query>
+    <create_query>CREATE TABLE tab_7 AS tab</create_query>
 
     <!--
         Two parts per table, so statistics are also merged across parts while
@@ -122,82 +103,43 @@
         cardinalities above the point where the sketch switches to HyperLogLog,
         which is the finalization path under test.
     -->
-    <fill_query>INSERT INTO t_plan_uniq_v2_0 SELECT * FROM generateRandom(10, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_0 SELECT * FROM generateRandom(11, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_1 SELECT * FROM generateRandom(20, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_1 SELECT * FROM generateRandom(21, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_2 SELECT * FROM generateRandom(30, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_2 SELECT * FROM generateRandom(31, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_3 SELECT * FROM generateRandom(40, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_3 SELECT * FROM generateRandom(41, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_4 SELECT * FROM generateRandom(50, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_4 SELECT * FROM generateRandom(51, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_5 SELECT * FROM generateRandom(60, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_5 SELECT * FROM generateRandom(61, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_6 SELECT * FROM generateRandom(70, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_6 SELECT * FROM generateRandom(71, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_7 SELECT * FROM generateRandom(80, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v2_7 SELECT * FROM generateRandom(81, 10, 10) LIMIT 3000</fill_query>
-
-    <fill_query>INSERT INTO t_plan_uniq_v1_0 SELECT * FROM generateRandom(10, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_0 SELECT * FROM generateRandom(11, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_1 SELECT * FROM generateRandom(20, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_1 SELECT * FROM generateRandom(21, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_2 SELECT * FROM generateRandom(30, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_2 SELECT * FROM generateRandom(31, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_3 SELECT * FROM generateRandom(40, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_3 SELECT * FROM generateRandom(41, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_4 SELECT * FROM generateRandom(50, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_4 SELECT * FROM generateRandom(51, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_5 SELECT * FROM generateRandom(60, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_5 SELECT * FROM generateRandom(61, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_6 SELECT * FROM generateRandom(70, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_6 SELECT * FROM generateRandom(71, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_7 SELECT * FROM generateRandom(80, 10, 10) LIMIT 3000</fill_query>
-    <fill_query>INSERT INTO t_plan_uniq_v1_7 SELECT * FROM generateRandom(81, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab SELECT * FROM generateRandom(10, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab SELECT * FROM generateRandom(11, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_1 SELECT * FROM generateRandom(20, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_1 SELECT * FROM generateRandom(21, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_2 SELECT * FROM generateRandom(30, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_2 SELECT * FROM generateRandom(31, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_3 SELECT * FROM generateRandom(40, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_3 SELECT * FROM generateRandom(41, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_4 SELECT * FROM generateRandom(50, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_4 SELECT * FROM generateRandom(51, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_5 SELECT * FROM generateRandom(60, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_5 SELECT * FROM generateRandom(61, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_6 SELECT * FROM generateRandom(70, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_6 SELECT * FROM generateRandom(71, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_7 SELECT * FROM generateRandom(80, 10, 10) LIMIT 3000</fill_query>
+    <fill_query>INSERT INTO tab_7 SELECT * FROM generateRandom(81, 10, 10) LIMIT 3000</fill_query>
 
     <!-- Join order optimization over eight wide relations, uniq_v2 statistics. -->
     <query>
-        EXPLAIN PLAN SELECT count() FROM t_plan_uniq_v2_0 AS a
-        JOIN t_plan_uniq_v2_1 AS b ON a.k = b.k
-        JOIN t_plan_uniq_v2_2 AS c ON a.c1 = c.k
-        JOIN t_plan_uniq_v2_3 AS d ON b.c2 = d.k
-        JOIN t_plan_uniq_v2_4 AS e ON c.c3 = e.k
-        JOIN t_plan_uniq_v2_5 AS f ON d.c4 = f.k
-        JOIN t_plan_uniq_v2_6 AS g ON e.c5 = g.k
-        JOIN t_plan_uniq_v2_7 AS h ON f.c6 = h.k
+        EXPLAIN PLAN SELECT count() FROM tab AS a
+        JOIN tab_1 AS b ON a.k = b.k
+        JOIN tab_2 AS c ON a.c1 = c.k
+        JOIN tab_3 AS d ON b.c2 = d.k
+        JOIN tab_4 AS e ON c.c3 = e.k
+        JOIN tab_5 AS f ON d.c4 = f.k
+        JOIN tab_6 AS g ON e.c5 = g.k
+        JOIN tab_7 AS h ON f.c6 = h.k
         WHERE a.c7 = 17 AND b.c8 = 23 AND c.c9 = 31 AND d.c10 = 41
           AND e.c11 = 53 AND f.c12 = 61 AND g.c13 = 71 AND h.c14 = 83
     </query>
 
-    <!-- Same query over uniq statistics. -->
-    <query>
-        EXPLAIN PLAN SELECT count() FROM t_plan_uniq_v1_0 AS a
-        JOIN t_plan_uniq_v1_1 AS b ON a.k = b.k
-        JOIN t_plan_uniq_v1_2 AS c ON a.c1 = c.k
-        JOIN t_plan_uniq_v1_3 AS d ON b.c2 = d.k
-        JOIN t_plan_uniq_v1_4 AS e ON c.c3 = e.k
-        JOIN t_plan_uniq_v1_5 AS f ON d.c4 = f.k
-        JOIN t_plan_uniq_v1_6 AS g ON e.c5 = g.k
-        JOIN t_plan_uniq_v1_7 AS h ON f.c6 = h.k
-        WHERE a.c7 = 17 AND b.c8 = 23 AND c.c9 = 31 AND d.c10 = 41
-          AND e.c11 = 53 AND f.c12 = 61 AND g.c13 = 71 AND h.c14 = 83
-    </query>
-
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_0</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_1</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_2</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_3</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_4</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_5</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_6</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v2_7</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_0</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_1</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_2</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_3</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_4</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_5</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_6</drop_query>
-    <drop_query>DROP TABLE IF EXISTS t_plan_uniq_v1_7</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_4</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_5</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_6</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tab_7</drop_query>
 </test>

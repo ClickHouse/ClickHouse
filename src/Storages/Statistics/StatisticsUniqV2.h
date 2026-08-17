@@ -31,9 +31,7 @@ private:
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
 
-    /// Memoized `estimateCardinality` + 1, so 0 means "not computed yet" and a cardinality of 0
-    /// stays cacheable (an all NULL column legitimately has 0 distinct values). Callers finish
-    /// building and merging before any cardinality is read. Relaxed: all racers store the identical value.
+    /// Cached result of estimateCardinality + 1. Zero (0) means "not computed yet".
     mutable std::atomic<UInt64> cached_cardinality_plus_one{0};
 };
 

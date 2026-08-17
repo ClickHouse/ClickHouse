@@ -29,11 +29,6 @@ private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
-
-    /// Memoized `estimateCardinality` + 1, so 0 means "not computed yet" and a cardinality of 0
-    /// stays cacheable. Callers finish building and merging before any cardinality is read.
-    /// Relaxed: all racers store the identical value.
-    mutable std::atomic<UInt64> cached_cardinality_plus_one{0};
 };
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

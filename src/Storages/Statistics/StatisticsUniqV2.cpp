@@ -99,8 +99,7 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
 
 UInt64 StatisticsUniqV2::estimateCardinality() const
 {
-    /// Finalizing the sketch is a pure function of the state, so it can be memoized.
-    if (const UInt64 cached = cached_cardinality_plus_one.load(std::memory_order_relaxed))
+    if (UInt64 cached = cached_cardinality_plus_one)
         return cached - 1;
 
     auto column = collector->getResultType()->createColumn();
@@ -108,7 +107,9 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
     /// When all input values are NULL the null-wrapper returns NULL (no non-null values seen).
     /// That means 0 distinct non-null values.
     const UInt64 cardinality = column->isNullAt(0) ? 0 : column->getUInt(0);
-    cached_cardinality_plus_one.store(cardinality + 1, std::memory_order_relaxed);
+
+    cached_cardinality_plus_one = cardinality + 1;
+
     return cardinality;
 }
 
