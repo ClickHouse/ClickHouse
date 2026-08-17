@@ -51,6 +51,11 @@ struct PrometheusQueryEvaluationSettings
     /// If not set then it's 5 minutes by default.
     std::optional<DurationType> instant_selector_window;
 
+    /// Value of the `time_series_selector_relaxed_filtering` setting of the query context:
+    /// selectors matching a whole metric may read without row-level filtering, and the transpiled
+    /// SQL gets the compensating filters (see `fromSelector` and `StorageTimeSeriesSelector`).
+    bool selector_relaxed_filtering = false;
+
     /// The default subquery step is used for subqueries specified without explicit step,
     /// for example "http_requests_total[10m:]"
     /// (If a step is given in the subquery, as in "http_requests_total[10m:1m]", then the given step is used.)

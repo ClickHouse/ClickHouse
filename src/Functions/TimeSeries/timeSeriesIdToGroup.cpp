@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,10 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
+/// An identifier which was never stored with timeSeriesStoreTags() is converted to the special group
+/// ContextTimeSeriesTagsCollector::UNKNOWN_GROUP: with relaxed selector filtering (see the
+/// `time_series_selector_relaxed_filtering` setting) reads may return rows of unselected time series,
+/// and the transpiled SQL filters such rows out by this group value.
 class FunctionTimeSeriesIdToGroup final : public IFunction
 {
 public:
@@ -59,10 +64,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto groups = tags_collector->getGroupByID(arguments[0].column);
-        chassert(groups.size() == input_rows_count);
-
-        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
+        /// The groups are written into the result column directly: with relaxed selector filtering
+        /// this function runs on every read row, so an intermediate buffer would be a measurable cost.
+        auto res = ColumnUInt64::create();
+        tags_collector->getGroupByID(arguments[0].column, res->getData());
+        chassert(res->size() == input_rows_count);
+        return res;
     }
 
 private:

@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
+#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -72,6 +73,11 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+}
+
+namespace Setting
+{
+    extern const SettingsBool time_series_selector_relaxed_filtering;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -333,7 +339,8 @@ namespace
         DateTime64 min_time,
         DateTime64 max_time,
         const DataTypePtr & timestamp_data_type,
-        ASTs whole_metric_id_range_conditions)
+        ASTs whole_metric_id_range_conditions,
+        bool relaxed_filtering)
     {
         ASTs conditions;
 
@@ -357,10 +364,13 @@ namespace
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
             timeSeriesTimestampToAST(max_time, timestamp_data_type)));
 
-        /// id IN (SELECT id FROM (select_id_query))
-        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
-        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        if (!relaxed_filtering)
+        {
+            /// id IN (SELECT id FROM (select_id_query))
+            /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+            auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+            conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        }
 
         /// For a whole-metric selector over a metric-clustered id layout two more conditions are
         /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
@@ -370,7 +380,16 @@ namespace
         for (auto & condition : whole_metric_id_range_conditions)
             conditions.push_back(std::move(condition));
 
-        return makeASTForLogicalAnd(std::move(conditions));
+        ASTPtr filter = makeASTForLogicalAnd(std::move(conditions));
+
+        /// With relaxed filtering every condition is used for primary-key index analysis only:
+        /// wrapping the conjunction in indexHint() keeps the granule pruning and removes the
+        /// row-level filter entirely. The rows of the partially matching boundary granules are
+        /// returned as is; the consumers tolerate them (see `Setting::time_series_selector_relaxed_filtering`).
+        if (relaxed_filtering)
+            filter = makeASTFunction("indexHint", std::move(filter));
+
+        return filter;
     }
 
     ASTPtr makeSelectQueryFromDataTable(const StorageID & data_table_id,
@@ -378,7 +397,8 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
-                                        ASTs whole_metric_id_range_conditions)
+                                        ASTs whole_metric_id_range_conditions,
+                                        bool relaxed_filtering)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -422,7 +442,7 @@ namespace
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
             auto where_filter = makeWhereFilterForDataTable(
-                select_query_from_tags_table, min_time, max_time, timestamp_data_type, std::move(whole_metric_id_range_conditions));
+                select_query_from_tags_table, min_time, max_time, timestamp_data_type, std::move(whole_metric_id_range_conditions), relaxed_filtering);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -823,8 +843,31 @@ void StorageTimeSeriesSelector::readImpl(
         context,
         log);
 
+    bool relaxed_filtering = !whole_metric_id_range_conditions.empty()
+        && context->getSettingsRef()[Setting::time_series_selector_relaxed_filtering];
+
     ContextPtr interpreter_context = context;
-    if (!whole_metric_id_range_conditions.empty())
+    if (relaxed_filtering)
+    {
+        /// The row-level filters are dropped entirely: the WHERE keeps all the conditions under
+        /// indexHint() for primary-key granule pruning only. The `id IN <set>` condition is not
+        /// emitted at all, so the tags subquery which collects the tags of the matched series
+        /// must be executed here instead (calling timeSeriesStoreTags() for every matched series
+        /// populates the per-query tags collector). The read then returns the rows of all
+        /// selected granules as is; rows of unselected series get UNKNOWN_GROUP from
+        /// timeSeriesIdToGroup() and are dropped by the transpiled SQL.
+        LOG_DEBUG(log, "Selector {} matches the whole metric: reading without row-level filtering, collecting tags eagerly",
+                  quoteString(config.selector.toString()));
+
+        InterpreterSelectQueryAnalyzer tags_interpreter(select_query_from_tags_table, context, SelectQueryOptions{});
+        auto io = tags_interpreter.execute();
+        PullingPipelineExecutor executor(io.pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+        }
+    }
+    else if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
         /// (and its subquery keeps collecting the tags of the matched series), but its set must
@@ -847,7 +890,8 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
-        std::move(whole_metric_id_range_conditions));
+        std::move(whole_metric_id_range_conditions),
+        relaxed_filtering);
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),

@@ -40,6 +40,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool time_series_selector_relaxed_filtering;
 }
 
 namespace
@@ -77,6 +78,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
+    evaluation_settings.selector_relaxed_filtering = getContext()->getSettingsRef()[Setting::time_series_selector_relaxed_filtering];
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);

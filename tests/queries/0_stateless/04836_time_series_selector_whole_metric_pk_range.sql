@@ -15,6 +15,10 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- This test documents the EXACT whole-metric emission (the id range next to the kept `id IN <set>`
+-- row-level filter). The relaxed emission, which replaces the row-level filter with an indexHint,
+-- is covered by 04926_time_series_selector_relaxed_filtering.
+SET time_series_selector_relaxed_filtering = 0;
 
 DROP TABLE IF EXISTS ts_clustered;
 DROP TABLE IF EXISTS ts_plain;

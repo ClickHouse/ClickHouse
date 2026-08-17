@@ -8602,6 +8602,16 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, time_series_selector_relaxed_filtering, false, R"(
+Allows the `timeSeriesSelector` table function to skip row-level filtering when a selector matches
+all time series of one metric. The read then relies on primary-key index analysis alone and may
+return additional rows: samples outside the requested time range (from the partially matching
+index granules at the range boundaries) and samples of time series which do not belong to the
+selector (their identifiers fall into the same primary-key range). The SQL a PromQL query is
+transpiled to tolerates and ignores such rows, so PromQL results do not change. Off by default:
+with a coarse samples-table index granularity the extra rows cost more in the downstream pipeline
+than the removed row-level filters save; enable for experiments with fine-granularity layouts.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \

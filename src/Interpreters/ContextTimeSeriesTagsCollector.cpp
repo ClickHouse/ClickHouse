@@ -1,5 +1,7 @@
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
+#include <Common/PODArray.h>
+
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -1230,89 +1232,77 @@ void ContextTimeSeriesTagsCollector::storeTagsGeneric(
 }
 
 
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column) const
+void ContextTimeSeriesTagsCollector::getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const
 {
     auto unwrapped = unwrapIDColumn(id_column);
     if (unwrapped.null_map)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected Nullable column {} of identifiers", id_column->getName());
     size_t num_rows = unwrapped.data->size();
 
-    VectorWithMemoryTracking<Group> res;
     bool dispatched = dispatchIDType(*unwrapped.data, [&](const auto & id_getter)
     {
-        res = getGroupByIDTyped(id_getter, *unwrapped.data, num_rows);
+        getGroupByIDTyped(id_getter, *unwrapped.data, num_rows, res);
     });
     if (dispatched)
-        return res;
+        return;
 
-    return getGroupByIDGeneric(*unwrapped.data, num_rows);
+    getGroupByIDGeneric(*unwrapped.data, num_rows, res);
 }
 
 
 template <typename IDGetter>
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDTyped(
-    const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const
+void ContextTimeSeriesTagsCollector::getGroupByIDTyped(
+    const IDGetter & id_getter, const IColumn & /*id_data*/, size_t num_rows, PaddedPODArray<Group> & res) const
 {
     using IDType = typename IDGetter::IDType;
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(num_rows);
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
 
     SharedLockGuard lock{mutex};
     const auto & id_map = getTypedIDMap<IDType>().map;
 
     /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
     IDType prev_id{};
-    Group prev_group = INVALID_GROUP;
+    bool has_prev = false;
+    Group prev_group = UNKNOWN_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
         IDType id = id_getter.get(i);
-        if ((id == prev_id) && (prev_group != INVALID_GROUP))
+        if (!has_prev || !(id == prev_id))
         {
-            res.push_back(prev_group);
-            continue;
+            const auto * it = id_map.find(id);
+            prev_id = id;
+            has_prev = true;
+            prev_group = it ? it->getMapped() : UNKNOWN_GROUP;
         }
-        const auto * it = id_map.find(id);
-        if (!it)
-            throwUnknownID(id_data, i);
-        prev_id = id;
-        prev_group = it->getMapped();
-        res.push_back(prev_group);
+        out[i] = prev_group;
     }
-
-    return res;
 }
 
 
-VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data, size_t num_rows) const
+void ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const
 {
     Arena temp_arena;
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(num_rows);
+    res.resize(num_rows);
+    Group * __restrict out = res.data();
 
     SharedLockGuard lock{mutex};
 
     /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
-    Group prev_group = INVALID_GROUP;
+    Group prev_group = UNKNOWN_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
-        if ((i > 0) && id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) == 0)
+        if ((i == 0) || id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) != 0)
         {
-            chassert(prev_group != INVALID_GROUP);
-            res.push_back(prev_group);
-            continue;
+            const char * begin = nullptr;
+            auto id = id_data.serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
+            const auto * it = generic_id_map.map.find(id);
+            prev_group = it ? it->getMapped() : UNKNOWN_GROUP;
         }
-        const char * begin = nullptr;
-        auto id = id_data.serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
-        const auto * it = generic_id_map.map.find(id);
-        if (!it)
-            throwUnknownID(id_data, i);
-        prev_group = it->getMapped();
-        res.push_back(prev_group);
+        out[i] = prev_group;
     }
-
-    return res;
 }
 
 

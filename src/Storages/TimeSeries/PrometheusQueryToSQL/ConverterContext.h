@@ -19,6 +19,8 @@ struct ConverterContext
     DataTypePtr scalar_data_type;
     const NodeEvaluationRangeGetter node_range_getter;
     const ResultType result_type;
+    /// See PrometheusQueryEvaluationSettings::selector_relaxed_filtering.
+    const bool selector_relaxed_filtering = false;
     SQLSubqueries subqueries;
 
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
