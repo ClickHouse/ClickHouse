@@ -109,6 +109,10 @@ class _Settings:
     # in S3. Jobs with needs_submodules=True download it instead of cloning from GitHub.
     ENABLE_SUBMODULE_CACHE: bool = False
 
+    # If enabled, submodule clones authenticate with the App installation token
+    # (required for private submodules); otherwise they run anonymously.
+    ENABLE_SUBMODULE_CLONE_AUTH: bool = False
+
     CACHE_VERSION: int = 1
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
@@ -128,6 +132,8 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
+    DOCKER_LAYER_COMPRESSION: str = "zstd"
+    DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
     ######################################
     #        CI DB Settings              #
@@ -191,6 +197,8 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
+    "DOCKER_LAYER_COMPRESSION",
+    "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
@@ -213,6 +221,7 @@ _USER_DEFINED_SETTINGS = [
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",
+    "ENABLE_SUBMODULE_CLONE_AUTH",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
