@@ -596,7 +596,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
 
         try
         {
-            jobs.emplace(std::move(job),
+            if (job_occupies_thread && adding_new_thread)
+            {
+                auto initial_job = std::make_unique<JobWithPriority>(
+                    std::move(job),
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -606,10 +609,26 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
                     std::move(available_threads_decrement),
                     std::move(thread_job_slot));
 
-            ++scheduled_jobs;
+                ++scheduled_jobs;
+                (*thread_slot)->start(thread_slot, std::move(initial_job));
+            }
+            else
+            {
+                jobs.emplace(
+                    std::move(job),
+                    priority,
+                    metric_scheduled_jobs,
+                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// capture_frame_pointers
+                    DB::Exception::enable_job_stack_trace,
+                    std::move(available_threads_decrement),
+                    std::move(thread_job_slot));
+                ++scheduled_jobs;
 
-            if (adding_new_thread)
-                (*thread_slot)->start(thread_slot);
+                if (adding_new_thread)
+                    (*thread_slot)->start(thread_slot);
+            }
 
         }
         catch (const std::exception &)
@@ -959,10 +978,17 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::iterator & it)
 {
+    start(it, {});
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_)
+{
     /// the thread which created ThreadFromThreadPool should start it after adding it to the pool, or destroy it.
     /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
     chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
     thread_it = it;
+    initial_job = std::move(initial_job_);
     thread_state.store(ThreadState::Running, std::memory_order_relaxed); /// now worker can start executing the main loop
 }
 
@@ -1081,6 +1107,16 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
+            if (initial_job)
+            {
+                job_data.emplace(std::move(*initial_job));
+                initial_job.reset();
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                    job_data->elapsedMicroseconds());
+            }
+            else
+            {
             /// LIFO idle thread scheduling: link this thread into the intrusive
             /// idle stack and wait on its own per-thread CV until selected. The
             /// scheduler pops the most recently idle thread from the stack, sets
@@ -1140,6 +1176,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             ProfileEvents::increment(
                 std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
+
+            }
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (parent_pool.shutdown)

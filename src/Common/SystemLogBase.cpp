@@ -333,7 +333,7 @@ template <typename LogElement>
 void SystemLogBase<LogElement>::startup()
 {
     std::lock_guard lock(thread_mutex);
-    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
+    saving_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { savingThreadFunction(); });
 }
 
 template <typename LogElement>
