@@ -43,9 +43,6 @@ class DatabaseWithOwnTablesBase : public DatabaseWithAltersOnDiskBase, protected
 public:
     bool isExternal() const override { return false; }
 
-    UInt64 getMaxRows() const override { return max_rows.load(std::memory_order_relaxed); }
-    std::optional<UInt64> getCurrentRowCount() const override;
-
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
@@ -73,9 +70,6 @@ protected:
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
-    /// `max_rows` limit (0 = unlimited), published by DatabaseOrdinary from settings.
-    std::atomic<UInt64> max_rows = 0;
-
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
@@ -83,7 +77,8 @@ protected:
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
 
-    /// getCurrentRowCount for callers already holding `mutex` (e.g. cross-database rename).
+    /// Row total for callers already holding `mutex`. Database engines that implement a
+    /// row limit expose this through their own `getCurrentRowCount` override.
     UInt64 getCurrentRowCountUnlocked() const TSA_REQUIRES(mutex);
 };
 

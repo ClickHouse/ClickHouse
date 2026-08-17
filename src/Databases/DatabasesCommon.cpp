@@ -591,16 +591,6 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     }
 }
 
-std::optional<UInt64> DatabaseWithOwnTablesBase::getCurrentRowCount() const
-{
-    /// Async database startup keeps not-yet-loaded tables outside `tables`. Complete it
-    /// before calculating an exact total, otherwise `system.databases` and the insert
-    /// limit could observe only a subset of the database.
-    waitDatabaseStarted();
-    std::lock_guard lock(mutex);
-    return getCurrentRowCountUnlocked();
-}
-
 UInt64 DatabaseWithOwnTablesBase::getCurrentRowCountUnlocked() const
 {
     UInt64 total = 0;

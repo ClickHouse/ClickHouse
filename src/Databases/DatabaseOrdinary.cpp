@@ -43,6 +43,15 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+std::optional<UInt64> DatabaseOrdinary::getCurrentRowCount() const
+{
+    /// Async database startup keeps not-yet-loaded tables outside `tables`. Complete it
+    /// before calculating an exact total for the row-accounted engines.
+    waitDatabaseStarted();
+    std::lock_guard lock(mutex);
+    return getCurrentRowCountUnlocked();
+}
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_database_ordinary;
