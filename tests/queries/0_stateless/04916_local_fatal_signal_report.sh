@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
+# Tags: long, no-fasttest, no-msan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -68,6 +68,21 @@ mkdir -p "$PREFIX".d/clientlog
 ABORT_PRE_ARGS=(--client_logs_file="$PREFIX".d/clientlog/client.log)
 abort_arm clientlog
 echo "clientlog file report $(count_in "$PREFIX".d/clientlog/client.log 'Short fault info')"
+
+# A destination under a directory that does not exist accepts no record. Destinations are
+# written one after another and the first failure ends the round, so stderr must not be
+# waiting behind this one. The path stays absent, which is what makes the arm measure the
+# failing destination rather than a writable one.
+ABORT_PRE_ARGS=(--client_logs_file="$PREFIX".d/absent/client.log)
+abort_arm clientlog_unwritable
+echo "clientlog_unwritable file report $(count_in "$PREFIX".d/absent/client.log 'Short fault info')"
+
+# The same with a console destination the logger configures, where the client drops its own.
+# Without it the client's console destination stays, and stays first, so this pair covers both
+# outcomes of that choice rather than only the one that reorders anything.
+ABORT_PRE_ARGS=(--client_logs_file="$PREFIX".d/absent/client.log)
+abort_arm clientlog_unwritable_console --logger.console=1
+echo "clientlog_unwritable_console file report $(count_in "$PREFIX".d/absent/client.log 'Short fault info')"
 
 # Logging inside the thread calling LOG rather than in a background thread.
 abort_arm sync --logger.async=0

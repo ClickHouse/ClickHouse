@@ -299,6 +299,15 @@ void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_repor
     if (configured_channel_reports_to_stderr && fatal_console_channel_ptr)
         fatal_channel_ptr->removeChannel(fatal_console_channel_ptr.get());
 
+    /// A file destination opens on its first record and a throw there ends the fan-out, so it
+    /// goes after the destinations that do not touch the filesystem. The owning pointer keeps
+    /// the channel alive across the move.
+    if (fatal_file_channel_ptr)
+    {
+        fatal_channel_ptr->removeChannel(fatal_file_channel_ptr.get());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr.get());
+    }
+
     fatal_log->setChannel(fatal_channel_ptr.get());
     /// Anything below fatal reaches stderr, which is the program's own output.
     fatal_log->setLevel(Poco::Message::PRIO_FATAL);
