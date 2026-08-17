@@ -739,6 +739,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
     {
+        const auto method_with_states = method_chosen;
         using Type = AggregatedDataVariants::Type;
         switch (method_chosen)
         {
@@ -758,6 +759,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
             default: break;
         }
+        uses_set_method = method_chosen != method_with_states;
     }
 
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
@@ -2205,7 +2207,18 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     return AggregatedChunk{std::move(chunk), bucket};
 }
 
+/// `bucket_top_k` ranks groups by a lone `count()`, which a set method cannot have - the plan only sets it
+/// for an aggregation whose sole output is that count. The call site tests it at run time, so this overload
+/// is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
+requires SetAggregationMethod<Method>
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const
 {

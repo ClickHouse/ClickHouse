@@ -454,6 +454,11 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
+    /// Whether the chosen method is a set method - `GROUP BY` without aggregate functions over a key type
+    /// that has a set counterpart. Such a method has no aggregate states, which the adaptive aggregation
+    /// path is built around, so it is kept off that path.
+    bool usesSetMethod() const { return uses_set_method; }
+
 private:
 
     friend struct AggregatedDataVariants;
@@ -476,6 +481,7 @@ private:
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
+    bool uses_set_method = false;
 
     /// The aggregation method used by the per-run in-order path (`executeOnBlockSmall` /
     /// `mergeOnBlockSmall`, called only from `AggregatingInOrderTransform`). It equals
@@ -661,6 +667,24 @@ private:
         bool all_keys_are_const) const;
 
     template <typename LocalMethod, typename SharedMethod>
+    requires MapAggregationMethod<LocalMethod>
+    void executeFrozenImpl(
+        LocalMethod & local_method,
+        std::type_identity<SharedMethod>,
+        Arena * aggregates_pool,
+        const Columns & columns,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveAggregationProducer & adaptive,
+        bool all_keys_are_const) const;
+
+    /// A set method has no aggregate states, so it is kept off the adaptive path entirely
+    /// (see `AggregatingStep::adaptiveAggregatorRejectionReason`); this overload only exists because the
+    /// dispatch macro is generated over every variant, and it must never be called.
+    template <typename LocalMethod, typename SharedMethod>
+    requires SetAggregationMethod<LocalMethod>
     void executeFrozenImpl(
         LocalMethod & local_method,
         std::type_identity<SharedMethod>,
@@ -743,6 +767,20 @@ private:
     /// chunks, while pressure-time drains persist them into the bucket's arena so the chunks
     /// can be freed (the whole point of draining early).
     template <AdaptiveKeyStorage key_storage, typename Method>
+    requires MapAggregationMethod<Method>
+    size_t drainAdaptiveBucketBacklog(
+        Method & method,
+        Arena * arena,
+        const std::vector<StagedChunkPtr> & backlog,
+        size_t bucket_index,
+        size_t total_records,
+        PaddedPODArray<AggregateDataPtr> & places,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// A set method never reaches the adaptive path, so nothing is ever staged for one; this overload
+    /// exists only because the dispatch is generated over every variant.
+    template <AdaptiveKeyStorage key_storage, typename Method>
+    requires SetAggregationMethod<Method>
     size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
@@ -754,6 +792,20 @@ private:
 
     /// Applies one staged chunk's slice [slice_begin, slice_end) to the bucket's table.
     template <AdaptiveKeyStorage key_storage, typename Method>
+    requires MapAggregationMethod<Method>
+    void drainAdaptiveBucketImpl(
+        Method & method,
+        Arena * bucket_arena,
+        const StagedChunk & block,
+        size_t slice_begin,
+        size_t slice_end,
+        PaddedPODArray<AggregateDataPtr> & places,
+        size_t bucket_index) const;
+
+    /// A set method never reaches the adaptive path, so nothing is ever staged for one; this overload
+    /// exists only because the dispatch is generated over every variant.
+    template <AdaptiveKeyStorage key_storage, typename Method>
+    requires SetAggregationMethod<Method>
     void drainAdaptiveBucketImpl(
         Method & method,
         Arena * bucket_arena,
@@ -958,6 +1010,14 @@ private:
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
     /// upstream receives at most 256 * n candidate rows instead of every group.
     template <typename Method>
+    requires MapAggregationMethod<Method>
+    AggregatedChunk convertOneBucketToChunkTopK(
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+
+    /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
+    /// aggregate functions at all. This overload exists only because the call site tests it at run time.
+    template <typename Method>
+    requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 

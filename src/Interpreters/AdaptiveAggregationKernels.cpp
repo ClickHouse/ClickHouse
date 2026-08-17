@@ -327,7 +327,28 @@ void Aggregator::executeFrozen(
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
 }
 
+/// A set method has no aggregate states, so the adaptive path is not engaged for one at all - see the
+/// rejection in `AggregatingStep::adaptiveAggregatorRejectionReason`. This overload exists only because the
+/// dispatch macro is generated over every variant convertible to two levels, the set methods among them.
 template <typename LocalMethod, typename SharedMethod>
+requires SetAggregationMethod<LocalMethod>
+void NO_INLINE Aggregator::executeFrozenImpl(
+    LocalMethod &,
+    std::type_identity<SharedMethod>,
+    Arena *,
+    const Columns &,
+    size_t,
+    size_t,
+    ColumnRawPtrs &,
+    AggregateFunctionInstruction *,
+    AdaptiveAggregationProducer &,
+    bool) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The adaptive aggregation frozen path does not support set methods");
+}
+
+template <typename LocalMethod, typename SharedMethod>
+requires MapAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
     LocalMethod & local_method,
     std::type_identity<SharedMethod>,
@@ -1037,7 +1058,23 @@ void Aggregator::drainAdaptiveBucketForMerge(
     shared.backlog.recordDrained(drained);
 }
 
+/// See `drainAdaptiveBucketImpl`: a set method never reaches the adaptive path, so it has no backlog.
 template <AdaptiveKeyStorage key_storage, typename Method>
+requires SetAggregationMethod<Method>
+size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
+    Method &,
+    Arena *,
+    const std::vector<StagedChunkPtr> &,
+    size_t,
+    size_t,
+    PaddedPODArray<AggregateDataPtr> &,
+    std::atomic<bool> &) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The adaptive aggregation drain does not support set methods");
+}
+
+template <AdaptiveKeyStorage key_storage, typename Method>
+requires MapAggregationMethod<Method>
 size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
     Arena * arena,
@@ -1138,7 +1175,18 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     return drained;
 }
 
+/// A set method never reaches the adaptive path (see `AggregatingStep::adaptiveAggregatorRejectionReason`),
+/// so nothing is ever staged for one to drain.
 template <AdaptiveKeyStorage key_storage, typename Method>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
+    Method &, Arena *, const StagedChunk &, size_t, size_t, PaddedPODArray<AggregateDataPtr> &, size_t) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The adaptive aggregation drain does not support set methods");
+}
+
+template <AdaptiveKeyStorage key_storage, typename Method>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,
