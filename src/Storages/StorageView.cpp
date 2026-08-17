@@ -34,6 +34,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
