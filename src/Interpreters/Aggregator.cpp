@@ -592,7 +592,7 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
 
     if (top_k)
         out << fmt::format(
-            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->keys, top_k->key_columns, fmt::join(top_k->directions, ","));
+            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -621,7 +621,7 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
     if (top_k)
     {
         auto top_k_map = std::make_unique<JSONBuilder::JSONMap>();
-        top_k_map->add("Limit", top_k->keys);
+        top_k_map->add("Limit", top_k->k);
         top_k_map->add("Columns", top_k->key_columns);
         auto directions = std::make_unique<JSONBuilder::JSONArray>();
         for (int direction : top_k->directions)
@@ -1096,7 +1096,7 @@ void Aggregator::executeImpl(
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
-            params.top_k->keys, params.top_k->directions,
+            params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
             params.top_k->load_factor,
             params.top_k->observation_rows);
@@ -1455,7 +1455,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k->keys)
+                if (method.top_k_heap.size() >= params.top_k->k)
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
@@ -1476,7 +1476,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
+                                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1570,7 +1570,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (top_k)
         {
             destroyed_states.clear();
-            if (method.top_k_heap.size() >= params.top_k->keys)
+            if (method.top_k_heap.size() >= params.top_k->k)
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
@@ -1596,7 +1596,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (skip_bitmap
                     ? bool(skip_bitmap[i])
-                    : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
+                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;

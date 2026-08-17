@@ -10,6 +10,10 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// Whether the expression between the aggregation and the sort forwards the
+/// key column `name` unchanged (possibly through aliases). If the expression
+/// computed a new value under the same name, the sort would order by something
+/// the heap never ranked, so the match must be rejected.
 static bool isSortKeyPassThrough(const ActionsDAG & dag, const std::string & name)
 {
     const auto * node = dag.tryFindInOutputs(name);
@@ -194,7 +198,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     aggregating_step->applyTopKOptimization(
         Aggregator::Params::TopKParams{
-            .keys = limit,
+            .k = limit,
             .directions = std::move(directions),
             .nulls_directions = std::move(nulls_directions),
             .key_columns = num_key_columns,
