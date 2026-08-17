@@ -8,10 +8,10 @@
 
 using namespace DB;
 
-class SourceNode final : public ITableExpressionNode
+class SourceNode final : public IQueryTreeNode
 {
 public:
-    SourceNode() : ITableExpressionNode(0 /*children_size*/) {}
+    SourceNode() : IQueryTreeNode(0 /*children_size*/) {}
 
     QueryTreeNodeType getNodeType() const override
     {

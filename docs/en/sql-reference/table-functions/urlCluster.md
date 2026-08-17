@@ -8,6 +8,8 @@ title: 'urlCluster'
 doc_type: 'reference'
 ---
 
+# urlCluster Table Function
+
 Allows processing files from URL in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisk in URL file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
 ## Syntax {#syntax}
@@ -57,7 +59,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 
 ## Globs in URL {#globs-in-url}
 
-Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
+Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
 
 ## Related {#related}

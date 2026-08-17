@@ -9,6 +9,8 @@ title: 'AggregateFunction Type'
 doc_type: 'reference'
 ---
 
+# AggregateFunction Type
+
 ## Description {#description}
 
 All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have

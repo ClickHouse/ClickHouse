@@ -73,14 +73,12 @@ public:
         explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
-private:
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
 
-public:
-    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-
-    bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
+    SerializationObjectSharedData(
+        SerializationVersion serialization_version_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_,
+        size_t buckets_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -145,11 +143,11 @@ private:
         /// Total number of paths in this granule, not only requested ones.
         size_t num_paths = 0;
         /// Mark of the ObjectSharedDataData stream for this granule.
-        MarkInCompressedFile data_stream_mark{};
+        MarkInCompressedFile data_stream_mark;
         /// Mark of the ObjectSharedDataPathsMarks stream for this granule.
-        MarkInCompressedFile paths_marks_stream_mark{};
+        MarkInCompressedFile paths_marks_stream_mark;
         /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this granule.
-        MarkInCompressedFile paths_substreams_metadata_stream_mark{};
+        MarkInCompressedFile paths_substreams_metadata_stream_mark;
 
         void clear()
         {
@@ -243,11 +241,11 @@ private:
     struct PathInfo
     {
         /// Mark of the ObjectSharedDataData stream for this path.
-        MarkInCompressedFile data_mark{};
+        MarkInCompressedFile data_mark;
         /// Mark of the substreams list in ObjectSharedDataSubstreams stream for this path.
-        MarkInCompressedFile substreams_mark{};
+        MarkInCompressedFile substreams_mark;
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.
-        MarkInCompressedFile substreams_marks_mark{};
+        MarkInCompressedFile substreams_marks_mark;
         /// List of substreams for this path.
         std::vector<String> substreams;
         /// Map Substream -> its mark in ObjectSharedDataData stream.
@@ -293,30 +291,6 @@ private:
     struct SubstreamsCachePathsDataElement : public ISubstreamsCacheElement
     {
         explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataGranules> paths_data_granules_) : paths_data_granules(paths_data_granules_) {}
-
-        void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-        {
-            if (!paths_data_granules)
-                return;
-
-            for (const auto & granule : *paths_data_granules)
-            {
-                for (const auto & [path, column] : granule.paths_data)
-                {
-                    if (column)
-                        callback(column);
-                }
-
-                for (const auto & [path, subcolumns] : granule.paths_subcolumns_data)
-                {
-                    for (const auto & [subcolumn_name, column] : subcolumns)
-                    {
-                        if (column)
-                            callback(column);
-                    }
-                }
-            }
-        }
 
         std::shared_ptr<PathsDataGranules> paths_data_granules;
     };

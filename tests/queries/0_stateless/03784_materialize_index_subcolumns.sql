@@ -17,7 +17,7 @@ SELECT count() FROM t_index WHERE data.b::UInt64 = 11 SETTINGS force_data_skippi
 
 DROP TABLE IF EXISTS t_index;
 
-CREATE TABLE t_index (id UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 100000000, enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE t_index (id UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 100000000;
 
 INSERT INTO t_index (id) VALUES (1);
 

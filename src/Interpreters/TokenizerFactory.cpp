@@ -1,12 +1,7 @@
 #include <Interpreters/TokenizerFactory.h>
 
-#include "config.h"
-
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
-#if USE_MECAB
-#include <Interpreters/JapaneseTokenizer.h>
-#endif
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -278,51 +273,28 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
     factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
 
-    auto ascii_cjk_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    auto unicode_word_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 0, AsciiCJKTokenizer::getExternalName());
-        return std::make_unique<AsciiCJKTokenizer>();
-    };
-
-    factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
-    factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
-    factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
-
-#if USE_ICU
-    auto icu_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
-    {
-        const auto * tokenizer_name = IcuTokenizer::getExternalName();
+        const auto * tokenizer_name = UnicodeWordTokenizer::getExternalName();
         assertParamsCount(args.size(), 1, tokenizer_name);
 
-        /// The locale is mandatory; there is no default.
+        std::vector<String> stop_words;
         if (args.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Tokenizer '{}' requires a mandatory locale argument, e.g. {}('en')",
-                tokenizer_name, tokenizer_name);
+        {
+            /// Default stop words: common CJK punctuation marks
+            stop_words = {"，", "。", "！", "？", "；", "：", "、", "‘", "’", "“", "”"};
+        }
+        else
+        {
+            auto array = castAs<Array>(args[0], "stop_words");
+            for (const auto & value : array)
+                stop_words.emplace_back(castAs<String>(value, "stop_word"));
+        }
 
-        auto locale = castAs<String>(args[0], "locale");
-        if (locale.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Incorrect parameter of tokenizer '{}': the locale must not be empty",
-                tokenizer_name);
-
-        return std::make_unique<IcuTokenizer>(locale);
+        return std::make_unique<UnicodeWordTokenizer>(stop_words);
     };
 
-    factory.registerTokenizer(IcuTokenizer::getName(), ITokenizer::Type::Icu, icu_creator);
-#endif
-
-#if USE_MECAB
-    auto japanese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
-    {
-        assertParamsCount(args.size(), 0, JapaneseTokenizer::getExternalName());
-        return std::make_unique<JapaneseTokenizer>();
-    };
-
-    factory.registerTokenizer(JapaneseTokenizer::getName(), ITokenizer::Type::Japanese, japanese_creator);
-#endif
+    factory.registerTokenizer(UnicodeWordTokenizer::getName(), ITokenizer::Type::UnicodeWord, unicode_word_creator);
 }
 
 }

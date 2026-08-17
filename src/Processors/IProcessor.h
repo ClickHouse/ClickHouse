@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
-#include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
 #include <fmt/format.h>
 
 class EventCounter;
+
 
 namespace DB
 {
@@ -30,12 +29,7 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
-
-class StepWallClock;
-
-
-using StepWallClockPtr = std::shared_ptr<StepWallClock>;
+using Processors = std::vector<ProcessorPtr>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -129,7 +123,6 @@ protected:
     OutputPorts outputs;
 
 public:
-
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -161,9 +154,9 @@ public:
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
-        /// Processor wants to add new processors and/or remove finished neighbours.
-        /// Update must be obtained by updatePipeline() call.
-        UpdatePipeline,
+        /// Processor wants to add other processors to pipeline.
+        /// New processors must be obtained by expandPipeline() call.
+        ExpandPipeline,
     };
 
     static std::string statusToName(std::optional<Status> status);
@@ -188,10 +181,10 @@ public:
       */
     virtual Status prepare();
 
+    using PortNumbers = std::vector<UInt64>;
+
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
-    virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
+    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -216,15 +209,12 @@ public:
       */
     virtual int schedule();
 
-    /** This method is similar to schedule() but also returns epoll events mask and an optional timeout.
+    /** This method is similar to schedule() but also returns epoll events mask
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
-      *
-      * The third element is a timeout in milliseconds. If non-negative, the processor will be re-dispatched after
-      * the timeout even when the fd has not become readable. A value of -1 means "no timeout" (block until fd fires).
       */
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    virtual std::tuple<int, uint32_t, Int64> scheduleForEvent();
+#ifdef OS_LINUX
+    virtual std::pair<int, uint32_t> scheduleForEvent();
 #endif
 
     /* The method is called right after asynchronous job is done
@@ -244,38 +234,21 @@ public:
      */
     virtual void onAsyncJobReady() {}
 
-    /** You must call this method if 'prepare' returned UpdatePipeline.
+    /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
-      * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * Method should return set of new already connected processors.
+      * All added processors must be connected only to each other or current processor.
       *
-      * Method can't move data from/to port or perform calculations.
-      * 'prepare' should be called again after this operation.
+      * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
+      * 'prepare' should be called again after expanding pipeline.
       */
-    struct PipelineUpdate
-    {
-        Processors to_add;
-        Processors to_remove;
-    };
-    virtual PipelineUpdate updatePipeline();
-
-    /// Why the processor is being cancelled, chosen by the caller of cancel.
-    enum class CancelReason : uint8_t
-    {
-        NotCancelled,           /// Default state: no cancellation happened yet.
-        Unknown,                /// Cancelled without a specific reason (legacy callers).
-        CancelledByUser,        /// User killed the query or closed the session.
-        CancelledByTimeout,     /// Query time limit exceeded.
-        PartialResult,          /// Consumer has enough data; stop ingress and drain compute.
-        Exception,              /// Pipeline is being torn down due to an error.
-    };
+    virtual Processors expandPipeline();
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    virtual void cancel(CancelReason reason) noexcept;
-    void cancel() noexcept { cancel(CancelReason::Unknown); }
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -306,17 +279,10 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    /// Step of QueryPlan from which processor was created
-    void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
+    /// Step of QueryPlan from which processor was created.
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
 
-    void setQueryPlanStepGroup(size_t group) { query_plan_step_group = group; }
-
-    /// Copy the query step fields from parent processor to child processor
-    /// The group can be adjusted manually, since even though the processors can be
-    /// coming from the same step, they can belong to different groups (stages)
-    void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
-
-    const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
@@ -325,17 +291,6 @@ public:
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
-
-    struct PortDataCounters
-    {
-        size_t rows = 0;
-        size_t bytes = 0;
-    };
-
-    /// The getter can be used only after running the query, for counting
-    /// the exact number of rows/bytes per port
-    /// Should be used only on the pors belonging to the processor
-    PortDataCounters getPortDataCounters(const Port & port) const;
 
     struct ProcessorDataStats
     {
@@ -441,7 +396,7 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    const IQueryPlanStep * query_plan_step = nullptr;
+    IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
 

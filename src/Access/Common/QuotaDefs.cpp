@@ -1,10 +1,13 @@
-#include <algorithm>
-#include <Common/StringUtils.h>
 #include <Access/Common/QuotaDefs.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 
 namespace DB
@@ -48,9 +51,9 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
     static constexpr auto make_info = [](const char * raw_name_, String current_usage_description_, String max_allowed_usage_description_, UInt64 output_denominator_)
     {
         String init_name = raw_name_;
-        toLowerASCII(init_name);
+        boost::to_lower(init_name);
         String init_keyword = raw_name_;
-        std::replace(init_keyword.begin(), init_keyword.end(), '_', ' ');
+        boost::replace_all(init_keyword, "_", " ");
         bool init_output_as_float = (output_denominator_ != 1);
         return QuotaTypeInfo
         {
@@ -176,16 +179,6 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
             );
             return info;
         }
-        case QuotaType::QUERIES_PER_NORMALIZED_HASH:
-        {
-            static const auto info = make_info(
-                "QUERIES_PER_NORMALIZED_HASH",
-                "The current maximum number of executions of any single normalized query within the current period of time.",
-                "The maximum number of executions of any single normalized query allowed within the specified period of time.",
-                1
-            );
-            return info;
-        }
         case QuotaType::MAX: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota type: {}", static_cast<int>(type));
@@ -201,19 +194,11 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
     static constexpr auto make_info = [](const char * raw_name_)
     {
         String init_name = raw_name_;
-        toLowerASCII(init_name);
+        boost::to_lower(init_name);
         std::vector<QuotaKeyType> init_base_types;
-        /// The name of a composite key type is its parts joined with "_or_".
+        String replaced = boost::algorithm::replace_all_copy(init_name, "_or_", "|");
         Strings tokens;
-        for (size_t begin = 0; begin <= init_name.length();)
-        {
-            size_t end = init_name.find("_or_", begin);
-            size_t token_end = (end == String::npos) ? init_name.length() : end;
-            tokens.emplace_back(init_name.substr(begin, token_end - begin));
-            if (end == String::npos)
-                break;
-            begin = end + 4;
-        }
+        boost::algorithm::split(tokens, replaced, boost::is_any_of("|"));
         if (tokens.size() > 1)
         {
             for (const auto & token : tokens)
@@ -266,11 +251,6 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         case QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS:
         {
             static const auto info = make_info("CLIENT_KEY_OR_IP_ADDRESS");
-            return info;
-        }
-        case QuotaKeyType::NORMALIZED_QUERY_HASH:
-        {
-            static const auto info = make_info("NORMALIZED_QUERY_HASH");
             return info;
         }
         case QuotaKeyType::MAX: break;

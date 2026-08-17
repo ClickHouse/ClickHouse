@@ -8,6 +8,8 @@ title: 'AzureQueue table engine'
 doc_type: 'reference'
 ---
 
+# AzureQueue table engine
+
 This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
 ## Create table {#creating-a-table}
@@ -93,19 +95,17 @@ The AzureQueue engine has a special setting for SELECT queries: `commit_on_selec
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.  Use the engine to create a table for consuming from the specified path in Azure Blob Storage and consider it a data stream.
+1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
 2.  Create a table with the desired structure.
 3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background.
 
-The engine arguments have the form `AzureQueue(connection_string, container_name, blobpath, format[, compression])`.
-
 Example:
 
 ```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
-  ENGINE=AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', '*', 'CSV')
+  ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
   SETTINGS
       mode = 'unordered';
 
@@ -195,7 +195,3 @@ exception:
 1 row in set. Elapsed: 0.002 sec.
 
 ```
-
-## Limitations {#limitations}
-
-`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
