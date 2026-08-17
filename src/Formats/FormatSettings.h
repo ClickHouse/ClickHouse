@@ -296,6 +296,15 @@ struct FormatSettings
     {
         size_t max_depth = 1000;
         bool array_of_rows = false;
+        /// Input counterpart of array_of_rows for JSONCompactEachRow.
+        /// Auto compares the leading '[' depth of the first value with the first column type.
+        enum class ArrayOfRowsInput : uint8_t
+        {
+            No,
+            Yes,
+            Auto,
+        };
+        ArrayOfRowsInput array_of_rows_input = ArrayOfRowsInput::Auto;
         bool quote_64bit_integers = false;
         bool quote_64bit_floats = false;
         bool quote_denormals = true;
