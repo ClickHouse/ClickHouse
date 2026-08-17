@@ -51,10 +51,13 @@ SETTINGS
 assert_metadata_only "count" "$out"
 
 # Contrast: disabling count-from-files must decode (proves counters are live).
+# Disable trivial count too — otherwise IcebergMetadata::totalRows answers from
+# snapshot summary without opening Parquet.
 out_full=$($CLICKHOUSE_LOCAL --print-profile-events -q "
 SELECT count() FROM icebergLocal('${TABLE_PATH}')
 SETTINGS
     optimize_count_from_files = 0,
+    optimize_trivial_count_query = 0,
     use_cache_for_count_from_files = 0
 " 2>&1)
 decode_full=$(printf '%s\n' "$out_full" | profile_sum ParquetDecodingTasks)
