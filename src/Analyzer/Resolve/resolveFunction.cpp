@@ -218,13 +218,27 @@ bool containsEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
     return false;
 }
 
-bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function, const QueryTreeNodePtr & node)
+bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
 {
     const auto & name = function.getFunctionName();
     const bool is_comparison = name == "equals" || name == "notEquals"
         || name == "less" || name == "greater"
         || name == "lessOrEquals" || name == "greaterOrEquals";
-    return is_comparison && containsEarlyShortCircuitScalarPlaceholder(node);
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const bool first_is_scalar = containsEarlyShortCircuitScalarPlaceholder(arguments[0]);
+    const bool second_is_scalar = containsEarlyShortCircuitScalarPlaceholder(arguments[1]);
+    if (first_is_scalar == second_is_scalar)
+        return false;
+
+    const auto & other_argument = arguments[first_is_scalar ? 1 : 0];
+    const auto * other_constant = other_argument->as<ConstantNode>();
+    return other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
 }
 
 bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
@@ -248,7 +262,7 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
-                    && !isComparisonOfEarlyShortCircuitScalar(*function, node))
+                    && !isComparisonOfEarlyShortCircuitScalar(*function))
                     return true;
             }
         }
@@ -338,6 +352,23 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
+bool isViewBackedSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+{
+    QueryTreeNodePtr resolved_table = join_tree;
+    if (const auto * identifier = join_tree->as<IdentifierNode>())
+    {
+        auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier->getIdentifier(), scope.context);
+        resolved_table = std::move(resolve_result.resolved_identifier);
+    }
+
+    const auto * table = resolved_table ? resolved_table->as<TableNode>() : nullptr;
+    if (!table || !table->getStorage())
+        return true;
+
+    return table->getStorage()->isView();
+}
+
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     const QueryNode & query,
     const IdentifierResolveScope & scope)
@@ -348,6 +379,7 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
             && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
         || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
             && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
+        || isViewBackedSource(join_tree, scope)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
         || query.hasPrewhere()
