@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -171,8 +172,13 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 }
 
 template <typename... Args>
-QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
-    const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
+QueryPlanOptimizationSettings::ParallelReplicasPlan buildQueryPlanForAutomaticParallelReplicas(
+    const ASTPtr & ast,
+    const ContextMutablePtr & ctx,
+    const SelectQueryOptions & select_options,
+    const BuiltSetsByHashPtr & built_sets,
+    bool defer_materialization,
+    Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
@@ -181,25 +187,33 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
             logger,
             "Setting 'enable_parallel_replicas' is disabled. Skipping building query plan with parallel "
             "replicas.");
-        return QueryPlanPtr{};
+        return {};
     }
     if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
-        return QueryPlanPtr{};
+        return {};
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
         LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
-        return QueryPlanPtr{};
+        return {};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        return QueryPlanPtr{};
+        return {};
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// Decide before the tree is built: a `GLOBAL IN` / `GLOBAL JOIN` rewrite materializes its subquery
+    /// while building the plan, and the probe is discarded often enough that paying for those rows here
+    /// is waste. Set it on the query context too - the plan is built through several derived contexts,
+    /// and the one that reaches `executeSubqueryNode` is not this copy. This is written on every build,
+    /// including the one that must materialize, because the same `ctx` is reused for both.
+    ctx->setDeferredSubqueryMaterialization(defer_materialization);
+    if (ctx->hasQueryContext())
+        ctx->getQueryContext()->setDeferredSubqueryMaterialization(defer_materialization);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -214,8 +228,15 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
+    /// Adopt the sets the single-node plan already filled. Optimizing this plan runs index analysis
+    /// over its reads, and a `col IN (subquery)` condition makes that analysis build the set on the
+    /// spot (`KeyCondition::tryPrepareSetIndexForIn`). Without this the same subqueries are executed
+    /// a second time just to plan a candidate that is usually thrown away.
+    reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
-    return std::make_unique<QueryPlan>(std::move(plan));
+    const bool deferred = ctx->wasSubqueryMaterializationDeferred()
+        || (ctx->hasQueryContext() && ctx->getQueryContext()->wasSubqueryMaterializationDeferred());
+    return {std::make_unique<QueryPlan>(std::move(plan)), deferred};
 }
 }
 
@@ -298,8 +319,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
+              const BuiltSetsByHashPtr & built_sets, bool defer_materialization)
+          {
+              return buildQueryPlanForAutomaticParallelReplicas(
+                  ast, ctx, select_options, built_sets, defer_materialization, column_names);
+          })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -321,7 +346,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, bool defer_materialization)
+          {
+              return buildQueryPlanForAutomaticParallelReplicas(
+                  ast, ctx, select_options, built_sets, defer_materialization, storage, column_names);
+          })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -335,8 +364,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
+              const BuiltSetsByHashPtr & built_sets, bool defer_materialization)
+          {
+              return buildQueryPlanForAutomaticParallelReplicas(
+                  tree->toAST(), ctx, select_options, built_sets, defer_materialization);
+          })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }

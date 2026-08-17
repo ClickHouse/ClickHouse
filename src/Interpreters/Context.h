@@ -625,6 +625,9 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
+    /// Shared with every context derived from this one, so that a plan build several contexts deep can
+    /// report back that it skipped materializing a subquery.
+    std::shared_ptr<std::atomic_bool> deferred_subquery_materialization;
 
     struct StorageCache
     {
@@ -1976,6 +1979,18 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    /// The automatic-parallel-replicas probe plan exists to be costed and is usually discarded, so it is
+    /// built without materializing the subqueries a `GLOBAL IN` / `GLOBAL JOIN` rewrite would otherwise
+    /// execute. Arming this makes such a build create the temporary tables empty and record that it did;
+    /// the caller rebuilds the plan for real before executing it. See `considerEnablingParallelReplicas`.
+    /// Set on every plan build, not only the deferring one: the same `Context` is reused for the probe
+    /// and for the rebuild that materializes for real, so leaving a previous build's arming in place
+    /// would make the rebuild defer too and execute a plan whose temporary tables are empty.
+    void setDeferredSubqueryMaterialization(bool defer);
+    bool isSubqueryMaterializationDeferred() const;
+    void setSubqueryMaterializationDeferred();
+    bool wasSubqueryMaterializationDeferred() const;
 
     ReverseLookupCache & getReverseLookupCache() const;
 

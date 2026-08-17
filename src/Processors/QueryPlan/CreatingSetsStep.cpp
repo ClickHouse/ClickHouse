@@ -10,6 +10,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -290,6 +293,78 @@ QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBui
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "Cannot build pipeline in DelayedCreatingSets. This step should be optimized out.");
+}
+
+namespace
+{
+
+/// Visit every `FutureSetFromSubquery` reachable from `root`. Sets do not live only in the plan's
+/// own nodes: a set's source is a plan of its own (that is where a nested `IN` keeps its set), and
+/// the parallel-replicas local branch hangs off `ReadFromLocalParallelReplicaStep` rather than being
+/// a child node. Both have to be followed or the walk misses exactly the sets that get rebuilt.
+void forEachSubquerySet(const QueryPlan * root, const std::function<void(FutureSetFromSubquery &)> & visit)
+{
+    if (!root || !root->getRootNode())
+        return;
+
+    std::vector<QueryPlan::Node *> stack{root->getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & future_set : delayed->getSets())
+            {
+                if (!future_set)
+                    continue;
+                visit(*future_set);
+                forEachSubquerySet(future_set->getQueryPlan(), visit);
+            }
+        }
+        else if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(node->step.get()))
+        {
+            forEachSubquerySet(read_from_local->getQueryPlan(), visit);
+        }
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
+}
+
+BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan)
+{
+    auto built = std::make_shared<BuiltSetsByHash>();
+    forEachSubquerySet(
+        &plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            const auto & set_and_key = future_set.getSetAndKey();
+            if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+                built->sets.emplace(future_set.getHash(), set_and_key);
+        });
+    return built;
+}
+
+void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built)
+{
+    if (!built || built->sets.empty())
+        return;
+
+    forEachSubquerySet(
+        &plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            const auto & set_and_key = future_set.getSetAndKey();
+            if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+                return;
+
+            if (auto it = built->sets.find(future_set.getHash()); it != built->sets.end())
+                future_set.replaceSetAndKey(it->second);
+        });
 }
 
 }
