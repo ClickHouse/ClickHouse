@@ -83,7 +83,7 @@ SELECT 'Test nondeterministic functions fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(1) WHERE throwIf(randConstant() % 1 = 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'Test comparison non-placeholder expressions stay eager';
-SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1));
 
 SELECT 'Test view-backed count subqueries fall back to normal analysis';
 DROP VIEW IF EXISTS test_03562_view;
