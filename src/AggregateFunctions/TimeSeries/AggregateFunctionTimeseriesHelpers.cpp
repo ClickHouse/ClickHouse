@@ -254,17 +254,17 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesRateToGrid = R"(
 timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesRateToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesRateToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -343,17 +343,17 @@ Aggregate function that takes time series data as pairs of timestamps and values
 The value is the total extrapolated increase of a counter over the window. A decrease between consecutive samples is treated as a counter reset and counted towards the increase, so the result reflects the cumulative growth of the counter even when it restarts from zero.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
 timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesIncreaseToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -431,17 +431,17 @@ Aggregate function that takes time series data as pairs of timestamps and values
 For each point on the grid the samples for calculating `delta` are considered within the specified time window.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDeltaToGrid = R"(
 timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesDeltaToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDeltaToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -519,17 +519,17 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `irate` are considered within the specified time window.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantRateToGrid = R"(
 timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesInstantRateToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantRateToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -608,17 +608,17 @@ Aggregate function that takes time series data as pairs of timestamps and values
 For each point on the grid the samples for calculating `idelta` are considered within the specified time window.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantDeltaToGrid = R"(
 timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesInstantDeltaToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantDeltaToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
@@ -696,17 +696,17 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like derivative](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `deriv` are considered within the specified time window.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDerivToGrid = R"(
 timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesDerivToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {}},
-        {"end_timestamp", "Specifies end of the grid.", {}},
-        {"grid_step", "Specifies step of the grid in seconds.", {}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDerivToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
@@ -782,18 +782,18 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like linear prediction](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) with a specified prediction timestamp offset from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `predict_linear` are considered within the specified time window.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesPredictLinearToGrid = R"(
 timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesPredictLinearToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {}},
-        {"end_timestamp", "Specifies end of the grid.", {}},
-        {"grid_step", "Specifies step of the grid in seconds.", {}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {}},
-        {"predict_offset", "Specifies number of seconds of offset to add to prediction time.", {}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"predict_offset", "Specifies number of seconds of offset to add to prediction time.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesPredictLinearToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
@@ -873,17 +873,17 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like changes](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `changes` are considered within the specified time window.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesChangesToGrid = R"(
 timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesChangesToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {}},
-        {"end_timestamp", "Specifies end of the grid.", {}},
-        {"grid_step", "Specifies step of the grid in seconds.", {}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples.", {}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesChangesToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
@@ -959,17 +959,17 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like resets](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `resets` are considered within the specified time window.
 
 :::note
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResetsToGrid = R"(
 timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesResetsToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {}},
-        {"end_timestamp", "Specifies end of the grid.", {}},
-        {"grid_step", "Specifies step of the grid in seconds.", {}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples.", {}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResetsToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
@@ -1048,17 +1048,17 @@ Aggregate function that takes time series data as pairs of timestamps and values
 Alias: `timeSeriesLastToGrid`.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResampleToGridWithStaleness = R"(
 timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(timestamp, value)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesResampleToGridWithStaleness = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResampleToGridWithStaleness = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
