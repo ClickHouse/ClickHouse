@@ -17,6 +17,10 @@
 namespace DB
 {
 
+/// GCD compression finds the greatest common divisor of the column's values and stores each
+/// value's quotient by it instead: smaller, lower-entropy quotients compress better downstream.
+/// GCD is not defined for negative numbers, so it is computed over the values' *magnitudes*; sign
+/// is preserved by negating the quotient, not the found `gcd` itself.
 class CompressionCodecGCD : public ICompressionCodec
 {
 public:
@@ -76,7 +80,6 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
-    hash.update(gcd_bytes_size);
     hash.update(is_signed_type);
 }
 
@@ -86,6 +89,8 @@ namespace
 template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
+    /// T is always unsigned, shared by signed and unsigned columns of the same width via the
+    /// runtime `is_signed` flag, to avoid doubling the number of template instantiations.
     static_assert(!is_signed_v<T>);
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with GCD codec, data size {} is not aligned to {}", source_size, sizeof(T));
@@ -122,7 +127,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
 
     if constexpr (sizeof(T) <= 8)
     {
-        /// libdivide supports only UInt32 and UInt64
+        /// libdivide supports only UInt32 and UInt64.
         using LibdivideT = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
         libdivide::divider<LibdivideT> divider(static_cast<LibdivideT>(gcd));
         cur_source = source;
@@ -307,16 +312,10 @@ void registerCodecGCD(CompressionCodecFactory & factory)
 
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
+        /// Unlike `T64`, `GCD` intentionally does not throw when type information is missing.
+        /// This still preserves correctness, but for signed data it can degrade divisor discovery and therefore compression efficiency.
         if (column_type)
-        {
             std::tie(gcd_bytes_size, is_signed_type) = getGCDTypeInfo(column_type);
-        }
-        else
-        {
-            /// Unlike `T64`, `GCD` intentionally does not throw when type information is missing.
-            /// This still preserves correctness, but for signed data it can degrade divisor
-            /// discovery and therefore compression efficiency.
-        }
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size, is_signed_type);
     };
