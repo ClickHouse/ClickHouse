@@ -78,7 +78,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         || !auth[S3AuthSetting::session_token].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "HMAC key credentials are not supported by the native GCS backend. "
-            "Use `google_adc_*` settings, a service account key, or `NOSIGN`, "
+            "Use Application Default Credentials or `NOSIGN`, "
             "or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
     if (!auth[S3AuthSetting::role_arn].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -101,8 +101,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata-service OAuth settings (`http_client`, `service_account`, `metadata_service`, `request_token_path`) "
             "are not supported by the native GCS backend; it can use Application Default Credentials "
-            "(which cover the default service account of the metadata server), `google_adc_*` settings, "
-            "a service account key, or `NOSIGN`. "
+            "(which cover the default service account of the metadata server) or `NOSIGN`. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
 
     /// The refresh-token credentials are exchanged eagerly by `resolveGCSCredentialsToken`, but a
