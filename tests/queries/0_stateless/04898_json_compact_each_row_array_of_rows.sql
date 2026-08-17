@@ -6,7 +6,6 @@ SELECT * FROM format(JSONCompactEachRow, 'a UInt64, b String', '[123, "Hello"]\n
 
 -- Wrapped rows, default auto.
 SELECT * FROM format(JSONCompactEachRow, 'a UInt64, b String', '[[123, "Hello"], [456, "World"]]');
-SELECT * FROM format(JSONCompactEachRow, 'a UInt64, b String', '[[123,"Hello"],[456,"World"]]');
 
 -- Pretty-printed wrapping array.
 SELECT * FROM format(JSONCompactEachRow, 'a UInt64, b String', '[\n  [123, "Hello"],\n  [456, "World"]\n]');
@@ -52,6 +51,9 @@ SELECT * FROM format(JSONCompactEachRowWithNamesAndTypes, 'a UInt64, b String', 
 
 -- Empty wrapping array is zero rows when unwrap is forced.
 SELECT count() FROM format(JSONCompactEachRow, 'a UInt64, b String', '[]') SETTINGS input_format_json_array_of_rows = 1;
+
+-- A wrapping array that is missing the closing ']' is incorrect data.
+SELECT * FROM format(JSONCompactEachRow, 'a UInt64, b String', '[[123, "Hello"], [456, "World"]') SETTINGS input_format_json_array_of_rows = 1; -- { serverError INCORRECT_DATA }
 
 -- Same wrapping-array support for the Strings variant. Fields are JSON strings, so Auto
 -- unwraps on a leading `[[` even when the first column is Array.

@@ -175,11 +175,10 @@ namespace JSONUtils
     void skipArrayEnd(ReadBuffer & in);
     bool checkAndSkipArrayStart(ReadBuffer & in);
     bool checkAndSkipArrayEnd(ReadBuffer & in);
-    /// For JSONCompactEachRow: optionally consume a wrapping `[` around the rows.
-    /// When the mode is Auto and `first_column_type` is null, unwrap only if
-    /// `allow_auto_without_type` is set (names/types header rows, or JSONCompactStringsEachRow
-    /// whose fields are JSON strings). Otherwise Auto does not unwrap, because `[[` is also
-    /// a valid Array/unnamed-Tuple first field.
+    /// Optionally consume a wrapping `[` around JSONCompactEachRow rows.
+    /// Auto unwraps when the data is one `[` deeper than the first column (`Array` and unnamed
+    /// `Tuple` add depth). If `first_column_type` is null, unwrap only when
+    /// `allow_auto_without_type` is set; otherwise `[[` is left as a first-field array.
     bool consumeJSONCompactEachRowWrappingArrayIfNeeded(
         ReadBuffer & in,
         const FormatSettings & settings,

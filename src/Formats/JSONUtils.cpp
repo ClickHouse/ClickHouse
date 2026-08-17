@@ -813,11 +813,9 @@ namespace JSONUtils
         return depth;
     }
 
-    /// Count extra '[' after the first '[' of the document, without consuming input.
-    /// The first '[' is either a wrapping array or the first row. Extra brackets belong to the first field.
-    /// Only inspects the current buffer so a temporary PeekableReadBuffer cannot drop bytes
-    /// if the prefix spans a buffer boundary. If the prefix is split, extra is undercounted
-    /// and Auto leaves the data wrapped (the caller can set the mode to 1).
+    /// Count extra '[' after the first '[' without consuming input. Only the current buffer
+    /// is inspected; wrapping the stream in PeekableReadBuffer can drop bytes across a boundary.
+    /// If the prefix is split, extra is undercounted and Auto leaves the data wrapped.
     static size_t peekLeadingArrayDepthAfterFirstBracket(ReadBuffer & in)
     {
         const char * pos = in.position();

@@ -121,8 +121,10 @@ bool JSONCompactEachRowFormatReader::checkForSuffix()
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
         ++in->position();
     skipWhitespaceIfAny(*in);
-    if (data_in_square_brackets && !in->eof() && *in->position() == ']')
+    if (data_in_square_brackets)
     {
+        if (in->eof() || *in->position() != ']')
+            return false;
         ++in->position();
         skipWhitespaceIfAny(*in);
         if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
