@@ -265,17 +265,34 @@ DROP TABLE tab;
 
 SET materialize_statistics_on_insert = 1;
 
--- Statistics declared on a non-physical column are accepted but ignored: the column is never
--- present in a written block, so INSERT must not try to build them.
+-- Statistics of a non-physical column cannot be built: it is never present in a written block.
 
 CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
 INSERT INTO tab VALUES (1);
 SELECT a, b FROM tab;
 ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS validate_mutation_query = 0; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab MATERIALIZE STATISTICS ALL;
-SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
 ALTER TABLE tab DROP STATISTICS b;
+DROP TABLE tab;
+
+-- MATERIALIZE STATISTICS ALL materializes the physical column and skips the alias one.
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
+INSERT INTO tab VALUES (1);
+ALTER TABLE tab MATERIALIZE STATISTICS ALL;
+SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
+DROP TABLE tab;
+
+-- A mutation that named the column while it was still physical must drain, not retry forever.
+-- The trailing synchronous mutation cannot complete until the queued one does.
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab VALUES (1, 1);
+SYSTEM STOP MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest) SETTINGS mutations_sync = 0;
+SYSTEM START MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
 DROP TABLE tab;
 
 CREATE TABLE tab (a UInt64, b UInt64 EPHEMERAL 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();

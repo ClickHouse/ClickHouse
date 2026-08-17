@@ -1314,8 +1314,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    /// ALL is a bulk request: a non-physical column is skipped so the statement
-                    /// stays usable on a table that carries such a declaration.
+                    /// The statement stays usable on a table that carries a non-physical
+                    /// statistics declaration.
                     if (!column_desc.statistics.empty() && column_desc.isPhysical())
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
@@ -1327,6 +1327,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
+
+                /// A command queued before the column became non-physical must drain rather than
+                /// retry forever. A newly issued statement is rejected in
+                /// MergeTreeData::checkMutationIsPossible.
+                if (!columns_desc.get(stat_column_name).isPhysical())
+                {
+                    LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
+                    continue;
+                }
 
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
