@@ -2,14 +2,14 @@
 
 -- Aggregation in order under plan-based parallel replicas (`parallel_replicas_plan_based`).
 --
--- Unlike a plain `ORDER BY` (see 04836_pr_plan_based_read_in_order), the partial `AggregatingStep` is placed
--- *below* the split marker, so it ships inside the fragment. The worker re-optimizes the deserialized
--- fragment with its own settings, so `optimizeAggregationInOrder` can fire there and request an in-order
--- read; the initiator's local half is re-optimized on a separate path. Both sides must independently derive
--- the same `CoordinationMode`, otherwise the coordinator throws
--- "Replica ... decided to read in ... mode, not in ...". This is the same failure shape as
--- 03810_pr_aggr_in_order_read_mode and 04009_pr_aggr_in_order_coordination_mode cover for classic
--- parallel replicas.
+-- The split is lifted through the `AggregatingStep` the same way it is lifted through the `SortingStep` (see
+-- 04836_pr_plan_based_read_in_order): a partial aggregation ships inside the fragment and the initiator keeps a
+-- `MergingAggregated` above the union. The worker re-optimizes the deserialized fragment with its own settings,
+-- so `optimizeAggregationInOrder` can fire there and request an in-order read; the initiator's local half is
+-- re-optimized on a separate path. Both sides must independently derive the same `CoordinationMode`, otherwise
+-- the coordinator throws "Replica ... decided to read in ... mode, not in ...". This is the same failure shape
+-- as 03810_pr_aggr_in_order_read_mode and 04009_pr_aggr_in_order_coordination_mode cover for classic parallel
+-- replicas.
 
 DROP TABLE IF EXISTS t_pr_aggr_in_order;
 
@@ -26,7 +26,6 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET optimize_aggregation_in_order = 1;
-SET optimize_read_in_order = 0;
 -- Pin the manual mode: CI randomizes `automatic_parallel_replicas_mode` to 2, and the cost model may then
 -- decide against parallel replicas, so the plan-based split would never engage.
 SET automatic_parallel_replicas_mode = 0;
@@ -93,10 +92,9 @@ SELECT
     countIf(explain LIKE '%MergingAggregated%') > 0 AS has_merging_aggregated
 FROM (EXPLAIN pretty = 0, description = 0 SELECT a, count() FROM t_pr_aggr_in_order GROUP BY a);
 
--- Unlike a plain ORDER BY, aggregation in order *does* survive the split: the partial aggregation ships with
--- the fragment, so both sides derive an in-order read and the coordinator runs in `WithOrder` mode. This is
--- the assertion that would catch a silent degradation to `Default` (which is what 04836 records for
--- `ORDER BY`), and equally a regression where only one side degrades and the coordinator throws.
+-- Both sides derive an in-order read from the shipped partial aggregation, so the coordinator runs in
+-- `WithOrder` mode. This catches a silent degradation to `Default`, and equally a regression where only one
+-- side degrades and the coordinator throws.
 SELECT '--- explain pipeline: in_order_pool, aggregating_in_order ---';
 SELECT
     countIf(explain LIKE '%ReadPoolParallelReplicasInOrder%') > 0 AS in_order_pool,
