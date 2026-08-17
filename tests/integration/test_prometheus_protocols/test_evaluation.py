@@ -3544,6 +3544,34 @@ def test_set_binary_operators():
     )
 
     do_query_test(
+        "(sum by (shape, size) (last_over_time(foo[10])) or sum by (shape, size) (last_over_time(bar[10])))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [120, "16"], [130, "16"], [150, "16"]]}, {"metric": {"shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "4"], [120, "40"], [130, "40"], [140, "700"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}, {"metric": {"shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:10.000',40),('1970-01-01 00:02:20.000',700)]",
+            ],
+            [
+                "[('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+            [
+                "[('shape','triangle'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]",
+            ],
+        ],
+    )
+
+    do_query_test(
         "(last_over_time(foo[10]) and on(shape) last_over_time(bar[10]))[50:10]",
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"]]}]}',
