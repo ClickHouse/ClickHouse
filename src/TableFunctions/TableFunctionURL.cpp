@@ -277,9 +277,7 @@ StoragePtr TableFunctionURL::executeImpl(
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
 
-    /// Stored columns only ever accompany a persisted definition, and `CREATE ... AS url(...)`
-    /// always reaches `getStorage` with this flag set, so replaying such a definition has to set it
-    /// too in order to resolve to the same storage.
+    /// Stored columns only ever accompany a persisted definition being replayed.
     const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
 
     return ITableFunctionFileLike::executeImpl(

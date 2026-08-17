@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Two `clickhouse local` invocations against the same --path: the second reloads the metadata the
 # first persisted, which is the path a server takes at startup. The host is unreachable on purpose -
 # both experimental gates throw before any network access, so nothing here connects.
-WORKING_FOLDER="${CLICKHOUSE_TMP}/04673_url_wildcard_reload"
+WORKING_FOLDER="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${WORKING_FOLDER}"
 
 GLOB_URL="http://127.0.0.1:1/**/"
@@ -22,13 +22,24 @@ run_local() {
     local out
     out=$(${CLICKHOUSE_LOCAL} --path="$1" --query "${NO_RETRY} $2" \
         -- --max_server_memory_usage=10G --memory_worker_use_cgroup=0 2>&1)
-    echo "$out" | grep -E '^(created|reloaded)\b' || true
+    echo "$out" | grep -E '^(created|reloaded|plan)\b' || true
     echo -n 'gate refused: '
     echo "$out" | grep -c 'SUPPORT_IS_DISABLED' || true
 }
 
 show_table() {
     echo "SELECT 'reloaded', engine FROM system.tables WHERE database = 'd' AND name = '$1';"
+}
+
+# Both candidate storages report engine `URL` in system.tables, so the engine name cannot say which
+# one a reload picked. The read step names them apart: ReadFromURL is the plain storage,
+# ReadFromObjectStorage the index-page-listing one. EXPLAIN stops before the pipeline, so no request
+# is issued.
+show_table_and_plan() {
+    echo "$(show_table "$1")
+          SELECT 'plan', countIf(explain ILIKE '%ReadFromURL%') > 0,
+                         countIf(explain ILIKE '%ReadFromObjectStorage%') = 0
+          FROM (EXPLAIN SELECT count() FROM d.$1);"
 }
 
 echo '--- A: explicit structure, created with the setting on, reloaded with it off'
@@ -38,7 +49,7 @@ run_local "$D" "
     CREATE DATABASE d;
     CREATE TABLE d.t (x Int32) AS url('${GLOB_URL}', JSONEachRow, 'x Int32');
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 't';"
-run_local "$D" "$(show_table t)"
+run_local "$D" "$(show_table_and_plan t)"
 run_local "$D" "SELECT count() FROM d.t;"
 
 echo '--- A2: structure inferred, same cycle'
@@ -50,7 +61,7 @@ run_local "$D" "
     CREATE DATABASE d;
     CREATE TABLE d.t (line String) AS url('${GLOB_URL}', LineAsString);
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 't';"
-run_local "$D" "$(show_table t)"
+run_local "$D" "$(show_table_and_plan t)"
 run_local "$D" "SELECT count() FROM d.t;"
 
 echo '--- C: ENGINE = URL keeps its own behaviour'

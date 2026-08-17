@@ -2,12 +2,14 @@
 created	URL
 gate refused: 0
 reloaded	URL
+plan	1	1
 gate refused: 0
 gate refused: 0
 --- A2: structure inferred, same cycle
 created	Proxy
 gate refused: 0
 reloaded	Proxy
+plan	1	1
 gate refused: 0
 gate refused: 0
 --- C: ENGINE = URL keeps its own behaviour
