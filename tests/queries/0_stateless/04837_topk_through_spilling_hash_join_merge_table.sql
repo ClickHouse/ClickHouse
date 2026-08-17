@@ -39,6 +39,7 @@ INSERT INTO t_topk_merge_payloads
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET query_plan_read_in_order_through_spilling_join = 1;
 SET query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1, query_plan_optimize_join_order_limit = 1;
