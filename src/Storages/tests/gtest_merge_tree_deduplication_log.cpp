@@ -3098,3 +3098,24 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartSurvivesRestart)
     std::filesystem::remove_all(work_dir);
 }
 #endif
+
+/// A stopped log must reject even otherwise no-op operations. In particular, they
+/// must not run the recovery barrier after `shutdown`, because it can reopen a writer
+/// which the already completed shutdown cannot finalize.
+TEST(MergeTreeDeduplicationLog, RejectsNoOpOperationsAfterShutdown)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_stopped/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+    log.shutdown();
+
+    EXPECT_THROW(log.addPart({"block1"}, MergeTreePartInfo::fromPartName("all_1_1_0", format_version)), Exception);
+    EXPECT_THROW(log.dropPart(MergeTreePartInfo::fromPartName("all_1_1_0", format_version)), Exception);
+
+    std::filesystem::remove_all(work_dir);
+}

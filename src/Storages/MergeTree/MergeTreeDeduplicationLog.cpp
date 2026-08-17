@@ -1075,6 +1075,9 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 {
     std::lock_guard lock(state_mutex);
 
+    if (stopped)
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
+
     /// `prepareToWrite` is a recovery barrier, not just preparation for a write. A
     /// successful duplicate fast path must make any process-local history fence
     /// durable too: otherwise a restart before the next write could replay a
@@ -1102,11 +1105,6 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     if (!result.empty())
         return result;
-
-    if (stopped)
-    {
-        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
-    }
 
     chassert(current_writer != nullptr);
 
@@ -1290,6 +1288,9 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 {
     std::lock_guard lock(state_mutex);
 
+    if (stopped)
+        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
+
     /// As in addPart, run the recovery barrier before every successful fast path.
     /// A no-op drop must not let an unfenced, diverged history escape until a later
     /// write or shutdown.
@@ -1301,11 +1302,6 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// threads and so on.
     if (deduplication_window == 0)
         return;
-
-    if (stopped)
-    {
-        throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
-    }
 
     chassert(current_writer != nullptr);
 
