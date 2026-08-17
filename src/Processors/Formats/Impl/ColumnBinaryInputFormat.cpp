@@ -4,6 +4,7 @@
 #include <limits>
 #include <vector>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ColumnarV1Wire.h>
@@ -195,8 +196,25 @@ Chunk ColumnBinaryInputFormat::read()
                     "ColumnBinary: column {} descriptor offset {} outside its data region [{}, {})",
                     i, off, region_start, region_end);
 
-        result.push_back(ColumnarV1::readColumnFromDesc(
-            buf.subspan(0, region_end), desc, num_rows, header_->getByPosition(i).type));
+        const auto & expected_type = header_->getByPosition(i).type;
+        auto column = ColumnarV1::readColumnFromDesc(buf.subspan(0, region_end), desc, num_rows, expected_type);
+
+        // Defence in depth for the whole tag dispatch, not just the families that check the
+        // declared type themselves: the chunk goes on to be inserted into the destination
+        // columns with `insertRangeFrom`, whose `assert_cast` is a plain `static_cast` in
+        // release builds, so a decoded column of the wrong concrete class would be host-side
+        // undefined behaviour rather than a rejected frame.
+        // COL_IS_CONST legitimately decodes to a ColumnConst wrapper, which never structurally
+        // equals the plain column the declared type creates; compare what it wraps.
+        const IColumn & decoded = column->isConst()
+            ? assert_cast<const ColumnConst &>(*column).getDataColumn()
+            : *column;
+        if (!decoded.structureEquals(*expected_type->createColumn()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnBinary: column {} decoded as {}, which does not match the declared type {}",
+                i, decoded.getName(), expected_type->getName());
+
+        result.push_back(std::move(column));
 
         region_start = region_end;
     }

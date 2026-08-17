@@ -1016,6 +1016,17 @@ inline MutableColumnPtr readColumnFromDesc(
 
     if (raw_type == COL_BYTES)
     {
+        // Unlike the COL_FIXED* branches, which build the declared column via
+        // base_type->createColumn(), this one always builds a ColumnString. The tag is
+        // otherwise-untrusted, so without this check a frame can declare COL_BYTES for a
+        // column the schema says is, say, UInt64 and hand a ColumnString back to the caller;
+        // the resulting insertRangeFrom into the destination column goes through assert_cast,
+        // which is a plain static_cast in release builds — type confusion instead of a clean
+        // rejection. The writer only ever emits COL_BYTES for a ColumnString, so mirror that.
+        if (!typeid_cast<const ColumnString *>(base_type->createColumn().get()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_BYTES descriptor does not match declared type {}", base_type->getName());
+
         // Widen before the +1: rows_to_dec is otherwise-untrusted (guest/network-controlled),
         // and rows_to_dec == UINT32_MAX would wrap (rows_to_dec + 1) to 0 in uint32_t
         // arithmetic before the cast, making the bounds check below trivially pass and letting
