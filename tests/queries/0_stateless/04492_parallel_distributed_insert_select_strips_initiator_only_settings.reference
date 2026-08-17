@@ -1,0 +1,14 @@
+-- distributedWriteBetweenDistributedTables (Distributed source)
+1	0	0	0	0	0	0	0	0
+-- distributedWriteFromClusterStorage (fileCluster source)
+1	0	0	0	0	0	0	0	0
+-- initiator-only setting reset to DEFAULT must not ride along in the forwarded query text
+1	0	0
+-- ReadFromCluster (a SELECT via the fileCluster IStorageCluster) does not forward initiator-only settings in the query text
+1	0	0
+-- an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text
+1	0	0
+-- an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text
+1	0
+-- the regular Distributed SELECT fan-out does not forward initiator-only settings (analyzer + nested)
+1	0	0

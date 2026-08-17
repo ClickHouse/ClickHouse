@@ -40,6 +40,8 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_mutate_task_pause_in_prepare[];
+    extern const char rmt_mutate_task_pause_before_rename_part[];
+    extern const char rmt_mutate_task_pause_after_temporary_part_released[];
     extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
 }
 
@@ -302,6 +304,18 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
     new_part->getDataPartStorage().commitTransaction();
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_before_rename_part);
+
+    /// Explicitly rename the part while `mutate_task` is still alive, because it owns the RAII guard
+    /// that keeps `clearOldTemporaryDirectories` away from the `tmp_mut_<part>` directory. Releasing
+    /// the guard before the rename opens a window in which the cleanup thread starts removing the
+    /// directory while the rename is moving it to the persistent name: the part becomes active with
+    /// some of its files already deleted, so reads of it fail with `No such file or directory` and
+    /// the next mutation of it fails with `CANNOT_LINK` forever. `renameMergedTemporaryPart` renames
+    /// under the same guard for the same reason.
+    transaction_ptr->renameParts();
+
     /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
     /// The task holds RAII guards for temporary part directories (TemporaryParts).
     /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution
@@ -314,11 +328,15 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    /// The temporary directory of the part is no longer protected by `TemporaryParts` here.
+    /// This failpoint lets a test observe that window: with the rename above it is already gone,
+    /// while with the old ordering it is still on disk and the cleanup thread removes it.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_temporary_part_released);
+
     Stopwatch commit_watch;
 
     try
     {
-        transaction_ptr->renameParts();
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, hardlinked_files);
     }
     catch (const Exception & e)
