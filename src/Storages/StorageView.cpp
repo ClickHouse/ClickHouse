@@ -66,8 +66,10 @@ namespace Setting
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsDouble limit;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsDouble offset;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -650,13 +652,13 @@ void StorageView::readImpl(
     auto row_policy_filter = context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    auto view_context = getViewContext(context, storage_snapshot, this);
     const bool hides_rows = security_barrier
-        && (has_row_policy || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, context));
+        && (has_row_policy || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
     const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, post_filter);
         interpreter.addStorageLimits(*query_info.storage_limits);
@@ -664,7 +666,6 @@ void StorageView::readImpl(
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
@@ -907,6 +908,13 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     if (!inner_query)
         return true;
 
+    /// The view is executed with its effective security context. A profile-level limit or offset
+    /// in that context restricts the rows visible through the view just like a clause in its AST.
+    /// Callers pass the view context, so this also covers `SQL SECURITY DEFINER` profiles.
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0)
+        return true;
+
     const auto * union_query = inner_query->as<ASTSelectWithUnionQuery>();
     if (!union_query || !union_query->list_of_selects)
         return true;
@@ -1008,6 +1016,14 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// filter, so it hides the overwritten and deleted versions of a row just like a filtering
     /// view does, and outer predicates must stay above it.
     if (table->needRewriteQueryWithFinal({}))
+        return true;
+
+    /// Row policies are evaluated as part of the source read. They are not represented in the
+    /// stored view AST, so inspect them under the effective context that runs the inner query.
+    const auto & storage_id = table->getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
         return true;
 
     return false;

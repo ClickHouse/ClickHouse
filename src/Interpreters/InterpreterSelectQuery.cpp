@@ -858,11 +858,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// This is what `EXPLAIN SYNTAX` is built with, and it is the form it has always printed.
         /// A view that provably hides no rows and has no effective row policy also keeps inlining
         /// — there is nothing below it for a merged predicate to observe.
+        auto view_context = view ? StorageView::getViewSubqueryContext(context, storage_snapshot) : nullptr;
         const bool inline_view = view
             && (options.only_analyze
                 || !StorageView::isSecurityBarrier(*metadata_snapshot, context)
                 || ((!row_policy_filter || row_policy_filter->isAlwaysTrue())
-                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, context)));
+                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, view_context)));
 
         if (view)
             query_info.is_parameterized_view = view->isParameterizedView();

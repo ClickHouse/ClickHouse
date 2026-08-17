@@ -5757,11 +5757,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// `IQueryPlanStep::isSecurityBarrier`.
     /// A view that provably hides no rows and has no effective row policy keeps being inlined —
     /// there is nothing below it for a merged predicate to observe.
-    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
-        && (has_row_policy || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, scope.context)))
-        return;
-
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
+    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
+        && (has_row_policy || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context)))
+        return;
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
