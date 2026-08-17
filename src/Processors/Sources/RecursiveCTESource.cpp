@@ -128,6 +128,10 @@ struct ParallelReplicasEngagement
     /// The planner applies the min-rows estimate only when its candidate plan has
     /// exactly one `ReadFromMergeTree` step.
     size_t local_merge_tree_read_count = 0;
+    /// A `Merge` read can prune its children by `_table` / `_database` before
+    /// planning. The preflight observes the unpruned child set, so its count can
+    /// be higher than the count the planner uses for the min-rows estimate.
+    bool local_merge_tree_read_count_may_be_reduced_by_merge_pruning = false;
     /// Via a `ClusterProxy`-served storage (`Distributed` and its wrappers): no row-count
     /// estimate applies, the parallel-replica settings are honoured as-is.
     bool remote = false;
@@ -138,6 +142,8 @@ struct ParallelReplicasEngagement
     {
         local_merge_tree |= other.local_merge_tree;
         local_merge_tree_read_count += other.local_merge_tree_read_count;
+        local_merge_tree_read_count_may_be_reduced_by_merge_pruning
+            |= other.local_merge_tree_read_count_may_be_reduced_by_merge_pruning;
         remote |= other.remote;
     }
 };
@@ -225,6 +231,13 @@ ParallelReplicasEngagement mayEngageParallelReplicasForRemoteStorage(const IStor
         });
         if (!has_children || has_ineligible_child)
             return {};
+
+        /// `ReadFromMerge::getSelectedTables` applies `_table` / `_database`
+        /// filters before creating child plans. Keep this ambiguity with the
+        /// engagement so the forced-mode preflight does not assume that the
+        /// unpruned count of local view reads is the planner's final count.
+        children_engagement.local_merge_tree_read_count_may_be_reduced_by_merge_pruning
+            = children_engagement.local_merge_tree_read_count > 1;
 
         /// The *flavor* of the engagement has to survive pruning as well. A `Merge` whose
         /// children are all eligible can still mix flavors — say a view over a local
@@ -1310,11 +1323,14 @@ public:
             /// planning, so when it *could* still disable parallel replicas — the
             /// threshold is set, the mode is the task-based one (the only one the
             /// estimate applies to), and the candidate has exactly one local `MergeTree`
-            /// read (a `ClusterProxy`-served read never runs the estimate) — do not throw
+            /// read — or a `Merge` may prune its preflight count down to one with a
+            /// `_table` / `_database` filter — (a `ClusterProxy`-served read never runs
+            /// the estimate) — do not throw
             /// preemptively; fall through to the disable below, mirroring the planner's
-            /// own silent disable. The exact-one check matters: multi-read shapes such as
-            /// a join of two local `MergeTree` tables or a view over `UNION ALL` skip the
-            /// estimate in `PlannerJoinTree` and must still fail closed in forcing mode.
+            /// own silent disable. Outside a prunable `Merge`, the exact-one check still
+            /// matters: multi-read shapes such as a join of two local `MergeTree` tables
+            /// or a view over `UNION ALL` skip the estimate in `PlannerJoinTree` and must
+            /// still fail closed in forcing mode.
             /// For a step the estimate would have let through this keeps parallel replicas
             /// off — the same documented under-throw trade-off as elsewhere in this file:
             /// the read stays correct.
@@ -1322,7 +1338,8 @@ public:
                 = ctx->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
                 && ctx->canUseTaskBasedParallelReplicas()
                 && !engagement.remote
-                && engagement.local_merge_tree_read_count == 1;
+                && (engagement.local_merge_tree_read_count == 1
+                    || engagement.local_merge_tree_read_count_may_be_reduced_by_merge_pruning);
 
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
                 && engagement.any()
