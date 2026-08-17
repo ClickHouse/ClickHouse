@@ -1,8 +1,6 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
-
 #if USE_SSL
 
 namespace DB
@@ -16,9 +14,7 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     size_t old_file_size,
     bool use_adaptive_buffer_size_,
     size_t adaptive_buffer_initial_size)
-    /// The adaptive buffer grows from the initial size up to buffer_size_ (the max), so the
-    /// initial allocation must not exceed it (see WriteBufferFromFileDescriptor for details).
-    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buffer_size_) : buffer_size_, nullptr, 0)
+    : WriteBufferDecorator<WriteBufferFromFileBase>(std::move(out_), use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buffer_size_, nullptr, 0)
     , header(header_)
     , flush_header(!old_file_size)
     , encryptor(header.algorithm, key_, header.init_vector)

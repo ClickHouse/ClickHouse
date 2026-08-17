@@ -181,13 +181,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name{};
-
-    /// True if the directory name carried a "_tryN" suffix that was stripped before parsing.
-    /// Such directories are leftover copies created by failed detach renames: they are valid
-    /// enough to be listed and dropped, but must not be considered as candidates for ATTACH,
-    /// because their on-disk name is not a parsable part name.
-    bool has_try_suffix{};
+    bool valid_name;
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
@@ -217,8 +211,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "mutate-not-byte-identical",
         "broken-from-backup",
     });
-
-    inline static const std::string TRY_N_SUFFIX = "_try";
 
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.

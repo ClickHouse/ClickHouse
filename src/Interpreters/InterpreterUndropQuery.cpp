@@ -87,7 +87,6 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     return required_access;
 }
 
-void registerInterpreterUndropQuery(InterpreterFactory & factory);
 void registerInterpreterUndropQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

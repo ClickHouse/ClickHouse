@@ -3,11 +3,12 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
-#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -19,10 +20,16 @@ namespace
     /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
     bool maskS3URICredentials(String & url)
     {
-        /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
-        /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-        bool changed = maskURIUserinfo(url);
-        changed |= maskPresignedURLParameters(url);
+        bool changed = false;
+        /// Greedy up to the last at-sign before the path, so a userinfo whose password itself
+        /// contains an at-sign is masked whole, not just up to the first one.
+        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@";
+        if (RE2::Replace(&url, userinfo_pattern, "\\1[HIDDEN]@"))
+            changed = true;
+        static re2::RE2 presign_pattern
+            = "([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\\-]*|X-Goog-[A-Za-z0-9\\-]*)=)[^&#]*";
+        if (RE2::GlobalReplace(&url, presign_pattern, "\\1[HIDDEN]"))
+            changed = true;
         return changed;
     }
 }
@@ -149,7 +156,7 @@ void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(
         return url_slot + slot < positional.size()
             && tryGetStringFromArgument(positional[url_slot + slot], &value) && predicate(value);
     };
-    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return equalsCaseInsensitive(v, "NOSIGN"); }); };
+    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return boost::iequals(v, "NOSIGN"); }); };
     auto is_format = [&](size_t slot) { return value_is(slot, [](const String & v) { return v == "auto" || KnownFormatNames::instance().exists(v); }); };
 
     bool secret_access_key = false; /// slot 2
@@ -261,7 +268,7 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
         findEncryptionFunctionSecretArguments();
     }
-    else if (equalsCaseInsensitive(function->name(), "HMAC"))
+    else if (boost::iequals(function->name(), "HMAC"))
     {
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
         findHMACSecretArguments();
@@ -298,40 +305,11 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     {
         /// mysql(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
-        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
         markSecretArgument(4);
-        findTLSCredentialsSecretArguments(5);
-    }
-}
-
-void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
-{
-    for (const auto & key : tls_credentials_secret_keys)
-        findSecretNamedArgument(key, start);
-
-    /// The named-collection parser does not require the key of a `key = value` argument to be a plain
-    /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
-    /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
-    /// This finder works on the AST alone and cannot evaluate an expression, so it fails closed: the
-    /// value of every argument whose key it cannot read is hidden. Hiding the value of a non-secret
-    /// argument written that way is harmless, while leaving a credential visible is not.
-    for (size_t i = start; i < function->arguments->size(); ++i)
-    {
-        const auto equals_func = function->arguments->at(i)->getFunction();
-        if (!equals_func || (equals_func->name() != "equals"))
-            continue;
-
-        if (!equals_func->arguments || equals_func->arguments->size() != 2)
-            continue;
-
-        if (tryGetStringFromArgument(*equals_func->arguments->at(0), nullptr))
-            continue;
-
-        markSecretArgument(i, /* argument_is_named= */ true);
     }
 }
 
@@ -570,7 +548,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
 
     if (!url_arg.starts_with("http"))
     {
-        if (maskConnectionStringKey(url_arg, "AccountKey="))
+        static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
+        if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -580,7 +559,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             return true;
         }
 
-        if (maskConnectionStringKey(url_arg, "SharedAccessSignature="))
+        static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+        if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -850,69 +830,12 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
         findRemoteFunctionSecretArguments();
     }
-    else if (engine_name == "NATS")
-    {
-        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-        findNATSTableEngineSecretArguments();
-    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
         /// ODBC('DSN', database, table)
         /// The DSN (connection string) may contain credentials.
         findXDBCSecretArguments();
-    }
-}
-
-void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
-{
-    /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
-    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
-    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
-    /// The only positional argument the engine accepts is the name of a named collection, so the
-    /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
-    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
-    /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
-    for (size_t i = 0; i < function->arguments->size(); ++i)
-    {
-        const auto equals_func = function->arguments->at(i)->getFunction();
-        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
-            || equals_func->arguments->size() != 2)
-        {
-            /// The engine accepts no positional arguments except the collection name in the first
-            /// position, but it rejects them only after the query has been formatted for logging.
-            /// A malformed positional argument can carry a secret (a credential file path, a url
-            /// with a password), so hide it whole rather than leak it (fail closed).
-            if (i > 0 || !function->arguments->at(i)->isIdentifier())
-                markSecretArgument(i, /* argument_is_named= */ false);
-            continue;
-        }
-
-        String key;
-        if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
-        {
-            markSecretArgument(i, /* argument_is_named= */ true);
-        }
-        else if (key == "nats_url")
-        {
-            String url;
-            if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
-            {
-                if (maskURIPassword(&url))
-                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
-            }
-            else
-            {
-                /// A url built from a constant expression can embed credentials in its pieces, which
-                /// we cannot evaluate here; hide it whole rather than leak.
-                markSecretArgument(i, /* argument_is_named= */ true);
-            }
-        }
-        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
-        {
-            markSecretArgument(i, /* argument_is_named= */ true);
-        }
     }
 }
 
@@ -1025,13 +948,11 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     {
         /// MySQL(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
-        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         markSecretArgument(3);
-        findTLSCredentialsSecretArguments(4);
     }
 }
 

@@ -9,9 +9,8 @@ import grpc
 import lz4.frame
 import pytest
 import pytz
-import snappy
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -22,6 +21,10 @@ import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
+
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 # Utilities
@@ -189,7 +192,7 @@ class QueryThread(Thread):
 def start_cluster():
     cluster.start()
     try:
-        with create_channel():
+        with create_channel() as channel:
             yield cluster
 
     finally:
@@ -605,13 +608,7 @@ def test_cancel_while_generating_output():
     output = b""
     for result in results:
         output += result.output
-    # The exact number of rows emitted before the cancel takes effect depends on
-    # how the server-side block production races against the cancel signal,
-    # which is timing-sensitive under load. Verify cancellation interrupted the
-    # query mid-stream by checking the output is a strict prefix of the full result.
-    full_output = b"".join(b"%d\t0\n" % i for i in range(10))
-    assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
-    assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
+    assert output == b"0\t0\n1\t0\n2\t0\n3\t0\n"
 
 
 def test_compressed_output():
@@ -720,33 +717,6 @@ def test_compressed_external_table():
         b"4\tDaniel\n"
         b"5\tEthan\n"
     )
-
-
-def test_compressed_external_table_snappy_framed():
-    # A per-table `snappy_mode = 'framed'` in `external_table.settings()` must be honored when
-    # decompressing the external table data. The server default is `basic` (Hadoop-block snappy),
-    # so the framing-format payload below only decodes if the per-table setting is applied before
-    # the decompression buffer is wrapped.
-    columns = [
-        clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),
-        clickhouse_grpc_pb2.NameAndType(name="UserName", type="String"),
-    ]
-    data = snappy.StreamCompressor().add_chunk(b"1\tAlex\n2\tBen\n3\tCarl\n")
-    ext = clickhouse_grpc_pb2.ExternalTable(
-        name="ext_snappy",
-        columns=columns,
-        data=data,
-        format="TabSeparated",
-        compression_type="snappy",
-        settings={"snappy_mode": "framed"},
-    )
-    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    query_info = clickhouse_grpc_pb2.QueryInfo(
-        query="SELECT * FROM ext_snappy ORDER BY UserID",
-        external_tables=[ext],
-    )
-    result = stub.ExecuteQuery(query_info)
-    assert result.output == b"1\tAlex\n2\tBen\n3\tCarl\n"
 
 
 def test_transport_compression():

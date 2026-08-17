@@ -19,37 +19,12 @@ class ServerDied(Exception):
     pass
 
 
-def escape_tsv_info(text: str) -> str:
-    # Escape CR alongside the other separators rather than dropping it.
-    # Bare CR is emitted by tools like `apt-get`/`dpkg` to overwrite
-    # progress frames in place, and the hung-check path embeds dpkg
-    # output verbatim when `clickhouse-test --capture-client-stacktrace`
-    # installs `lldb` on the fly. Left raw in the TSV, those CRs are
-    # turned back into LF by universal-newlines mode at read time and
-    # fragment the row. Encoding them as `\r` keeps the diagnostic
-    # detail intact for the unescape pass in `read_test_results`.
-    return (
-        text.replace("\0", "\\0")
-        .replace("\t", "\\t")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
-
-
 class RandomQueryKiller:
-    """Background thread that randomly kills queries, client processes and mutations
-    during stress tests.
+    """Background thread that randomly kills queries and client processes during stress tests.
 
-    This helps test that queries and mutations are cancelled correctly and handles
-    scenarios where the client unexpectedly disconnects (issue #39803).
+    This helps test that queries are cancelled correctly and handles scenarios
+    where the client unexpectedly disconnects (issue #39803).
     """
-
-    # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
-    _SELECT_TIMEOUT = 5
-    _KILL_QUERY_TIMEOUT = 5
-    _KILL_MUTATION_TIMEOUT = 15
-    # Longest an iteration can run, plus margin, so stop() outlasts one of them.
-    _JOIN_TIMEOUT = _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT + 5
 
     def __init__(self, interval: float = 3.0):
         self._stop_event = threading.Event()
@@ -61,53 +36,26 @@ class RandomQueryKiller:
         try:
             # Get a random query_id, excluding our own queries and system queries
             result = check_output(
-                "clickhouse client --receive_timeout=5 -q \""
+                "clickhouse client -q \""
                 "SELECT query_id FROM system.processes "
                 "WHERE query NOT LIKE '%system.processes%' "
                 "AND query NOT LIKE '%KILL QUERY%' "
                 "AND elapsed > 0.1 "
                 "ORDER BY rand() LIMIT 1\" 2>/dev/null",
                 shell=True,
-                timeout=self._SELECT_TIMEOUT,
+                timeout=5,
             )
-            # Strip only the row delimiter: a query_id may legitimately start or end with
-            # a space, and TSV escapes the separators, so a raw newline is always the
-            # delimiter rather than part of the value.
-            query_id = result.decode("utf-8").removesuffix("\n")
+            query_id = result.decode("utf-8").strip()
             if query_id:
-                # Shutdown may have been requested while the SELECT above was running.
-                if self._stop_event.is_set():
-                    return
                 logging.info("Killing random query: %s", query_id)
-                # A query_id is arbitrary text (tests pass --query_id), so pass it as a query
-                # parameter instead of interpolating it: parameters are read with
-                # deserializeTextEscaped, the exact inverse of the TSV escaping above.
-                returncode = call(
-                    [
-                        "clickhouse",
-                        "client",
-                        "--receive_timeout=5",
-                        "--param_query_id",
-                        query_id,
-                        "-q",
-                        "KILL QUERY WHERE query_id = {query_id:String} ASYNC",
-                    ],
-                    stderr=subprocess.DEVNULL,
-                    timeout=self._KILL_QUERY_TIMEOUT,
+                call(
+                    f"clickhouse client -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    shell=True,
+                    timeout=5,
                 )
-                # Both expected outcomes exit 0: a matched kill prints a kill_status row,
-                # a query that already finished prints nothing. Non-zero means the command
-                # itself is broken, which would silently disable the killer.
-                if returncode:
-                    logging.warning(
-                        "KILL QUERY exited %s for query_id %s", returncode, query_id
-                    )
-        except subprocess.TimeoutExpired as e:
-            # Expected while the server is loaded, and far too frequent to report louder.
-            logging.debug("Random query killer timed out: %s", e)
         except Exception as e:
-            # Anything else means the killer itself is misbehaving.
-            logging.warning("Random query killer failed: %s: %s", type(e).__name__, e)
+            # Errors are expected (server busy, no queries, etc.)
+            logging.debug("Random query killer got exception (expected): %s", e)
 
     def _kill_random_client(self) -> None:
         """Kill a random clickhouse-client process."""
@@ -127,88 +75,20 @@ class RandomQueryKiller:
                     os.kill(int(pid), signal.SIGTERM)
                 except (ProcessLookupError, ValueError):
                     pass  # Process already gone
-        except subprocess.TimeoutExpired as e:
-            logging.debug("Random client killer timed out: %s", e)
         except Exception as e:
-            logging.warning("Random client killer failed: %s: %s", type(e).__name__, e)
-
-    def _kill_random_mutation(self) -> None:
-        """Select a random unfinished mutation and kill it."""
-        try:
-            # Skip mutations already killed: KILL MUTATION is not instantaneous, a mutation
-            # stays visible with is_killed=1 and is_done=0 while it finalizes.
-            result = check_output(
-                "clickhouse client --receive_timeout=5 -q \""
-                "SELECT mutation_id, database, table "
-                "FROM system.mutations "
-                "WHERE NOT is_done AND NOT is_killed "
-                "ORDER BY rand() LIMIT 1\" 2>/dev/null",
-                shell=True,
-                timeout=self._SELECT_TIMEOUT,
-            )
-            # Strip only the row delimiter, so a name that starts or ends with a space
-            # survives; TSV escapes the separators, so a raw newline is the delimiter.
-            line = result.decode("utf-8").removesuffix("\n")
-            if line:
-                mutation_id, db, table = line.split("\t")
-                # Shutdown may have been requested while the SELECT above was running.
-                if self._stop_event.is_set():
-                    return
-                logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
-                # Names are arbitrary text, so pass them as query parameters instead of
-                # interpolating: parameters are read with deserializeTextEscaped, the exact
-                # inverse of the TSV escaping above.
-                # KILL MUTATION is ASYNC by default (ASTKillQueryQuery::sync = false), so it
-                # returns a kill_status row without waiting for the mutation to finalize. The
-                # subprocess cap stays above --receive_timeout so the client's own timeout is
-                # the one that governs.
-                returncode = call(
-                    [
-                        "clickhouse",
-                        "client",
-                        "--receive_timeout=10",
-                        "--param_database",
-                        db,
-                        "--param_table",
-                        table,
-                        "--param_mutation_id",
-                        mutation_id,
-                        "-q",
-                        "KILL MUTATION WHERE database = {database:String} "
-                        "AND table = {table:String} AND mutation_id = {mutation_id:String}",
-                    ],
-                    stderr=subprocess.DEVNULL,
-                    timeout=self._KILL_MUTATION_TIMEOUT,
-                )
-                # A mutation that finished or a table dropped meanwhile still exits 0, so a
-                # non-zero code means the command itself is broken.
-                if returncode:
-                    logging.warning(
-                        "KILL MUTATION exited %s for %s on %s.%s",
-                        returncode,
-                        mutation_id,
-                        db,
-                        table,
-                    )
-        except subprocess.TimeoutExpired as e:
-            logging.debug("Random mutation killer timed out: %s", e)
-        except Exception as e:
-            logging.warning("Random mutation killer failed: %s: %s", type(e).__name__, e)
+            logging.debug("Random client killer got exception (expected): %s", e)
 
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
-        logging.info("Random query/client/mutation killer started (interval: %.1fs)", self._interval)
+        logging.info("Random query/client killer started (interval: %.1fs)", self._interval)
         while not self._stop_event.is_set():
-            # Randomly choose to kill a query, a client process or a mutation
-            r = random.random()
-            if r < 0.6:
+            # Randomly choose to kill a query or a client process
+            if random.random() < 0.7:
                 self._kill_random_query()
-            elif r < 0.8:
-                self._kill_random_client()
             else:
-                self._kill_random_mutation()
+                self._kill_random_client()
             self._stop_event.wait(self._interval)
-        logging.info("Random query/client/mutation killer stopped")
+        logging.info("Random query/client killer stopped")
 
     def start(self) -> None:
         """Start the background killer thread."""
@@ -223,15 +103,7 @@ class RandomQueryKiller:
         if self._thread is None:
             return
         self._stop_event.set()
-        # Outlast one full in-flight iteration: the stop flag is only checked between the
-        # SELECT and the kill, so a request arriving just after that check still has to
-        # wait out the kill client call. The caller goes on to the hung check and
-        # DROP DATABASE, which must not race a killer that is still running.
-        self._thread.join(timeout=self._JOIN_TIMEOUT)
-        if self._thread.is_alive():
-            # Keep the handle so a later start() cannot spawn a second killer.
-            logging.error("Random query/client/mutation killer did not stop in time")
-            return
+        self._thread.join(timeout=10)
         self._thread = None
 
 
@@ -245,7 +117,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-merge-tree-settings")
 
     # allow constraint
-    client_options.append("enable_analyzer=1")
+    client_options.append(f"enable_analyzer=1")
 
     if i > 0:
         options.append("--order=random")
@@ -289,23 +161,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
 
-    # Rarely enable the query cache; independently, half the time also pin the
-    # `*_overflow_mode` settings to 'throw'.
-    if i > 0 and random.random() < 1 / 15:
+    if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
         client_options.append("query_cache_nondeterministic_function_handling='ignore'")
         client_options.append("query_cache_system_table_handling='ignore'")
-        if random.random() < 1 / 2:
-            client_options.append("read_overflow_mode='throw'")
-            client_options.append("read_overflow_mode_leaf='throw'")
-            client_options.append("group_by_overflow_mode='throw'")
-            client_options.append("sort_overflow_mode='throw'")
-            client_options.append("result_overflow_mode='throw'")
-            client_options.append("timeout_overflow_mode='throw'")
-            client_options.append("set_overflow_mode='throw'")
-            client_options.append("join_overflow_mode='throw'")
-            client_options.append("transfer_overflow_mode='throw'")
-            client_options.append("distinct_overflow_mode='throw'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
@@ -367,44 +226,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         f"query_plan_optimize_join_order_algorithm={random.choice(join_order_algorithm_combinations)}"
     )
 
-    # Pin max_parser_backtracks on the client command line. Its pre-24.3 default is 0, so the
-    # randomized compatibility='NN.N' above reverts it to 0 in the client, which then sends 0 to
-    # the server and trips the <min>1</min> limit-recursion constraint on every query. A
-    # command-line value survives applyCompatibilitySetting, unlike a users.d profile value.
-    client_options.append("max_parser_backtracks=1000000")
-
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
     return " ".join(options)
-
-
-def install_thread_pool_fault_injection() -> None:
-    """Install `cannot_allocate_thread_injection.xml` and reload config so
-    `cannot_allocate_thread_fault_injection_probability` becomes active.
-    Fail-close on persistent reload failure or inactive setting after reload."""
-    src = "/repo/tests/config/config.d/cannot_allocate_thread_injection.xml"
-    dst = "/etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml"
-
-    if not os.path.exists(src):
-        raise RuntimeError(f"Thread-pool fault-injection source config not found at {src}")
-
-    logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
-    subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
-
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
-    verify_query = make_query_command(
-        "SELECT value FROM system.server_settings "
-        "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
-    )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
-    if not value or float(value) <= 0:
-        raise RuntimeError(
-            f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
-        )
-    logging.info("Thread-pool fault injection active: probability=%s", value)
 
 
 def run_func_test(
@@ -422,10 +247,6 @@ def run_func_test(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
-    # --stress-tests loops until global_time_limit; cap the smoke check so
-    # clickhouse-test exits on its own within the execute_bash timeout (180s).
-    smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
-    smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -436,57 +257,36 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
-        options = get_options(i, upgrade_check, encrypted_storage)
-        base_command = (
-            f"{cmd} --stress-tests {options} "
+        full_command = (
+            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
-        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
-        # Smoke check: disable AST fuzzer (fuzzed queries produce expected
-        # errors in stderr) and cap global_time_limit so clickhouse-test
-        # exits on its own within the execute_bash timeout.
-        smoke_command = base_command.replace(
-            "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
-        ) + f" {smoke_time_limit_option} "
         check_command = (
-            smoke_command
+            full_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
         )
         logging.info(check_command)
         try:
             execute_bash(check_command, timeout=180)
         except subprocess.CalledProcessError as e:
-            logging.info("Smoke check stdout:\n%s", e.stdout)
-            logging.info("Smoke check stderr:\n%s", e.stderr)
+            logging.info(e.stdout)
 
-            # Thread-pool fault injection is off during smoke check, so the
-            # tolerated transients are ZK fault injection + per-worker
-            # `memory_tracker_fault_probability` only.
+            # Ignore fault injects and transient errors, but most of the time tests should complete successfully
             ignored_errors = [
+                "CANNOT_SCHEDULE_TASK",
+                "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
                 "DATABASE_REPLICATION_FAILED",
                 "QUERY_WAS_CANCELLED",
-                "UNKNOWN_STATUS_OF_INSERT",
             ]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(
                     f"Detected known transient error, ignoring: {ignored_errors}"
                 )
                 continue
-            raise RuntimeError(
-                f"Smoke check failed (exit code {e.returncode}):\n"
-                f"Command: {e.cmd}\n"
-                f"stdout:\n{e.stdout}\n"
-                f"stderr:\n{e.stderr}"
-            ) from e
-
-    # Smoke check passed: activate thread-pool fault injection for the real
-    # stress test. Upgrade-check never had it (old binary may not support
-    # the setting), so keep that behavior.
-    if not upgrade_check:
-        install_thread_pool_fault_injection()
+            raise
 
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
@@ -566,7 +366,7 @@ def execute_bash(full_command, timeout=120):
 
 def make_query_command(query: str) -> str:
     return (
-        f'clickhouse client -q "{query}" --receive_timeout=15 --max_untracked_memory=1Gi '
+        f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
         "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
         "--enable-progress-table-toggle=0"
     )
@@ -595,7 +395,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
+        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -694,7 +494,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
+        query = 'clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
@@ -730,7 +530,7 @@ def parse_args() -> argparse.Namespace:
         "--no-random-query-killer",
         action="store_true",
         default=False,
-        help="Disable random query/client/mutation killer during stress test",
+        help="Disable random query/client killer during stress test",
     )
     return parser.parse_args()
 
@@ -755,7 +555,7 @@ def main():
         query_killer = RandomQueryKiller(interval=3.0)
 
     try:
-        run_func_test(
+        func_pipes = run_func_test(
             args.test_cmd,
             args.output_folder,
             args.num_parallel,
@@ -811,7 +611,6 @@ def main():
                     "max_untracked_memory=1Gi",
                     "max_memory_usage_for_user=0",
                     "memory_profiler_step=1Gi",
-                    "ast_fuzzer_runs=0",
                     # Use system database to avoid CREATE/DROP DATABASE queries
                     "--database=system",
                     "--hung-check",
@@ -829,63 +628,14 @@ def main():
                     tee.stdin.close()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
-
-                # Embed a tail of the captured hung-check output in
-                # test_results.tsv so the processlist and thread stacktraces
-                # are visible in CIDB. The full log is also kept as a CI
-                # artifact (see process_results in stress_job.py), giving
-                # investigators access to the complete diagnostic output.
-                #
-                # Read only the last 32 KiB rather than the whole file: on
-                # deadlock failures `hung_check.log` can be very large (a
-                # full processlist plus a `gdb` backtrace for every server
-                # process), and the stress-test machine is already under
-                # memory pressure. The diagnostic content we need
-                # (`Found hung queries`, the processlist with stacktraces,
-                # the `gdb` backtraces) is printed at the end of the log,
-                # so the tail is exactly the relevant region.
-                info_field = ""
-                try:
-                    tail_bytes_size = 32 * 1024
-                    with open(hung_check_log, "rb") as f:
-                        f.seek(0, os.SEEK_END)
-                        size = f.tell()
-                        offset = max(0, size - tail_bytes_size)
-                        f.seek(offset)
-                        tail_bytes = f.read()
-                    log_text = tail_bytes.decode("utf-8", errors="replace")
-                    if offset > 0:
-                        # Drop the (likely partial) first line so the tail
-                        # always starts on a line boundary.
-                        nl = log_text.find("\n")
-                        if nl >= 0:
-                            log_text = log_text[nl + 1 :]
-                        log_text = (
-                            "(truncated; see hung_check.log artifact for"
-                            " the full output; showing last 32 KiB)\n...\n"
-                            + log_text
-                        )
-                    # Escape so NUL, tab, and newline survive the TSV encoding,
-                    # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(log_text)
-                except OSError as ex:
-                    logging.warning(
-                        "Failed to read hung_check.log to embed in"
-                        " test_results.tsv: %s",
-                        ex,
-                    )
-
                 hung_check_status = (
-                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t"
-                    f"{info_field}\n"
+                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t\n"
                 )
                 with open(
                     args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
                 ) as results:
                     results.write(hung_check_status)
-                # Keep hung_check.log on disk so the CI artifact upload picks
-                # it up. Without it, deadlock investigations have no evidence
-                # to work with — see ClickHouse/ClickHouse#100941.
+                    hung_check_log.unlink()
             else:
                 logging.info("No queries hung")
 

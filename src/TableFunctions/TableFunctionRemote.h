@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 
@@ -43,10 +42,6 @@ private:
     StorageID remote_table_id = StorageID::createEmpty();
     ASTPtr remote_table_function_ptr;
     ASTPtr sharding_key = nullptr;
-
-    /// Changes from a SETTINGS clause among the arguments, applied to the `DistributedSettings`
-    /// of the created `StorageDistributed`, e.g. SETTINGS skip_unavailable_shards = 1.
-    SettingsChanges settings_changes;
 };
 
 }

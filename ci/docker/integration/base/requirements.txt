@@ -1,5 +1,5 @@
 blinker==1.4
-cryptography==46.0.6
+cryptography==44.0.1
 dbus-python==1.2.18
 distro==1.7.0
 httplib2==0.20.2
@@ -12,7 +12,7 @@ lazr.uri==1.0.6
 more-itertools==8.10.0
 oauthlib==3.2.2
 packaging==24.1
-pip==26.1.2
+pip==25.0.1
 pipdeptree==2.23.0
 pycurl==7.45.3
 PyJWT==2.10.1

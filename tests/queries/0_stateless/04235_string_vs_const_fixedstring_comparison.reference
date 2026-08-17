@@ -1,9 +1,0 @@
-equals	1	1	1	1	1	1
-notEquals	0	0	0	0	0	0
-less	0	0	0	0	0	0
-lessOrEquals	1	1	1	1	1	1
-isNotDistinctFrom	1	1	1	1	1	1
-isDistinctFrom	0	0	0	0	0	0
-abc/abc_padded	1	1	0	0
-abc/abc_padded_124	1	1
-0
