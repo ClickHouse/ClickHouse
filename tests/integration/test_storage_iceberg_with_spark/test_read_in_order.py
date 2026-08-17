@@ -268,3 +268,123 @@ def test_read_in_order_with_complex_truncate(started_cluster_iceberg_with_spark,
             f"EXPLAIN PIPELINE SELECT * FROM {TABLE_NAME} ORDER BY icebergTruncate(16, id);"
         )
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_read_in_order_through_merge_table(started_cluster_iceberg_with_spark, storage_type):
+    # An object storage table reached through a `Merge` table must not be told to
+    # read in an order it cannot deliver: `ReadFromObjectStorageStep` has no
+    # reverse file walk and no `ReverseTransform`, so it only ever promises the
+    # natural order. The direct path is where that gate is observable today, and
+    # this test pins it, together with the current `Merge` behaviour.
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_read_in_order_merge_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(f"""
+        CREATE TABLE {TABLE_NAME} (
+            id BIGINT,
+            data STRING
+        )
+        USING iceberg
+    """)
+    spark.sql(f"""
+        ALTER TABLE {TABLE_NAME}
+        WRITE ORDERED BY id
+    """)
+
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
+
+    patch_metadata(TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    merge_source = f"merge(currentDatabase(), '^{TABLE_NAME}$')"
+
+    # Reading in order through a `Merge` table over an object storage table is
+    # rejected in either direction, for two independent reasons. First, a
+    # persistent `Iceberg` table only learns its sort order when
+    # `updateExternalDynamicMetadataIfExists` is called, which the analyzer does
+    # for the tables named in the query - and a `Merge` table does not forward it
+    # to the tables it selects - so while the `Merge` table is the only reader the
+    # child's sorting key is empty and `checkSupportedReadingStep` rejects the
+    # optimization outright. Second, even with refreshed metadata, the object
+    # storage arm of `recursivelyApplyToReadingSteps` fails closed:
+    # `ReadFromObjectStorageStep::initializePipeline` does not preserve file order
+    # (https://github.com/ClickHouse/ClickHouse/issues/112981), so the outer step
+    # must not announce an order the child reader does not deliver. The `Merge`
+    # queries here come first, before any direct read has refreshed the child's
+    # metadata, so this block exercises the first gate; the block at the end of
+    # the test exercises the second.
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id"
+    ).strip().split("\n") == ["1", "2", "3", "4"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id")
+    )
+
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id DESC"
+    ).strip().split("\n") == ["4", "3", "2", "1"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id DESC")
+    )
+
+    # The direct path is where reading in order really engages. Ascending is
+    # accepted, so the sorting step is replaced by a merge of the already sorted
+    # streams. That the request is accepted is what this assertion pins - it is
+    # the positive control for the direction gate asserted right below.
+    #
+    # The delivered row order is deliberately not asserted here: every source in
+    # `ReadFromObjectStorageStep::initializePipeline` pulls from one shared file
+    # iterator, so which data file a given stream reads is a race. When a single
+    # stream happens to take both files its output is their concatenation, which
+    # is not sorted (the files overlap: `1, 3` and `2, 4`), and the merge above it
+    # has nothing left to interleave. See
+    # https://github.com/ClickHouse/ClickHouse/issues/112981 - a pre-existing
+    # limitation of reading an object storage table in order, unrelated to this
+    # direction gate. The sibling `test_read_in_order` in this file sorts its
+    # results through `get_array` for the same reason.
+    assert sorted(
+        int(x) for x in instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id").strip().split("\n")
+    ) == [1, 2, 3, 4]
+    assert "PartialSortingTransform" not in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {TABLE_NAME} ORDER BY id")
+    )
+
+    # The reverse direction is not supported by the reader, so it must be
+    # rejected and the sorting step kept - otherwise ascending chunks would be
+    # announced as descending and the rows would come out in the wrong order.
+    # This is the regression test for the direction gate in
+    # `ReadFromObjectStorageStep::requestReadingInOrder`.
+    assert instance.query(
+        f"SELECT id FROM {TABLE_NAME} ORDER BY id DESC"
+    ).strip().split("\n") == ["4", "3", "2", "1"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {TABLE_NAME} ORDER BY id DESC")
+    )
+
+    # The direct reads above refreshed the child's metadata (cached in the
+    # storage object), so from here on the child's sorting key is visible through
+    # the `Merge` table and `checkSupportedReadingStep` no longer stands in the
+    # way. The fail-closed object storage arm of `recursivelyApplyToReadingSteps`
+    # must still reject the request and keep the sorting step: the object storage
+    # pipeline does not preserve file order, so accepting here would return rows
+    # in a racy order (https://github.com/ClickHouse/ClickHouse/issues/112981).
+    # Once that issue is fixed and the `Merge` path delegates to
+    # `ReadFromObjectStorageStep::requestReadingInOrder`, flip the ascending
+    # assertion to expect the sorting step to be dropped.
+    assert instance.query(
+        f"SELECT id FROM {merge_source} ORDER BY id"
+    ).strip().split("\n") == ["1", "2", "3", "4"]
+    assert "PartialSortingTransform" in (
+        instance.query(f"EXPLAIN PIPELINE SELECT id FROM {merge_source} ORDER BY id")
+    )

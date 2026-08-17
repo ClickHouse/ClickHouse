@@ -20,6 +20,11 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage);
 
+/// The context whose settings the shipped fragment runs under on the remote replicas: the fragment is sent
+/// as an AST carrying the `SETTINGS` of its own root `QueryNode` / `UnionNode`, not those of the outer query.
+/// Returns `fallback` when the root is neither of those.
+ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, ContextPtr fallback);
+
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,
