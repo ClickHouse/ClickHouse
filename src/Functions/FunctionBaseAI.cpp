@@ -414,8 +414,8 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
             /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
             if (quota.checkQuotas())
                 break;
-            /// Reserve before the call so failed calls still count against the request quota.
-            if (!quota.tryReserveApiCall())
+            /// Count the call before dispatching, so failed calls still count against the request quota.
+            if (!quota.recordApiCall())
                 break;
 
             try
@@ -537,8 +537,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
             if (quota_tracker->checkQuotas())
                 break;
-            /// Reserve before the call so failed calls still count against the request quota.
-            if (!quota_tracker->tryReserveApiCall())
+            /// Count the call before dispatching, so failed calls still count against the request quota.
+            if (!quota_tracker->recordApiCall())
                 break;
 
             try

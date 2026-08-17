@@ -39,12 +39,12 @@ bool AIQuotaTracker::checkQuotas()
     return false;
 }
 
-bool AIQuotaTracker::tryReserveApiCall()
+bool AIQuotaTracker::recordApiCall()
 {
     if (max_api_calls == 0) /// 0 disables the limit.
         return true;
 
-    /// Bounded atomic increment: claim a slot only while under the limit, so `api_calls` never
+    /// Bounded atomic increment: count the call only while under the limit, so `api_calls` never
     /// exceeds `max_api_calls` no matter how many threads race here.
     UInt64 cur = api_calls.load(std::memory_order_relaxed);
     while (cur < max_api_calls)

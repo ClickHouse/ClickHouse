@@ -30,15 +30,15 @@ public:
 
     /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
     /// exceeded, false otherwise. Should be called before issuing an API call. The API-call limit is
-    /// enforced separately by `tryReserveApiCall`.
+    /// enforced separately by `recordApiCall`.
     bool checkQuotas();
 
-    /// Atomically reserve one outbound API call against the request quota. Should be called before
-    /// each provider request (including retries), so a misbehaving endpoint can't bypass
-    /// `ai_function_max_api_calls_per_query`. Returns true if a slot was reserved (the caller may
-    /// dispatch), false when the per-query limit is already reached; throws when
-    /// `throw_on_quota_exceeded`.
-    bool tryReserveApiCall();
+    /// Count one outbound API call against the request quota, atomically and only while under the
+    /// limit. Should be called before each provider request (including retries), so a misbehaving
+    /// endpoint can't bypass `ai_function_max_api_calls_per_query`. Returns true if the call is within
+    /// the limit (the caller may dispatch), false once the per-query limit is reached; throws when
+    /// `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
+    bool recordApiCall();
 
     /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
     /// so this is kept separate and called only after the response is parsed.
