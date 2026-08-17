@@ -20,7 +20,7 @@ SELECT accurateCastOrDefault(NULL, 'Nullable(UInt32)', CAST(42, 'Nullable(UInt32
 -- A NULL input for a non-nullable target is a failed conversion and must use
 -- the caller-supplied default.
 SELECT accurateCastOrDefault(NULL, 'UInt32', 42::UInt32);
-SELECT toUInt32OrDefault(NULL, 42);
+SELECT toUInt32OrDefault(NULL, 42::UInt32);
 
 -- The source NULL must be preserved when it is encoded in a low-cardinality
 -- nullable column, rather than replaced with the explicit default.
