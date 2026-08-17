@@ -23,6 +23,10 @@ FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'rate(m[20])', 120));
 
 SELECT count() FROM prometheusQuery('prometheus', 'rate(m[20])', 120);
 
+SELECT '-- fixed metric name survives a simple vector function';
+SELECT countIf(explain LIKE '%timeSeriesThrowDuplicateSeriesIf%') = 0
+FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'abs(m)', 120));
+
 SELECT '-- fixed metric name survives offset';
 SELECT countIf(explain LIKE '%timeSeriesThrowDuplicateSeriesIf%') = 0
 FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'rate(m[20] offset 10)', 130));

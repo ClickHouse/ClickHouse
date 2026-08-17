@@ -66,6 +66,7 @@ struct SQLQueryPiece
     bool metric_name_dropped = false;
 
     /// The metric name is the same for every series in the result.
+    /// This is meaningful only while metric_name_dropped is false.
     bool metric_name_is_constant = false;
 
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
