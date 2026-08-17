@@ -2,10 +2,11 @@
 -- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
 
 -- `EXPLAIN ANALYZE` must reach the joins inside a view whose SQL security rebuilds the context
--- (`DEFINER` and `NONE` start from the global context). `Left: rows`/`matched` are only reported
--- when the join was told to collect statistics, so a zero count means the mode did not arrive.
+-- (`DEFINER` and `NONE` start from the global context). Under `hash` the `Left` group is reported
+-- only when the join was told to collect statistics, so a zero count means the mode did not arrive.
 
 SET enable_analyzer = 1;
+SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
