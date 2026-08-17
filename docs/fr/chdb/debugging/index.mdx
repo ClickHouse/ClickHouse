@@ -1,0 +1,338 @@
+---
+title: 'Débogage de DataStore'
+sidebarTitle: 'Vue d’ensemble'
+slug: /chdb/debugging
+description: 'Déboguez les opérations DataStore avec explain(), le profiling et le logging'
+keywords: ['chdb', 'datastore', 'debug', 'explain', 'profiling', 'logging']
+doc_type: 'guide'
+---
+
+DataStore propose des outils complets de débogage pour comprendre et optimiser vos pipelines de données.
+
+<div id="overview">
+  ## Vue d’ensemble des outils de débogage
+</div>
+
+| Outil       | Objectif                     | Quand l’utiliser                            |
+| ----------- | ---------------------------- | ------------------------------------------- |
+| `explain()` | Voir le plan d’exécution     | Comprendre quelle requête SQL sera exécutée |
+| Profiler    | Mesurer les performances     | Repérer les opérations lentes               |
+| journalisation     | Voir les détails d’exécution | Déboguer un comportement inattendu          |
+
+<div id="decision-matrix">
+  ## Matrice de décision rapide
+</div>
+
+| Besoin                    | Outil          | Commande                    |
+| ------------------------- | -------------- | --------------------------- |
+| Voir le plan d’exécution  | `explain()`    | `ds.explain()`              |
+| Mesurer les performances  | Profiler       | `config.enable_profiling()` |
+| Déboguer les requêtes SQL | Journalisation | `config.enable_debug()`     |
+| Tout ce qui précède       | Combinaison    | Voir ci-dessous             |
+
+<div id="quick-setup">
+  ## Configuration rapide
+</div>
+
+<div id="enable-all">
+  ### Activer le débogage complet
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable all debugging
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# View execution plan
+result.explain()
+
+# Get profiler report
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## Méthode explain()
+</div>
+
+Consultez le plan d’exécution avant d’exécuter une requête.
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+Consultez la [documentation sur explain()](/fr/chdb/debugging/explain) pour plus de détails.
+
+***
+
+<div id="profiling">
+  ## Profilage
+</div>
+
+Mesurez le temps d’exécution de chaque opération.
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Performance Report
+==================
+Step                          Duration    Calls
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Total                         1.939s      7
+```
+
+Voir le [Guide de profilage](/fr/chdb/debugging/profiling) pour plus de détails.
+
+***
+
+<div id="logging">
+  ## Journalisation
+</div>
+
+Consultez les logs d’exécution détaillés.
+
+```python
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Run operations - logs will show:
+# - SQL queries generated
+# - Execution engine used
+# - Cache hits/misses
+# - Timing information
+```
+
+Exemple de sortie des logs :
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+Consultez [Configuration de la journalisation](/fr/chdb/debugging/logging) pour plus de détails.
+
+***
+
+<div id="scenarios">
+  ## Scénarios de débogage courants
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. La requête ne renvoie pas les résultats attendus
+</div>
+
+```python
+# Step 1: View the execution plan
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Step 2: Enable logging to see SQL
+config.enable_debug()
+
+# Step 3: Run and check logs
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. Requête lente
+</div>
+
+```python
+# Step 1: Enable profiling
+config.enable_profiling()
+
+# Step 2: Run your query
+result = process_data()
+
+# Step 3: Check profiler report
+profiler = get_profiler()
+profiler.report()
+
+# Step 4: Identify slow operations and optimize
+```
+
+<div id="scenario-engine">
+  ### 3. Comprendre le choix du moteur
+</div>
+
+```python
+# Enable verbose logging
+config.enable_debug()
+
+# Run operations
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# Logs will show which engine was used for each operation:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. Débogage des problèmes liés au cache
+</div>
+
+```python
+# Enable debug to see cache operations
+config.enable_debug()
+
+# First run
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache miss, executing query
+
+# Second run (should use cache)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache hit, returning cached result
+
+# If not caching when expected, check:
+# - Are operations identical?
+# - Is cache enabled? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## Bonnes pratiques
+</div>
+
+<div id="best-practice-1">
+  ### 1. Débogage en environnement de développement, pas en production
+</div>
+
+```python
+# Development
+config.enable_debug()
+config.enable_profiling()
+
+# Production
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. Utilisez explain() avant d’exécuter des requêtes volumineuses
+</div>
+
+```python
+# Build query
+query = ds.filter(...).groupby(...).agg(...)
+
+# Check plan first
+query.explain()
+
+# If plan looks good, execute
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. Analysez les performances avant d’optimiser
+</div>
+
+```python
+# Don't guess what's slow - measure it
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. Vérifiez les requêtes SQL lorsque les résultats sont incorrects
+</div>
+
+```python
+# View generated SQL
+print(query.to_sql())
+
+# Compare with expected SQL
+# Run SQL directly in ClickHouse to verify
+```
+
+***
+
+<div id="summary">
+  ## Résumé des outils de débogage
+</div>
+
+| Outil                      | Commande                    | Sortie                                  |
+| -------------------------- | --------------------------- | --------------------------------------- |
+| Plan d’exécution           | `ds.explain()`              | Étapes d’exécution + SQL                |
+| Plan d’exécution détaillé  | `ds.explain(verbose=True)`  | + Métadonnées                           |
+| Afficher le SQL            | `ds.to_sql()`               | Chaîne de requête SQL                   |
+| Activer le débogage        | `config.enable_debug()`     | Logs détaillés                          |
+| Activer le profilage       | `config.enable_profiling()` | Données de temporisation                |
+| Rapport du profileur       | `get_profiler().report()`   | Résumé des performances                 |
+| Réinitialiser le profileur | `get_profiler().reset()`    | Effacement des données de temporisation |
+
+***
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Méthode explain()](/fr/chdb/debugging/explain) - Documentation détaillée du plan d’exécution
+* [Guide de profilage](/fr/chdb/debugging/profiling) - Mesure des performances
+* [Configuration de la journalisation](/fr/chdb/debugging/logging) - Configuration du niveau de journalisation et du format

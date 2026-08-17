@@ -16,7 +16,7 @@ Para que las funciones de introspección funcionen correctamente:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
 
-* Establezca el ajuste [allow&#95;introspection&#95;functions](/es/reference/settings/session-settings#allow_introspection_functions) en 1.
+* Establezca el ajuste [allow&#95;introspection&#95;functions](/es/reference/settings/session-settings/allow#allow_introspection_functions) en 1.
 
   Por motivos de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
 
@@ -45,7 +45,7 @@ Convierte una dirección de memoria virtual dentro del proceso del servidor de C
 Para habilitar esta función de introspección:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
-* Establezca la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions) en `1`.
+* Establezca la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
 
 **Sintaxis**
 
@@ -71,7 +71,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- El campo `trace` contiene la traza de pila en el momento del muestreo.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:              2019-11-19
@@ -99,8 +99,8 @@ addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadP
 **Aplicación de la función a toda la traza de pila**
 
 ```sql title=Query
--- La función arrayMap en este ejemplo procesa cada elemento individual del array trace mediante la función addressToLine.
--- El resultado de este procesamiento se puede ver en la columna trace_source_code_lines de la salida.
+-- The arrayMap function in this example processing each individual element of the trace array by the addressToLine function.
+-- The result of this processing is seen in the trace_source_code_lines column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
@@ -134,7 +134,7 @@ Por ello, es más lenta que `addressToLine`.
 Para habilitar esta función de introspección:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
-* Establezca el ajuste [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions) en `1`.
+* Establezca el ajuste [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
 
 **Sintaxis**
 
@@ -170,7 +170,7 @@ SELECT addressToLineWithInlines(531055181::UInt64);
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- La función arrayJoin dividirá el array en filas
+-- The arrayJoin function will split array to rows
 
 SELECT
     ta, addressToLineWithInlines(arrayJoin(trace) AS ta)
@@ -460,7 +460,12 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 Introducido en: v20.12.0
 
-Emite un mensaje de traza en el registro del servidor por cada [bloque](/es/resources/develop-contribute/introduction/architecture#block).
+Emite un mensaje de traza en el registro del servidor.
+
+La función solo acepta un argumento constante, por lo que la llamada se evalúa durante el análisis de la consulta y se sustituye
+por su resultado. Por lo tanto, el mensaje se emite una vez mientras se analiza la consulta, y no una vez por cada
+[bloque](/es/resources/develop-contribute/introduction/architecture#block) procesado: el número de filas y la configuración `max_block_size` no afectan
+a la cantidad de mensajes que aparecen en el log.
 
 **Sintaxis**
 
@@ -470,7 +475,7 @@ logTrace(message)
 
 **Argumentos**
 
-* `message` — Mensaje que se emite al log del servidor. [`const String`](/es/reference/data-types/string)
+* `message` — Mensaje que se emite al registro del servidor. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 

@@ -92,6 +92,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
+        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
@@ -181,11 +182,12 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizeExchanges(QueryPlan::Node & root);
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -213,6 +215,7 @@ void optimizeTreeSecondPass(
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
+        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
@@ -280,7 +283,11 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
+            /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
+            /// Joins left in the outer plan are converted right after the fragment is created.
+            if (!optimization_settings.enable_parallel_replicas)
+                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
     /// If join runtime filters were added re-run push down optimizations
@@ -309,15 +316,23 @@ void optimizeTreeSecondPass(
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
+    /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
+    /// after `applyParallelReplicas` - it runs there instead, see below.
+    const auto optimize_join_lazy_indexing = [&]
     {
+        if (optimization_settings.min_columns_for_join_lazy_indexing == 0)
+            return;
+
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
                 optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
             });
-    }
+    };
+
+    if (!optimization_settings.enable_parallel_replicas)
+        optimize_join_lazy_indexing();
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
@@ -329,20 +344,25 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The
+    /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
+    /// into exchanges again - so run them only on a plan that has no exchanges yet.
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !planContainsLogicalExchange(root);
+
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
     /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
     /// than silently running single-node.
-    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         checkDistributedReadSupported(root);
     /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         validateDistributedPlanBucketCounts(optimization_settings);
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
@@ -353,12 +373,27 @@ void optimizeTreeSecondPass(
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
-                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
+                tryMakeDistributedSorting(stack, frame_node, nodes, optimization_settings);
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
+
+    /// Distributed joins now live inside fragments and are converted by each fragment's own
+    /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
+    /// when nothing was distributed), which the traversal above skipped.
+    if (optimization_settings.enable_parallel_replicas)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto &) {},
+            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+
+        /// The joins are physical only now, so this is the first point where lazy column indexing can be
+        /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the
+        /// fragment's own re-optimization on the replica.
+        optimize_join_lazy_indexing();
+    }
 
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -375,6 +410,9 @@ void optimizeTreeSecondPass(
                 if (optimization_settings.optimize_projection)
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
+
+                if (optimization_settings.query_plan_optimize_count_from_text_index)
+                    optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
@@ -425,6 +463,9 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.limit_by_partitions_independently)
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_partitions_independently)
+                optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
@@ -479,11 +520,19 @@ void optimizeTreeSecondPass(
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
+                local_optimization_settings.read_in_order_through_spilling_join
+                    = subquery_optimization_settings.read_in_order_through_spilling_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;
+                /// Plan-based PR adds the join runtime filters on the outer plan before cloning the
+                /// fragment, so they are already in this local plan; re-adding them would filter the
+                /// coordinated read twice. Classic PR (this same step, with parallel_replicas_local_plan)
+                /// builds a fresh local plan with no filters yet, so it must still add them.
+                if (optimization_settings.enable_parallel_replicas)
+                    local_optimization_settings.enable_join_runtime_filters = false;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
@@ -502,11 +551,16 @@ void optimizeTreeSecondPass(
         tryRemoveRedundantSorting(&root);
     /// Optimize exchanges
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
-        optimizeExchanges(root);
+        optimizeExchanges(root, optimization_settings);
 
     /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
-    /// and constness is re-derived per step.
-    if (optimization_settings.make_distributed_plan)
+    /// and constness is re-derived per step. A plan with no exchanges is never split into serialized
+    /// fragments (`convertToDistributed` keeps it as a single stage executed in this process), so it
+    /// must keep its constants: e.g. a child plan of `ReadFromMerge` is united into the parent pipeline
+    /// in-process, and materializing the constants of a `Union` inside one child (such as a `Buffer`
+    /// table reading its destination table and its buffers) while a sibling child keeps them const
+    /// breaks the equal-headers invariant across the children of `ReadFromMerge`.
+    if (optimization_settings.make_distributed_plan && planContainsLogicalExchange(root))
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
@@ -583,6 +637,13 @@ void optimizeTreeSecondPass(
         while (!stack.empty())
         {
             auto & frame = stack.back();
+
+            /// A lazy branch must stay within one fragment; below a logical exchange it belongs to another one.
+            if (frame.next_child == 0 && dynamic_cast<const LogicalExchangeStep *>(frame.node->step.get()))
+            {
+                stack.pop_back();
+                continue;
+            }
 
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
@@ -670,8 +731,26 @@ void optimizeTreeSecondPass(
     if (optimization_settings.optimize_aggregation_in_order_limit)
         optimizeLimitForAggregationInOrder(root);
 
+    /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
+    applyStreamDisjointness(optimization_settings, root);
+
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
+    /// choice is the gate (this is a no-op unless a join uses that algorithm).
+    ///
+    /// Skipped while building a distributed plan (`make_distributed_plan`): `convertToScatteredFullSort`
+    /// gives the merge-join `SortingStep` a non-empty `partition_by_description`, which is not
+    /// serializable for remote execution (`SortingStep::isSerializable`), so `convertToDistributed`
+    /// would reject such a fragment. Today the pass already cannot fire here - a distributed plan keeps
+    /// its joins logical (`convertLogicalJoinToPhysical` returns early on `make_distributed_plan`), and
+    /// this pass only matches a physical `JoinStep` - so the join stays a single (serializable) merge
+    /// join and the physical join is built per fragment on the worker. The explicit guard documents and
+    /// preserves that invariant even if join physicalization is ever reordered. Local, single-fragment
+    /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
+    if (!optimization_settings.make_distributed_plan)
+        optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }

@@ -41,9 +41,9 @@ Engine arguments:
 
 Optional parameters:
 
-- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](/reference/settings/session-settings#stream_poll_timeout_ms).
-- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings#max_block_size).
-- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings#max_insert_block_size).
+- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
+- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
@@ -76,7 +76,9 @@ CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+  ) ENGINE = SummingMergeTree
+  PARTITION BY toYYYYMM(day)
+  ORDER BY (day, level);
 
 CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total

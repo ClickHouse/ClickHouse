@@ -17,7 +17,7 @@ public:
     AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
 
     AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -60,6 +60,10 @@ struct AIRequest
 
     /// Maximum number of tokens the model may generate in its response. This is a per-request limit, not a per-query limit.
     UInt64 max_tokens = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiGenerate").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
@@ -95,6 +99,10 @@ struct AIEmbeddingRequest
     /// Optional target dimensionality for the output vectors. 0 means use the model's native size.
     /// Supported by OpenAI's `text-embedding-3-*` models; providers that ignore it return the native size.
     UInt64 dimensions = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiEmbed").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single embedding request. `embeddings` is aligned 1:1 with `AIEmbeddingRequest::inputs`.
@@ -131,5 +139,8 @@ public:
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
+
+/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
+String formatProviderError(int status_code, const String & response_body);
 
 }

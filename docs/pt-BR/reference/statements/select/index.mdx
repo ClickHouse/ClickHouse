@@ -1,6 +1,6 @@
 ---
 description: 'Documentação da consulta SELECT'
-sidebarTitle: 'SELECT'
+sidebarTitle: 'Visão geral'
 slug: /sql-reference/statements/select/
 title: 'Consulta SELECT'
 doc_type: 'reference'
@@ -34,23 +34,26 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Todas as cláusulas são opcionais, exceto a lista obrigatória de expressões imediatamente após `SELECT`, que é abordada com mais detalhes [abaixo](#select-clause).
+A lista de expressões imediatamente após `SELECT` é obrigatória; todas as outras cláusulas são opcionais.
 
-Os detalhes de cada cláusula opcional são abordados em seções separadas, listadas na mesma ordem em que são executadas:
+`SELECT` e suas cláusulas opcionais são abordados em seções separadas:
 
 * [cláusula WITH](/pt-BR/reference/statements/select/with)
 * [cláusula SELECT](#select-clause)
+* [cláusula ALL](/pt-BR/reference/statements/select/all)
 * [cláusula DISTINCT](/pt-BR/reference/statements/select/distinct)
 * [cláusula FROM](/pt-BR/reference/statements/select/from)
 * [cláusula SAMPLE](/pt-BR/reference/statements/select/sample)
+* [cláusula ARRAY JOIN](/pt-BR/reference/statements/select/array-join)
 * [cláusula JOIN](/pt-BR/reference/statements/select/join)
 * [cláusula PREWHERE](/pt-BR/reference/statements/select/prewhere)
 * [cláusula WHERE](/pt-BR/reference/statements/select/where)
-* [cláusula WINDOW](/pt-BR/reference/functions/window-functions/index)
 * [cláusula GROUP BY](/pt-BR/reference/statements/select/group-by)
-* [cláusula LIMIT BY](/pt-BR/reference/statements/select/limit-by)
 * [cláusula HAVING](/pt-BR/reference/statements/select/having)
+* [cláusula WINDOW](/pt-BR/reference/functions/window-functions/index)
 * [cláusula QUALIFY](/pt-BR/reference/statements/select/qualify)
+* [cláusula ORDER BY](/pt-BR/reference/statements/select/order-by)
+* [cláusula LIMIT BY](/pt-BR/reference/statements/select/limit-by)
 * [cláusula LIMIT](/pt-BR/reference/statements/select/limit)
 * [cláusula OFFSET](/pt-BR/reference/statements/select/offset)
 * [cláusula UNION](/pt-BR/reference/statements/select/union)
@@ -58,6 +61,15 @@ Os detalhes de cada cláusula opcional são abordados em seções separadas, lis
 * [cláusula EXCEPT](/pt-BR/reference/statements/select/except)
 * [cláusula INTO OUTFILE](/pt-BR/reference/statements/select/into-outfile)
 * [cláusula FORMAT](/pt-BR/reference/statements/select/format)
+
+Uma consulta também pode ser escrita como uma cadeia linear de transformações com [operadores de pipe](/pt-BR/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## Cláusula SELECT
@@ -196,7 +208,7 @@ Os valores extremos são calculados para as linhas antes de `LIMIT`, mas depois 
 
 Você pode usar sinônimos (aliases `AS`) em qualquer parte de uma consulta.
 
-As cláusulas `GROUP BY`, `ORDER BY` e `LIMIT BY` podem aceitar argumentos posicionais. Para habilitar isso, ative a configuração [enable&#95;positional&#95;arguments](/pt-BR/reference/settings/session-settings#enable_positional_arguments). Assim, por exemplo, `ORDER BY 1,2` ordenará as linhas da tabela pela primeira e depois pela segunda coluna.
+As cláusulas `GROUP BY`, `ORDER BY` e `LIMIT BY` podem aceitar argumentos posicionais. Para habilitar isso, ative a configuração [enable&#95;positional&#95;arguments](/pt-BR/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Assim, por exemplo, `ORDER BY 1,2` ordenará as linhas da tabela pela primeira e depois pela segunda coluna.
 
 <div id="implementation-details">
   ## Detalhes de implementação

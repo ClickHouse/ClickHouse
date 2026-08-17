@@ -71,6 +71,6 @@ open(path, 'wb').write(bytes(data))
 EOF
 
 echo "--- record batch with surplus field nodes/buffers is rejected ---"
-${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+${CLICKHOUSE_LOCAL} \
     --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') FORMAT Null" 2>&1 \
     | grep -oF 'does not match the schema' | head -1 || echo 'FAIL: expected the surplus record batch layout to be rejected'

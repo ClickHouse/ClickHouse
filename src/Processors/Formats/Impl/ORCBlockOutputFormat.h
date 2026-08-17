@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <orc/OrcFile.hh>
 
 
@@ -42,7 +43,7 @@ private:
 class ORCBlockOutputFormat final : public IOutputFormat
 {
 public:
-    ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, ColumnMapperPtr column_mapper_ = nullptr);
 
     String getName() const override { return "ORCBlockOutputFormat"; }
 
@@ -51,7 +52,9 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
-    std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
+    /// For Iceberg writes, attaches the field-id `iceberg.id` type attribute so readers project
+    /// by id. `column_path` is the dotted name (`t.x`, `arr.element`) used to look the id up.
+    std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type, const String & column_path);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).
@@ -82,6 +85,8 @@ private:
     std::unique_ptr<orc::Writer> writer;
     std::unique_ptr<orc::Type> schema;
     orc::WriterOptions options;
+    /// Non-null only for Iceberg writes; maps dotted column name -> Iceberg field-id.
+    ColumnMapperPtr column_mapper;
 };
 
 }

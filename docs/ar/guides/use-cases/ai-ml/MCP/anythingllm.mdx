@@ -3,46 +3,40 @@ slug: /use-cases/AI/MCP/anythingllm
 sidebarTitle: 'دمج AnythingLLM'
 title: 'استخدام خادم ClickHouse MCP مع AnythingLLM'
 description: 'يوضح هذا الدليل كيفية إعداد AnythingLLM مع خادم ClickHouse MCP باستخدام Docker.'
-keywords: ['الذكاء الاصطناعي', 'AnythingLLM', 'MCP']
+keywords: ['AI', 'AnythingLLM', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-> يشرح هذا الدليل كيفية إعداد [AnythingLLM](https://anythingllm.com/) مع خادم ClickHouse MCP باستخدام Docker
+> يشرح هذا الدليل كيفية إعداد [AnythingLLM](https://anythingllm.com/) مع ClickHouse MCP server باستخدام Docker،
 > وربطه بمجموعات بيانات ClickHouse التجريبية.
 
 <Steps>
-  <Step>
-    ## تثبيت Docker
-
-    ستحتاج إلى Docker لتشغيل LibreChat وخادم MCP. للحصول على Docker:
+  <Step title="تثبيت Docker" id="install-docker">
+    ستحتاج إلى Docker لتشغيل LibreChat وMCP server. للحصول على Docker:
 
     1. انتقل إلى [docker.com](https://www.docker.com/products/docker-desktop)
     2. نزّل Docker Desktop لنظام التشغيل لديك
     3. ثبّت Docker باتباع التعليمات الخاصة بنظام التشغيل لديك
-    4. افتح Docker Desktop وتأكد من أنه يعمل
+    4. افتح Docker Desktop وتأكد من أنه قيد التشغيل
 
     <br />
 
     لمزيد من المعلومات، راجع [وثائق Docker](https://docs.docker.com/get-docker/).
   </Step>
 
-  <Step>
-    ## سحب صورة Docker الخاصة بـ AnythingLLM
-
-    شغّل الأمر التالي لسحب صورة Docker الخاصة بـ AnythingLLM إلى جهازك:
+  <Step title="سحب Docker image الخاصة بـ AnythingLLM" id="pull-anythingllm-docker-image">
+    شغّل الأمر التالي لسحب Docker image الخاصة بـ AnythingLLM إلى جهازك:
 
     ```bash
     docker pull anythingllm/anythingllm
     ```
   </Step>
 
-  <Step>
-    ## إعداد موقع التخزين
-
-    أنشئ دليلًا للتخزين وهيّئ ملف البيئة:
+  <Step title="إعداد موقع التخزين" id="setup-storage-location">
+    أنشئ دليلاً للتخزين وهيّئ ملف البيئة:
 
     ```bash
     export STORAGE_LOCATION=$PWD/anythingllm && \
@@ -51,16 +45,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## تهيئة ملف إعدادات خادم MCP
-
-    أنشئ دليل `plugins`:
+  <Step title="تهيئة MCP server config file" id="configure-mcp-server-config-file">
+    أنشئ دليلاً باسم `plugins`:
 
     ```bash
     mkdir -p "$STORAGE_LOCATION/plugins"
     ```
 
-    أنشئ ملفًا باسم `anythingllm_mcp_servers.json` داخل دليل `plugins` وأضف المحتويات التالية:
+    أنشئ ملفًا باسم `anythingllm_mcp_servers.json` داخل الدليل `plugins` وأضف المحتويات التالية:
 
     ```json
     {
@@ -85,15 +77,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     }
     ```
 
-    إذا أردت استكشاف بياناتك الخاصة، فيمكنك فعل ذلك
+    إذا كنت تريد استكشاف بياناتك الخاصة، يمكنك القيام بذلك
     باستخدام [المضيف واسم المستخدم وكلمة المرور](/ar/get-started/setup/cloud#connect-with-your-app)
     الخاصة بخدمة ClickHouse Cloud لديك.
   </Step>
 
-  <Step>
-    ## تشغيل حاوية Docker الخاصة بـ AnythingLLM
-
-    شغّل الأمر التالي لبدء حاوية Docker الخاصة بـ AnythingLLM:
+  <Step title="بدء Docker container الخاص بـ AnythingLLM" id="start-anythingllm-docker-container">
+    شغّل الأمر التالي لبدء Docker container الخاص بـ AnythingLLM:
 
     ```bash
     docker run -p 3001:3001 \
@@ -104,29 +94,25 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     mintplexlabs/anythingllm
     ```
 
-    بعد بدء التشغيل، انتقل في المتصفح إلى `http://localhost:3001`.
-    حدّد النموذج الذي تريد استخدامه وأدخل مفتاح API الخاص بك.
+    بعد بدء التشغيل، انتقل إلى `http://localhost:3001` في متصفحك.
+    اختر النموذج الذي تريد استخدامه وأدخل مفتاح API الخاص بك.
   </Step>
 
-  <Step>
-    ## انتظر حتى تبدأ خوادم MCP
-
+  <Step title="انتظر حتى تبدأ MCP servers" id="wait-for-mcp-servers-to-start-up">
     انقر على أيقونة الأداة في أسفل يسار واجهة المستخدم:
 
     <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="أيقونة الأداة" size="md" />
 
-    انقر على `Agent Skills` وابحث ضمن قسم `MCP servers`.
-    انتظر حتى ترى أن `Mcp ClickHouse` أصبح على `On`
+    انقر على `Agent Skills` ثم انظر ضمن قسم `MCP servers`.
+    انتظر حتى ترى `Mcp ClickHouse` مضبوطًا على `On`
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="خوادم MCP جاهزة" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers جاهزة" size="md" />
   </Step>
 
-  <Step>
-    ## أجرِ محادثة مع خادم ClickHouse MCP باستخدام AnythingLLM
+  <Step title="الدردشة مع ClickHouse MCP server باستخدام AnythingLLM" id="chat-with-clickhouse-mcp-server-with-anythingllm">
+    أصبحنا الآن جاهزين لبدء دردشة.
+    لإتاحة MCP servers للدردشة، ستحتاج إلى إضافة البادئة `@agent` إلى الرسالة الأولى في المحادثة.
 
-    أصبحنا الآن جاهزين لبدء محادثة.
-    ولجعل خوادم MCP متاحة في المحادثة، ستحتاج إلى إضافة السابقة `@agent` إلى الرسالة الأولى في المحادثة.
-
-    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="محادثة" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="المحادثة" size="md" />
   </Step>
 </Steps>

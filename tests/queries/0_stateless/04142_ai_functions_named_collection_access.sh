@@ -23,9 +23,10 @@ CREATE NAMED COLLECTION $collection_name AS
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 "
 
-# Runs both AI functions as the test user in one client invocation and emits one line
+# Runs the AI functions as the test user in one client invocation and emits one line
 # per query — "ACCESS_DENIED" if that line of output mentions ACCESS_DENIED, "OK" otherwise.
-# `aiEmbed` does not go through `FunctionBaseAI` and has its own access check, so we verify both.
+# `aiEmbed` and `aiSimilarity` do not go through `FunctionBaseAI` and have their own access
+# checks, so we verify all three.
 # The zero-row variants (FROM (SELECT ... WHERE 0)) lock in that the access check runs even
 # when no row reaches the function — otherwise an empty input could be used to bypass the grant.
 function check_access_both()
@@ -36,9 +37,13 @@ function check_access_both()
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
+        SELECT aiSimilarity('hi', 'there', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
+        SELECT 'SEP';
         SELECT aiGenerate(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed(x, 'test-model', map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiSimilarity(x, x, 'test-model', map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }
@@ -49,7 +54,7 @@ function check_access_both()
 # Same checks, but credentials are selected via the default-credentials settings instead of the
 # `credentials` map key. This settings-based indirection is a separate, security-sensitive path
 # (`ai_function_text_default_credentials` for text functions, `ai_function_embedding_default_credentials`
-# for aiEmbed) that must enforce the same NAMED_COLLECTION grant.
+# for the embedding functions) that must enforce the same NAMED_COLLECTION grant.
 function check_access_both_default()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
@@ -60,9 +65,13 @@ function check_access_both_default()
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model') FORMAT Null;
         SELECT 'SEP';
+        SELECT aiSimilarity('hi', 'there', 'test-model') FORMAT Null;
+        SELECT 'SEP';
         SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed(x, 'test-model') FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiSimilarity(x, x, 'test-model') FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }

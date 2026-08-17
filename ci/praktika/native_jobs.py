@@ -1,6 +1,7 @@
 import dataclasses
 import hashlib
 import json
+import os
 import platform
 import shlex
 import sys
@@ -13,6 +14,7 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
+from .gh_auth import GHAuth
 from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -25,16 +27,6 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-
-
-# TODO: find the right place to not dublicate
-def _GH_Auth(force=False):
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return
-    from .gh_auth import GHAuth
-
-    if force or not Shell.check("gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -223,7 +215,22 @@ def _clean_buildx_volumes():
     )
 
 
-def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+def _submodule_auth_env(workflow) -> dict:
+    """Prepare the environment and access permissions for submodule clones."""
+    env = os.environ.copy()
+    if not Settings.ENABLE_SUBMODULE_CLONE_AUTH:
+        return env
+    if not GHAuth.auth(workflow, no_strict=True):
+        print("WARNING: no GH token available, submodule clones run anonymously")
+        return env
+    token = Shell.get_output("gh auth token", strict=True)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
+    env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
+def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
@@ -257,6 +264,7 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
                 retries=3,
+                env=_submodule_auth_env(workflow),
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
             Shell.check(
@@ -580,10 +588,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
-    try:
-        _GH_Auth(force=True)
-    except Exception as e:
-        print(f"WARNING: Failed to auth with GH: [{e}]")
+    if not GHAuth.auth(workflow, force=True, no_strict=True):
+        print("WARNING: Failed to auth with GH")
 
     # refresh PR data
     if env.PR_NUMBER > 0:
@@ -616,6 +622,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 "param_1": "",
                 "summary": "",
                 "review": "",
+                "coverage": "",
             },
         )
         res1 = GH.post_commit_status(
@@ -814,7 +821,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
-        result = _prepare_submodule_cache(workflow_config)
+        result = _prepare_submodule_cache(workflow, workflow_config)
         results.append(result)
 
     if workflow.enable_slack_feed:
@@ -995,7 +1002,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth()
+        GHAuth.auth(workflow, no_strict=True)
 
     update_final_report = False
     results = []
@@ -1084,6 +1091,7 @@ def _finish_workflow(workflow, job_name):
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
                 )
                 result.status = Result.Status.ERROR
+                result.add_error(ResultInfo.NOT_FINALIZED)
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
                 # Attribute the error to the failed job (not Finish Workflow)

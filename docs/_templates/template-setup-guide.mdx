@@ -1,0 +1,88 @@
+---
+title: '{Page title}'
+sidebarTitle: '{Nav label}'
+slug: /{path/to/page}
+description: '{One-sentence summary for search and link previews}'
+doc_type: 'guide'
+keywords: ['{keyword}', '{keyword}']
+---
+
+{/* GUIDE TEMPLATE — copy this file, fill the {placeholders}, and delete these comments.
+    Keep the section order; drop a section only if it genuinely doesn't apply.
+    When to use which component: see the Templates section of the docs contribution guide (../README.md#templates). */}
+
+{One or two sentences: what this guide does and the outcome the reader will have by the end.}
+
+## Before you begin {#before-you-begin}
+
+{What the reader needs in place first.}
+
+- {Prerequisite}
+- {Prerequisite}
+
+## How it works {#how-it-works}
+
+{Build the reader's mental model of the end-to-end flow — a short numbered sequence or a brief paragraph, whichever fits. This is what happens, in order; not reference detail.}
+
+1. {What happens first}
+2. {What happens next}
+
+## {First task — e.g. "Configure X"} {#task-1}
+
+{/* One "## {Task}" section per major part of the setup. Deep tasks use <Steps>; a simple task can be a plain numbered list. */}
+
+<Steps>
+<Step title="{First step, phrased as an action}" id="step-1">
+
+{Step detail.}
+</Step>
+<Step title="{Second step, phrased as an action}" id="step-2">
+
+{/* When a step differs by variant (provider, OS, deployment), branch with Tabs. Give each Tab an id to make that variant deep-linkable via #id. */}
+
+<Tabs>
+<Tab title="{Option A}" id="{option-a}">
+
+{Step detail for Option A.}
+
+</Tab>
+<Tab title="{Option B}" id="{option-b}">
+
+{Step detail for Option B.}
+
+</Tab>
+</Tabs>
+</Step>
+</Steps>
+
+## Verify {#verify}
+
+{How the reader confirms it worked. Use a table when they scan action → expected result.}
+
+| Action | Expected result |
+|---|---|
+| {What the reader does} | {What they should see} |
+
+## Best practices {#best-practices}
+
+### {Practice, phrased as an imperative} {#practice-1}
+
+{Why it matters and what to do.}
+
+## Troubleshooting {#troubleshooting}
+
+{/* Selective-consult content — one <Accordion> per issue. */}
+
+<Accordion title="{Symptom, as the reader would describe it}">
+{Cause and fix.}
+</Accordion>
+
+## Frequently asked questions {#faq}
+
+<Accordion title="{Question}">
+{Answer.}
+</Accordion>
+
+## Next steps {#next-steps}
+
+- [{Related guide}](/{path/to/related})

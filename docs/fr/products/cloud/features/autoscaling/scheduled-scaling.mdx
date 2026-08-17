@@ -7,7 +7,7 @@ title: 'Scheduled scaling'
 doc_type: 'guide'
 ---
 
-import PrivatePreviewBadge from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
@@ -16,7 +16,7 @@ Les services ClickHouse Cloud s’adaptent automatiquement en fonction de l’ut
 
 Avec Scheduled Scaling, vous configurez directement dans la console ClickHouse Cloud un ensemble de règles basées sur le temps. Chaque règle spécifie une heure, une récurrence (quotidienne, hebdomadaire ou personnalisée) et la taille cible — soit le nombre de réplicas (horizontal), soit le palier mémoire (vertical). À l’heure planifiée, ClickHouse Cloud applique automatiquement le changement afin que votre service soit correctement dimensionné avant l’arrivée de la demande, plutôt que de réagir après coup.
 
-Cela se distingue de l’autoscaling basé sur les métriques, qui réagit dynamiquement à la pression sur le CPU et la mémoire. Scheduled Scaling est déterministe : vous savez exactement quand la mise à l’échelle aura lieu et à quelle taille. Les deux approches sont complémentaires — un service peut avoir un calendrier de mise à l’échelle de référence tout en bénéficiant de l’autoscaling dans cette plage si les charges de travail fluctuent de manière inattendue.
+Cela se distingue de l’autoscaling basé sur les métriques, qui réagit dynamiquement à la pression sur le CPU et la mémoire. Scheduled Scaling est déterministe : vous savez exactement quand la mise à l’échelle aura lieu et à quelle taille. Les deux approches sont complémentaires — un service peut avoir une planification de mise à l’échelle de référence tout en bénéficiant de l’autoscaling dans cette plage si les charges de travail fluctuent de manière inattendue.
 
 Scheduled Scaling est actuellement disponible en **Private Preview**. Pour l’activer pour votre organisation, contactez l’équipe de support ClickHouse.
 

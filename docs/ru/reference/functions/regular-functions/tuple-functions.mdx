@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **Возвращаемое значение**
 
-Возвращает скалярное произведение двух векторов. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
+Возвращает скалярное произведение двух векторов. Для двух массивов `BFloat16` накопление выполняется в `Float32`, и результат также возвращается как `Float32`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal`](/ru/reference/data-types/decimal)
 
 **Примеры**
 
@@ -173,7 +173,7 @@ SELECT tupleConcat((1, 2), ('a',), (true, false))
 
 Добавленный в: v21.11.0
 
-Вычисляет поэлементное деление двух или более кортежей одинакового размера слева направо.
+Вычисляет поэлементное деление двух или более Tuple одинакового размера слева направо.
 
 <Note>
   Деление на ноль вернёт `inf`.
@@ -188,7 +188,7 @@ tupleDivide(t1, t2[, tN, ...])
 **Аргументы**
 
 * `t1` — Первый входной кортеж. [`Tuple((U)Int*)`](/ru/reference/data-types/tuple) или [`Tuple(Float*)`](/ru/reference/data-types/tuple) или [`Tuple(Decimal)`](/ru/reference/data-types/tuple)
-* `t2, ..., tN` — Один или несколько дополнительных входных кортежей. Все кортежи должны иметь одинаковую длину. [`Tuple((U)Int*)`](/ru/reference/data-types/tuple) или [`Tuple(Float*)`](/ru/reference/data-types/tuple) или [`Tuple(Decimal)`](/ru/reference/data-types/tuple)
+* `t2, ..., tN` — Один или несколько дополнительных входных Tuple. Все Tuple должны иметь одинаковую длину. [`Tuple((U)Int*)`](/ru/reference/data-types/tuple) или [`Tuple(Float*)`](/ru/reference/data-types/tuple) или [`Tuple(Decimal)`](/ru/reference/data-types/tuple)
 
 **Возвращаемое значение**
 
@@ -196,7 +196,7 @@ tupleDivide(t1, t2[, tN, ...])
 
 **Примеры**
 
-**Два кортежа**
+**Два Tuple**
 
 ```sql title=Query
 SELECT tupleDivide((1, 2), (2, 3))
@@ -350,10 +350,10 @@ hello
 
 Добавленный в: v21.1.0
 
-Возвращает [расстояние Хэмминга](https://en.wikipedia.org/wiki/Hamming_distance) между двумя кортежами одинаковой длины.
+Возвращает [расстояние Хэмминга](https://en.wikipedia.org/wiki/Hamming_distance) между двумя Tuple одинаковой длины.
 
 <Note>
-  Тип результата определяется так же, как для [арифметических функций](/ru/reference/functions/regular-functions/arithmetic-functions), на основе количества элементов во входных кортежах.
+  Тип результата определяется так же, как для [арифметических функций](/ru/reference/functions/regular-functions/arithmetic-functions), на основе количества элементов во входных Tuple.
 
   ```sql
   SELECT

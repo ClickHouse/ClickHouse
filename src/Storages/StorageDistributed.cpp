@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -48,6 +49,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IdentifierQuotingStyle.h>
@@ -404,12 +406,8 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
 
-/// Returns true if `target` (this distributed table's join-tree node) sits on a side of some outer
-/// join in `node` that is filled with default/null values for unmatched rows. On such a side the
-/// grouping column can take a padded value (e.g. the sharding key becomes 0) on every shard, so a
-/// group keyed by it spans shards and the per-shard partials must be merged on the initiator; the
-/// shard-local shortcut would return them unmerged. `padded_by_ancestor` propagates the padded state
-/// from enclosing joins down to `target`.
+/// True if `target` sits, within the join tree `node`, on a side that an outer join fills with
+/// defaults for unmatched rows. `padded_by_ancestor` carries that state down from enclosing joins.
 bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const QueryTreeNodePtr & target, bool padded_by_ancestor)
 {
     if (node == target)
@@ -426,12 +424,12 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
         /// RIGHT/FULL join pads the left side; LEFT/FULL join pads the right side.
         const bool left_padded = padded_by_ancestor || (pads && isRightOrFull(kind));
         const bool right_padded = padded_by_ancestor || (pads && isLeftOrFull(kind));
-        return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpression(), target, left_padded)
-            || isTableExpressionOnOuterJoinNullSide(join_node->getRightTableExpression(), target, right_padded);
+        return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpressionNode(), target, left_padded)
+            || isTableExpressionOnOuterJoinNullSide(join_node->getRightTableExpressionNode(), target, right_padded);
     }
 
     if (const auto * array_join_node = node->as<ArrayJoinNode>())
-        return isTableExpressionOnOuterJoinNullSide(array_join_node->getTableExpression(), target, padded_by_ancestor);
+        return isTableExpressionOnOuterJoinNullSide(array_join_node->getTableExpressionNode(), target, padded_by_ancestor);
 
     /// A cross/comma join never pads its own operands, but it does not shield them from padding by an
     /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds JoinNode(RIGHT){CrossJoinNode[t, u], v},
@@ -447,14 +445,9 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
     return false;
 }
 
-/// Old-analyzer (AST) counterpart of isTableExpressionOnOuterJoinNullSide. The old analyzer works on
-/// a flat, left-associative table list (ASTSelectQuery::tables()), where this distributed table is
-/// always the main/leftmost operand and every join is applied to the accumulated left side. So this
-/// table is on an outer-join padded side iff any join in the list is RIGHT or FULL (both pad their
-/// left operand). LEFT pads only the right operand and INNER/CROSS never pad, so those keep the
-/// shortcut for GROUP BY over this table's own sharding key. A SEMI join keeps only matched rows and
-/// emits no default-padded rows, so RIGHT/FULL SEMI does not pad the main table and keeps the shortcut
-/// (ANTI keeps unmatched rows and does default the other side's columns, so it is treated as padding).
+/// Same predicate as `isTableExpressionOnOuterJoinNullSide`, for the AST path. The table list is flat
+/// and left-associative, so this table is the accumulated left operand of every join in it and is
+/// padded exactly when one of them is RIGHT or FULL with a strictness that keeps unmatched rows.
 bool selectHasOuterJoinPaddingMainTable(const ASTSelectQuery & select)
 {
     const ASTPtr tables = select.tables();
@@ -507,7 +500,8 @@ StorageDistributed::StorageDistributed(
     LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
-    bool is_remote_function_)
+    bool is_remote_function_,
+    bool is_remote_database_proxy_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -523,11 +517,14 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
+    , is_remote_database_proxy(is_remote_database_proxy_)
 {
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
+    /// Only a definition loaded from validated metadata reaches here with no columns; the creators
+    /// infer an omitted structure themselves, under the user's context.
     if (columns_.empty())
     {
         StorageID id = StorageID::createEmpty();
@@ -616,7 +613,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             else
             {
                 LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
-                        has_sharding_key ? "" : " (no sharding key)");
+                        hasShardingKeyForReads() ? "" : " (no sharding key)");
             }
         }
     }
@@ -690,22 +687,18 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
-    /// The shard-local shortcut is only sound when every group's rows live on a single shard, which
-    /// holds only if the expression is over this distributed table's own columns. In a JOIN a column
-    /// from another table (e.g. the right side of a LEFT JOIN) may share the sharding-key name but
-    /// span shards, so exclude expressions that reference columns outside this table_expression.
+    /// A group lives on one shard only if the expression is over this table's own columns: another
+    /// table's column may share the sharding key's name yet span shards.
     if (query_info.table_expression && hasUnknownColumn(expr, query_info.table_expression))
         return false;
 
-    /// Even when the expression is over this table's own columns, the shortcut is unsound if this table
-    /// is on an outer-join padded side: unmatched rows default the sharding-key column to the same value
-    /// (e.g. 0) on every shard, so that group spans shards and the per-shard partials must be merged on
-    /// the initiator. Fall back to merging in that case.
+    /// On an outer-join padded side even this table's own sharding-key column takes the same default
+    /// on every shard for unmatched rows, so that group spans shards.
     if (query_info.query_tree && query_info.table_expression)
     {
         if (const auto * query_node = query_info.query_tree->as<QueryNode>())
         {
-            if (isTableExpressionOnOuterJoinNullSide(query_node->getJoinTree(), query_info.table_expression, /*padded_by_ancestor=*/ false))
+            if (isTableExpressionOnOuterJoinNullSide(query_node->getJoinTreeNode(), query_info.table_expression, /*padded_by_ancestor=*/ false))
                 return false;
         }
     }
@@ -761,7 +754,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -819,7 +812,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -827,10 +820,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    /// Mirror the analyzer padded-side guard for the AST path: if this distributed table is on an
-    /// outer-join padded side, unmatched rows default its sharding-key column to the same value (e.g. 0)
-    /// on every shard, so that group spans shards and the per-shard partials must be merged on the
-    /// initiator. Disable the shard-local shortcut for DISTINCT/GROUP BY/LIMIT BY in that case.
+    /// AST-path counterpart of the padded-side guard above; one point here covers DISTINCT,
+    /// GROUP BY and LIMIT BY.
     if (optimize_sharding_key_aggregation && selectHasOuterJoinPaddingMainTable(select))
         optimize_sharding_key_aggregation = false;
 
@@ -909,33 +900,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
-
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
 public:
@@ -950,7 +914,7 @@ public:
             if (!query)
                 return;
             bool no_replace = true;
-            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            for (const auto & table_node : extractTableExpressions(query->getJoinTreeNodeTyped(), false, true))
             {
                 const StorageDistributed * storage_distributed = nullptr;
                 if (const TableNode * table_node_typed = table_node->as<TableNode>())
@@ -991,10 +955,10 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (!join)
         return rewrite;
 
-    auto table_expression = join->getRightTableExpression();
+    auto table_expression = join->getRightTableExpressionNode();
 
     if (QueryNode * query = table_expression->as<QueryNode>())
-        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTree());
+        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTreeNode());
     else if (const TableNode * table_node_typed = table_expression->as<TableNode>())
     {
         if (!typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get()))
@@ -1009,7 +973,7 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (rewrite)
         join->setLocality(JoinLocality::Global);
 
-    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpressionNode());
 
     return rewrite;
 }
@@ -1029,7 +993,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     else if (auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
         table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
 
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 
     if (remote_table_function)
     {
@@ -1085,8 +1049,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.visit(query_tree_to_modify);
+    inlineAliasColumns(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1099,12 +1062,27 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             visitor.visit(query_node.getWhere());
         }
 
-        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTreeNode());
     }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
+}
+
+void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
+{
+    if (!is_remote_database_proxy)
+        return;
+
+    for (const auto & shard_info : getCluster()->getShardsInfo())
+    {
+        if (shard_info.isLocal())
+        {
+            local_context->checkAccess(access, remote_database, remote_table);
+            return;
+        }
+    }
 }
 
 void StorageDistributed::read(
@@ -1117,6 +1095,8 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
+    checkLocalShardAccess(AccessType::SELECT, local_context);
+
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
@@ -1208,6 +1188,8 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     /// When the target is a table function (e.g. `numbers(...)`, `view(...)`), there is no remote
     /// table to insert into: `remote_storage` is an empty `StorageID`, so `DistributedSink` would
     /// build an `INSERT` into an empty table id. Such targets are read-only by nature, so reject the
@@ -1253,6 +1235,58 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 
     /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(local_context, *this, metadata_snapshot, cluster, insert_sync, timeout, columns_to_send);
+}
+
+
+/// Remove the initiator-only settings (see `ClusterProxy::stripInitiatorOnlySettings`) from a query's
+/// own `SETTINGS` clause. The optimized `parallel_distributed_insert_select` paths forward a *formatted
+/// query string* to each shard, so an initiator-only setting written by the user in the `SETTINGS`
+/// clause would otherwise be baked into that SQL and re-applied on the shard (or rejected as
+/// `UNKNOWN_SETTING` by an older shard for the settings new to the HTTP table-as-file feature). The
+/// settings packet is stripped separately, on the per-shard context.
+static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
+{
+    /// Strip both `ASTSetQuery` lists: `changes` (`name = value`) and `default_settings` (`name = DEFAULT`).
+    /// `ASTSetQuery::formatImpl` serializes both, so a `... = DEFAULT` reset would otherwise still ride along
+    /// in the forwarded query text and trip `UNKNOWN_SETTING` on an older shard that lacks the name.
+    auto strip_set_query = [](ASTSetQuery & set_query)
+    {
+        std::erase_if(set_query.changes, [](const SettingChange & change) { return ClusterProxy::isInitiatorOnlySettingName(change.name); });
+        std::erase_if(set_query.default_settings, [](const String & name) { return ClusterProxy::isInitiatorOnlySettingName(name); });
+    };
+
+    /// An `INSERT ... SELECT ... SETTINGS ...` keeps the source SELECT's own SETTINGS node too:
+    /// `ParserInsertQuery` copies those settings onto the INSERT (via `InsertQuerySettingsPushDownVisitor`)
+    /// but does not remove them from the SELECT, and `ASTInsertQuery::formatImpl` serializes the SELECT after
+    /// this — and a nested source subquery (`WHERE x IN (SELECT ... SETTINGS ...)`) carries its own SETTINGS
+    /// too. All would otherwise leak. The optimized paths above rebuild `query.select` as an
+    /// `ASTSelectWithUnionQuery` whose `list_of_selects` is set as a member but not registered in `children`,
+    /// so a child-traversal strip on the union itself misses the arms; iterate the arms through the member and
+    /// run the shared query strip on each — an arm is a parsed clone with populated children, so this reaches
+    /// the arm's own SETTINGS and recurses through any nested-subquery SETTINGS (both `changes` and
+    /// `default_settings`), pruning emptied clauses.
+    if (query.select)
+    {
+        ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
+        if (auto * union_query = query.select->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
+            for (const auto & arm : union_query->list_of_selects->children)
+                ClusterProxy::stripInitiatorOnlySettingsFromQuery(arm);
+    }
+
+    if (!query.settings_ast)
+        return;
+
+    auto & set_query = query.settings_ast->as<ASTSetQuery &>();
+    strip_set_query(set_query);
+
+    /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
+    /// so drop an emptied clause entirely to keep the forwarded query valid.
+    if (set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty())
+    {
+        query.children.erase(
+            std::remove(query.children.begin(), query.children.end(), query.settings_ast), query.children.end());
+        query.settings_ast.reset();
+    }
 }
 
 
@@ -1334,6 +1368,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     const auto & shards_info = dst_cluster->getShardsInfo();
 
+    /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
+    /// packet is stripped separately, on `query_context` below).
+    stripInitiatorOnlySettingsFromQueryText(*new_query);
+
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1347,6 +1385,17 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
+
+    /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only
+    /// settings) so the per-shard `INSERT SELECT` forwarded by `RemoteQueryExecutor` does not carry
+    /// them; this is the same contract the regular fan-out and `DistributedSink` paths apply via
+    /// `ClusterProxy::stripInitiatorOnlySettings`. The local-replica branch below shares this context
+    /// and is just another shard, so it must not re-apply these settings either.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
@@ -1467,6 +1516,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query->reset(new_query->table_function);
     }
 
+    /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
+    /// packet is stripped separately, on `query_context` below).
+    stripInitiatorOnlySettingsFromQueryText(*new_query);
+
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1479,6 +1532,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+
+    /// Strip the initiator-only settings (query-shaping/result-serialisation and the HTTP/path-only
+    /// settings) so the per-shard query forwarded by `RemoteQueryExecutor` does not carry them; this
+    /// is the same contract the regular fan-out and `DistributedSink` paths apply via
+    /// `ClusterProxy::stripInitiatorOnlySettings`.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     const auto & current_settings = query_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -1535,6 +1598,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
@@ -1551,7 +1616,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         {
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
@@ -1723,6 +1788,16 @@ Strings StorageDistributed::getDataPaths() const
 
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
+    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
+    /// against such a database.
+    if (is_remote_database_proxy)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            getStorageID().getNameForLogs());
+
     std::lock_guard lock(cluster_nodes_mutex);
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
@@ -1886,7 +1961,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     bool sharding_key_is_usable = settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic;
 
-    if (has_sharding_key && sharding_key_is_usable)
+    if (hasShardingKeyForReads() && sharding_key_is_usable)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
@@ -1894,9 +1969,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     }
 
     UInt64 force = settings[Setting::force_optimize_skip_unused_shards];
-    if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key))
+    if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && hasShardingKeyForReads()))
     {
-        if (!has_sharding_key)
+        if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
@@ -2313,9 +2388,25 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
+        /// local shard is not made against the global context the constructor holds. Skipped when the
+        /// definition comes from already-validated metadata, which has no user to check against.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
+            /// database's implicit cluster is found by the expanded name only.
+            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
+            columns = getStructureOfRemoteTable(
+                *local_context->getCluster(expanded_cluster_name),
+                StorageID{remote_database, remote_table},
+                local_context,
+                /* table_func_ptr = */ nullptr);
+        }
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,
@@ -2338,7 +2429,7 @@ void registerStorageDistributed(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 :::warning Distributed engine in Cloud
-To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions.
+To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
@@ -2365,6 +2456,35 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
+### Remote and RemoteSecure engines {#distributed-remote-engines}
+
+`Remote` and `RemoteSecure` are persistent table engines that accept the same address expressions and credentials as the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+[SETTINGS name = value, ...]
+```
+
+`RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+The [settings of the created storage](#distributed-settings), such as `skip_unavailable_shards`, are specified after the engine definition, for example `ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`. Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead, `remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it; the engines do not accept that form.
+
+For example:
+
+```sql
+CREATE TABLE remote_one ENGINE = Remote('127.0.0.1', system, one);
+SELECT * FROM remote_one;
+```
+
+This is the persistent equivalent of `CREATE TABLE ... AS remote(...)`. Like the `remote` table function, these engines are convenient but do not let you set up shards and replicas declaratively the way [`Distributed`](#distributed-creating-a-table) over a configured cluster does, so for a permanent, frequently used set of servers prefer defining a cluster and using the `Distributed` engine.
+
+The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason.
+
 ### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -2377,8 +2497,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 **See Also**
 
-- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+- [distributed_foreground_insert](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
+- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) for the examples
 ### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |
@@ -2390,10 +2510,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |
-| `background_insert_batch`                  | The same as [`distributed_background_insert_batch`](../../../operations/settings/settings.md#distributed_background_insert_batch)                                                                                                     | `0`           |
-| `background_insert_split_batch_on_failure` | The same as [`distributed_background_insert_split_batch_on_failure`](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)                                                                   | `0`           |
-| `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
-| `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
+| `background_insert_batch`                  | The same as [`distributed_background_insert_batch`](/reference/settings/session-settings/distributed-background#distributed_background_insert_batch)                                                                                                     | `0`           |
+| `background_insert_split_batch_on_failure` | The same as [`distributed_background_insert_split_batch_on_failure`](/reference/settings/session-settings/distributed-background#distributed_background_insert_split_batch_on_failure)                                                                   | `0`           |
+| `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
+| `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 
 :::note
@@ -2405,8 +2525,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 For **Insert limit settings** (`..._insert`) see also:
 
-- [`distributed_foreground_insert`](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [`prefer_localhost_replica`](/operations/settings/settings#prefer_localhost_replica) setting
+- [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
+- [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 :::
 
@@ -2426,7 +2546,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
+Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <remote_servers>
@@ -2492,13 +2612,13 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 |---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
 | `host`        | The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server does not start. If you change the DNS record, restart the server. | -            |
 | `port`        | The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Not to be confused with `http_port`.                                                                                                                                                                                                                | -            |
-| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](../../../guides/sre/user-management/index.md).                                                                    | `default`    |
+| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](/concepts/features/security/access-rights).                                                                    | `default`    |
 | `password`    | The password for connecting to a remote server (not masked).                                                                                                                                                                                                                                                                             | ''           |
 | `secure`      | Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.                                                                                            | `false`      |
 | `compression` | Use data compression.                                                                                                                                                                                                                                                                                                                    | `true`       |
 | `bind_host`   | The source address to use when connecting to the remote server from this node. IPv4 address only supported. Intended for advanced deployment use cases where setting the source IP address used by ClickHouse distributed queries is needed.                                                                                             | -            |
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
 You can specify just one of the shards (in this case, query processing should be called remote, rather than distributed) or up to any number of shards. In each shard, you can specify from one to any number of replicas. You can specify a different number of replicas for each shard.
 
@@ -2508,7 +2628,7 @@ To view your clusters, use the `system.clusters` table.
 
 The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
 
-If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](../../../sql-reference/table-functions/index.md).
+If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 
 ## Writing data {#distributed-writing-data}
 
@@ -2535,7 +2655,7 @@ You should be concerned about the sharding scheme in the following cases:
 - Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
 - A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
-Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting.
+Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](/reference/settings/session-settings/distributed-background#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size) setting.
 
 If the server ceased to exist or had a rough restart (for example, due to a hardware failure) after an `INSERT` to a `Distributed` table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
@@ -2543,25 +2663,25 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
-When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#max_parallel_replicas).
+When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
 
-To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
+To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/reference/statements/in#distributed-subqueries) documentation.
 
 ## Virtual columns {#virtual-columns}
 
 #### _Shard_num {#_shard_num}
 
-`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](/reference/data-types/int-uint).
 
 :::note
-Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
+Since [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 :::
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
-- [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
-- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns) description
+- [`background_distributed_schedule_pool_size`](/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size) setting
+- [`shardNum()`](/reference/functions/regular-functions/other-functions#shardNum) and [`shardCount()`](/reference/functions/regular-functions/other-functions#shardCount) functions
 )DOCS_MD",
         .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])",
         .related = {"Merge"}});
@@ -2747,8 +2867,8 @@ void registerStorageRemote(StorageFactory & factory)
     };
 
     const String common_description = R"DOCS_MD(
-The `Remote` and `RemoteSecure` table engines are the persistent counterparts of the [`remote` and `remoteSecure`](/sql-reference/table-functions/remote) table functions.
-They accept the same arguments and let you access remote servers without listing a cluster in the server configuration file: the engine builds a [`Distributed`](/engines/table-engines/special/distributed)-like storage over an ad-hoc cluster created from the supplied addresses on the fly.
+The `Remote` and `RemoteSecure` table engines are the persistent counterparts of the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
+They accept the same arguments and let you access remote servers without listing a cluster in the server configuration file: the engine builds a [`Distributed`](/reference/engines/table-engines/special/distributed)-like storage over an ad-hoc cluster created from the supplied addresses on the fly.
 
 Unlike the table functions, the addresses and credentials are stored in the table definition, so the password is hidden in `SHOW CREATE TABLE` and the engine is exposed as `Distributed` in `system.tables.engine`.
 
@@ -2758,6 +2878,12 @@ The address expression supports globbing patterns such as `{a,b,c}`, `{N..M}` an
 If `db` and `table` are omitted, `system.one` is used.
 
 The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
+
+The settings of the created storage, such as `skip_unavailable_shards`, are specified after the engine definition:
+`ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`.
+Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead,
+`remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it;
+the engines do not accept that form.
 
 The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
 )DOCS_MD";
@@ -2770,7 +2896,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
@@ -2781,7 +2907,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 }
 
