@@ -2973,7 +2973,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_table_expression*/);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+    {
         validateGroupByKeyType(partition_by_node->getResultType(), scope);
+        validateWindowKeyType(partition_by_node->getResultType(), "PARTITION BY");
+    }
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
@@ -4704,6 +4707,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
         if (table_function_argument->as<TableFunctionNode>())
         {
+            /// An argument already marked unresolved must stay marked: `resolve` below overwrites the whole
+            /// index set, and traversal helpers rely on it to not descend into a not-fully-resolved subtree.
+            const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
+            if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
+                != previous_unresolved_indexes.end())
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -6487,7 +6497,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
+        bool in_prewhere = scope.in_prewhere;
+        scope.in_prewhere = true;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.

@@ -17,6 +17,8 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
@@ -432,7 +434,15 @@ bool PostgreSQLHandler::startup()
         session->makeSessionContext();
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
+        {
+            /// `database` is a real setting, so enforce its constraints on the startup-message
+            /// database too, consistently with `USE`, `SET database = ...` and the HTTP
+            /// `?database=...` parameter.
+            SettingsChanges database_change;
+            database_change.setSetting("database", start_up_msg->database);
+            session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
+        }
     }
     catch (const Exception & exc)
     {
