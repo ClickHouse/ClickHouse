@@ -4352,6 +4352,11 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
     /// would be a data race.
     io.releaseQuerySlot();
 
+    /// Release the admission slot early (same timing as the query slot) to reduce slot hold time.
+    /// Without this, the admission slot is held until the `ProcessListEntry` destructor, which includes
+    /// query logging and HTTP response flushing.
+    io.releaseAdmissionSlot();
+
     /// The order is important here:
     /// - first we save finish_time, used for query_log/opentelemetry_span_log.finish_time_us;
     /// - then we call query_finish_callback() - right now its only purpose is to flush the data over HTTP;
