@@ -1150,7 +1150,7 @@ def test_complete_multi_part_upload_no_such_upload_keeps_prior_object(
     cluster, broken_s3
 ):
     node = cluster.instances["node"]
-    key = "test_complete_mpu_no_such_upload"
+    key = "test_complete_multipart_upload_no_such_upload"
     table_function = (
         f"s3('http://resolver:8083/root/data/{key}', "
         f"'minio', '{minio_secret_key}', 'CSV', 'tag String, filler String')"

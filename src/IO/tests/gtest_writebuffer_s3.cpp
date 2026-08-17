@@ -588,9 +588,9 @@ struct CompleteMPUInvalidPartOnceIngection : InjectionModel
 
 /// Answers NoSuchUpload while letting the store apply the completion, reproducing a completion whose
 /// response was lost: the object at the key is the one this part list describes.
-struct CompleteMPUNoSuchUploadAfterCompletingIngection : InjectionModel
+struct CompleteMultipartUploadNoSuchUploadAfterCompletingIngection : InjectionModel
 {
-    explicit CompleteMPUNoSuchUploadAfterCompletingIngection(std::shared_ptr<S3MemStrore> store_) : store(std::move(store_)) {}
+    explicit CompleteMultipartUploadNoSuchUploadAfterCompletingIngection(std::shared_ptr<S3MemStrore> store_) : store(std::move(store_)) {}
 
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
@@ -612,7 +612,7 @@ struct CompleteMPUNoSuchUploadAfterCompletingIngection : InjectionModel
 
 /// Answers NoSuchUpload without completing anything, reproducing a genuinely aborted upload. Whatever
 /// object the key already holds belongs to a different write.
-struct CompleteMPUNoSuchUploadIngection : InjectionModel
+struct CompleteMultipartUploadNoSuchUploadIngection : InjectionModel
 {
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & /*request*/) override
     {
@@ -1022,37 +1022,37 @@ TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
 
 /// A completion whose response was lost leaves the upload completed, so the retry's NoSuchUpload must
 /// still be absorbed: the object at the key carries the ETag this part list implies.
-TEST_P(SyncAsync, CompleteMPUAbsorbsNoSuchUploadForOwnObject) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadAfterCompletingIngection>(client->store));
+TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadForOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
 
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
     getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
 
-    auto buffer = getWriteBuffer("complete_mpu_absorb_own_object");
+    auto buffer = getWriteBuffer("complete_multipart_upload_absorb_own_object");
     buffer->write('A');
 
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
     auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["complete_mpu_absorb_own_object"], "A");
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_absorb_own_object"], "A");
     EXPECT_EQ(client->counters.headObject, 1u);
 }
 
 /// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier
 /// object. Acknowledging it would report a write that never stored any of its data.
-TEST_P(SyncAsync, CompleteMPUReportsNoSuchUploadForForeignObject) {
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObject) {
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
     getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
 
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("complete_mpu_foreign_object", "OLD");
+    bStore.PutObject("complete_multipart_upload_foreign_object", "OLD");
 
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadIngection>());
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
 
     EXPECT_THROW({
         try {
-            auto buffer = getWriteBuffer("complete_mpu_foreign_object");
+            auto buffer = getWriteBuffer("complete_multipart_upload_foreign_object");
             buffer->write('A');
 
             getAsyncPolicy().setAutoExecute(true);
@@ -1066,7 +1066,7 @@ TEST_P(SyncAsync, CompleteMPUReportsNoSuchUploadForForeignObject) {
         }
       }, DB::S3Exception);
 
-    EXPECT_EQ(bStore.objects["complete_mpu_foreign_object"], "OLD");
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_foreign_object"], "OLD");
 }
 
 /// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
