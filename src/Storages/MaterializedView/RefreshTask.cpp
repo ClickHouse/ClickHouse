@@ -1330,6 +1330,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// source locally regardless of any parallel-replica settings inherited by the refresh context.
             refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
             refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
+            refresh_context->setSetting("allow_insert_into_iceberg", Field(UInt64{1}));
 
             /// A transactional target (e.g. Iceberg) keeps the cursor with its data and provides a store to
             /// read it back; otherwise resume from the cursor persisted in the Keeper coordination znode.
