@@ -4,20 +4,20 @@
 # pipelines (per table, variant) launched in parallel, so a regular build takes ~8s. It stays off the
 # flaky check and the slow instrumented builds anyway: the flaky check re-runs a new test many times,
 # and under a sanitizer the per-query cost multiplies. The keyValuePairs index code paths are covered
-# under sanitizers by the deterministic tests (04726_map_kv_tokenizer_basic, 04727_map_kv_tokenizer_compound, 04728_map_kv_tokenizer_bugfixes).
+# under sanitizers by the deterministic tests (04926_map_kv_tokenizer_basic, 04927_map_kv_tokenizer_compound, 04928_map_kv_tokenizer_bugfixes).
 # Randomized consistency check for the keyValuePairs text index under COMPOUND predicates: AND / OR / NOT
 # chains that cross-mix predicate families (mapContainsKey, mapContainsValue, mapContainsKeyValue, their
 # LIKE forms and the m['key'] accessor) over two or three different (key, value) needles per query. The
 # index must never change the result versus a brute-force scan, so the RPN combination logic
 # (FUNCTION_AND / FUNCTION_OR / FUNCTION_NOT and the set / HAS_ANY_ELEMENTS path) is what is exercised
-# here, on top of the single-predicate coverage in 04729_map_kv_tokenizer_random_consistency.
+# here, on top of the single-predicate coverage in 04929_map_kv_tokenizer_random_consistency.
 #
 # Each compound family is checked in four variants — {index on, index off} x {optimize_functions_to_subcolumns
 # on, off} — over a default-serialized and a bucketed-serialized Map column. All variants of a family must
 # return the same set of matching rows.
 #
 # The m['key'] accessor families are compared only at optimize_functions_to_subcolumns=0 (arrayElement,
-# first-occurrence — the occurrence the index pins), same as 04729. The `eqset` family additionally
+# first-occurrence — the occurrence the index pins), same as 04929. The `eqset` family additionally
 # compares the OR-of-equals chain against its IN(...) form: the two are semantically equal and both
 # engage the index (each is an OR of exact m['key'] = vi lookups), so the OR-vs-IN rewrite must not
 # change the result.
@@ -31,7 +31,7 @@ SEED=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())")
 # vectorized position/LIKE misses a needle byte >= 0x80 over a multi-row String column, so the LIKE-family
 # index-vs-scan comparisons here would spuriously diverge (the index answers byte-exactly, the scan does not).
 # Revert `1 + ...%127` back to `...%256` once that is fixed. High bytes and NUL for the exact-match path are
-# covered by the deterministic tests 04726_map_kv_tokenizer_basic and 04728_map_kv_tokenizer_bugfixes.
+# covered by the deterministic tests 04926_map_kv_tokenizer_basic and 04928_map_kv_tokenizer_bugfixes.
 GENDATA="SELECT number, arrayZip(all_keys, arrayMap(j -> if(cityHash64(number,j,17,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,j,i,3,${SEED})%127), range(1+(cityHash64(number,j,11,${SEED})%20))))), range(length(all_keys))))::Map(String,String) FROM (SELECT number, arrayConcat(base_keys, arraySlice(base_keys,1,1+(cityHash64(number,5,${SEED})%length(base_keys)))) AS all_keys FROM (SELECT number, arrayMap(k -> if(cityHash64(number,k,13,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,k,i,${SEED})%127), range([1,50,63,64,65,127,200][1+(cityHash64(number,k,7,${SEED})%7)])))), range(1+(cityHash64(number,${SEED})%4))) AS base_keys FROM numbers(200)))"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_def; DROP TABLE IF EXISTS t_buckets; DROP TABLE IF EXISTS res;"

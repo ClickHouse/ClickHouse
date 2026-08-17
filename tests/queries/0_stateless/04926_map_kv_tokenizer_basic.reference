@@ -44,6 +44,17 @@ elementLike on	1
 valueLike prefix off	0
 keyLike prefix off	0
 valueLike short	0
+prefix erro%	1
+suffix %rror	1
+startsWith erro	1
+endsWith rror	1
+prefix short er%	1
+suffix short %or	1
+startsWith key-qualifies	1
+endsWith key-qualifies	1
+startsWith below min	0
+endsWith below min	0
+startsWith scan off	0
 -- exact m[key] = value --
 1
 1
