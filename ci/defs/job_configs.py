@@ -1728,12 +1728,6 @@ class JobConfigs:
     # comment when the change is significant. The data comes from the CI logs
     # cluster: the PR side is uploaded by the arm_release build post-hook
     # (build_profile_hook.py), the master side by master workflow builds.
-    # No digest_config, i.e. not cacheable: the job's output is a PR comment
-    # about one concrete commit (it embeds the head sha and links this run's
-    # report). Reusing a cached result would leave that comment describing an
-    # older commit of the PR - including a change that the head has already
-    # reverted - so the comparison is redone for every head. The job is cheap:
-    # it only queries the CI logs cluster.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1745,6 +1739,18 @@ class JobConfigs:
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         timeout=1800,
         enable_gh_auth=True,
+        # Only the job's own scripts. Whether the profiled build can produce
+        # data for this head arrives through `requires`; a file added to this
+        # job's pipeline later is not covered automatically.
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_profile_diff_job.py",
+                "./ci/jobs/scripts/log_cluster.py",
+            ],
+        ),
+        # The comment this job posts names one concrete commit, so a reused
+        # result would describe an older head. Every selected run must run.
+        enable_cache=False,
         # Run on a red head too. This job is the only writer of the
         # `build-profile-diff` PR comment, so skipping it leaves the comment
         # posted for an older commit pinned to the PR, reading as if it

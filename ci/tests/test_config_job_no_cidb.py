@@ -174,29 +174,23 @@ def test_merge_queue_jobs_are_filtered_without_cidb(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
-def test_build_profile_diff_skipped_for_docs_only_changes(monkeypatch):
-    _use_fake_info(
-        monkeypatch,
-        changed_files=("docs/en/development/continuous-integration.md",),
-    )
-
-    assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (
-        True,
-        "Skipped, only documentation changed",
-    )
-
-
 @pytest.mark.parametrize(
     "changed_files",
     [
+        ("docs/en/development/continuous-integration.md",),
+        ("utils/exclude-authors.txt",),
         ("src/Core/Settings.cpp",),
-        (
-            "docs/en/development/continuous-integration.md",
-            "src/Core/Settings.cpp",
-        ),
     ],
 )
-def test_build_profile_diff_runs_for_non_docs_changes(monkeypatch, changed_files):
+def test_build_profile_diff_is_not_filtered_by_the_hook(monkeypatch, changed_files):
+    """The hook must not decide whether `Build profile diff` runs.
+
+    Which changed files affect the job is expressed by its `digest_config`, so that a
+    diff which cannot change the profiled build's output also skips the build itself
+    instead of rescuing it through `requires`. A hook gate here would only see the
+    changed files, not the build's own digest, and would drift from it. Scheduling is
+    asserted in ci/tests/test_build_profile_diff_scheduling.py.
+    """
     _use_fake_info(monkeypatch, changed_files=changed_files)
 
     assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (False, "")

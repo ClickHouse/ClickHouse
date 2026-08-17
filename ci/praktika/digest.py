@@ -79,12 +79,15 @@ class Digest:
 
         job_config_dict = dataclasses.asdict(job_config)
 
+        # Fields that govern result reuse or reporting rather than what the job
+        # produces. Every field outside this list re-keys every job's digest.
         drop_fields = [
             "requires",
             "enable_commit_status",
             "allow_failure",
             "force_success",
             "digest_config",
+            "enable_cache",
         ]
         filtered_job_dict = {
             k: v for k, v in job_config_dict.items() if k not in drop_fields
