@@ -716,6 +716,10 @@ check_fails_kind_without_detach "CREATE VIEW t_reattach_alias_view (a) AS SELECT
 # leave that source attached.
 check_fails_kind_without_detach "ATTACH TABLE t_reattach_attach_from_dst FROM '/outside' ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "PATH_ACCESS_DENIED"
 
+# `ATTACH ... AS [NOT] REPLICATED` is only supported by short `ATTACH` statements. A full definition is
+# rejected before its `AS SELECT` source is analyzed, so it must leave the source attached.
+check_fails_kind_without_detach "ATTACH TABLE t_reattach_attach_replicated AS REPLICATED (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "SUPPORT_IS_DISABLED"
+
 # SQL UDF substitution runs before `CREATE VIEW` reads its source. A recursive UDF makes substitution
 # fail with `UNSUPPORTED_METHOD`, so the source must remain attached.
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_udf"
@@ -812,6 +816,9 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_tmp_src (a UInt64) ENGINE = Mer
 
 check_fails_kind_without_detach "CREATE TEMPORARY TABLE ${CLICKHOUSE_DATABASE}.t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "BAD_DATABASE_FOR_TEMPORARY_TABLE"
 check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ON CLUSTER test_shard_localhost ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
+# An explicitly forbidden temporary-table engine is rejected by `setEngine` before it analyzes the
+# populating `SELECT` too.
+check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_reattach_tmp', '{replica}') ORDER BY tuple() AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
 
 check_if_detached "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src"
 

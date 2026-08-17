@@ -1518,6 +1518,17 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (create.isTemporary() && (create.attach || create.database || !create.cluster.empty()))
         return true;
 
+    /// `getTablePropertiesAndNormalizeCreateQuery` rejects temporary tables using the `Replicated`,
+    /// `Shared`, or `KeeperMap` engines before it reads an `AS src` structure source or a populating
+    /// `SELECT`. This applies both to an engine inferred from the setting below and to an explicitly
+    /// spelled engine.
+    if (create.isTemporary() && create.storage && create.storage->engine)
+    {
+        const String & engine_name = create.storage->engine->name;
+        if (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared") || engine_name == "KeeperMap")
+            return true;
+    }
+
     /// A persistent destination is resolved in the ordinary namespace (`InterpreterCreateQuery` never
     /// resolves it against session temporary tables); a temporary one carries no database at all.
     if (create.table && !create.isTemporary())
@@ -1638,6 +1649,11 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
                 return true;
         }
     }
+
+    /// A full-definition `ATTACH ... AS [NOT] REPLICATED` is rejected before it reads an `AS src`
+    /// structure source or a populating `SELECT`: that syntax is only supported by a short `ATTACH`.
+    if (create.attach && !create.attach_short_syntax && create.attach_as_replicated.has_value())
+        return true;
 
     /// A stub `ATTACH` (no engine and no column list) applies the table definition from stored metadata
     /// and rejects any user-supplied clause it would otherwise silently drop — `AS src`, `AS SELECT`,
