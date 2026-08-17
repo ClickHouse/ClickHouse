@@ -1,4 +1,6 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+-- Tag no-replicated-database, no-shared-merge-tree: the test creates two explicit replicas
+-- of one ReplicatedMergeTree table to check that replicated fetches ignore the size limits.
 
 -- Test for the max_table_size_rows setting with ReplicatedMergeTree.
 
@@ -9,7 +11,8 @@ CREATE TABLE t_max_size_r1 (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/
 CREATE TABLE t_max_size_r2 (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_max_size', 'r2') ORDER BY x SETTINGS max_table_size_rows = 10;
 
 -- The limits are checked against the current table size, so an insert that crosses the limit succeeds.
-INSERT INTO t_max_size_r1 SELECT number FROM numbers(20);
+INSERT INTO t_max_size_r1 SELECT number FROM numbers(8);
+INSERT INTO t_max_size_r1 VALUES (8), (9), (10), (11), (12);
 
 -- Replicated fetches are not checked, so the data is replicated despite exceeding the limit.
 SYSTEM SYNC REPLICA t_max_size_r2;
