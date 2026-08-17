@@ -4012,6 +4012,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
     /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
     cloned_step->top_k_filter_info = top_k_filter_info;
+    cloned_step->final_limit = final_limit;
     /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
     /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
     /// already have a predicate rewritten to `__text_index_*` virtual columns; those columns are
