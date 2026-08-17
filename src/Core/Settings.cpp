@@ -8506,6 +8506,15 @@ and `exponentialTimeDecayedCount`,
 and the scalar functions for `ExponentialTimeDecayingFloat64` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL) \
+    DECLARE(Float, exponential_time_decay_aggregate_function_calculation_budget, 0.0, R"(
+Maximum age, measured in decay lengths, for contributions retained by the mergeable
+`exponentialTimeDecayed*` aggregate functions. Older contributions and aggregate states
+are discarded without evaluating `exp`.
+
+The default value `0` disables the cutoff and preserves exact behavior. A positive value
+opts into approximate aggregation for better performance. Results close to the cutoff can
+depend on input order and state-merge grouping.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \

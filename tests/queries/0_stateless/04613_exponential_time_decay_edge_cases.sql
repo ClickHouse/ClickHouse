@@ -56,3 +56,51 @@ SELECT
     exponentialTimeDecayingValueAt(combined, toFloat64(0)),
     toFloat64(0),
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
+
+
+-- Calculation budget 0 preserves exact behavior.
+SET exponential_time_decay_aggregate_function_calculation_budget = 0;
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
+FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
+
+-- A positive budget is measured in decay lengths. Contributions beyond it are
+-- discarded before exp(), while contributions inside it are retained.
+SET exponential_time_decay_aggregate_function_calculation_budget = 5;
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
+FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
+
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
+FROM VALUES('value Float64, time Float64', (100, 60), (2, 100));
+
+-- The same cutoff applies while merging independently built states.
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSumMerge(10)(state),
+        toFloat64(100)),
+    6)
+FROM
+(
+    SELECT exponentialTimeDecayedSumState(10)(value, time) AS state
+    FROM VALUES('value Float64, time Float64', (1000, 0))
+    UNION ALL
+    SELECT exponentialTimeDecayedSumState(10)(value, time) AS state
+    FROM VALUES('value Float64, time Float64', (2, 100))
+);
+
+SET exponential_time_decay_aggregate_function_calculation_budget = -1;
+SELECT exponentialTimeDecayedSum(10)(value, time)
+FROM VALUES('value Float64, time Float64', (1, 0)); -- { serverError BAD_ARGUMENTS }
+
+SET exponential_time_decay_aggregate_function_calculation_budget = 0;
