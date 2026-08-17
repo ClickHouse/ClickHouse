@@ -79,6 +79,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -461,13 +462,36 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
+    /// An interactive-cancel callback that reports the cancellation by itself (the mutation one does)
+    /// stops this pipeline with an exception. A callback that only returns `true` stops it silently:
+    /// `CompletedPipelineExecutor::execute` cancels the pipeline and its poll loop returns normally.
+    bool observed_cancel = false;
+
     CompletedPipelineExecutor executor(pipeline);
     if (context->hasQueryContext())
     {
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            executor.setCancelCallback(
+                [&observed_cancel, is_cancelled = std::move(cancel_callback)]
+                {
+                    if (!is_cancelled())
+                        return false;
+                    observed_cancel = true;
+                    return true;
+                },
+                std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
+
+    /// A silently stopped pipeline never reaches `CreatingSetsTransform::generate`, so `Set::finishInsert`
+    /// does not run, while `build` above has already moved the source plan out. The caller evaluates its
+    /// filter in the same call - `VirtualColumnUtils::buildFilterExpression` and the `minmax_count`
+    /// projection do - and would pass the unbuilt set to `FunctionIn`, which reports it as
+    /// `Not-ready Set is passed as the second argument for function 'in'`, a `LOGICAL_ERROR`.
+    /// Report the cancellation instead. Not a readiness guard for other causes: a pipeline that stops
+    /// for any other reason still finishes the set.
+    if (observed_cancel && !set_and_key->set->isCreated())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
     pipeline.finalizeWriteInQueryResultCache();
