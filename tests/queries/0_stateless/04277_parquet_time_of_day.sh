@@ -99,14 +99,13 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
 
 echo "=== Insert into Date / Date32 columns ==="
 $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
-    CREATE OR REPLACE TABLE test_parquet_time_date (
-        d Date,
-        d32 Date32
-    ) ENGINE = Memory;
+    CREATE OR REPLACE TABLE test_parquet_time_date (d Date) ENGINE = Memory;
+    CREATE OR REPLACE TABLE test_parquet_time_date32 (d Date32) ENGINE = Memory;
 
-    INSERT INTO test_parquet_time_date (d, d32)
-        SELECT t_late AS d, t_late AS d32 FROM file('$DATA_FILE', 'Parquet');
-    SELECT * FROM test_parquet_time_date;
+    INSERT INTO test_parquet_time_date SELECT t_late FROM file('$DATA_FILE', 'Parquet');
+    INSERT INTO test_parquet_time_date32 SELECT t_late FROM file('$DATA_FILE', 'Parquet');
+    SELECT d FROM test_parquet_time_date;
+    SELECT d FROM test_parquet_time_date32;
 "
 
 # Cleanup
