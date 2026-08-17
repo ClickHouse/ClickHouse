@@ -788,6 +788,17 @@ def test_x509_san_email_no_wildcard():
         "CREATE USER email_wildcard IDENTIFIED WITH ssl_certificate SAN 'EMAIL:*@example.com'"
     )
     try:
+        # client14's certificate carries the literal 'EMAIL:*@example.com', which must match.
+        assert (
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_wildcard",
+                cert_name="client14",
+            )
+            == "email_wildcard\\n"
+        )
+
         # client13's certificate carries 'EMAIL:alice@example.com', which is not the literal
         # pattern, so authentication must fail on both interfaces (no wildcard expansion).
         with pytest.raises(Exception) as err:

@@ -44,6 +44,9 @@ openssl req -newkey rsa:4096 -nodes -batch -keyout client_far_future-key.pem -ou
 # An e-mail address in the subjectAltName extension ('EMAIL:alice@example.com'), to test that an
 # 'EMAIL:' SAN is extracted and can be used to authenticate an SSL certificate user.
 openssl req -newkey rsa:4096 -nodes -batch -keyout client13-key.pem -out client13-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client13"
+# An e-mail address whose local part is literally '*', to verify that EMAIL: SAN matching remains
+# exact and does not interpret '*' as a wildcard.
+openssl req -newkey rsa:4096 -nodes -batch -keyout client14-key.pem -out client14-req.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client14"
 
 # 5. Use CA's private key to sign client's CSR and get back the signed certificate
 openssl x509 -req -days 3650 -in client1-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out client1-cert.pem
@@ -61,6 +64,7 @@ openssl x509 -req -days 3650 -in client12-req.pem -CA ca-cert.pem -CAkey ca-key.
 # ~100 years, so the notAfter time falls past the year 2106 (the upper bound of DateTime).
 openssl x509 -req -days 36525 -in client_far_future-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out client_far_future-cert.pem
 openssl x509 -req -days 3650 -in client13-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client13-ext.cnf -out client13-cert.pem
+openssl x509 -req -days 3650 -in client14-req.pem -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -extfile client14-ext.cnf -out client14-cert.pem
 
 # 6. Generate one more self-signed certificate and private key for using as wrong certificate (because it's not signed by CA)
 openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch -keyout wrong-key.pem -out wrong-cert.pem -subj "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client"
