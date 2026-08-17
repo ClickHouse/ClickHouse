@@ -1553,7 +1553,6 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
     chassert(tags_vector2.size() == groups2.size());
 
     std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
-    indices_in_result_vector.reserve(groups1.size());
 
     VectorWithMemoryTracking<Group> res;
     res.resize(groups1.size());
