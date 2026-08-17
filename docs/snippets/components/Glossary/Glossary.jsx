@@ -28,9 +28,12 @@ export const Glossary = ({ children, metadata = {} }) => {
   const [query, setQuery] = useState('');
 
   const normalizedQuery = query.trim().toLowerCase();
+  const exactMatch = entry => [entry.term, ...(entry.aliases || [])]
+    .some(value => value.toLowerCase() === normalizedQuery);
   const visibleEntries = normalizedQuery
     ? entries.filter(entry => [entry.term, ...(entry.aliases || []), nodeText(entry.content)]
         .some(value => value.toLowerCase().includes(normalizedQuery)))
+        .sort((a, b) => Number(exactMatch(b)) - Number(exactMatch(a)))
     : entries;
 
   return (
