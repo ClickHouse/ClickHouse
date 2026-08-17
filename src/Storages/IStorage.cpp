@@ -20,6 +20,9 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
+#include <Common/MemoryTrackerUtils.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -29,6 +32,8 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
 }
 
 namespace ErrorCodes
@@ -175,9 +180,16 @@ void IStorage::read(
     const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
+    /// Output ports are bounded by the threads consuming them, not by the
+    /// `max_streams_to_max_threads_ratio` over-request carried in `num_streams`.
+    const auto & settings = context->getSettingsRef();
+    const size_t resize_to = std::min(
+        num_streams,
+        getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]));
+
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
-        && output_ports < num_streams)
-        pipe.resize(num_streams);
+        && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
 }

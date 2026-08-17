@@ -2403,7 +2403,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->distributed_processing);
 }
 
-void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
 
@@ -2460,8 +2460,11 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// Output ports are bounded by the threads consuming them, not by the
+    /// `max_streams_to_max_threads_ratio` over-request carried in `max_num_streams`.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
