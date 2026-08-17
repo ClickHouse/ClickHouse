@@ -314,8 +314,10 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
+    /// 3. A dialect parser reading the raw text may legitimately contain tokens the SQL lexer
+    /// rejects, such as PromQL's `=~`; it only uses the tokens to find the end of the statement.
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!parser.consumesRawText() && !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
@@ -353,8 +355,9 @@ ASTPtr tryParseQuery(
         return res;
 
     // More granular checks for queries other than INSERT w/inline data.
-    /// Lexical error
-    if (last_token.isError())
+    /// Lexical error, unless the parser read the raw text itself and only used the tokens
+    /// to delimit the statement (see IParser::consumesRawText).
+    if (last_token.isError() && !parser.consumesRawText())
     {
         out_error_message = getLexicalErrorMessage(
             query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);

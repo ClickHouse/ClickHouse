@@ -1,0 +1,9 @@
+-- =~ selects the matching series
+[('__name__','up'),('instance','host2')]	10
+[('__name__','up'),('instance','host3')]	20
+-- !~ selects the complement
+[('__name__','up'),('instance','host1')]	30
+-- a matcher inside a function argument
+[]	30
+-- the equality matcher still works
+[('__name__','up'),('instance','host1')]	30
