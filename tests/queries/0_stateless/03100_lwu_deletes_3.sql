@@ -5,7 +5,8 @@ ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_deletes_3/', '1')
 ORDER BY (id, dt)
 SETTINGS
     enable_block_number_column = 1,
-    enable_block_offset_column = 1;
+    enable_block_offset_column = 1,
+    patch_parts_version = 'v2';
 
 SET apply_patch_parts = 1;
 SET enable_lightweight_update = 1;
@@ -38,7 +39,7 @@ WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_
 
 SYSTEM START MERGES t_lwu_deletes_3;
 SYSTEM SYNC REPLICA t_lwu_deletes_3 PULL;
-OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-f18f7271629a324b0d26b6ad0b83a6c2-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-92ce34eb51347dee2a78f5c33227a3fc-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge patch';
 SELECT count(), sum(v1), sum(notEmpty(v2)) FROM t_lwu_deletes_3;
