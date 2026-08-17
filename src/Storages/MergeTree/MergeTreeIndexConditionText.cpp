@@ -377,7 +377,6 @@ namespace
 /// A query in `All` mode folds postings by intersection, so a partially folded
 /// posting list is a superset of the result and can be used for pruning right away.
 bool queryMayBeTrueInRange(
-    const TextSearchQuery & query,
     const TextIndexAnalyzer::QueryBuilder & query_builder,
     const std::optional<RowsRange> & current_range,
     TextSearchMode search_mode)
@@ -386,8 +385,8 @@ bool queryMayBeTrueInRange(
     if (query_builder.is_failed)
         return false;
 
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    /// An incomplete scan may have missed matching tokens, so nothing can be pruned.
+    if (query_builder.is_analysis_incomplete)
         return true;
 
     if (!current_range.has_value())
@@ -419,7 +418,7 @@ bool hasAnyTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer:
     if (query.getTokens().empty())
         return false;
 
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
+    return queryMayBeTrueInRange(query_builder, current_range, TextSearchMode::Any);
 }
 
 bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
@@ -427,7 +426,7 @@ bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyze
     if (query.getPatterns().empty())
         return false;
 
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
+    return queryMayBeTrueInRange(query_builder, current_range, TextSearchMode::Any);
 }
 
 bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
@@ -435,7 +434,7 @@ bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAn
     if (query.getTokens().empty())
         return true;
 
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
+    return queryMayBeTrueInRange(query_builder, current_range, TextSearchMode::All);
 }
 
 bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
@@ -443,7 +442,7 @@ bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer:
     if (query.getTokens().empty())
         return false;
 
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
+    return queryMayBeTrueInRange(query_builder, current_range, TextSearchMode::All);
 }
 
 }
@@ -784,7 +783,7 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 namespace
 {
 
-/// Only '%needle%' is decided by the dictionary alone: an affix is anchored to the value, a token match is not.
+/// '%needle%' is anchored the same way in a token as in the whole value; an affix is not.
 bool isInfixPattern(const String & pattern)
 {
     return pattern.starts_with('%') && pattern.ends_with('%');
@@ -958,6 +957,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const auto & settings = getContext()->getSettingsRef();
 
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
+
+    /// A UInt8 virtual column cannot carry the NULL a predicate returns for a NULL value, which NOT flips to true.
+    const bool affix_patterns_allowed
+        = !(header.has(index_column_name) && isNullableOrLowCardinalityNullable(header.getByName(index_column_name).type));
 
     /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
     static const std::unordered_set<ITokenizer::Type> like_optimization_supported_tokenizers = {
@@ -1256,15 +1259,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
-            /// An affix is never exact, so `direct_read_mode` (hint or none) already fits.
             const auto & needle = value_field.safeGet<String>();
-            auto patterns = stringLikeToPatterns(is_prefix ? needle + "%" : "%" + needle, /*case_insensitive=*/ false);
-            if (patterns.size() == 1)
+            const auto affix_pattern = is_prefix ? needle + "%" : "%" + needle;
+            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false);
+            if (patterns.size() == 1 && affix_patterns_allowed)
             {
+                const auto is_exact = is_array_tokenizer && candidate_for_exact_mode;
+                const auto pattern_read_mode = is_exact ? TextIndexDirectReadMode::Exact : direct_read_mode;
+
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, direct_read_mode,
+                        function_name, TextSearchMode::Any, pattern_read_mode,
                         VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
@@ -1298,9 +1304,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// 3. Bypass a non-selective hint: it prunes nothing and still costs a dictionary scan.
             const auto & like_pattern = value_field.safeGet<String>();
             auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
-            if (patterns.size() == 1)
+            const bool is_infix = isInfixPattern(like_pattern);
+            if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
             {
-                const auto is_exact = isInfixPattern(like_pattern) && candidate_for_exact_mode;
+                const auto is_exact = (is_infix || is_array_tokenizer) && candidate_for_exact_mode;
                 const auto pattern_read_mode = is_exact ? TextIndexDirectReadMode::Exact : direct_read_mode;
 
                 out.function = RPNElement::FUNCTION_LIKE;
@@ -1332,10 +1339,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         const auto & like_pattern = value_field.safeGet<String>();
         auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true);
-        if (patterns.size() == 1)
+        const bool is_infix = isInfixPattern(like_pattern);
+        if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {
             /// `getDirectReadMode` does not list `ilike`, which is served by the dictionary scan only.
-            const auto is_exact = isInfixPattern(like_pattern) && candidate_for_exact_mode;
+            const auto is_exact = (is_infix || is_array_tokenizer) && candidate_for_exact_mode;
             const auto pattern_read_mode = is_exact ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
 
             out.function = RPNElement::FUNCTION_LIKE;

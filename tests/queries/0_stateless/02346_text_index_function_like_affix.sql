@@ -219,3 +219,91 @@ SELECT groupArray(id) FROM tab WHERE tag ILIKE 'clickhouse%';
 SELECT groupArray(id) FROM tab WHERE tag ILIKE '%cloud';
 
 DROP TABLE tab;
+
+SELECT 'With the array tokenizer a token is the whole value, so an affix is exact';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, tag) VALUES
+    (1, 'ClickHouseServer'),
+    (2, 'clickhouseClient'),
+    (3, 'ClickHouseCloud'),
+    (4, 'ClickhouseSQL');
+
+SELECT 'prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION startsWith(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE 'ClickHouse%');
+
+SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION endsWith(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE '%Cloud');
+
+SELECT 'ilike prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION ilike(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clickhouse%');
+
+DROP TABLE tab;
+
+SELECT 'A nullable value is left to the original condition';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag Nullable(String),
+    INDEX idx(tag) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, tag) VALUES
+    (1, 'ClickHouseServer'),
+    (2, 'clickhouseClient'),
+    (3, 'ClickHouseCloud'),
+    (4, NULL);
+
+SELECT groupArray(id) FROM tab WHERE tag LIKE 'ClickHouse%';
+SELECT groupArray(id) FROM tab WHERE tag LIKE 'ClickHouse%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag NOT LIKE 'ClickHouse%';
+SELECT groupArray(id) FROM tab WHERE tag NOT LIKE 'ClickHouse%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE NOT endsWith(tag, 'Cloud');
+SELECT groupArray(id) FROM tab WHERE NOT endsWith(tag, 'Cloud') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE 'clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE 'clickhouse%' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT 'An affix hint that prunes nothing is discarded, granule pruning is kept';
+
+CREATE TABLE tab
+(
+    id UInt64,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, multiIf(number < 1000, 'clickhouse is fast', number < 30000, 'bank of the river', 'alpha beta gamma') FROM numbers(100000);
+
+SELECT count() FROM tab WHERE message LIKE 'clickhouse%' SETTINGS log_comment = 'affix_hint_selective';
+SELECT count() FROM tab WHERE message LIKE 'river%' SETTINGS log_comment = 'affix_hint_nonselective';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment,
+       max(ProfileEvents['TextIndexUseHint'] > 0) AS hint_used,
+       max(ProfileEvents['TextIndexDiscardHint'] > 0) AS hint_discarded,
+       max(read_rows < 100000) AS granules_pruned
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish' AND log_comment IN ('affix_hint_selective', 'affix_hint_nonselective')
+GROUP BY log_comment
+ORDER BY log_comment;
+
+DROP TABLE tab;
