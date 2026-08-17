@@ -5318,16 +5318,13 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI text generation: text + optional params map
-        {"aiGenerate"},
-        /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
-        /// grouped for name-swapping (a swap would produce arity-mismatched calls).
-        {"aiEmbed"},
-        /// aiSimilarity takes (text1, text2, model[, params]); like aiEmbed its arity matches no other
-        /// AI function, so it is not grouped for name-swapping.
-        {"aiSimilarity"},
-        /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate"},
+        /// AI functions over (text, const String arg, [params]): instruction / condition / language / model
+        {"aiEmbed", "aiExtract", "aiFilter", "aiTranslate"},
+        /// AI functions over (text, const Array(String) categories, [params])
+        {"aiClassify", "aiRedact"},
+        /// AI functions with their own arity (prompt alone, and a text pair): the mismatch is
+        /// intentional, it fuzzes the hand-written variadic validation these functions all use
+        {"aiGenerate", "aiSimilarity"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
@@ -5867,7 +5864,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
-        /// Fuzz STREAM [CURSOR {...}] modifier (streaming queries). The cursor is a map of
+        /// Fuzz STREAM [BOUNDED] [CURSOR {...}] modifier (streaming queries). The cursor is a map of
         /// partition_id -> {block_number, block_offset}; values must stay within Int64 range
         /// because the formatter renders them via Int64 and negatives would not reparse.
         auto make_random_cursor = [&]() -> Map
@@ -5914,21 +5911,29 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 ch.erase(std::remove(ch.begin(), ch.end(), table_expr->stream_settings), ch.end());
                 table_expr->stream_settings = {};
             }
-            else if (fuzz_rand() % 10 == 0)
+            else
             {
-                /// Toggle between bare STREAM and STREAM CURSOR, or regenerate the cursor
                 auto & stream = table_expr->stream_settings->as<ASTStreamSettings &>();
-                if (stream.cursor && fuzz_rand() % 2 == 0)
-                    stream.cursor.reset();
-                else
-                    stream.setCursor(buildCursorTree(make_random_cursor()));
+                if (fuzz_rand() % 10 == 0)
+                {
+                    /// Toggle between bare STREAM and STREAM CURSOR, or regenerate the cursor
+                    if (stream.cursor && fuzz_rand() % 2 == 0)
+                        stream.cursor.reset();
+                    else
+                        stream.setCursor(buildCursorTree(make_random_cursor()));
+                }
+                /// BOUNDED stops after the first snapshot, so setting it is cheap. Clearing it
+                /// turns the read into a tail that only ends at `max_execution_time`, so it is rare.
+                if (fuzz_rand() % 4 == 0)
+                    stream.setSubscribeForUpdates(fuzz_rand() % 16 == 0);
             }
         }
-        else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
+        else if (table_expr->database_and_table_name && fuzz_rand() % 50 == 0)
         {
-            /// Add STREAM [CURSOR {...}]. A bare STREAM read tails new data until
-            /// max_execution_time, so keep the probability low.
+            /// Add STREAM [BOUNDED] [CURSOR {...}], preferring BOUNDED: an unbounded stream tails
+            /// new data until `max_execution_time`, so that form stays as rare as it was before.
             auto stream_node = make_intrusive<ASTStreamSettings>();
+            stream_node->setSubscribeForUpdates(fuzz_rand() % 5 == 0);
             if (fuzz_rand() % 2 == 0)
                 stream_node->setCursor(buildCursorTree(make_random_cursor()));
             table_expr->stream_settings = stream_node;
