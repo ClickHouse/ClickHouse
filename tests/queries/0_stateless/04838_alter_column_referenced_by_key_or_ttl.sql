@@ -22,6 +22,12 @@ ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test DROP COLUMN b;
 DROP TABLE test;
 
+-- The same when the subcolumn is used in the partition key
+CREATE TABLE test (a Tuple(x UInt64, y UInt64), b UInt64) ENGINE = MergeTree PARTITION BY a.x ORDER BY b;
+ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test;
+
 -- A special column of the engine that is a key column as well
 CREATE TABLE test (a UInt64, s Int8, b UInt64) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s);
 ALTER TABLE test DROP COLUMN s; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
@@ -65,6 +71,13 @@ DROP TABLE test;
 CREATE TABLE test (n Nested(a UInt64, b UInt64), x UInt64) ENGINE = MergeTree PARTITION BY intDiv(`n.b`, 10) ORDER BY (x, `n.a`);
 ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test;
+
+-- The same when a column of the group is used in the key only through its subcolumn
+CREATE TABLE test (`n.a` Tuple(x UInt64, y UInt64), `n.b` UInt64, z UInt64) ENGINE = MergeTree ORDER BY n.a.x;
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN `n.b`;
 DROP TABLE test;
 
 -- A group with no key columns inside can still be dropped
