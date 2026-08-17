@@ -39,7 +39,7 @@
             <url>/test_predefined_handler_request_parser_backtracks</url>
             <handler>
                 <type>predefined_query_handler</type>
-                <query>SELECT length([[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]][1]])</query>
+                <query>SELECT length([[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]][1])</query>
             </handler>
         </rule>
 
