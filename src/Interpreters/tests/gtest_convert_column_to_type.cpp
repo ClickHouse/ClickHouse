@@ -127,6 +127,11 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Float64", Field(Float64(3.0)), "Int128", true},               // exact -> 3
         {"Float64", Field(Float64(3.5)), "Int128", true},               // non-integer -> null
         {"UInt64", Field(UInt64(5)), "Int256", true},                   // widen across sign -> 5
+        /// wide int -> float precision loss: strict must reject (this is what IN/set building relies on)
+        {"Int128", Field(Int128(9007199254740993ll)), "Float64"},        // 2^53+1: default -> nearest float
+        {"Int128", Field(Int128(9007199254740993ll)), "Float64", true},  // 2^53+1: strict -> null
+        {"UInt256", Field(UInt256(9007199254740993ull)), "Float64", true}, // strict -> null
+        {"Int128", Field(Int128(16777217)), "Float32", true},            // 2^24+1: strict -> null (Float32)
 
         /// floats: exact / inexact in all three modes / overflow / NaN / inf
         {"Float64", Field(Float64(0.5)), "Float32"},
@@ -190,6 +195,10 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"DateTime('UTC')", Field(UInt64(1641600000)), "Date"},          // -> day 19000
         {"Date32", Field(Int64(19000)), "DateTime('UTC')"},              // -> 1641600000
         {"DateTime('UTC')", Field(UInt64(1641600000)), "Date32"},        // -> day 19000
+        /// non-UTC: proves the timezone object of the DateTime type is actually consulted
+        {"Date32", Field(Int64(19000)), "DateTime('Europe/Berlin')"},    // fromDayNum in Berlin tz
+        {"DateTime('Europe/Berlin')", Field(UInt64(1641600000)), "Date"}, // toDayNum in Berlin tz
+        {"DateTime('Europe/Berlin')", Field(UInt64(1641600000)), "Date32"},
 
         /// nullable / lowcardinality wrappers
         {"Nullable(Int32)", Field(Int64(7)), "Int64"},
