@@ -167,13 +167,13 @@ DROP TABLE t_join_signed_lc;
 SELECT 'A direct dictionary lookup keeps a stored subtype key and accurately converts only the probe key';
 DROP DICTIONARY IF EXISTS t_direct_dictionary;
 DROP TABLE IF EXISTS t_direct_dictionary_source;
-CREATE TABLE t_direct_dictionary_source (x UInt64, v String) ENGINE = Memory;
+CREATE TABLE t_direct_dictionary_source (x Nullable(UInt64), v String) ENGINE = Memory;
 INSERT INTO t_direct_dictionary_source VALUES (1, 'a');
-CREATE DICTIONARY t_direct_dictionary (x UInt64, v String)
+CREATE DICTIONARY t_direct_dictionary (x Nullable(UInt64), v String)
 PRIMARY KEY x
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DB currentDatabase() TABLE 't_direct_dictionary_source'))
 LIFETIME(MIN 0 MAX 0)
-LAYOUT(HASHED());
+LAYOUT(COMPLEX_KEY_HASHED());
 SELECT d.v FROM (SELECT CAST(1, 'Int64') AS x UNION ALL SELECT CAST(-1, 'Int64')) AS t
 INNER JOIN t_direct_dictionary AS d ON t.x = d.x
 SETTINGS join_algorithm = 'direct';

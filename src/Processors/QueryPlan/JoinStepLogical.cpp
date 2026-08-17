@@ -826,7 +826,7 @@ static void predicateOperandsToCommonType(
         /// a subtype fallback where only the probe needs an accurate conversion. In particular,
         /// a nullable probe key does not require converting the dictionary key to `Nullable`,
         /// which would turn it into a derived expression and disable the direct algorithm.
-        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+        if (!removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type)))
             cast_right_node();
     }
     else
