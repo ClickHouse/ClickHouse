@@ -62,8 +62,8 @@ public:
         const DataTypePtr value_type = getBloomFilterValueType(arguments[0]);
         if (!value_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a Bloom filter state "
-                "(AggregateFunction(1, groupBloomFilter, T)) but it has type {}",
+                "First argument for function {} must be a compatible Bloom filter aggregate state "
+                "but it has type {}",
                 getName(), arguments[0]->getName());
 
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
@@ -86,8 +86,8 @@ public:
         DataTypePtr value_type = getBloomFilterValueType(arguments[0].type);
         if (!value_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a Bloom filter state "
-                "(AggregateFunction(1, groupBloomFilter, T)) but it has type {}",
+                "First argument for function {} must be a compatible Bloom filter aggregate state "
+                "but it has type {}",
                 getName(), arguments[0].type->getName());
 
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
