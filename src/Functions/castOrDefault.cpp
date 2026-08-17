@@ -212,7 +212,7 @@ public:
         for (size_t i = 0; i < cast_result->size(); ++i)
         {
             const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
-            const bool cast_failed = (*cast_null_map_data)[i] && !is_source_null;
+            const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !canContainNull(*return_type));
             if (!cast_failed)
             {
                 if (cast_result_nullable && !result->isNullable())
