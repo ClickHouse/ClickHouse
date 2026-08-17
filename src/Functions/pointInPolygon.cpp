@@ -334,18 +334,17 @@ public:
             for (const auto * f : args)
             {
                 const auto & array = f->safeGet<Array>();
+                /// `getReturnTypeImpl` below requires EVERY argument to be a depth-2 array once the
+                /// first polygon argument is one, so a flat `Ring` in a later position is not another
+                /// `MultiPolygon` component -- it raises `ILLEGAL_TYPE_OF_ARGUMENT`. Deriving a bbox
+                /// from such a call would let pruning drop every granule and answer `0`, hiding that
+                /// exception; for a `Dynamic`/`Variant` argument the raising overload is only built at
+                /// execution time, so pruning everything away hides it completely.
+                if (!isPolygonArray(array))
+                    return false;
+
                 multi_polygon.emplace_back();
-                if (isPolygonArray(array))
-                {
-                    if (!buildPolygon(array, multi_polygon.back()))
-                        return false;
-                }
-                else if (isRingArray(array))
-                {
-                    if (!appendRing(array, multi_polygon.back().outer()))
-                        return false;
-                }
-                else
+                if (!buildPolygon(array, multi_polygon.back()))
                     return false;
             }
 
