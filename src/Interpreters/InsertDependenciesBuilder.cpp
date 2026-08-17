@@ -984,7 +984,10 @@ bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & st
         try
         {
             auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-            if (!view)
+            auto view_lock = view
+                ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!view_lock)
                 continue;
 
             const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
@@ -995,13 +998,21 @@ bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & st
             if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
                 continue;
 
-            if (!materialized_view->tryGetTargetTable()
-                && settings[Setting::ignore_materialized_views_with_dropped_target_table])
-                continue;
+            auto target = materialized_view->tryGetTargetTable();
+            auto target_lock = target
+                ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!target_lock)
+            {
+                if (settings[Setting::ignore_materialized_views_with_dropped_target_table])
+                    continue;
+
+                return true;
+            }
 
             return true;
         }
-        catch (...)
+        catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
         {
             if (!settings[Setting::materialized_views_ignore_errors])
                 return true;
@@ -1192,7 +1203,10 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
         try
         {
             auto view = DatabaseCatalog::instance().tryGetTable(view_id, init_context);
-            if (!view)
+            auto view_lock = view
+                ? view->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!view_lock)
                 continue;
 
             const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
@@ -1204,14 +1218,22 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
                 continue;
 
             auto target = materialized_view->tryGetTargetTable();
-            if (!target && ignore_materialized_views_with_dropped_target_table)
-                continue;
+            auto target_lock = target
+                ? target->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!target_lock)
+            {
+                if (ignore_materialized_views_with_dropped_target_table)
+                    continue;
 
-            if (!target || storageMayWriteToReplicatedTable(target, depth + 1)
+                return true;
+            }
+
+            if (storageMayWriteToReplicatedTable(target, depth + 1)
                 || dependentViewMayWriteToReplicatedTable(target, depth + 1))
                 return true;
         }
-        catch (...)
+        catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
         {
             if (!materialized_views_ignore_errors)
                 return true;
