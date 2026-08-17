@@ -1330,14 +1330,14 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the server is not answering queries — the SQL dump
-    would hit the same dead socket as the liveness check.  This keeps
+    Self-skips when the liveness check fails, because the SQL dump would
+    issue the same query the check just could not complete.  This keeps
     callers honest: they can invoke this from any context (per-test
-    timeout, end-of-run hung-check) without first checking whether the
-    server still responds.
+    timeout, end-of-run hung-check) without first probing the server
+    themselves.
     """
     if not check_server_liveness(args, max_retries=1):
-        print("Skipping system.stack_trace query: server is unreachable.")
+        print("Skipping system.stack_trace query: liveness check failed.")
         return
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
@@ -3867,7 +3867,7 @@ class TestCase:
                             TestStatus.FAIL,
                             FailureReason.LIVENESS_CHECK_FAILED,
                             0.0,
-                            "\nServer does not respond to health check\n",
+                            "\nServer liveness check failed\n",
                         )
 
             self.runs_count += 1
@@ -5487,7 +5487,7 @@ def do_run_tests(
             # conclude, so it is not started once a stop is already pending.
             if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
-                    print("Hung check failed: server is not responding")
+                    print("Hung check failed: server liveness check failed")
                     # Claim before collecting: the sweep below can block ~30s per
                     # server process.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
