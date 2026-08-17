@@ -71,8 +71,9 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return JoinedTables(context, *select).getLeftTableStorage();
 }
 
-/// Empty table, nothing to scan, just mark every candidate not-applicable
-WhatIfIndexEstimator::Result buildEmptyTableResult(const MergeTreeData & data, const HypotheticalIndexStore & store)
+/// Nothing was scanned, so mark every candidate not-applicable with the same reason
+WhatIfIndexEstimator::Result buildResultWithoutScan(
+    const MergeTreeData & data, const HypotheticalIndexStore & store, const String & reason)
 {
     WhatIfIndexEstimator::Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -83,7 +84,7 @@ WhatIfIndexEstimator::Result buildEmptyTableResult(const MergeTreeData & data, c
         r.index_name = index_desc.name;
         r.index_type = index_desc.type;
         r.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        r.not_applicable_reason = "Table is empty, so there is no data to estimate a benefit";
+        r.not_applicable_reason = reason;
         result.index_results.push_back(std::move(r));
     }
     if (result.index_results.empty())
@@ -332,11 +333,20 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     if (read_steps.empty())
     {
-        /// Empty table -> ReadNothing, no read step, report a zero baseline
         auto storage = tryResolveSingleTable(select_query, local_context);
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get());
-            mt && mt->getActivePartsCount() == 0)
-            return buildEmptyTableResult(*mt, local_context->getHypotheticalIndexStore());
+        const auto & store = local_context->getHypotheticalIndexStore();
+        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        {
+            /// Empty table -> ReadNothing, report a zero baseline
+            if (mt->getActivePartsCount() == 0)
+                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit");
+
+            /// The plan answers the query without reading the table's parts at all: a trivial
+            /// count, a minmax_count or exact-count projection, or a projection that selected no
+            /// ranges. No index on those parts would be read
+            return buildResultWithoutScan(
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
+        }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "EXPLAIN WHATIF requires a query reading from a MergeTree family table");

@@ -31,4 +31,12 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42 SETTINGS optimize_use_projections = 0;
 " 2>&1 | grep -oE 'status: +applicable|source: +empirical' | tr -s ' '
 
+# A plan with no ReadFromMergeTree at all (trivial count here; a minmax_count or exact-count
+# projection reaches the same path) must also report candidates instead of throwing
+echo "--- a plan with no MergeTree read step still reports candidates ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline;
+" 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_baseline;"

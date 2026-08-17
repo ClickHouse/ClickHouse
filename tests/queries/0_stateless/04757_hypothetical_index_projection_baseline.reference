@@ -7,3 +7,6 @@ no exception
 --- with projections off the same candidate is estimated as usual ---
 status: applicable
 source: empirical
+--- a plan with no MergeTree read step still reports candidates ---
+status: not_applicable
+reason: The query is answered without reading the table\'s parts, so an index on them would not be read
