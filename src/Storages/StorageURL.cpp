@@ -105,6 +105,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
@@ -746,16 +747,17 @@ void StorageURLSource::cancel(CancelReason reason) noexcept
     ///
     /// - A query whose consumer simply does not need any more data must still succeed with what it has
     ///   already read, so the error of the interrupted read is discarded in generate:
-    ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name only
-    ///   ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
-    ///   the `break` overflow mode - a query which is not killed and returns what it has read so far.
+    ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout when `max_execution_time`
+    ///   uses the `break` overflow mode - a query which is not killed and returns what it has read so far.
     ///
     /// The reasons of the repeated calls may differ: ExecutingGraph::cancel upgrades PartialResult
     /// to the reason of a later hard cancellation and cancels the processors once more, after which
     /// the query fails and the error of the interrupted read must not be discarded anymore. The flag
     /// keeps the effective kind - hard overrides soft, see Cancellation::cancel - and generate reads
     /// it from there, so the discarding follows the upgrade.
-    const bool soft = reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult;
+    const bool soft = reason == CancelReason::PartialResult
+        || (reason == CancelReason::CancelledByTimeout
+            && getContext()->getSettingsRef()[Setting::timeout_overflow_mode] == OverflowMode::BREAK);
     cancellation->cancel(soft);
 
     /// The behavior above depends on which of the sometimes repeated cancellations have arrived so

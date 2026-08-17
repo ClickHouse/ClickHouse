@@ -9,6 +9,7 @@
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
@@ -56,6 +57,20 @@ public:
 
 namespace DB
 {
+
+namespace
+{
+
+void checkQueryTimeLimit()
+{
+    CurrentThread::checkIfNotCancelled();
+
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        if (auto query_status = query_context->getProcessListElementSafe())
+            query_status->checkTimeLimit();
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -354,7 +369,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            CurrentThread::checkIfNotCancelled();
+            checkQueryTimeLimit();
             if (isReadCancelled())
                 throw ReadInterruptedException(exception);
         }
@@ -426,7 +441,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// cancellation error could mask the failure that tore the pipeline down. Marking the
             /// error lets that reader tell it from a failure the cancellation has nothing to do
             /// with, which it must not discard.
-            CurrentThread::checkIfNotCancelled();
+            checkQueryTimeLimit();
             if (isReadCancelled())
                 throw ReadInterruptedException(exception);
 
