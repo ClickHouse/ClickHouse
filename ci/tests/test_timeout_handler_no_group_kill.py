@@ -15,10 +15,12 @@ be killed. A third check pins the whole-run callers, which still need the
 broadcast.
 
 Surviving the alarm is only half the contract: the run must then REPORT the
-timed-out test. The last test drives the real `run_tests_array` through the one
-window where `run` cannot convert the alarm into a result (inside its own
-`except` arms, past its spent `socket.timeout` arm) and asserts a per-test
-FAIL/TIMEOUT is produced, using the production `process_result`.
+timed-out test exactly once. Three tests drive the real `run_tests_array` over
+the windows where `run` cannot convert the alarm itself, using the production
+`process_result`: before any result exists, after one exists but before its
+status marker is stamped, and after the marker was stamped but before that is
+recorded. The last one matters because a doubled description also matches the
+job-side leaf pattern, so the run would report a test that never ran.
 
 No server and no wall-clock: the real handler body is exec'd against the real
 module globals with `killpg` / `pgrep` / `getpgid` faked.
@@ -337,6 +339,69 @@ def test_alarm_between_run_and_formatting_still_yields_a_parseable_leaf(
     )
     assert leaf, f"no parseable leaf for the real verdict:\n{report}"
     assert leaf.group(2) == "[ FAIL ]", f"expected FAIL, got {leaf.group(2)}"
+    assert "real verdict preserved" in report, (
+        f"the real description was lost:\n{report}"
+    )
+    assert exit_code == 1, f"the real FAIL must still count, exit_code={exit_code}"
+
+
+def test_alarm_after_formatting_does_not_stamp_the_report_twice(rec, monkeypatch):
+    """The narrower sibling window: the alarm lands after `process_result`
+    already mutated `description`, but before `formatted` records it. A flag that
+    only tracks "the call returned" then disagrees with the object, and the
+    recovery arm formats it a second time.
+
+    A doubled line is not merely cosmetic: it matches the job-side leaf pattern
+    too, so the run reports an extra failing test that never ran."""
+    calls = []
+
+    def run(self, args, suite, client_options):
+        return _ct["TestResult"](
+            self.name,
+            _ct["TestStatus"].FAIL,
+            _ct["FailureReason"].RESULT_DIFF,
+            1.0,
+            "\nreal verdict preserved\n",
+        )
+
+    def process_result(self, result, messages):
+        calls.append(result.reason)
+        result = _ct["TestCase"].process_result(self, result, messages)
+        if len(calls) == 1:
+            # Deliver the alarm strictly after the formatter mutated `result`,
+            # which is the whole point of this arm. `raise_signal` runs the real
+            # handler, so a blocked SIGALRM is deferred exactly as in production.
+            signal.raise_signal(signal.SIGALRM)
+        return result
+
+    report, exit_code = _drive_run_tests_array(
+        monkeypatch, run, process_result=process_result
+    )
+
+    assert len(calls) == 1, (
+        f"an already-formatted result must not be formatted again, calls={calls}"
+    )
+    # Deferring must not become dropping. If the mask were left blocked, this
+    # worker would silently stop honouring every later per-test deadline, so
+    # assert the alarm was really delivered (the handler ran) and the mask is
+    # clean afterwards.
+    assert rec.killed_groups == [_OUT_OF_GROUP_PGID], (
+        "the deferred alarm must still be delivered once the mask is restored, "
+        f"but the handler never ran: {rec.killed_groups}"
+    )
+    assert signal.SIGALRM not in signal.pthread_sigmask(signal.SIG_BLOCK, []), (
+        "SIGALRM was left blocked, which disarms every later per-test timeout"
+    )
+    leaves = [
+        line for line in report.splitlines() if _TEST_RESULT_PATTERN.match(line)
+    ]
+    assert len(leaves) == 1, (
+        "a double-stamped description yields a second line matching the job-side "
+        f"leaf pattern, so the run reports a test that never ran:\n{report}"
+    )
+    assert leaves[0].lstrip().startswith("00001_probe:"), (
+        f"the single leaf must be the real test, got:\n{leaves[0]}"
+    )
     assert "real verdict preserved" in report, (
         f"the real description was lost:\n{report}"
     )

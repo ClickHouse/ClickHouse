@@ -4858,8 +4858,18 @@ def run_tests_array(
                 attempt_start = datetime.now()
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
-                    test_result = test_case.process_result(test_result, MESSAGES)
-                    formatted = True
+                    # `process_result` stamps the marker by mutating `description`
+                    # in place, so that mutation and `formatted` must be
+                    # indivisible. Deferring the alarm is safe here: pure
+                    # formatting, no I/O and no loop.
+                    prev_mask = signal.pthread_sigmask(
+                        signal.SIG_BLOCK, {signal.SIGALRM}
+                    )
+                    try:
+                        test_result = test_case.process_result(test_result, MESSAGES)
+                        formatted = True
+                    finally:
+                        signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
                 except TimeoutError:
                     # The alarm lands wherever the worker was, which may be
                     # before a result exists or before its status marker is
