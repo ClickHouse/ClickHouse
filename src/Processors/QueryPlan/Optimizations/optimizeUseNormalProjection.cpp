@@ -295,9 +295,8 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-/// Emit `main_header`'s columns, taken by name out of `proj_header`, so a stream that carries surplus
-/// pass-throughs is narrowed to the structure it must replace. Returns nullopt when the two already
-/// hold the same names in the same order, or when `proj_header` cannot supply some column.
+/// Emit `main_header`'s columns by name out of `proj_header`, narrowing away surplus pass-throughs.
+/// nullopt when the names already match in order, or when `proj_header` cannot supply a column.
 static std::optional<ActionsDAG> makeNarrowingDAG(const Block & proj_header, const Block & main_header)
 {
     ActionsDAG dag;
@@ -758,11 +757,8 @@ std::optional<String> optimizeUseNormalProjections(
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
 
-    /// `filterPartsByProjection` keeps only the parts served by the regular read (`best_candidate->parent_parts`)
-    /// and drops those served by the projection, mutating `parent_reading_select_result` in place. We must run
-    /// the header check below BEFORE that (irreversible) mutation, so that skipping the projection on a
-    /// structure mismatch leaves the regular read (which shares this analysis result) seeing every part.
-    /// Compute whether any such parent parts exist without mutating, for the decisions that need it now.
+    /// Read-only: `parent_reading_select_result` is shared with the regular read and must stay intact
+    /// until the structure check below has decided, because `filterPartsByProjection` mutates it in place.
     bool has_parent_parts = std::any_of(
         parent_reading_select_result->parts_with_ranges.begin(),
         parent_reading_select_result->parts_with_ranges.end(),
@@ -808,13 +804,9 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
-    /// The rewritten projection stream must keep the same structure as the subplan it replaces:
-    /// columns from `required_columns` that `query.dag` does not consume survive as pass-throughs
-    /// (`ActionsDAG::updateHeader` appends every un-consumed input) and would otherwise widen the
-    /// output header, breaking the parent step's header contract. This protects both replacement
-    /// branches below: the all-parts branch (which splices `next_node` directly) and the `Union` branch.
-    /// Narrow those pass-throughs away and materialize constants if needed, then require equal
-    /// structure, else skip (regular read stays correct).
+    /// The projection stream must carry the same structure as the subplan it replaces. Columns
+    /// `query.dag` does not consume survive as pass-throughs (`ActionsDAG::updateHeader` appends every
+    /// un-consumed input), so narrow them away and materialize constants before requiring equal structure.
     const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
     const auto * proj_stream = &next_node->step->getOutputHeader();
 
@@ -838,11 +830,9 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_node;
     }
 
-    /// Skip the projection (keep the correct regular read) when the rewritten stream cannot match the
-    /// structure it replaces. This runs before `filterPartsByProjection` mutates the analysis result and
-    /// before query access info is recorded, so a skipped projection neither drops parts from the
-    /// regular read nor records this read as having used the projection. Rewrite the candidate's stat
-    /// description so `EXPLAIN projections = 1` reflects the rejection instead of the earlier `selected`.
+    /// Nothing below this point has run yet, so a skip leaves the regular read with every part and
+    /// records no projection access. The stat description is rewritten so `EXPLAIN projections = 1`
+    /// shows the rejection rather than the earlier `selected`.
     if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
     {
         if (best_candidate->stat)
@@ -852,10 +842,9 @@ std::optional<String> optimizeUseNormalProjections(
         return {};
     }
 
-    /// `reading` is detached below without running `initializePipeline`, so announce its empty read
-    /// set here instead (same guard as `optimizeUseAggregateProjections`; issue #110518). Must stay
-    /// below the structure check: the coordinator rejects a second announcement for the same replica
-    /// and stream, and after a skip the surviving regular read announces its own ranges.
+    /// `reading` is detached below without running `initializePipeline`, so announce its empty read set
+    /// here. Must stay below the structure check: the coordinator rejects a second announcement for the
+    /// same replica and stream, and after a skip the surviving regular read announces its own ranges.
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
