@@ -1,0 +1,26 @@
+-- multi-byte trailer in a short token: decode-scan must not mis-read --
+1
+1
+2
+2
+2
+2
+1
+1
+8
+-- mapContainsKeyValue: index must equal brute-force (19) on the pruning and direct-read paths --
+19
+19
+19
+-- the absent pair must still match nothing --
+0
+-- regression: a part where the index is not materialized must not drop rows --
+1
+2
+10
+11
+-- regression (subcolumn form): non-materialized part must not drop rows --
+1
+2
+10
+11

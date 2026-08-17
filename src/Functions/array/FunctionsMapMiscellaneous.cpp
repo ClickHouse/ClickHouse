@@ -1013,7 +1013,7 @@ position-independent, so duplicate keys are handled naturally.
         "1"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyValue = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyValue = {26, 8};
     FunctionDocumentation::Category category_mapContainsKeyValue = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapContainsKeyValue = {description_mapContainsKeyValue, syntax_mapContainsKeyValue, arguments_mapContainsKeyValue, {}, returned_value_mapContainsKeyValue, examples_mapContainsKeyValue, introduced_in_mapContainsKeyValue, category_mapContainsKeyValue};
     factory.registerFunction<FunctionMapContainsKeyValue>(documentation_mapContainsKeyValue);
@@ -1293,7 +1293,7 @@ Requires the map keys and values to be `String` or `FixedString`.
         "1"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyValueLike = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_mapContainsKeyValueLike = {26, 8};
     FunctionDocumentation::Category category_mapContainsKeyValueLike = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapContainsKeyValueLike = {description_mapContainsKeyValueLike, syntax_mapContainsKeyValueLike, arguments_mapContainsKeyValueLike, {}, returned_value_mapContainsKeyValueLike, examples_mapContainsKeyValueLike, introduced_in_mapContainsKeyValueLike, category_mapContainsKeyValueLike};
     factory.registerFunction<FunctionMapContainsKeyValueLike>(documentation_mapContainsKeyValueLike);

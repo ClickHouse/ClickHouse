@@ -5,7 +5,7 @@
 # ~5s. It stays off the flaky check and the slow instrumented builds anyway: the flaky check re-runs a
 # new test many times, and under a sanitizer the per-query cost multiplies (the earlier per-family form
 # timed out at 600s under msan). The keyValuePairs index code paths it covers are also exercised under
-# sanitizers by the deterministic tests (04614/04616/04618/04619).
+# sanitizers by the deterministic tests (04726_map_kv_tokenizer_basic, 04728_map_kv_tokenizer_bugfixes).
 # Randomized consistency check for the keyValuePairs text index: the index must never change the
 # result of a mapContains* predicate versus a brute-force scan. Each predicate is run in four variants
 # — {index on, index off} x {optimize_functions_to_subcolumns on, off} — over both a default-serialized
@@ -30,7 +30,7 @@ SEED=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())")
 # vectorized position/LIKE misses a needle byte >= 0x80 over a multi-row String column, so the LIKE-family
 # index-vs-scan comparisons here would spuriously diverge (the index answers byte-exactly, the scan does not).
 # Revert `1 + ...%127` back to `...%256` once that is fixed. High bytes and NUL for the exact-match path are
-# covered by the deterministic tests 04615 and 04619.
+# covered by the deterministic tests 04726_map_kv_tokenizer_basic and 04728_map_kv_tokenizer_bugfixes.
 GENDATA="SELECT number, arrayZip(all_keys, arrayMap(j -> if(cityHash64(number,j,17,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,j,i,3,${SEED})%127), range(1+(cityHash64(number,j,11,${SEED})%20))))), range(length(all_keys))))::Map(String,String) FROM (SELECT number, arrayConcat(base_keys, arraySlice(base_keys,1,1+(cityHash64(number,5,${SEED})%length(base_keys)))) AS all_keys FROM (SELECT number, arrayMap(k -> if(cityHash64(number,k,13,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,k,i,${SEED})%127), range([1,50,63,64,65,127,200][1+(cityHash64(number,k,7,${SEED})%7)])))), range(1+(cityHash64(number,${SEED})%4))) AS base_keys FROM numbers(200)))"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_def; DROP TABLE IF EXISTS t_buckets; DROP TABLE IF EXISTS res;"

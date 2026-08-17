@@ -1,0 +1,160 @@
+keyValuePairs
+666F6F62617206	1
+666F6F62617A06	1
+6B32763204	1
+1
+1
+2
+2
+Name: idx
+2
+1
+2
+1
+2
+2
+Name: idx
+1
+1
+2
+2
+2
+Name: idx
+2
+3
+1
+2
+3
+1
+1
+2
+prefix	1
+prefix	1
+literal	1
+literal	1
+keyprefix	1
+keyprefix	2
+keyprefix	1
+keyprefix	2
+valueLike prefix on	1
+valueLike literal on	1
+valueLike substring on	1
+keyLike prefix on	1
+elementLike on	1
+valueLike prefix off	0
+keyLike prefix off	0
+valueLike short	0
+-- exact m[key] = value --
+1
+1
+2
+2
+3
+3
+-- mapContainsKey (long key) --
+2
+4
+2
+4
+-- mapContainsValue (long value, and value shared by long+short key) --
+3
+3
+4
+5
+4
+5
+-- no false match on a long absent key/value --
+0
+-- mapContainsKeyValue: indexed == Memory --
+1
+1
+2
+2
+3
+3
+-- mapContainsKeyValueLike: indexed == Memory --
+1
+1
+2
+2
+-- direct read engages for the pair functions (settings pinned) --
+kv exact	1
+kvLike on	1
+kvLike off	0
+kvLike short	0
+-- m[key] = value over special-byte keys: index == plain scan (subcolumn path) --
+1
+1
+2
+2
+3
+3
+4
+4
+5
+5
+-- startsWith over a special-byte key (subcolumn path) --
+1
+1
+-- an absent special-byte key matches nothing --
+0
+======== Memory (no index) ========
+SECOND ARG
+=============1
+=============2
+=============3
+1	{'k':'a','k':'b'}
+=============4
+1	{'k':'a','k':'b'}
+FIRST ARG
+=============1
+1	{'k':'a','k':'b'}
+=============2
+1	{'k':'a','k':'b'}
+=============3
+=============4
+======== MergeTree + keyValuePairs index ========
+SECOND ARG
+=============1
+=============2
+=============3
+1	{'k':'a','k':'b'}
+=============4
+1	{'k':'a','k':'b'}
+FIRST ARG
+=============1
+1	{'k':'a','k':'b'}
+=============2
+1	{'k':'a','k':'b'}
+=============3
+=============4
+-- index (granule pruning) == plain scan --
+1
+3
+6
+1
+3
+6
+1
+3
+6
+-- direct read IS used for the literal IN set form (1) --
+direct read	1
+-- direct-read path == plain scan --
+1
+3
+6
+-- absent values match nothing --
+0
+-- empty string in the set: rows without the key match --
+1
+4
+6
+7
+1
+4
+6
+7
+-- duplicate key: first-value (arrayElement) semantics, k=(a,b) matches on a, not b --
+7
+0

@@ -328,10 +328,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return TextIndexDirectReadMode::Exact;
     }
 
-    /// The keyValuePairs tokenizer stores each map pair as one whole token, so an exact
-    /// `m['k'] = 'v'` lookup identifies the matching rows precisely — exact direct read.
-    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return function_name == "equals" ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+    /// The keyValuePairs tokenizer does not use this result: its rewrites in `traverseFunctionNode`
+    /// build their `TextSearchQuery` objects with an explicit direct-read mode (always `Exact`, because
+    /// each constructed query is provably precise) and never read the mode computed here. This function
+    /// only feeds the generic mapKeys/mapValues/JSONAllValues fall-through builders, which a keyValuePairs
+    /// index never reaches. So fall through to the generic logic below, which is conservative for it.
 
     if (function_name == "hasPhrase")
         return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
@@ -1078,6 +1079,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (typeid_cast<const KeyValuePairsTokenizer *>(tokenizer) && WhichDataType(value_type).isStringOrFixedString())
     {
+        /// The rewrites in this block set their direct-read mode explicitly (always `Exact`) rather than
+        /// using `direct_read_mode` above: each constructed query is provably precise — a whole-token
+        /// lookup, or a complete dictionary scan with a lossless key/value decode — so its posting union
+        /// is exactly the matching rows. (`direct_read_mode` governs only the generic fall-through builders
+        /// further below, which a keyValuePairs index never reaches.)
+        ///
         /// LIKE rewrites over the dictionary follow the same opt-in as the non-map LIKE path: only when
         /// use_text_index_like_evaluation_by_dictionary_scan is set and the pattern's longest literal run
         /// is at least text_index_like_min_pattern_length (a shorter needle matches too many tokens). Any
@@ -1149,8 +1156,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
             {
                 /// Same dictionary-scan opt-in and minimum literal length gate; any pattern shape is
-                /// matched against the decoded value via regex.
-                if (!like_dict_scan_enabled || likePatternMaxLiteralRun(value_field.safeGet<String>()) < like_min_pattern_length)
+                /// matched against the decoded value via regex. The token is `key || value || trailer`,
+                /// and the key here is fully specified, so it is part of the literal run that determines
+                /// selectivity: gate on `len(key) + longest literal run of the value pattern`.
+                if (!like_dict_scan_enabled || key->size() + likePatternMaxLiteralRun(value_field.safeGet<String>()) < like_min_pattern_length)
                     return false;
 
                 auto value_pattern = std::make_shared<OptimizedRegularExpression>(
@@ -1181,6 +1190,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 /// An empty prefix/suffix is satisfied by the default value '' of an absent key,
                 /// whose row has no token. Bail to a full scan then.
                 if (value_field.safeGet<String>().empty())
+                    return false;
+
+                /// Same dictionary-scan opt-in and minimum literal length gate as the other LIKE
+                /// rewrites (`m['key'] LIKE ...` is rewritten to startsWith/endsWith by the optimizer,
+                /// so it must obey the same contract). The token is `key || value || trailer`; for
+                /// startsWith the matched tokens share the byte-prefix `key || prefix`, so the literal
+                /// run that bounds selectivity is `len(key) + len(prefix)` (and likewise the key anchors
+                /// endsWith). Gating on the value part alone would over-conservatively fall back on a
+                /// short-but-specific needle like `m['method'] LIKE 'GET%'`; gating on the whole leaves
+                /// only genuinely low-selectivity needles on the full-scan path.
+                if (!like_dict_scan_enabled || key->size() + value_field.safeGet<String>().size() < like_min_pattern_length)
                     return false;
 
                 /// Positional `m['key']`: only the key's first value participates (is_rest = 0).

@@ -1,0 +1,79 @@
+-- OR of two literal value patterns (distinct query hashes, must not be conflated) --
+1
+2
+4
+1
+2
+4
+-- OR of two m[key] LIKE literals --
+1
+2
+4
+1
+2
+4
+-- AND of mapContainsKey and mapContainsValue --
+1
+1
+-- AND of mapContainsKeyValue and mapContainsKey --
+4
+4
+-- OR of mapContainsKey and mapContainsKeyValue --
+2
+4
+2
+4
+-- NOT of a single existence predicate --
+2
+3
+5
+6
+2
+3
+5
+6
+-- AND NOT: key present but not with a given value --
+2
+3
+6
+2
+3
+6
+-- m[key] IN AND mapContainsKey --
+1
+3
+1
+3
+-- m[key] IN OR mapContainsKeyValue --
+1
+3
+6
+1
+3
+6
+-- nested (AND) OR pair function --
+1
+3
+6
+1
+3
+6
+-- accessor equality AND existence --
+1
+1
+-- NOT accessor equality AND key present --
+1
+3
+4
+6
+1
+3
+4
+6
+-- key LIKE AND value LIKE (both dictionary-scan forms) --
+1
+4
+1
+4
+-- the index participates in a compound predicate (exact + existence AND) --
+Name: idx
