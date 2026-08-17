@@ -332,11 +332,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        if (write_request.timeseries_size())
-            protocol.writeTimeSeries(write_request.timeseries());
-
-        if (write_request.metadata_size())
-            protocol.writeMetricsMetadata(write_request.metadata());
+        protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);

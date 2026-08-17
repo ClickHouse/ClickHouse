@@ -1,0 +1,60 @@
+---
+description: 'Contém uma linha para cada nó da árvore de dados armazenada no nó local do ClickHouse Keeper em processo.'
+keywords: ['system table', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: 'reference'
+---
+
+import SystemTableCloud from '/snippets/pt-BR/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## Descrição
+</div>
+
+A tabela existe apenas em implantações do ClickHouse Keeper que usam o processo `clickhouse server` (e não `clickhouse keeper`). Ela contém uma linha para cada nó da árvore de dados armazenada no nó Keeper local, incluindo os nós de sistema `/keeper`.
+
+Ao contrário de `system.zookeeper`, esta tabela não envia solicitações a um cluster Keeper. Ela lê diretamente o estado confirmado do Keeper local a partir de uma visão consistente e sem bloqueios, sem afetar o processamento de solicitações. A leitura da tabela não exige uma condição de caminho e retorna toda a árvore, sendo adequada para consultas que examinam todos os nós, como encontrar os nós com mais nós filhos ou com a maior quantidade de dados.
+
+<div id="columns">
+  ## Colunas
+</div>
+
+* `path` ([String](/pt-BR/reference/data-types/string)) — Caminho absoluto do nó.
+* `data` ([String](/pt-BR/reference/data-types/string)) — Dados armazenados no nó.
+* `czxid` ([Int64](/pt-BR/reference/data-types/int-uint)) — ID da transação que criou o nó.
+* `mzxid` ([Int64](/pt-BR/reference/data-types/int-uint)) — ID da transação que modificou o nó pela última vez.
+* `ctime` ([DateTime64(3)](/pt-BR/reference/data-types/datetime64)) — Momento em que o nó foi criado.
+* `mtime` ([DateTime64(3)](/pt-BR/reference/data-types/datetime64)) — Momento em que o nó foi modificado pela última vez.
+* `version` ([Int32](/pt-BR/reference/data-types/int-uint)) — Número de modificações dos dados do nó.
+* `cversion` ([Int32](/pt-BR/reference/data-types/int-uint)) — Número de modificações dos nós filhos do nó.
+* `aversion` ([Int32](/pt-BR/reference/data-types/int-uint)) — Número de modificações da ACL do nó.
+* `ephemeral_owner` ([Int64](/pt-BR/reference/data-types/int-uint)) — ID da sessão proprietária do nó se ele for efêmero; caso contrário, `0`.
+* `data_length` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Tamanho dos dados do nó em bytes.
+* `num_children` ([Int32](/pt-BR/reference/data-types/int-uint)) — Número de nós filhos do nó.
+* `pzxid` ([Int64](/pt-BR/reference/data-types/int-uint)) — ID da transação que adicionou ou removeu nós filhos do nó pela última vez.
+* `seq_num` ([Int64](/pt-BR/reference/data-types/int-uint)) — Contador usado para gerar nomes de nós filhos sequenciais do nó.
+* `ttl` ([Int64](/pt-BR/reference/data-types/int-uint)) — TTL do nó em milissegundos se for um nó TTL; caso contrário, `0`.
+* `acl_id` ([UInt32](/pt-BR/reference/data-types/int-uint)) — ID interno da ACL do nó; `0` se o nó não tiver ACL.
+
+<div id="example">
+  ## Exemplo
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```
