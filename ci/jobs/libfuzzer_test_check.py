@@ -115,7 +115,8 @@ def generate_dictionary(
     # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
     clickhouse_bin = fuzzers_path / "clickhouse"
     assert clickhouse_bin.exists(), "ClickHouse release binary not found"
-    clickhouse_bin.chmod(clickhouse_bin.stat().st_mode | 0o111)
+    original_mode = clickhouse_bin.stat().st_mode
+    clickhouse_bin.chmod(original_mode | 0o111)
 
     uid = os.getuid()
     gid = os.getgid()
@@ -135,7 +136,12 @@ def generate_dictionary(
         f"bash /repo/tests/fuzz/update_dict.sh"
     )
     logging.info("Generating fuzzer dictionary: %s", cmd)
-    subprocess.check_call(cmd, shell=True)
+    try:
+        subprocess.check_call(cmd, shell=True)
+    finally:
+        # Everything executable in this directory is a fuzzer target to the
+        # runner, so only the *_fuzzer files may stay executable in it.
+        clickhouse_bin.chmod(original_mode)
 
 
 def parse_args():
