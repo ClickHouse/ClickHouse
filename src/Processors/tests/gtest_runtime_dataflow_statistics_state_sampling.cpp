@@ -505,7 +505,8 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseArrayStateDoesNotSkipFirstNes
     sparse_offsets->insert(0);
     auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
 
-    const auto exact_compressed_bytes = compressedColumnSize({sparse, array_type, "sparse_array_state"});
+    const auto exact_compressed_bytes
+        = compressedColumnSize({sparse->convertToFullColumnIfSparse(), array_type, "sparse_array_state"});
     ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
 
     const size_t cache_key = 0x111985 + 11;
@@ -549,7 +550,8 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseMapStateDoesNotSkipFirstNeste
     sparse_offsets->insert(0);
     auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
 
-    const auto exact_compressed_bytes = compressedColumnSize({sparse, map_type, "sparse_map_state"});
+    const auto exact_compressed_bytes
+        = compressedColumnSize({sparse->convertToFullColumnIfSparse(), map_type, "sparse_map_state"});
     ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
 
     const size_t cache_key = 0x111985 + 12;
