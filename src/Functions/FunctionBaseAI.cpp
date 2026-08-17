@@ -498,7 +498,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();
-    AIQuotaTracker & quota = *quota_tracker;
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -521,7 +520,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        if (quota.checkQuotas())
+        if (quota_tracker->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -536,10 +535,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         {
             /// Check quotas before every request, and reserve the API-call slot atomically.
             /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
+            if (quota_tracker->checkQuotas())
                 break;
             /// Reserve before the call so failed calls still count against the request quota.
-            if (!quota.tryReserveApiCall())
+            if (!quota_tracker->tryReserveApiCall())
                 break;
 
             try
@@ -557,7 +556,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 

@@ -157,7 +157,6 @@ public:
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
-        AIQuotaTracker & quota = *quota_tracker;
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
@@ -203,7 +202,7 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
