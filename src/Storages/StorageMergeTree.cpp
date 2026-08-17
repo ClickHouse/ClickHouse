@@ -1803,16 +1803,21 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// without a parallel upload scheduler the writer uploads inline and holds far fewer buffers.
             const auto merge_write_settings = merge_context->getWriteSettings();
 
+            /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
+            /// carried to the task through the selected entry, so the merge evaluates its TTL boundaries
+            /// against the same clock this estimate priced them with.
+            const time_t time_of_merge = std::time(nullptr);
+
             /// The disks this merge can actually land on. CurrentlyMergingPartsTagger reserves either on the
             /// destination of a move TTL rule, or - through balancedReservation /
             /// tryReserveSpacePreferringTTLRules - on a volume no earlier than the last volume any source
             /// part sits on: both take the source parts' max volume index as the min volume index of
             /// StoragePolicy::reserve / getVolume. Earlier volumes of the policy are therefore impossible
             /// destinations, and letting one of them mark the output as remote - or contribute its multipart
-            /// ceiling - would reject merges for upload memory that can never be allocated. Every move TTL
-            /// destination is a candidate: which rule applies is decided from the source parts' TTL infos
-            /// against the clock at reservation time, so a merge waiting in the background queue can still
-            /// move to any of them once a boundary passes.
+            /// ceiling - would reject merges for upload memory that can never be allocated. A move TTL adds
+            /// only the destination selected for these source parts at this captured timestamp: the tagger
+            /// reserves its destination immediately, so a future TTL rule cannot change this queued merge's
+            /// disk later.
             const auto storage_policy = getStoragePolicy();
             size_t min_reachable_volume_index = 0;
             for (const auto & part : future_part->parts)
@@ -1836,19 +1841,23 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
             }
 
-            for (const auto & move_ttl : metadata_snapshot->getMoveTTLs())
+            IMergeTreeDataPart::TTLInfos ttl_infos;
+            for (const auto & part : future_part->parts)
+                ttl_infos.update(part->ttl_infos);
+            if (const auto move_ttl = selectTTLDescriptionForTTLInfos(
+                    metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_merge, true))
             {
-                const auto destination = getDestinationForMoveTTL(move_ttl);
-                if (!destination)
-                    continue;
-
-                if (destination->isVolume())
+                const auto destination = getDestinationForMoveTTL(*move_ttl);
+                if (destination)
                 {
-                    const auto & volume_disks = std::static_pointer_cast<IVolume>(destination)->getDisks();
-                    candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+                    if (destination->isVolume())
+                    {
+                        const auto & volume_disks = std::static_pointer_cast<IVolume>(destination)->getDisks();
+                        candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+                    }
+                    else if (destination->isDisk())
+                        candidate_destination_disks.push_back(std::static_pointer_cast<IDisk>(destination));
                 }
-                else if (destination->isDisk())
-                    candidate_destination_disks.push_back(std::static_pointer_cast<IDisk>(destination));
             }
 
             bool output_may_be_on_remote_disk = false;
@@ -1867,14 +1876,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
                 admission_write_buffer_memories.push_back(disk_write_buffer_memory);
             }
-
-            /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
-            /// carried to the task through the selected entry, so the merge evaluates its TTL boundaries
-            /// against the same clock this estimate priced them with. Taking a fresh time at task start
-            /// would let a merge that waits in the background queue while a TTL boundary passes execute
-            /// as a row-reducing TTL merge its reservation did not price. The replicated path pins the
-            /// clock the same way, via entry.create_time.
-            const time_t time_of_merge = std::time(nullptr);
 
             /// Snapshot of the pending mutations for the source parts, built with the same parameters
             /// MergeTask builds its own: the estimate must observe the same pending RENAME COLUMN

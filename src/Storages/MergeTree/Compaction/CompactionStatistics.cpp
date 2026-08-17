@@ -1459,18 +1459,10 @@ UInt64 estimateNeededMemoryForMerge(
     /// writer creates at that same size (the stream's own writeFile call), so its worst case is twice the
     /// block size.
     const UInt64 base_max_compress_block_size = resolve_max_compress_block_size(settings, output_columns, columns_description);
-    const UInt64 local_write_buffer_size = 2 * base_max_compress_block_size;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
     /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
     /// without them, or a local pre-disk-selection guess), so the local per-stream size applies.
-    const auto worst_case_write_buffer_size = [&](UInt64 non_adaptive_buffer_size)
-    {
-        return remote_write_buffer_size != 0 ? remote_write_buffer_size : non_adaptive_buffer_size;
-    };
-    const UInt64 write_buffer_size = worst_case_write_buffer_size(local_write_buffer_size);
-    const UInt64 output_worst_case = saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
-
     /// However, only the compressor block and the file buffer are allocated eagerly (and they start at
     /// adaptive_write_buffer_initial_size when adaptive write buffers are active for this part). Object
     /// storage upload buffers - and the growth of adaptive buffers - only ever hold data that has already
@@ -1542,6 +1534,17 @@ UInt64 estimateNeededMemoryForMerge(
         return non_adaptive * eager_stream_buffers(non_adaptive_compress_block_size)
             + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
+
+    /// Multipart upload buffers are in addition to the compressor and file buffers that every writer
+    /// stream creates eagerly. The multipart ceiling alone is therefore not a per-stream upper bound.
+    const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size)
+    {
+        return remote_write_buffer_size != 0
+            ? remote_write_buffer_size + eager_stream_buffers(max_compress_block_size)
+            : 2 * max_compress_block_size;
+    };
+    const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size);
+    const UInt64 output_worst_case = saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
     /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
@@ -1943,8 +1946,6 @@ UInt64 estimateNeededMemoryForMerge(
                 /// (the projection metadata carries them), not by the parent table's.
                 const UInt64 projection_max_compress_block_size = resolve_max_compress_block_size(
                     projection_settings, projection_column_list, projection.metadata->getColumns());
-                const UInt64 projection_local_write_buffer_size = 2 * projection_max_compress_block_size;
-
                 /// A temporary projection part is written as Wide only when it is big enough:
                 /// writeTempProjectionPart passes the projected block's size to choosePartFormat, which picks
                 /// Compact below min_bytes_for_wide_part (default 10 MiB) / min_rows_for_wide_part, and a merge
@@ -2028,6 +2029,12 @@ UInt64 estimateNeededMemoryForMerge(
                         projection_uncompressed_bytes += missing_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
+                /// `parse` removes `_part_offset` from required_columns for projections that store it as
+                /// `_parent_part_offset`, but `calculate` synthesizes one UInt64 for every rebuilt row.
+                /// Account for that generated column even though it is not read from source parts.
+                if (projection.with_parent_part_offset)
+                    projection_uncompressed_bytes += projection_rows * sizeof(UInt64);
+
                 /// One rebuild does NOT write one temporary part: MergeTask squashes the calculated
                 /// projection blocks (min_insert_block_size_rows / min_insert_block_size_bytes, see
                 /// ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock) and calls
@@ -2080,7 +2087,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// ways: toward Wide only bounded by the data-proportional term below, toward Compact only
                 /// weakening the throttling of concurrent merges.
                 const auto read_back_projection_format = future_part.parts.front()->storage.choosePartFormat(
-                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection, base_settings);
+                    projection_uncompressed_bytes, projection_rows, 1, &projection, base_settings);
                 const bool read_back_projection_is_compact
                     = read_back_projection_format.part_type == MergeTreeDataPartType::Compact;
                 const size_t read_back_streams = read_back_projection_is_compact ? 1 : projection_wide_stream_counts.total;
@@ -2118,7 +2125,7 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 projection_read_buffer_size
                     = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
                 const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(
-                    projection_writer_streams, worst_case_write_buffer_size(projection_local_write_buffer_size));
+                    projection_writer_streams, worst_case_write_buffer_size(projection_max_compress_block_size));
                 /// A Wide part - a temp part or the read-back result - is written by the same wide writer
                 /// as the base output, so its eager per-stream buffers follow the same per-stream adaptive
                 /// split (the count-based rule sees the writer's own columns list - the projection's
