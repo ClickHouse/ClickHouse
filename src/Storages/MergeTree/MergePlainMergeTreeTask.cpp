@@ -99,6 +99,7 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+    ThreadGroupSwitcher switcher((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,

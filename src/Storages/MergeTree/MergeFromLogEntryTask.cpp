@@ -9,6 +9,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
@@ -368,6 +369,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         storage.getStorageID(),
         future_merged_part,
         task_context);
+    ThreadGroupSwitcher switcher((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
