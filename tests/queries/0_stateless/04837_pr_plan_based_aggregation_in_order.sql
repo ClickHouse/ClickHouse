@@ -33,10 +33,10 @@ SET automatic_parallel_replicas_mode = 0;
 -- Aggregation on the primary-key prefix must match non-parallel execution exactly. Aggregating the
 -- per-group results keeps the reference small while still failing if the partial aggregation shipped with the
 -- fragment and the `MergingAggregated` above the union do not add up to the same groups.
-SELECT '--- GROUP BY pk, plan_based = 0, local_plan = 1 ---';
+SELECT '--- GROUP BY pk, local ---';
 SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
-SETTINGS parallel_replicas_plan_based = 0, parallel_replicas_local_plan = 1;
+SETTINGS enable_parallel_replicas = 0;
 SELECT '--- GROUP BY pk, plan_based = 1, local_plan = 1 ---';
 SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
@@ -48,9 +48,9 @@ SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
 
 -- The first groups in key order, so a wrong in-order merge shows up as reordered or merged groups rather
 -- than only as a bad total.
-SELECT '--- first groups in key order, plan_based = 0 ---';
+SELECT '--- first groups in key order, local ---';
 SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
-SETTINGS parallel_replicas_plan_based = 0;
+SETTINGS enable_parallel_replicas = 0;
 SELECT '--- first groups in key order, plan_based = 1 ---';
 SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
 SETTINGS parallel_replicas_plan_based = 1;

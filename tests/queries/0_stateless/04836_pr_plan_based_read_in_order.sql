@@ -39,48 +39,48 @@ SELECT count() = 100000, sum(a) = 4999950000 FROM t_pr_read_in_order SETTINGS pa
 
 -- ORDER BY ... LIMIT is the shape read-in-order exists to accelerate. Printing the rows checks the ordering
 -- itself, not just the row count.
-SELECT '--- ORDER BY a LIMIT 5, plan_based = 0 ---';
-SELECT a, b FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY a LIMIT 5, local ---';
+SELECT a, b FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY a LIMIT 5, plan_based = 1 ---';
 SELECT a, b FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
-SELECT '--- ORDER BY a DESC LIMIT 5, plan_based = 0 ---';
-SELECT a, b FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY a DESC LIMIT 5, local ---';
+SELECT a, b FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY a DESC LIMIT 5, plan_based = 1 ---';
 SELECT a, b FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- A deep OFFSET checks the bound shipped with the fragment: a replica may stop at `limit` + `offset` rows,
 -- but not at `limit` - the OFFSET applies once, above the merge, not on each replica.
-SELECT '--- ORDER BY a, deep OFFSET, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY a, deep OFFSET, local ---';
+SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 OFFSET 49997 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY a, deep OFFSET, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 1;
-SELECT '--- ORDER BY a DESC, deep OFFSET, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY a DESC, deep OFFSET, local ---';
+SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 OFFSET 49997 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY a DESC, deep OFFSET, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 1;
 
 -- `WITH TIES` extends the LIMIT to every row tying with the last one, so it depends on the full ordered
 -- stream rather than on the first N rows. Shipping a per-replica `LimitStep` under a merge could cut the tie
 -- group short. b = a % 10, so the first tie group is all 10000 rows with b = 0.
-SELECT '--- WITH TIES, plan_based = 0 ---';
-SELECT count(), sum(a) FROM (SELECT a FROM t_pr_read_in_order ORDER BY b LIMIT 3 WITH TIES) SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- WITH TIES, local ---';
+SELECT count(), sum(a) FROM (SELECT a FROM t_pr_read_in_order ORDER BY b LIMIT 3 WITH TIES) SETTINGS enable_parallel_replicas = 0;
 SELECT '--- WITH TIES, plan_based = 1 ---';
 SELECT count(), sum(a) FROM (SELECT a FROM t_pr_read_in_order ORDER BY b LIMIT 3 WITH TIES) SETTINGS parallel_replicas_plan_based = 1;
 
 -- `LIMIT BY` picks N rows per key from the ordered stream, so it is order-sensitive in a different way: the
 -- per-key selection happens on the initiator, above the merge of the per-replica streams.
-SELECT '--- LIMIT BY, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 2 BY b LIMIT 6 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- LIMIT BY, local ---';
+SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 2 BY b LIMIT 6 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- LIMIT BY, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 2 BY b LIMIT 6 SETTINGS parallel_replicas_plan_based = 1;
 
 -- Ordering must survive a filter too (the filter is pushed into the shipped fragment).
-SELECT '--- WHERE + ORDER BY a, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a      LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- WHERE + ORDER BY a, local ---';
+SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a      LIMIT 5 OFFSET 10 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- WHERE + ORDER BY a, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a      LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 1;
-SELECT '--- WHERE + ORDER BY a DESC, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a DESC LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- WHERE + ORDER BY a DESC, local ---';
+SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a DESC LIMIT 5 OFFSET 10 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- WHERE + ORDER BY a DESC, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a DESC LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 1;
 
@@ -127,12 +127,12 @@ FROM (EXPLAIN pretty = 0 SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 5 SET
 -- `rows_before_limit_at_least` itself is not asserted: it is still inexact under
 -- `parallel_replicas_local_plan = 1`, the same as classic parallel replicas - see the FIXME in
 -- `applyParallelReplicas.cpp` and https://github.com/ClickHouse/ClickHouse/issues/114723.)
-SELECT '--- exact_rows_before_limit = 1, ORDER BY a, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 0;
+SELECT '--- exact_rows_before_limit = 1, ORDER BY a, local ---';
+SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS exact_rows_before_limit = 1, enable_parallel_replicas = 0;
 SELECT '--- exact_rows_before_limit = 1, ORDER BY a, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 1;
-SELECT '--- exact_rows_before_limit = 1, ORDER BY a DESC, plan_based = 0 ---';
-SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 0;
+SELECT '--- exact_rows_before_limit = 1, ORDER BY a DESC, local ---';
+SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS exact_rows_before_limit = 1, enable_parallel_replicas = 0;
 SELECT '--- exact_rows_before_limit = 1, ORDER BY a DESC, plan_based = 1 ---';
 SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 1;
 

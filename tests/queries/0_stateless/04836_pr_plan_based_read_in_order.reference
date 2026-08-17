@@ -1,6 +1,6 @@
 --- every row read exactly once, plan_based = 1 ---
 1	1
---- ORDER BY a LIMIT 5, plan_based = 0 ---
+--- ORDER BY a LIMIT 5, local ---
 0	0
 1	1
 2	2
@@ -12,7 +12,7 @@
 2	2
 3	3
 4	4
---- ORDER BY a DESC LIMIT 5, plan_based = 0 ---
+--- ORDER BY a DESC LIMIT 5, local ---
 99999	9
 99998	8
 99997	7
@@ -24,7 +24,7 @@
 99997	7
 99996	6
 99995	5
---- ORDER BY a, deep OFFSET, plan_based = 0 ---
+--- ORDER BY a, deep OFFSET, local ---
 49997
 49998
 49999
@@ -36,7 +36,7 @@
 49999
 50000
 50001
---- ORDER BY a DESC, deep OFFSET, plan_based = 0 ---
+--- ORDER BY a DESC, deep OFFSET, local ---
 50002
 50001
 50000
@@ -48,11 +48,11 @@
 50000
 49999
 49998
---- WITH TIES, plan_based = 0 ---
+--- WITH TIES, local ---
 10000	499950000
 --- WITH TIES, plan_based = 1 ---
 10000	499950000
---- LIMIT BY, plan_based = 0 ---
+--- LIMIT BY, local ---
 0
 1
 2
@@ -66,7 +66,7 @@
 3
 4
 5
---- WHERE + ORDER BY a, plan_based = 0 ---
+--- WHERE + ORDER BY a, local ---
 103
 113
 123
@@ -78,7 +78,7 @@
 123
 133
 143
---- WHERE + ORDER BY a DESC, plan_based = 0 ---
+--- WHERE + ORDER BY a DESC, local ---
 99893
 99883
 99873
@@ -104,7 +104,7 @@
 1
 --- explain: local top-N shipped, exact_rows_before_limit = 1 ---
 0
---- exact_rows_before_limit = 1, ORDER BY a, plan_based = 0 ---
+--- exact_rows_before_limit = 1, ORDER BY a, local ---
 0
 1
 2
@@ -116,7 +116,7 @@
 2
 3
 4
---- exact_rows_before_limit = 1, ORDER BY a DESC, plan_based = 0 ---
+--- exact_rows_before_limit = 1, ORDER BY a DESC, local ---
 99999
 99998
 99997

@@ -1,4 +1,4 @@
---- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 0 ---
+--- row_number() OVER (PARTITION BY p ORDER BY a), local ---
 0	5000	12502500	5000
 1	5000	12502500	5000
 2	5000	12502500	5000
@@ -8,7 +8,7 @@
 1	5000	12502500	5000
 2	5000	12502500	5000
 3	5000	12502500	5000
---- running sum within a partition, plan_based = 0 ---
+--- running sum within a partition, local ---
 0	0	0
 0	4	28
 0	8	84

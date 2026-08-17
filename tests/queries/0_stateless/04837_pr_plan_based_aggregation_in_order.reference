@@ -1,10 +1,10 @@
---- GROUP BY pk, plan_based = 0, local_plan = 1 ---
+--- GROUP BY pk, local ---
 1000	100000	4999950000
 --- GROUP BY pk, plan_based = 1, local_plan = 1 ---
 1000	100000	4999950000
 --- GROUP BY pk, plan_based = 1, local_plan = 0 ---
 1000	100000	4999950000
---- first groups in key order, plan_based = 0 ---
+--- first groups in key order, local ---
 0	100
 1	100
 2	100

@@ -32,24 +32,24 @@ SET automatic_parallel_replicas_mode = 0;
 
 -- Sorting on a non-primary-key column: this threw `Unknown function __topKFilter` on the replica. Results
 -- must match non-parallel execution, in both directions.
-SELECT '--- ORDER BY b, a LIMIT 5, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY b, a LIMIT 5, local ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY b, a LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
-SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, local ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- A deep OFFSET: the Top-K threshold must not drop a row that belongs in the requested window.
-SELECT '--- deep OFFSET, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- deep OFFSET, local ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- deep OFFSET, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
 
 -- With a filter, so the Top-K filter has to coexist with a real predicate in the same read.
-SELECT '--- WHERE + ORDER BY b, a LIMIT 5, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- WHERE + ORDER BY b, a LIMIT 5, local ---';
+SELECT b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- WHERE + ORDER BY b, a LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
@@ -89,14 +89,14 @@ SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 0;
 
-SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, local ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- A deep OFFSET, applied once above the merge, while a replica may stop at `LIMIT` + `OFFSET` rows.
-SELECT '--- Top-K disabled, deep OFFSET, plan_based = 0 ---';
-SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- Top-K disabled, deep OFFSET, local ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- Top-K disabled, deep OFFSET, plan_based = 1 ---';
 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
 

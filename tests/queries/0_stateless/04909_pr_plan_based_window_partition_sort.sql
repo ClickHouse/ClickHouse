@@ -33,20 +33,20 @@ SET max_threads = 4;
 -- The window results must match non-parallel execution. `row_number()` restarts per partition, so these
 -- aggregates change as soon as the window is computed over the wrong scope - a partition spread over several
 -- streams, or rows of one partition arriving out of order.
-SELECT '--- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 0 ---';
+SELECT '--- row_number() OVER (PARTITION BY p ORDER BY a), local ---';
 SELECT p, count(), sum(rn), max(rn) FROM
     (SELECT p, row_number() OVER (PARTITION BY p ORDER BY a) AS rn FROM t_pr_window)
-GROUP BY p ORDER BY p SETTINGS parallel_replicas_plan_based = 0;
+GROUP BY p ORDER BY p SETTINGS enable_parallel_replicas = 0;
 SELECT '--- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 1 ---';
 SELECT p, count(), sum(rn), max(rn) FROM
     (SELECT p, row_number() OVER (PARTITION BY p ORDER BY a) AS rn FROM t_pr_window)
 GROUP BY p ORDER BY p SETTINGS parallel_replicas_plan_based = 1;
 
 -- A running sum depends on the order inside each partition, not only on the set of rows.
-SELECT '--- running sum within a partition, plan_based = 0 ---';
+SELECT '--- running sum within a partition, local ---';
 SELECT p, a, s FROM
     (SELECT p, a, sum(v) OVER (PARTITION BY p ORDER BY a) AS s FROM t_pr_window)
-ORDER BY p, a LIMIT 3 BY p LIMIT 12 SETTINGS parallel_replicas_plan_based = 0;
+ORDER BY p, a LIMIT 3 BY p LIMIT 12 SETTINGS enable_parallel_replicas = 0;
 SELECT '--- running sum within a partition, plan_based = 1 ---';
 SELECT p, a, s FROM
     (SELECT p, a, sum(v) OVER (PARTITION BY p ORDER BY a) AS s FROM t_pr_window)
