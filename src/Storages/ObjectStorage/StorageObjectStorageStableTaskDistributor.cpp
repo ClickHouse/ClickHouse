@@ -1,4 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
 #include <optional>
@@ -18,6 +20,11 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 {
     if (send_over_whole_archive && object_info->isArchive())
         return object_info->getIdentifierForPath(object_info->getPathToArchive());
+
+    /// For Iceberg objects addressed by an external (absolute) path, schedule by that metadata path
+    /// so the same physical file maps to a stable replica regardless of the coordinator's key.
+    if (auto metadata_path = getMetadataPathFromObjectInfo(object_info))
+        return object_info->getIdentifierForPath(*metadata_path);
 
     return object_info->getIdentifier();
 }
@@ -148,7 +155,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
         else
         {
-            file_identifier = object_info->getIdentifier();
+            file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
         }
 
         size_t file_replica_idx = getReplicaForFile(file_identifier);

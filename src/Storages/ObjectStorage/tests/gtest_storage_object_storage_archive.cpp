@@ -98,6 +98,7 @@ TEST(StorageObjectStorageArchive, DistributedArchiveRejectsUnknownSize)
         /*max_threads_count=*/1,
         /*is_archive_=*/true,
         object_storage,
+        /*table_location_=*/"",
         context);
 
     try
