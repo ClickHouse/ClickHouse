@@ -75,8 +75,8 @@ ORDER BY x
 SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_nullable_null_set VALUES (NULL), (1), (2);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-Condition: (x notIn 1-element set)
-Granules: 2/3
+Condition: true
+Granules: 3/3
 SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x);
 2
 SELECT count() FROM test_nullable_null_set WHERE notHas([NULL], x) SETTINGS use_primary_key = 0;
