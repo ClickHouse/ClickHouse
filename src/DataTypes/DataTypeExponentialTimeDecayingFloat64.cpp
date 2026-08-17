@@ -10,7 +10,6 @@
 
 #include <cmath>
 #include <fmt/format.h>
-#include <limits>
 #include <utility>
 
 namespace DB
@@ -55,7 +54,7 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
             std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>()},
-        Names{"value", "time", "decay_length"});
+        Names{"sign", "signed_unit_time", "decay_length"});
 
     return {
         storage_type,
@@ -77,13 +76,13 @@ String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
 
 std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() const
 {
-    return Tuple{Float64(0), std::numeric_limits<Float64>::quiet_NaN(), decay_length};
+    return Tuple{Float64(0), Float64(0), decay_length};
 }
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
     return DataTypeFactory::instance().getCustom(
-        "Tuple(value Float64, time Float64, decay_length Float64)",
+        "Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)",
         std::make_unique<DataTypeCustomDesc>(
             std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
 }
@@ -134,13 +133,17 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 Represents one or more finite exponentially time-decaying values at a shared anchor time.
 
 The decay length is part of the type: `ExponentialTimeDecayingFloat64(decay_length)`.
-The stored fields are `value Float64`, `time Float64`, and a redundant `decay_length Float64`
-marker. The implicit empty value uses zero value and a `NaN` time sentinel so it remains an identity
-when merged with values whose observed timestamps are negative. DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
+The stored fields form a canonical, order-preserving representation:
+`sign Float64`, `signed_unit_time Float64`, and a redundant `decay_length Float64` marker.
+For a nonzero curve, `unit_time = anchor_time + decay_length * ln(abs(value_at_anchor))` is
+the time at which its magnitude is one. `signed_unit_time` stores `sign * unit_time`.
+This layout makes ClickHouse's regular tuple comparison and sorting order match the numeric order
+of curves with the same decay length. Zero, including the implicit empty value, is represented as
+`(0, 0, decay_length)`.
+
+DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
 the type parameter when a value is combined or evaluated, so incompatible decay lengths are not
 silently mixed even in paths where ClickHouse treats custom tuple storage as layout-compatible.
-
-Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
 The type can be used with `SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an
 `AggregatingMergeTree`.
 

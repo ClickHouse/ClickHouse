@@ -5,15 +5,10 @@ FROM VALUES('value Float64, time Float64', (1, 0));
 -- The new aggregate-function form is experimental and disabled by default.
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-CREATE TABLE exponential_time_decay_disabled_combinator
-(
-    value AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)
-)
-ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 
 -- Boolean keywords enable and disable the aggregate-function forms.
 SET allow_experimental_time_decay_aggregate_functions = true;
-SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'value');
+SELECT tupleElement(exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)), 'sign');
 
 SET allow_experimental_time_decay_aggregate_functions = false;
 SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
@@ -49,9 +44,9 @@ SELECT
 -- Preserve the existing decay-length semantics: a value observed one decay
 -- length before the greatest timestamp has weight 1/e.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM VALUES('value Float64, time Float64', (2, 0), (0, 10));
 
 SELECT weighted_sum, weighted_avg, weight
@@ -69,16 +64,16 @@ ORDER BY time DESC
 LIMIT 1;
 
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM VALUES('value Float64, time Float64', (10, 0), (20, 10), (5, 5));
 
 -- The aggregation result must not depend on row order.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM
 (
     SELECT *
@@ -87,9 +82,9 @@ FROM
 )
 UNION ALL
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM
 (
     SELECT *
@@ -99,16 +94,16 @@ FROM
 
 -- Rows at the anchor time have unit weight without evaluating a decay.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(10)(value, time), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
-    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(10)(time), toFloat64(10)), 6)
 FROM VALUES('value Float64, time Float64', (2, 10), (4, 10), (6, 10));
 
 -- States with the same anchor time merge without evaluating a decay.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
 FROM
 (
     SELECT
@@ -126,9 +121,9 @@ FROM
 
 -- Independently aggregated states must merge to the same result.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
 FROM
 (
     SELECT
@@ -175,24 +170,24 @@ FROM VALUES('value Float64, time Float64', (10, 0), (5, 5));
 OPTIMIZE TABLE exponential_time_decayed_aggregate FINAL;
 
 SELECT
-    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(10)(sum_state), toFloat64(10)), 6),
     round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(10)(count_state), toFloat64(10)), 6)
 FROM exponential_time_decayed_aggregate;
 
 DROP TABLE exponential_time_decayed_aggregate;
 
 -- Decimal values and DateTime64 time arguments use their scaled values.
 SELECT
-    round(tupleElement(decaying_sum, 'value'), 6),
+    round(exponentialTimeDecayingValueAt(decaying_sum, toFloat64(1577836810)), 6),
     round(decaying_avg, 6),
-    round(tupleElement(decaying_count, 'value'), 6),
+    round(exponentialTimeDecayingValueAt(decaying_count, toFloat64(1577836810)), 6),
     toTypeName(decaying_sum),
-    tupleElement(decaying_sum, 'time'),
+    toFloat64(1577836810),
     round(exponentialTimeDecayingDecayLength(decaying_sum), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_sum,
-        tupleElement(decaying_sum, 'time') + 10), 6)
+        toFloat64(1577836820)), 6)
 FROM
 (
     SELECT
@@ -213,8 +208,8 @@ WITH
     exponentialTimeDecayingAdd(a, b) AS c
 SELECT
     toTypeName(c),
-    round(tupleElement(c, 'value'), 6),
-    tupleElement(c, 'time'),
+    round(exponentialTimeDecayingValueAt(c, toFloat64(10)), 6),
+    toFloat64(10),
     round(exponentialTimeDecayingDecayLength(c), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
 
@@ -224,8 +219,8 @@ WITH
     exponentialTimeDecayingFloat64(10)(4, toFloat64(10)) AS b,
     exponentialTimeDecayingAdd(a, b) AS c
 SELECT
-    round(tupleElement(c, 'value'), 6),
-    tupleElement(c, 'time'),
+    round(exponentialTimeDecayingValueAt(c, toFloat64(10)), 6),
+    toFloat64(10),
     round(exponentialTimeDecayingValueAt(c, toFloat64(10)), 6);
 
 -- DateTime anchors are stored as Float64 seconds.
@@ -233,7 +228,7 @@ WITH exponentialTimeDecayingFloat64(10)(
     8,
     toDateTime('2020-01-01 00:00:00', 'UTC')) AS decaying_value
 SELECT
-    tupleElement(decaying_value, 'time'),
+    toFloat64(1577836800),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
         toDateTime('2020-01-01 00:00:10', 'UTC')), 6);
@@ -253,8 +248,8 @@ WITH
 SELECT a + b;
 
 SELECT
-    round(tupleElement(decaying_value, 'value'), 6),
-    tupleElement(decaying_value, 'time'),
+    round(exponentialTimeDecayingValueAt(decaying_value, toFloat64(1577836810)), 6),
+    toFloat64(1577836810),
     round(exponentialTimeDecayingDecayLength(decaying_value), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
@@ -283,8 +278,8 @@ SELECT 1, exponentialTimeDecayingFloat64(10)(4, toFloat64(10));
 
 -- The aggregate also accepts finalized decaying values directly, with decay length inferred from the type.
 SELECT
-    round(tupleElement(exponentialTimeDecayedSum(decaying_value), 'value'), 6),
-    tupleElement(exponentialTimeDecayedSum(decaying_value), 'time'),
+    round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(decaying_value), toFloat64(10)), 6),
+    toFloat64(10),
     exponentialTimeDecayingDecayLength(exponentialTimeDecayedSum(decaying_value))
 FROM exponential_time_decaying_simple_aggregate;
 
@@ -295,8 +290,8 @@ FROM exponential_time_decaying_simple_aggregate; -- { serverError BAD_ARGUMENTS 
 OPTIMIZE TABLE exponential_time_decaying_simple_aggregate FINAL;
 
 SELECT
-    round(tupleElement(decaying_value, 'value'), 6),
-    tupleElement(decaying_value, 'time'),
+    round(exponentialTimeDecayingValueAt(decaying_value, toFloat64(10)), 6),
+    toFloat64(10),
     exponentialTimeDecayingDecayLength(decaying_value),
     round(exponentialTimeDecayingValueAt(decaying_value, toFloat64(20)), 6)
 FROM exponential_time_decaying_simple_aggregate;
@@ -319,7 +314,7 @@ WITH
     (a + b) + c AS lhs,
     a + (b + c) AS rhs
 SELECT
-    abs(tupleElement(lhs, 'value') - tupleElement(rhs, 'value')) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(lhs, toFloat64(10)) - exponentialTimeDecayingValueAt(rhs, toFloat64(10))) < 1e-12,
     exponentialTimeDecayingDecayLength(lhs) = exponentialTimeDecayingDecayLength(rhs),
     abs(exponentialTimeDecayingValueAt(lhs, toFloat64(10)) - exponentialTimeDecayingValueAt(rhs, toFloat64(10))) < 1e-12;
 
@@ -329,8 +324,9 @@ WITH
     arrayMap(
         number -> CAST(
             (
-                toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000,
-                toFloat64(sipHash64(number, 22) % 100000) / 100,
+                toFloat64(1),
+                toFloat64(sipHash64(number, 22) % 100000) / 100
+                    + 17 * log(toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000),
                 toFloat64(17)
             ),
             'ExponentialTimeDecayingFloat64(17)'),
@@ -356,7 +352,8 @@ WITH
         second_batch_values[1]) AS second_batch,
     first_batch + second_batch AS batched
 SELECT
-    abs(tupleElement(direct, 'value') - tupleElement(reversed, 'value')) <= 1e-12 * greatest(1., tupleElement(direct, 'value')),
+    abs(exponentialTimeDecayingValueAt(direct, toFloat64(2000)) - exponentialTimeDecayingValueAt(reversed, toFloat64(2000)))
+        <= 1e-12 * greatest(1., abs(exponentialTimeDecayingValueAt(direct, toFloat64(2000)))),
     exponentialTimeDecayingDecayLength(direct) = exponentialTimeDecayingDecayLength(batched),
     abs(exponentialTimeDecayingValueAt(direct, toFloat64(2000)) - exponentialTimeDecayingValueAt(batched, toFloat64(2000)))
         <= 1e-12 * greatest(1., exponentialTimeDecayingValueAt(direct, toFloat64(2000)));
@@ -389,9 +386,9 @@ WITH
     first_direct AS
     (
         SELECT
-            tupleElement(exponentialTimeDecayedSum(500)(value, time), 'value') AS expected_sum,
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(500)(value, time), toFloat64(10000)) AS expected_sum,
             exponentialTimeDecayedAvg(500)(value, time) AS expected_avg,
-            tupleElement(exponentialTimeDecayedCount(500)(time), 'value') AS expected_count
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(500)(time), toFloat64(10000)) AS expected_count
         FROM
         (
             SELECT value, time
@@ -402,9 +399,9 @@ WITH
     second_direct AS
     (
         SELECT
-            tupleElement(exponentialTimeDecayedSum(500)(value, time), 'value') AS reordered_sum,
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(500)(value, time), toFloat64(10000)) AS reordered_sum,
             exponentialTimeDecayedAvg(500)(value, time) AS reordered_avg,
-            tupleElement(exponentialTimeDecayedCount(500)(time), 'value') AS reordered_count
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedCount(500)(time), toFloat64(10000)) AS reordered_count
         FROM
         (
             SELECT value, time
@@ -433,9 +430,9 @@ WITH
     (
         SELECT
             batch_count,
-            tupleElement(exponentialTimeDecayedSumMerge(500)(sum_state), 'value') AS actual_sum,
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedSumMerge(500)(sum_state), toFloat64(10000)) AS actual_sum,
             exponentialTimeDecayedAvgMerge(500)(avg_state) AS actual_avg,
-            tupleElement(exponentialTimeDecayedCountMerge(500)(count_state), 'value') AS actual_count
+            exponentialTimeDecayingValueAt(exponentialTimeDecayedCountMerge(500)(count_state), toFloat64(10000)) AS actual_count
         FROM batch_states
         GROUP BY batch_count
     )

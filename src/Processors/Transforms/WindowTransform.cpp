@@ -4027,9 +4027,10 @@ FROM
         FunctionDocumentation{
             .description = R"(
 Constructs an `ExponentialTimeDecayingFloat64(decay_length)` value from one or more `(value, time)` rows.
-Rows are evaluated at their greatest timestamp. The result can be combined again by
-`exponentialTimeDecayedSum`, including as a `SimpleAggregateFunction` column in an
-`AggregatingMergeTree`.
+The result is normalized to its unit-magnitude time, producing a compact representation whose
+native comparison and sorting order matches the numeric order of curves with the same decay length.
+It can be combined again by `exponentialTimeDecayedSum`, including as a
+`SimpleAggregateFunction` column in an `AggregatingMergeTree`.
 )",
             .syntax = "exponentialTimeDecayingFloat64(decay_length)(value, time)",
             .arguments = {
@@ -4041,7 +4042,7 @@ Rows are evaluated at their greatest timestamp. The result can be combined again
             .examples = {{
                 "Construct a decaying value",
                 "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0))",
-                "(8,0,10)"}},
+                "(1,20.79441541679836,10)"}},
             .introduced_in = {26, 8},
             .category = FunctionDocumentation::Category::AggregateFunction},
         {},

@@ -173,8 +173,8 @@ public:
         if (input_is_decaying_value)
         {
             const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
-            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            const Float64 sign = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
+            const Float64 signed_unit_time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
             const Float64 stored_decay_length
                 = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
             if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
@@ -184,8 +184,23 @@ public:
                     stored_decay_length,
                     decay_length,
                     getName());
-            if (value == 0 && std::isnan(time))
+            if (sign == 0)
+            {
+                if (signed_unit_time != 0)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Zero value of aggregate function {} must have zero signed unit time",
+                        getName());
                 return;
+            }
+            if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Input of aggregate function {} is not a canonical ExponentialTimeDecayingFloat64 value",
+                    getName());
+
+            value = sign;
+            time = getExponentialTimeDecayingUnitTime(sign, signed_unit_time);
         }
         else
         {
@@ -233,9 +248,19 @@ public:
             const Float64 result = result_kind == ExponentialTimeDecayedResult::Sum
                 ? state.weighted_sum
                 : state.weight;
+            const auto normalized = normalizeExponentialTimeDecayingFloat64(
+                result,
+                state.empty() ? 0 : state.max_time,
+                decay_length);
+            if (!std::isfinite(normalized.signed_unit_time))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Result of aggregate function {} cannot be represented by ExponentialTimeDecayingFloat64",
+                    getName());
+
             Tuple decaying_value{
-                Field(result),
-                Field(state.empty() ? std::numeric_limits<Float64>::quiet_NaN() : state.max_time),
+                Field(normalized.sign),
+                Field(normalized.signed_unit_time),
                 Field(decay_length)};
             to.insert(Field(decaying_value));
         }

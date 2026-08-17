@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1780,6 +1781,28 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        const auto left_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeLowCardinalityAndNullable(arguments[0]));
+        const auto right_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeLowCardinalityAndNullable(arguments[1]));
+        if (left_decay_length || right_decay_length)
+        {
+            if (!left_decay_length || !right_decay_length)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} cannot compare ExponentialTimeDecayingFloat64 with {}",
+                    getName(),
+                    left_decay_length ? arguments[1]->getName() : arguments[0]->getName());
+
+            if (*left_decay_length != *right_decay_length)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Function {} cannot compare ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
+                    getName(),
+                    *left_decay_length,
+                    *right_decay_length);
+        }
+
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
