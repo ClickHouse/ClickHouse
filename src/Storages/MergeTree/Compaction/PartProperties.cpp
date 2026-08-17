@@ -41,7 +41,8 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
     if (ttl_description)
     {
         bool will_change_codec = false;
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
+        const auto & current_codec_ptr = part->on_disk_default_codec ? part->on_disk_default_codec : part->default_codec;
+        const std::string current_codec = astToString(current_codec_ptr->getFullCodecDesc());
         if (CompressionCodecFactory::containsDefaultCodecAlias(ttl_description->recompression_codec))
         {
             /// A `Default` alias — exact `CODEC(Default)`, or inside a chain like `CODEC(Delta, Default)` —

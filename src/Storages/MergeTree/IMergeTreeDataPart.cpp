@@ -1967,6 +1967,8 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     else
         default_codec = detectDefaultCompressionCodec();
 
+    on_disk_default_codec = default_codec;
+
     /// The part default codec is fed raw — without a column type — into untyped streams such as the
     /// statistics and text-index serialization, and a mutation copies it straight into the writer of
     /// the new part (see `MutateTask`). Such a stream can only accept a codec that does not require a

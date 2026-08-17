@@ -736,7 +736,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/true, version);
+    sort_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/type == Type::Full, version);
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;

@@ -940,6 +940,7 @@ struct ContextSharedPart : boost::noncopyable
 
         std::lock_guard lock(mutex);
         config = config_value;
+        compression_codec_selector.reset();
         access_control->setExternalAuthenticatorsConfig(*config_value);
     }
 

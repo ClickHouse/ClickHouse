@@ -361,6 +361,7 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
     const bool merge_join_is_possible = single_clause_join
         && !join_operator.buildsMixedJoinExpression()
         && MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_limit_is_set = max_rows_in_join != 0 || max_bytes_in_join != 0 || default_max_bytes_in_join != 0;
     const bool external_join_threshold_is_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.;
 
     /// `chooseJoinAlgorithm` walks the algorithm list in order and the first algorithm that builds a join
@@ -378,7 +379,8 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
         /// `RIGHT ANY` join under `auto` falls back to an in-memory hash join.
         if ((algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
              || algorithm == JoinAlgorithm::AUTO)
-            && merge_join_is_possible)
+            && merge_join_is_possible
+            && merge_join_limit_is_set)
             return true;
 
         /// An external-join threshold converts the hash branch into a spilling hash join
