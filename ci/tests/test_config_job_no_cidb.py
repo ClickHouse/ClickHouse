@@ -361,5 +361,58 @@ def test_config_job_outlives_the_submodule_cache_bound():
     ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
 
 
+def test_submodule_cache_clone_is_bounded_and_not_retried():
+    """The cache-population clone must run under `timeout` exactly once.
+
+    An unbounded or retried clone can outlast the job cap, which kills the job that
+    computes the matrix instead of degrading to a GitHub clone.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    calls = []
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **kwargs):
+            calls.append((command, kwargs))
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p):
+            return False
+
+        @staticmethod
+        def copy_file_to_s3(**_k):
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    # Substituted too: with ENABLE_SUBMODULE_CLONE_AUTH set, the clone's `env=` argument
+    # mints a token, which would reach the network from here.
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj._prepare_submodule_cache(None, _Cfg())
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    clones = [(c, k) for c, k in calls if "submodule update" in c]
+    assert len(clones) == 1, calls
+    command, kwargs = clones[0]
+    assert command.startswith(
+        f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
+    ), command
+    assert kwargs.get("retries", 1) == 1, kwargs
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

@@ -27,6 +27,8 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
+# `timeout` treats a non-positive duration as no timeout at all.
+assert Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC > 0
 
 
 _workflow_config_job = Job.Config(
@@ -41,8 +43,7 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    # Reserve 600s above the clone's own bound for the rest of the job, which needs
-    # at most 184s. The cap must exceed that bound, or it is the cap that fires.
+    # Must exceed the submodule clone's own bound, or it is this cap that fires.
     timeout=Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC + 600,
 )
 
@@ -261,8 +262,7 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             print(f"Submodule cache miss, creating: {s3_path}")
             Shell.check("git submodule sync", verbose=True, strict=True)
             Shell.check("git submodule init", verbose=True, strict=True)
-            # Bounded below the job's own timeout, so an overrun lands in the handler
-            # below rather than killing the job.
+            # An overrun must land in the handler below, not in the job's own timeout.
             Shell.check(
                 f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
                 "git submodule update --depth=1 --single-branch --jobs 64",
