@@ -27,6 +27,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/quoteString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/ASTLiteral.h>
@@ -141,6 +142,7 @@ Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
 }
 
 std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
+    const std::optional<String> & projection_name,
     const OptionalVectorSearchParameters & vector_search_parameters,
     const std::vector<std::string_view> & parts)
 {
@@ -152,6 +154,10 @@ std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage
         query += fmt::format(", ['{}']", fmt::join(parts, "','"));
     else
         query += fmt::format(", __getScalar('parts')");
+    /// Note, servers without projection support reject the argument count, and the initiator
+    /// falls back to local analysis for such replicas.
+    if (projection_name)
+        query += fmt::format(", {}", quoteString(*projection_name));
     if (vector_search_parameters)
     {
         query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
@@ -205,10 +211,11 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
 }
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
+                                                     const std::optional<String> & projection_name,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
                                                      const std::vector<std::string_view> & parts, Connection & connection)
 {
-    auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
+    auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, projection_name, vector_search_parameters, parts);
     auto sample_block = indexAnalysisSampleBlock();
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, scalars, external_tables);
@@ -248,11 +255,13 @@ public:
         ASTPtr sampling_filter,
         const NameSet & indexes_column_names,
         const RangesInDataParts & parts_with_ranges_,
+        const std::optional<String> & projection_name_,
         const OptionalVectorSearchParameters & vector_search_parameters_,
         LocalIndexAnalysisCallback local_index_analysis_callback_,
         ContextPtr context_)
         : storage_id(storage_id_)
         , parts_with_ranges(parts_with_ranges_)
+        , projection_name(projection_name_)
         , vector_search_parameters(vector_search_parameters_)
         , local_index_analysis_callback(std::move(local_index_analysis_callback_))
         , context(std::move(context_))
@@ -522,7 +531,7 @@ private:
         {
             chassert(part_ranges.exact_ranges.empty());
 
-            const auto & part_name = part_ranges.data_part->name;
+            const auto & part_name = part_ranges.getAnalysisPartName();
             const auto hash_slot = partReplica(part_name, active_original_indexes.size());
             const auto original_index = active_original_indexes[hash_slot];
             if (original_index == local_original_index)
@@ -623,7 +632,7 @@ private:
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
+            auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter_query, projection_name, vector_search_parameters, remote_parts[i]);
             auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, scalars, external_tables);
             executor->setLogger(logger);
 
@@ -769,7 +778,7 @@ private:
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
                         remote_parts[i].size(), remote_marks[i], remote_rows[i], replica_addresses[i], remote_parts[i]);
-                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, remote_parts[i], *connection);
+                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, projection_name, vector_search_parameters, execution_context, external_tables, remote_parts[i], *connection);
                     LOG_TRACE(logger, "Received {} parts from {}: {}", parts_ranges.size(), replica_addresses[i], parts_ranges);
                     res[i].second = std::move(parts_ranges);
                 }
@@ -807,7 +816,7 @@ private:
         size_t missing_parts_rows = 0;
         for (const auto & part_ranges : parts_with_ranges)
         {
-            const auto & part_name = part_ranges.data_part->name;
+            const auto & part_name = part_ranges.getAnalysisPartName();
             if (resolved_parts.contains(part_name))
                 continue;
             missing_parts.push_back(part_name);
@@ -828,6 +837,7 @@ private:
 
     const StorageID & storage_id;
     const RangesInDataParts & parts_with_ranges;
+    const std::optional<String> projection_name;
     const OptionalVectorSearchParameters & vector_search_parameters;
     LocalIndexAnalysisCallback local_index_analysis_callback;
     ContextPtr context;
@@ -877,6 +887,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     ASTPtr sampling_filter,
     const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const std::optional<String> & projection_name,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context)
@@ -894,6 +905,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         std::move(sampling_filter),
         indexes_column_names,
         parts_with_ranges,
+        projection_name,
         vector_search_parameters,
         std::move(local_index_analysis_callback),
         std::move(context_copy));

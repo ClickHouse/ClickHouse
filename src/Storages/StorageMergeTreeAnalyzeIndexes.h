@@ -16,8 +16,10 @@ public:
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
         std::vector<String> parts_,
+        String projection_name_,
         const ASTPtr & primary_key_predicate_,
-        const OptionalVectorSearchParameters & vector_search_parameters_);
+        const OptionalVectorSearchParameters & vector_search_parameters_,
+        ContextPtr context);
 
     void readImpl(
         QueryPlan & query_plan,
@@ -37,7 +39,13 @@ private:
     friend class ReadFromMergeTreeAnalyzeIndexes;
 
     StoragePtr source_table;
+    StorageMetadataHandle source_metadata_snapshot;
     MergeTreeData::DataPartsVector data_parts;
+    /// Parallel to data_parts when projection_name is set; data_parts then keeps the parent
+    /// parts (their names identify the projection parts in the result), and parents without
+    /// a usable projection part are dropped so that the initiator analyzes them itself.
+    MergeTreeData::DataPartsVector projection_parts;
+    String projection_name;
     MergeTreeSettingsPtr table_settings;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;

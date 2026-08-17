@@ -119,6 +119,7 @@ private:
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
     Strings parts;
+    String projection_name;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
@@ -148,9 +149,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
 {
     ASTs & args = args_func.at(0)->children;
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
-    if (args.empty() || args.size() > 5)
+    if (args.empty() || args.size() > 6)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have from 1 to 3 or 5 arguments (UUID, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 1 to 6 arguments (UUID[, condition[, parts_array[, projection]]][, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
@@ -161,11 +162,22 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     if (args.size() > 2)
         parts = extractParts(args[2], context);
 
-    if (args.size() > 3)
+    /// The projection argument is recognized by argument count alone (4 - projection,
+    /// 5 - optimization pair, 6 - both), and servers unaware of it reject counts 4 and 6,
+    /// which keeps mixed-version distributed index analysis fail-closed.
+    size_t optimization_index = 3;
+    if (args.size() == 4 || args.size() == 6)
     {
-        if (args.size() < 5)
+        args[3] = evaluateConstantExpressionAsLiteral(args[3], context);
+        projection_name = checkAndGetLiteralArgument<String>(args[3], "projection");
+        optimization_index = 4;
+    }
+
+    if (args.size() > optimization_index)
+    {
+        if (args.size() != optimization_index + 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
-        parseArgumentsForOptimizations(args, context, 3);
+        parseArgumentsForOptimizations(args, context, optimization_index);
     }
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
@@ -174,9 +186,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
 void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
 {
     ASTs & args = args_func.at(0)->children;
-    if (args.size() < 2 || args.size() > 6)
+    if (args.size() < 2 || args.size() > 7)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have from 2 to 4 or 6 arguments (database, table, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 2 to 7 arguments (database, table[, condition[, parts_array[, projection]]][, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     auto database = checkAndGetLiteralArgument<String>(args[0], "database");
@@ -190,11 +202,22 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     if (args.size() > 3)
         parts = extractParts(args[3], context);
 
-    if (args.size() > 4)
+    /// The projection argument is recognized by argument count alone (5 - projection,
+    /// 6 - optimization pair, 7 - both), and servers unaware of it reject counts 5 and 7,
+    /// which keeps mixed-version distributed index analysis fail-closed.
+    size_t optimization_index = 4;
+    if (args.size() == 5 || args.size() == 7)
     {
-        if (args.size() < 6)
+        args[4] = evaluateConstantExpressionAsLiteral(args[4], context);
+        projection_name = checkAndGetLiteralArgument<String>(args[4], "projection");
+        optimization_index = 5;
+    }
+
+    if (args.size() > optimization_index)
+    {
+        if (args.size() != optimization_index + 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
-        parseArgumentsForOptimizations(args, context, 4);
+        parseArgumentsForOptimizations(args, context, optimization_index);
     }
 
     source_table_id = StorageID{database, table};
@@ -266,8 +289,10 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(source_table),
         std::move(columns),
         parts,
+        projection_name,
         predicate,
-        vector_search_parameters);
+        vector_search_parameters,
+        context);
     res->startup();
     return res;
 }
@@ -279,7 +304,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])", ""}},
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2'][, projection]])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}
@@ -289,7 +314,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexesUUID", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])", ""}},
+            .examples = {{"mergeTreeAnalyzeIndexesUUID", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2'][, projection]])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}

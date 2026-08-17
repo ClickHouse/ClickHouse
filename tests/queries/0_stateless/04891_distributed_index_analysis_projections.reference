@@ -9,6 +9,9 @@ select count(), sum(key) from test_dia_proj where value in (500000, 2500000) set
 2	3000000
 select count(), sum(key) from test_dia_proj where value in (500000, 2500000) settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
 2	3000000
+-- The rows limit fits reading via the projection, but not a full scan (see the failing query above)
+select count(), sum(key) from test_dia_proj where value in (500000, 2500000) settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1, max_rows_to_read=1000000;
+2	3000000
 distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas>0=0
 distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas>0=1
 distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, DistributedIndexAnalysisMissingParts=0, DistributedIndexAnalysisScheduledReplicas>0=0

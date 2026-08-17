@@ -1,0 +1,18 @@
+-- { echo }
+-- Projection parts are identified by the parent part name, ranges are pruned by the projection sorting key;
+-- the part that has no projection part is absent from the result
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), test_mtai_proj, value = 150000, ['all_1_1_0', 'all_2_2_0', 'all_3_3_0'], 'prj_value') order by part_name;
+all_2_2_0	[(6,7)]
+all_3_3_0	[]
+-- Without the projection the table primary key cannot prune by value
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), test_mtai_proj, value = 150000, ['all_2_2_0']) order by part_name;
+all_2_2_0	[(0,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), test_mtai_proj, value = 150000, ['all_2_2_0'], 'no_such_projection'); -- { serverError BAD_ARGUMENTS }
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), test_mtai_proj, value = 150000, ['all_2_2_0'], 'prj_value', 'vector_search_index_analysis', [], 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+--- Ignore warnings when replica does not respond, and analysis is done on initiator
+set send_logs_level='error';
+-- The first matching row comes from the table (its part has no projection part), the other two are read via the projection
+select count(), sum(key) from test_mtai_proj where value in (50000, 150000, 250000) settings distributed_index_analysis=0;
+3	450000
+select count(), sum(key) from test_mtai_proj where value in (50000, 150000, 250000) settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+3	450000

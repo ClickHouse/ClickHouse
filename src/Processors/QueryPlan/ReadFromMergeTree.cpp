@@ -3166,8 +3166,9 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
     IndexAnalysisPartsRanges res;
     for (const auto & part_ranges : parts_ranges_res)
     {
-        const auto & part_name = part_ranges.data_part->name;
+        const auto & part_name = part_ranges.getAnalysisPartName();
         res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+        processed_parts.insert(part_name);
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
@@ -3411,10 +3412,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
         bool distributed_index_analysis_enabled = !final_second_pass
-            /// Projection parts are identified only by the projection name, which is identical in every
-            /// parent part, so per-part analysis results cannot be attributed back, and remote replicas
-            /// resolve part names against the parent table. Analyze projection parts locally.
-            && !projection_parts_exist
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
@@ -3436,9 +3433,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
         else
         {
+            /// A single analysis never mixes projections (or projection parts with parent parts).
+            std::optional<String> projection_name;
+            if (projection_parts_exist)
+            {
+                chassert(std::ranges::all_of(res_parts, [](const auto & part) { return part.data_part->isProjectionPart(); }));
+                projection_name = res_parts.front().data_part->name;
+            }
+
             std::unordered_map<std::string, const RangesInDataPart *> parts_ranges_map;
             for (const auto & part_ranges : res_parts)
-                parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
+                parts_ranges_map[part_ranges.getAnalysisPartName()] = &part_ranges;
 
             LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
@@ -3450,6 +3455,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result.sampling.filter_function,
                 indexes_column_names,
                 res_parts,
+                projection_name,
                 vector_search_parameters,
                 local_index_analysis_callback,
                 context_);

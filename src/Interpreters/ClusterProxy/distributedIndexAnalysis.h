@@ -27,12 +27,17 @@ using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const 
 /// in case of any failures the analysis will be done on local replica.
 ///
 /// For local replica uses LocalIndexAnalysisCallback (can be called multiple times).
+///
+/// When projection parts are analyzed, all parts must belong to the same projection
+/// (projection_name), and everywhere (parts_with_ranges, callback, result) the parts are
+/// identified by the parent part name.
 DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const StorageID & storage_id,
     const ActionsDAG * filter_actions_dag,
     ASTPtr sampling_filter,
     const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
+    const std::optional<String> & projection_name,
     const OptionalVectorSearchParameters & vector_search_parameters,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context);
