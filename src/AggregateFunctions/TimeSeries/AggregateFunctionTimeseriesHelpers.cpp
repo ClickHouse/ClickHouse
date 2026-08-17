@@ -1152,7 +1152,7 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
 Aggregate function that takes time series data as pairs of timestamps and values and, for each point on a regular time grid described by start timestamp, end timestamp and step, returns the timestamp (in seconds since epoch) of the most recent sample within the specified time window. Used to implement [PromQL's `timestamp()` function](https://prometheus.io/docs/prometheus/latest/querying/functions/#timestamp).
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesTimestampToGrid = R"(
