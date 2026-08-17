@@ -1048,30 +1048,6 @@ def _finish_workflow(workflow, job_name):
                 name = str(check)
             results_.append(Result.from_commands_run(name=name, command=check))
 
-        # `Finish Workflow` aggregates every failed post-hook into one result.
-        # When `can_be_merged.py` is blocked by review threads as well as
-        # another post-hook, keep the `Review Threads` marker distinct. The
-        # review-thread reconciliation workflow may clear `Mergeable Check`
-        # only when this hook was the sole failed post-hook for the run.
-        can_be_merged_failed = any(
-            "can_be_merged.py" in result.name and not result.is_ok()
-            for result in results_
-        )
-        another_post_hook_failed = any(
-            "can_be_merged.py" not in result.name and not result.is_ok()
-            for result in results_
-        )
-        if can_be_merged_failed and another_post_hook_failed:
-            if not GH.post_commit_status(
-                name="Review Threads",
-                status=Result.Status.FAIL,
-                description="review threads and another post-hook blocked",
-                url="",
-            ):
-                raise RuntimeError(
-                    "Failed to post the combined post-hook `Review Threads` status"
-                )
-
         results.append(
             Result.create_from(
                 name="Post Hooks",

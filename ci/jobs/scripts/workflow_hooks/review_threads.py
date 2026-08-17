@@ -112,18 +112,16 @@ def fetch_thread_state(info):
 def record_limited_pipeline_status(info, unresolved_count):
     """Record the marker needed to replay a limited pipeline.
 
-    This is deliberately strict. Without this status, the reconciliation
-    workflow cannot distinguish a limited pipeline from a full one after the
-    threads are resolved. Raising lets the config workflow skip its filters,
-    which fails toward running the full suite.
+    Without this status, the reconciliation workflow cannot distinguish a
+    limited pipeline from a full one after the threads are resolved. Returning
+    false lets the config hook avoid the filters, so the full suite runs.
     """
-    if not GH.post_commit_status(
+    return GH.post_commit_status(
         name=REVIEW_THREADS_STATUS_NAME,
         status=Result.Status.FAIL,
         description=f"{unresolved_count} unresolved review thread(s) - running the limited CI suite",
         url=info.get_report_url(),
-    ):
-        raise RuntimeError("Failed to post the `Review Threads` limited-pipeline status")
+    )
 
 
 if __name__ == "__main__":
@@ -143,11 +141,6 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    info.store_kv_data(KV_UNRESOLVED_COUNT, unresolved_count)
-    info.store_kv_data(KV_OVERRIDE, override)
-    # All later config decisions must use this live value. `info.pr_labels`
-    # comes from the original workflow event and is stale on GitHub reruns.
-    info.store_kv_data(KV_FORCE_ALL, force_all)
     print(
         f"Unresolved review threads: {unresolved_count}, "
         f"'{Labels.IGNORE_UNRESOLVED_THREADS}' label: {override}, "
@@ -157,4 +150,15 @@ if __name__ == "__main__":
     if should_limit_pipeline(unresolved_count, override) and not force_all:
         # Immediate feedback on the PR; can_be_merged.py posts the final
         # verdict at finish time.
-        record_limited_pipeline_status(info, unresolved_count)
+        if not record_limited_pipeline_status(info, unresolved_count):
+            print(
+                "WARNING: failed to post the review-threads marker - "
+                "the full CI suite will run"
+            )
+            sys.exit(0)
+
+    info.store_kv_data(KV_UNRESOLVED_COUNT, unresolved_count)
+    info.store_kv_data(KV_OVERRIDE, override)
+    # All later config decisions must use this live value. `info.pr_labels`
+    # comes from the original workflow event and is stale on GitHub reruns.
+    info.store_kv_data(KV_FORCE_ALL, force_all)

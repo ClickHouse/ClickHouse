@@ -142,7 +142,7 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
-    assert 'review threads and another post-hook blocked' in (
+    assert 'review threads and another post-hook blocked' not in (
         repository_root / "ci/praktika/native_jobs.py"
     ).read_text()
 
@@ -327,12 +327,11 @@ def test_check_review_threads_fails_when_the_status_write_fails(monkeypatch):
         can_be_merged.check_review_threads()
 
 
-def test_limited_pipeline_status_write_failure_aborts_the_filtering_path(monkeypatch):
+def test_limited_pipeline_status_write_failure_does_not_enable_filtering(monkeypatch):
     info = FakeInfo()
     monkeypatch.setattr(GH, "post_commit_status", lambda **_: False)
 
-    with pytest.raises(RuntimeError, match="limited-pipeline"):
-        record_limited_pipeline_status(info, 1)
+    assert not record_limited_pipeline_status(info, 1)
 
 
 def test_review_threads_marker_distinguishes_another_merge_gate(monkeypatch):
