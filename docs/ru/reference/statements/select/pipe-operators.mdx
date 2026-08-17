@@ -1,0 +1,210 @@
+---
+description: 'Документация по пайп-операторам'
+sidebarTitle: 'Пайп-операторы'
+slug: /sql-reference/statements/select/pipe-operators
+title: 'Пайп-операторы'
+doc_type: 'reference'
+---
+
+Пайп-операторы позволяют записывать запросы в виде линейной цепочки преобразований, читаемой сверху вниз, подобно [синтаксису пайпов в GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
+
+```sql
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+
+За любым `SELECT`-запросом может следовать цепочка пайп-операторов. Каждый оператор начинается с токена `|>`, принимает результат предыдущего запроса в качестве входных данных и применяет к нему ещё одно преобразование. Внутри каждого оператора используется обычный синтаксис ClickHouse.
+
+Пайп-операторы — это расширение синтаксиса: каждый оператор оборачивает предыдущий запрос в подзапрос, поэтому получающееся AST совпадает с AST эквивалентного запроса с вложенными подзапросами, а приведённый выше запрос эквивалентен следующему:
+
+```sql
+SELECT * FROM
+(
+    SELECT customer, sum(amount) AS total FROM
+    (
+        SELECT * FROM
+        (
+            SELECT * FROM orders
+        )
+        WHERE cancelled = 0
+    )
+    GROUP BY customer
+)
+ORDER BY total DESC
+LIMIT 3
+```
+
+<div id="from-queries">
+  ## Запросы с FROM
+</div>
+
+Запрос может начинаться с предложения `FROM`, а предложение `SELECT` в таких запросах необязательно: если оно опущено, запрос выполняется так, как если бы было указано `SELECT *`:
+
+```sql
+FROM orders;
+FROM orders WHERE amount > 100;
+FROM orders |> WHERE amount > 100;
+```
+
+Псевдонимы таблиц можно указывать с ключевым словом `AS` или без него, как в предложении `FROM` обычного `SELECT`-запроса: `FROM orders o WHERE o.amount > 100`. Единственное исключение — псевдоним в виде отдельного слова `select`: после таблиц оно начинает явное предложение `SELECT`, а не считается псевдонимом. Таблица с именем `select` не подпадает под это правило и сохраняет свой псевдоним: `FROM select s WHERE s.id = 1`.
+
+Предложение `SELECT` нельзя опускать, если смещение выборки последней таблицы также может быть интерпретировано как `OFFSET` на уровне запроса, поскольку в `FROM t SAMPLE 1/10 OFFSET 5` `OFFSET` относится к `SAMPLE`, а в `FROM t SAMPLE 1/10 SELECT * OFFSET 5` это `OFFSET` на уровне запроса — явное предложение `SELECT` необходимо для устранения неоднозначности. Если запрос продолжается предложением, перед которым `OFFSET` на уровне запроса не может стоять, неоднозначность отсутствует и предложение `SELECT`, как обычно, необязательно: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
+
+<div id="operators">
+  ## Операторы
+</div>
+
+<div id="where">
+  ### WHERE
+</div>
+
+`|> WHERE condition` фильтрует входные строки. При применении после агрегации работает как `HAVING`:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> WHERE total > 100
+```
+
+<div id="select">
+  ### SELECT
+</div>
+
+`|> SELECT [DISTINCT] expr1 [AS alias1], ...` оставляет в выходных данных только перечисленные столбцы выражений:
+
+```sql
+FROM orders |> SELECT customer, amount * 2 AS doubled
+```
+
+В конце списка выражений допускается завершающая запятая в тех же местах, что и в предложении `SELECT` обычного запроса: за ней может следовать конец запроса или следующий оператор `|>`: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. То же относится к операторам `EXTEND` и `AGGREGATE`.
+
+<div id="extend">
+  ### EXTEND
+</div>
+
+`|> EXTEND expr1 [AS alias1], ...` добавляет перечисленные выражения к входным столбцам; это эквивалентно `SELECT *, expr1 AS alias1, ...`:
+
+```sql
+FROM orders |> EXTEND amount * 10 AS big
+```
+
+<div id="set">
+  ### SET
+</div>
+
+`|> SET column1 = expr1, ...` заменяет значения указанных столбцов; эквивалентно `SELECT * REPLACE (expr1 AS column1, ...)`:
+
+```sql
+FROM orders |> SET amount = amount + 1000
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+`|> DROP column1, ...` удаляет указанные столбцы; эквивалентно `SELECT * EXCEPT (column1, ...)`:
+
+```sql
+FROM orders |> DROP cancelled
+```
+
+<div id="as">
+  ### AS
+</div>
+
+`|> AS alias` присваивает псевдоним входным данным следующего оператора, чтобы на них можно было ссылаться в этом операторе. Это особенно полезно при JOIN:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> AS agg
+|> JOIN orders AS o ON agg.customer = o.customer
+```
+
+<div id="aggregate">
+  ### AGGREGATE
+</div>
+
+`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` агрегирует входные строки. Выходные столбцы: сначала столбцы группировки, затем агрегатные столбцы. Без `GROUP BY` все входные строки агрегируются в одну строку:
+
+```sql
+FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
+FROM orders |> AGGREGATE count() AS c;
+```
+
+<div id="distinct">
+  ### DISTINCT
+</div>
+
+`|> DISTINCT` удаляет дублирующиеся строки; это эквивалентно `SELECT DISTINCT *`.
+
+<div id="order-by">
+  ### ORDER BY
+</div>
+
+`|> ORDER BY expr1 [ASC/DESC], ...` сортирует входные строки. Поддерживается полный синтаксис предложения `ORDER BY`, включая `ORDER BY ALL`, `WITH FILL` и `INTERPOLATE`:
+
+```sql
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
+```
+
+<div id="limit-and-offset">
+  ### LIMIT и OFFSET
+</div>
+
+`|> LIMIT length [OFFSET offset]` и `|> OFFSET offset` ограничивают число строк:
+
+```sql
+FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
+```
+
+<div id="join-and-array-join">
+  ### JOIN и ARRAY JOIN
+</div>
+
+`|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` объединяет входные данные с другой таблицей, подзапросом или табличной функцией. Поддерживаются все виды [JOIN](/ru/reference/statements/select/join) и [ARRAY JOIN](/ru/reference/statements/select/array-join), при этом один оператор может содержать несколько JOIN, как и предложение `FROM`:
+
+```sql
+FROM customers
+|> AS c
+|> LEFT JOIN orders AS o ON c.name = o.customer
+|> ARRAY JOIN tags
+```
+
+Поскольку каждый оператор создаёт новую область видимости подзапроса, псевдонимы таблиц видны только в пределах одного оператора (в условии `ON`). Последующие операторы видят объединённые столбцы результата JOIN, как после `SELECT *`.
+
+Также поддерживается запись CROSS JOIN через запятую, при которой входные данные оператора выступают в качестве левой части: `FROM customers |> AS c |> , orders`. Как и для других JOIN, входным данным требуется псевдоним, если включена настройка `joined_subquery_requires_alias` (по умолчанию она включена).
+
+Как и в предложении `FROM` обычного запроса, JOIN через запятую (CROSS JOIN) не поддерживается непосредственно после `ARRAY JOIN`: запятая после `ARRAY JOIN` всегда относится к списку его выражений.
+
+<div id="union-intersect-and-except">
+  ### UNION, INTERSECT и EXCEPT
+</div>
+
+`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...` и `|> EXCEPT [ALL/DISTINCT] ...` объединяют входные данные с результатами других запросов:
+
+```sql
+FROM orders
+|> SELECT customer
+|> UNION ALL (FROM customers |> SELECT name)
+|> DISTINCT
+```
+
+Скобки вокруг операнда необязательны, если он содержит один запрос, но нужны, если после операции над множествами цепочка продолжается другим пайп-оператором — иначе было бы неясно, применяется ли следующий оператор к последнему операнду или ко всему результату.
+
+<div id="notes">
+  ## Примечания
+</div>
+
+* Предложение `WITH` запроса остаётся видимым во всех последующих пайп-операторах — как для скалярных псевдонимов, так и для CTE: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
+* В `INSERT ... SELECT` предложение `WITH`, указанное перед `INSERT`, присоединяется к самому внешнему сгенерированному `SELECT` и при интерпретации становится доступным внутренним стадиям конвейера через настройку `enable_global_with_statement` (включена по умолчанию) — так же, как и во вложенном подзапросе, написанном вручную. Если эта настройка отключена, псевдонимы и CTE из `WITH`, ограниченного областью действия `INSERT`, недоступны внутри стадий конвейера — точно так же, как и внутри подзапроса, написанного вручную.
+* Как и любой `SELECT`-запрос, запрос, сгенерированный пайп-оператором, может заканчиваться предложением `SETTINGS`, которое присоединяется к этому сгенерированному запросу: `FROM t |> LIMIT 1 SETTINGS max_threads = 1` эквивалентен `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`. Это также работает там, где нет отдельного этапа обработки настроек запроса, например в подзапросе, в `CREATE VIEW` или в табличной функции `view`. Предложение `SETTINGS` в середине цепочки остаётся на своей стадии, которая становится подзапросом для следующего оператора. После операции над множествами с операндом в скобках завершающее предложение `SETTINGS` не допускается — эквивалентный запрос с подзапросами также не может содержать предложение `SETTINGS` в этой позиции.
+* Предложение `SETTINGS` запроса перед первым пайп-оператором остаётся в этом запросе, который становится подзапросом сгенерированной обёртки. Обычные настройки продолжают работать, поскольку настройки подзапроса применяются при его интерпретации. Единственное исключение — пара настроек, выбирающих анализатор запросов: `enable_analyzer` и её псевдоним `allow_experimental_analyzer`. Изменять их в подзапросе нельзя, поэтому `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` возвращает `INCORRECT_QUERY` — точно так же, как и эквивалентный запрос, написанный вручную: `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1`. Указывайте эти две настройки после последнего пайп-оператора или передавайте их вне запроса.
+* Пайп-операторы применяются ко всему предшествующему запросу, включая операции над множествами: в `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()` агрегация применяется к результату `UNION ALL`. Чтобы продолжить запрос с `UNION` после пайп-оператора, используйте оператор `|> UNION` или скобки.
+* Пайп-операторы можно использовать везде, где ожидается `SELECT`-запрос: в подзапросах, в `INSERT ... SELECT` (включая форму `INSERT INTO t FROM src |> ...`), в `CREATE VIEW`, в табличной функции `view` и так далее.
+* Отдельный оператор для переименования столбцов на месте не предусмотрен; используйте `|> SELECT * EXCEPT (old_name), old_name AS new_name` или операторы `SET` и `DROP`.
