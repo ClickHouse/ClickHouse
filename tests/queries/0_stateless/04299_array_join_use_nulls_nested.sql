@@ -78,6 +78,16 @@ SELECT toTypeName(v) FROM
 ORDER BY v
 SETTINGS array_join_use_nulls = 1;
 
+-- The unaligned-array guard is query-scoped as well. Although the outer query only reads `a`,
+-- `b` must remain in the inner ARRAY JOIN because it determines the unaligned row multiplier.
+SELECT 'subquery settings inner unaligned 1 outer 0';
+SELECT a FROM
+(
+    SELECT a FROM (SELECT [1] AS a, [10, 20] AS b) LEFT ARRAY JOIN a, b SETTINGS enable_unaligned_array_join = 1
+)
+ORDER BY a
+SETTINGS enable_unaligned_array_join = 0;
+
 -- array_join_use_nulls = 0: behavior unchanged (non-nullable, empty arrays produce defaults).
 SET array_join_use_nulls = 0;
 SELECT 'array_join_use_nulls = 0';

@@ -355,7 +355,10 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     if (!top_query_node)
         return;
 
-    const auto & settings = context->getSettingsRef();
+    /// A query tree can contain a subquery with its own `SETTINGS`. The pass-manager context
+    /// belongs to the outer query, while this query node owns the ARRAY JOIN nodes inspected below.
+    /// Use the node context so an unaligned ARRAY JOIN is never pruned based on another query scope.
+    const auto & settings = top_query_node->getContext()->getSettingsRef();
     if (settings[Setting::enable_unaligned_array_join])
         return;
 
