@@ -338,9 +338,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
 
-            /// Truncate only removes data, so it must not hold the DDL guard: it may wait for merges or
-            /// for other replicas. Safe when data belongs to the UUID, as the storage outlives the name.
-            if (database->getUUID() != UUIDHelpers::Nil)
+            /// Only a replicated truncate is safe to run concurrently, and it may wait long enough to stall other DDL.
+            if (database->getUUID() != UUIDHelpers::Nil && table->supportsReplication())
                 ddl_guard.reset();
 
             /// Drop table data, don't touch metadata
