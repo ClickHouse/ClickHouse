@@ -93,7 +93,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM json_bf_structural_null WHERE j.needle = 'missing'
-    SETTINGS force_data_skipping_indices = 'idx'
+    SETTINGS force_data_skipping_indices = 'idx', parallel_replicas_for_non_replicated_merge_tree = 0
 )
 WHERE trim(explain) = 'Granules: 0/2';
 

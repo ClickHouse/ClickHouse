@@ -55,7 +55,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM json_bf_include_paths WHERE j.request_id = 'missing'
-    SETTINGS force_data_skipping_indices = 'exact_idx'
+    SETTINGS force_data_skipping_indices = 'exact_idx', parallel_replicas_for_non_replicated_merge_tree = 0
 )
 WHERE trim(explain) = 'Granules: 0/2';
 
@@ -63,7 +63,7 @@ SELECT trim(explain) FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM json_bf_include_paths WHERE j.created_at = 'missing'
-    SETTINGS force_data_skipping_indices = 'regexp_idx'
+    SETTINGS force_data_skipping_indices = 'regexp_idx', parallel_replicas_for_non_replicated_merge_tree = 0
 )
 WHERE trim(explain) = 'Granules: 0/2';
 
