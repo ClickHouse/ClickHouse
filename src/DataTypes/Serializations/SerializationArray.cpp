@@ -493,8 +493,6 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }
-
-    column = std::move(mutable_column);
 }
 
 
