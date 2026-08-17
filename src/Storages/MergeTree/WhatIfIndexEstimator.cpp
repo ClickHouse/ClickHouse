@@ -349,11 +349,14 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             /// ranges. No index on those parts would be read
             /// Nothing can satisfy a forced name here, so throw like a real read would
             for (const auto & forced_string : forced_strings)
-                for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, local_context->getSettingsRef()))
+            {
+                auto forced = parseIdentifiersOrStringLiteralsToSet(forced_string, local_context->getSettingsRef());
+                if (!forced.empty())
                     throw Exception(
                         ErrorCodes::INDEX_NOT_USED,
                         "Index {} is not used and setting 'force_data_skipping_indices' contains it",
-                        backQuoteIfNeed(name));
+                        backQuoteIfNeed(*forced.begin()));
+            }
 
             return buildResultWithoutScan(
                 *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
