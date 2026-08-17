@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -223,6 +224,27 @@ def _coverage_comment_snippet() -> str:
     return textwrap.dedent("".join(lines[start : end + 1]))
 
 
+def _wiring_snippet() -> str:
+    """Where the job turns the diff step's real on-disk state into an outcome.
+
+    The classifier is only as good as the arguments the job hands it, so this
+    block is executed rather than reconstructed: a call site that stops reading
+    the marker, or derives `_diff_ran` some other way, has to show up here.
+    """
+    lines = _job_source().splitlines(True)
+    start = next(i for i, l in enumerate(lines) if "_diff_report_dir = Path(TEMP_DIR)" in l)
+    end = next(i for i in range(start + 1, len(lines)) if "_diff_ran =" in lines[i])
+    return textwrap.dedent("".join(lines[start : end + 1]))
+
+
+def _diff_inputs_snippet() -> str:
+    """Where the job decides whether print_uncovered_code.py has this run's data."""
+    lines = _job_source().splitlines(True)
+    start = next(i for i, l in enumerate(lines) if "_diff_inputs_exist = (" in l)
+    end = next(i for i in range(start + 1, len(lines)) if lines[i].rstrip() == "        )")
+    return textwrap.dedent("".join(lines[start : end + 1]))
+
+
 class _DiffResultStub:
     """The two things the reporting block may do to a failed/ok diff result."""
 
@@ -288,6 +310,42 @@ def _run_snippet(snippet: str, **overrides):
     return "\n".join(printed), ns
 
 
+def _seed_diff_state(tmp_path, marker: str, report_ready: bool):
+    """Write the files the job reads: the real marker and the real report index."""
+    if marker:
+        (tmp_path / "diff_outcome.txt").write_text(marker + "\n", encoding="utf-8")
+    if report_ready:
+        report_dir = tmp_path / "llvm_coverage_diff_html_report"
+        report_dir.mkdir(exist_ok=True)
+        (report_dir / "index.html").write_text("<html></html>", encoding="utf-8")
+
+
+def _wired_outcome(tmp_path, marker: str, report_ready: bool, script_ok: bool):
+    """Run the job's own call site over real files. Returns (outcome, diff_ran)."""
+    _seed_diff_state(tmp_path, marker, report_ready)
+    # TEMP_DIR ends in a separator in production and some blocks concatenate it
+    # as a string, so a value without one probes a different path.
+    _, ns = _run_snippet(
+        _wiring_snippet(),
+        TEMP_DIR=str(tmp_path) + os.sep,
+        diff_res=_DiffResultStub(ok=script_ok),
+        Path=Path,
+    )
+    return ns["_diff_outcome"], ns["_diff_ran"]
+
+
+def _wired_inputs_exist(tmp_path, marker: str, report_ready: bool, script_ok: bool):
+    """Whether the job would run print_uncovered_code.py over this state."""
+    outcome, _ = _wired_outcome(tmp_path, marker, report_ready, script_ok)
+    _, ns = _run_snippet(
+        _diff_inputs_snippet(),
+        TEMP_DIR=str(tmp_path) + os.sep,
+        _diff_outcome=outcome,
+        Path=Path,
+    )
+    return ns["_diff_inputs_exist"]
+
+
 def _reported_reasons(script_ok: bool, marker: str, tmp_path) -> str:
     """Every reason the job gives the reader for the absence of a report."""
     outcome = _outcome(script_ok, marker, tmp_path)
@@ -312,6 +370,10 @@ def test_reporting_snippets_are_the_real_production_blocks():
     assert "Print Uncovered Code" in _print_uncovered_snippet()
     assert "Result.create_from" in _print_uncovered_snippet()
     assert "_has_coverage_data" in _coverage_comment_snippet()
+    assert "classify_diff_outcome" in _wiring_snippet()
+    assert "_diff_ran" in _wiring_snippet()
+    assert "changes.diff" in _diff_inputs_snippet()
+    assert "_diff_inputs_exist" in _diff_inputs_snippet()
 
 
 def test_tool_failure_is_not_reported_as_no_cpp_changes(tmp_path):
@@ -466,6 +528,95 @@ def test_a_marker_less_script_with_no_report_reports_no_outcome(tmp_path):
 
 def test_a_reported_report_runs_the_diff_branch(tmp_path):
     assert _outcome(True, _MARKER_REPORT, tmp_path, report_ready=False) == _MARKER_REPORT
+
+
+# ---------------------------------------------------------------------------
+# The production call site, driven over real files.
+#
+# Everything above proves things about classify_diff_outcome. These prove the
+# job calls it with the state it is looking at, and derives _diff_ran from the
+# answer -- otherwise a correct classifier can sit next to a call site that
+# ignores it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "marker,report_ready,script_ok,want_outcome,want_diff_ran",
+    [
+        # A marker on disk outranks a report directory an earlier run left.
+        (_MARKER_NO_CPP, True, True, _MARKER_NO_CPP, False),
+        # _diff_ran follows the outcome, not the directory listing.
+        (_MARKER_REPORT, False, True, _MARKER_REPORT, True),
+        # No marker and no report: the job knows it knows nothing.
+        ("", False, True, "unknown", False),
+        # A non-zero exit outranks every artifact on disk.
+        (_MARKER_REPORT, True, False, "failed", False),
+    ],
+)
+def test_the_job_reads_the_state_it_is_looking_at(
+    marker, report_ready, script_ok, want_outcome, want_diff_ran, tmp_path
+):
+    outcome, diff_ran = _wired_outcome(tmp_path, marker, report_ready, script_ok)
+    assert (outcome, diff_ran) == (want_outcome, want_diff_ran)
+
+
+@pytest.mark.parametrize(
+    "marker,inputs_expected",
+    [
+        # These have this run's own coverage slice to report on.
+        (_MARKER_REPORT, True),
+        (_MARKER_EMPTY, True),
+        # These do not, so a file present here is an earlier run's.
+        (_MARKER_NO_CPP, False),
+        (_MARKER_NO_DATA, False),
+    ],
+)
+def test_uncovered_code_analysis_only_reads_this_runs_data(
+    marker, inputs_expected, tmp_path
+):
+    # Both files present on disk, as a repeated run in one directory leaves them.
+    (tmp_path / "changes.diff").write_text("diff --git a/x b/x\n", encoding="utf-8")
+    (tmp_path / "current.changed.info").write_text(
+        "SF:/src/Foo.cpp\nDA:1,1\nend_of_record\n", encoding="utf-8"
+    )
+    assert (
+        _wired_inputs_exist(tmp_path, marker, report_ready=False, script_ok=True)
+        is inputs_expected
+    )
+
+
+def test_a_failed_script_never_reads_leftover_coverage_data(tmp_path):
+    # The 404 path: the script died between writing changes.diff and
+    # current.changed.info, so a present pair is not this run's.
+    (tmp_path / "changes.diff").write_text("diff --git a/x b/x\n", encoding="utf-8")
+    (tmp_path / "current.changed.info").write_text(
+        "SF:/src/Foo.cpp\nDA:1,1\nend_of_record\n", encoding="utf-8"
+    )
+    assert (
+        _wired_inputs_exist(tmp_path, "", report_ready=False, script_ok=False) is False
+    )
+
+
+def test_the_report_outcome_still_reads_its_own_inputs(tmp_path):
+    # The gate must not cost the one outcome that does have data.
+    (tmp_path / "changes.diff").write_text("diff --git a/x b/x\n", encoding="utf-8")
+    (tmp_path / "current.changed.info").write_text(
+        "SF:/src/Foo.cpp\nDA:1,1\nend_of_record\n", encoding="utf-8"
+    )
+    assert (
+        _wired_inputs_exist(tmp_path, _MARKER_REPORT, report_ready=True, script_ok=True)
+        is True
+    )
+
+
+def test_a_missing_input_file_still_blocks_the_analysis(tmp_path):
+    # The outcome says the run should have produced them; the file checks confirm
+    # it did, so both halves of the predicate stay load-bearing.
+    (tmp_path / "changes.diff").write_text("diff --git a/x b/x\n", encoding="utf-8")
+    assert (
+        _wired_inputs_exist(tmp_path, _MARKER_REPORT, report_ready=True, script_ok=True)
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -657,3 +808,25 @@ def test_the_job_classifies_every_real_script_run(_script_runs, tmp_path):
             report_ready=report,
         )
         assert outcome == expected[case], (case, log)
+
+
+@pytest.mark.parametrize(
+    "case,want_outcome,want_diff_ran",
+    [
+        ("no_cpp", _MARKER_NO_CPP, False),
+        ("no_data", _MARKER_NO_DATA, False),
+        ("empty", _MARKER_EMPTY, False),
+        ("report", _MARKER_REPORT, True),
+        ("gh_404", "failed", False),
+    ],
+)
+def test_the_job_reports_what_the_real_script_did(
+    case, want_outcome, want_diff_ran, _script_runs, tmp_path
+):
+    # End to end over the real files: the script writes a token, the job's own
+    # call site reads it, and the outcome is what the reader is told.
+    rc, marker, report, log = _script_runs[case]
+    outcome, diff_ran = _wired_outcome(
+        tmp_path, marker, report_ready=report, script_ok=(rc == 0)
+    )
+    assert (outcome, diff_ran) == (want_outcome, want_diff_ran), (case, log)

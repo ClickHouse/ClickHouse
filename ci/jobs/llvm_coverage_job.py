@@ -128,7 +128,7 @@ def classify_diff_outcome(script_ok: bool, marker: str, report_ready: bool) -> s
 # <reason>." sentence. The helpers below index it directly, so an outcome missing
 # from here is a crash rather than a silently empty reason.
 _DIFF_OUTCOME_REASON = {
-    DiffOutcome.REPORT_GENERATED: "inconsistent state - the report was generated",
+    DiffOutcome.REPORT_GENERATED: "a report was generated but not detected",
     DiffOutcome.NO_CPP_CHANGES: (
         "No coverable C/C++ source files changed"
         " (contrib/ is excluded from coverage)"
@@ -400,8 +400,13 @@ if __name__ == "__main__":
 
         # Generate report for changed blocks only
         _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
+        # These are the outcomes that have this run's own coverage slice to report
+        # on. In the others the file is absent, or belongs to an earlier run in the
+        # same directory and its numbers would be reported as this run's.
         _diff_inputs_exist = (
-            Path(TEMP_DIR + "changes.diff").exists()
+            _diff_outcome
+            in (DiffOutcome.REPORT_GENERATED, DiffOutcome.CURRENT_COVERAGE_EMPTY)
+            and Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
         if _diff_inputs_exist:
