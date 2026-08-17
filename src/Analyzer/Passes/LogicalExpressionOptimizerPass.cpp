@@ -1945,16 +1945,18 @@ private:
             QueryTreeNodePtr expression;
             bool constant_on_left = false;
 
-            if (const auto * lhs_literal = lhs->as<ConstantNode>())
+            /// A NULL-valued constant is not a usable bound, and its type can still be non-Nullable
+            /// (e.g. a NULL-valued `Variant`), so the `isNullable` early-return does not exclude it.
+            if (const auto * lhs_literal = lhs->as<ConstantNode>();
+                lhs_literal && !lhs_literal->getValue().isNull())
             {
-                chassert(!lhs_literal->getValue().isNull());
                 constant = lhs_literal;
                 expression = rhs;
                 constant_on_left = true;
             }
-            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>();
+                     rhs_literal && !rhs_literal->getValue().isNull())
             {
-                chassert(!rhs_literal->getValue().isNull());
                 constant = rhs_literal;
                 expression = lhs;
             }
