@@ -43,8 +43,8 @@ namespace DB
 struct AdaptiveAggregationSession;
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
-/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase, per-block
-/// staging for the missed rows, and the buffered chunks awaiting coalescing.
+/// Per-transform context of the adaptive aggregation: the thread's lifecycle phase and its
+/// staged-chunk builder (see `AdaptiveAggregationStaging.h`).
 struct AdaptiveAggregationProducer;
 
 /// All delayed records of one consumed block, grouped by bucket. A published chunk is

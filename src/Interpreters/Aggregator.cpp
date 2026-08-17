@@ -1890,7 +1890,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
         {
-            /// The staged stream proved repeat-dominated (see `publishDelayedRecords`): thaw and
+            /// The staged stream proved repeat-dominated (see `stageRecordedMisses`): thaw and
             /// return to the baseline checks below, permanently. The table resumes ordinary
             /// insertion; the records staged so far stay published and the merge drains them.
             /// A thread that has not frozen yet stands down the same way, so that it does not
@@ -1919,7 +1919,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                 if (params.max_bytes_before_external_group_by
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
-                    flushPendingChunks(*adaptive);
+                    flushStaging(*adaptive);
                     drainStagedChunksUnderMemoryPressure(*adaptive->session);
                 }
 

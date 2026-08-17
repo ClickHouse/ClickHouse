@@ -1089,7 +1089,7 @@ AggregatingTransform::AggregatingTransform(
     , updater(std::move(updater_))
 {
     if (many_data->adaptive_session)
-        adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+        adaptive_context = params->aggregator.createAdaptiveProducer(many_data->adaptive_session);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1300,7 +1300,7 @@ void AggregatingTransform::initGenerate()
     {
         /// Complete this thread's backlog contribution before the finish barrier below: the last
         /// finisher assembles the merge assuming every producer's staged records are enqueued.
-        params->aggregator.flushPendingChunks(*adaptive_context);
+        params->aggregator.flushStaging(*adaptive_context);
 
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
