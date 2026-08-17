@@ -295,6 +295,45 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
+/// Emit `main_header`'s columns, taken by name out of `proj_header`, so a stream that carries surplus
+/// pass-throughs is narrowed to the structure it must replace. Returns nullopt when the two already
+/// hold the same names in the same order, or when `proj_header` cannot supply some column.
+static std::optional<ActionsDAG> makeNarrowingDAG(const Block & proj_header, const Block & main_header)
+{
+    ActionsDAG dag;
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_by_name;
+    for (const auto & col : proj_header.getColumnsWithTypeAndName())
+    {
+        const auto * input = &dag.addInput(col);
+        inputs_by_name[input->result_name].push_back(input);
+    }
+
+    bool narrowed = proj_header.columns() != main_header.columns();
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(main_header.columns());
+
+    for (const auto & col_main : main_header.getColumnsWithTypeAndName())
+    {
+        auto it = inputs_by_name.find(col_main.name);
+        if (it == inputs_by_name.end() || it->second.empty())
+            return {};
+
+        const auto * node = it->second.front();
+        it->second.pop_front();
+
+        if (!narrowed && node != dag.getInputs()[outputs.size()])
+            narrowed = true;
+
+        outputs.push_back(node);
+    }
+
+    if (!narrowed)
+        return {};
+
+    dag.getOutputs() = std::move(outputs);
+    return dag;
+}
+
 static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block & main_header)
 {
     /// Materialize constants in case we don't have it in output header.
@@ -774,9 +813,20 @@ std::optional<String> optimizeUseNormalProjections(
     /// (`ActionsDAG::updateHeader` appends every un-consumed input) and would otherwise widen the
     /// output header, breaking the parent step's header contract. This protects both replacement
     /// branches below: the all-parts branch (which splices `next_node` directly) and the `Union` branch.
-    /// Materialize constants if needed and require equal structure, else skip (regular read stays correct).
+    /// Narrow those pass-throughs away and materialize constants if needed, then require equal
+    /// structure, else skip (regular read stays correct).
     const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
     const auto * proj_stream = &next_node->step->getOutputHeader();
+
+    if (auto narrowing = makeNarrowingDAG(**proj_stream, *main_stream))
+    {
+        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*narrowing));
+        proj_stream = &converting->getOutputHeader();
+        auto & expr_node = nodes.emplace_back();
+        expr_node.step = std::move(converting);
+        expr_node.children.push_back(next_node);
+        next_node = &expr_node;
+    }
 
     if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
     {
