@@ -408,7 +408,8 @@ WITH
     ) AS src_groups
 SELECT count(),
        uniqExact(new_group),
-       arraySort(groupUniqArray(timeSeriesGroupToTags(new_group)))
+       arraySort(groupUniqArray(timeSeriesGroupToTags(new_group))),
+       groupArray(timeSeriesGroupToTags(new_group))
 FROM
 (
     SELECT timeSeriesCopyTag(dest_group, src_group, 'src') AS new_group
@@ -446,7 +447,8 @@ WITH
     ) AS src_groups
 SELECT count(),
        uniqExact(new_group),
-       arraySort(groupUniqArray(timeSeriesGroupToTags(new_group)))
+       arraySort(groupUniqArray(timeSeriesGroupToTags(new_group))),
+       groupArray(timeSeriesGroupToTags(new_group))
 FROM
 (
     SELECT timeSeriesCopyTags(dest_group, src_group, ['src']) AS new_group

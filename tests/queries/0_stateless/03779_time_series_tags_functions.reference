@@ -67,7 +67,7 @@ timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:
 5	1	[[('shared','value')]]
 
 timeSeriesCopyTag vectorized two groups:
-6	3	[[('dest','0'),('src','10')],[('dest','1'),('src','11')],[('dest','2'),('src','12')]]
+6	3	[[('dest','0'),('src','10')],[('dest','1'),('src','11')],[('dest','2'),('src','12')]]	[[('dest','0'),('src','10')],[('dest','1'),('src','11')],[('dest','0'),('src','10')],[('dest','2'),('src','12')],[('dest','1'),('src','11')],[('dest','0'),('src','10')]]
 
 timeSeriesCopyTags vectorized two groups with collapsed outputs:
-4	2	[[('dest','0'),('src','same')],[('dest','1'),('src','same')]]
+4	2	[[('dest','0'),('src','same')],[('dest','1'),('src','same')]]	[[('dest','0'),('src','same')],[('dest','1'),('src','same')],[('dest','0'),('src','same')],[('dest','1'),('src','same')]]
