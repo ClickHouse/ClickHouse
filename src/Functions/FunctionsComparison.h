@@ -1960,6 +1960,15 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
+        if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                removeLowCardinalityAndNullable(left_type)))
+        {
+            validateExponentialTimeDecayingFloat64Column(
+                *col_with_type_and_name_left.column, *decay_length, getName());
+            validateExponentialTimeDecayingFloat64Column(
+                *col_with_type_and_name_right.column, *decay_length, getName());
+        }
+
         /// The case when arguments are the same (tautological comparison). Return constant.
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)

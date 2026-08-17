@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
 
@@ -111,6 +112,11 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
         const auto & sort_column_description = description[i];
 
         auto column = block.getColumnOrSubcolumnByName(sort_column_description.column_name);
+
+        if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                removeLowCardinalityAndNullable(column.type)))
+            validateExponentialTimeDecayingFloat64Column(
+                *column.column, *decay_length, "sorting");
 
         if (isCollationRequired(sort_column_description))
         {

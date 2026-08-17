@@ -525,6 +525,26 @@ FROM
     SELECT exponentialTimeDecayedSumState(10)(toFloat64(1), toFloat64(0)) AS state
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Generic tuple comparison and sorting must validate every reconstructed row.
+WITH
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
+SELECT malformed = valid; -- { serverError BAD_ARGUMENTS }
+
+WITH
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
+SELECT malformed < valid; -- { serverError BAD_ARGUMENTS }
+
+SELECT value
+FROM
+(
+    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS value
+    UNION ALL
+    SELECT _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
+)
+ORDER BY value; -- { serverError BAD_ARGUMENTS }
+
 -- Regular aggregates use aggregation properties when applying OrNull rewrites.
 SET enable_analyzer = 1;
 SELECT

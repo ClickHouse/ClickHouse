@@ -55,6 +55,11 @@ std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const Dat
 bool isExponentialTimeDecayingFloat64(const IDataType & type);
 bool isExponentialTimeDecayingFloat64(const DataTypePtr & type);
 
+/// Rejects rows whose redundant marker or canonical ordering fields do not match the type.
+/// Used before generic tuple comparison and sorting, which cannot see the custom type name.
+void validateExponentialTimeDecayingFloat64Column(
+    const IColumn & column, Float64 decay_length, const String & operation);
+
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory);
 
 }

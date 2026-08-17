@@ -1,6 +1,11 @@
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -120,6 +125,59 @@ bool isExponentialTimeDecayingFloat64(const IDataType & type)
 bool isExponentialTimeDecayingFloat64(const DataTypePtr & type)
 {
     return tryGetExponentialTimeDecayingFloat64DecayLength(type).has_value();
+}
+
+void validateExponentialTimeDecayingFloat64Column(
+    const IColumn & column, Float64 decay_length, const String & operation)
+{
+    ColumnPtr full_column = column.convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(full_column.get());
+
+    ColumnPtr nested_holder;
+    const IColumn * nested_column = full_column.get();
+    if (nullable)
+    {
+        nested_holder = nullable->getNestedColumnPtr()->convertToFullColumnIfLowCardinality();
+        nested_column = nested_holder.get();
+    }
+
+    const auto & tuple = assert_cast<const ColumnTuple &>(*nested_column);
+    const auto & signs = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & stored_decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+
+    for (size_t row = 0; row < tuple.size(); ++row)
+    {
+        if (nullable && nullable->isNullAt(row))
+            continue;
+
+        const Float64 stored_decay_length = stored_decay_lengths[row];
+        if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: stored decay length {} does not match type decay length {}",
+                operation,
+                stored_decay_length,
+                decay_length);
+
+        const Float64 sign = signs[row];
+        const Float64 signed_unit_time = signed_unit_times[row];
+        if (sign == 0)
+        {
+            if (signed_unit_time != 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed ExponentialTimeDecayingFloat64 value in {}: zero value must have zero signed unit time",
+                    operation);
+        }
+        else if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: expected a canonical sign and finite signed unit time",
+                operation);
+        }
+    }
 }
 
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
