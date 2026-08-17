@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- The test exercises Parquet, which is not built in fast-test images.
+
 SET allow_experimental_nullable_array_type = 1;
 
 DROP TABLE IF EXISTS nullable_array_format_null_as_default_src;
