@@ -112,6 +112,9 @@ public:
     const SortDescription & getSortDescription() const override { return result_description; }
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
+    const SortDescription & getPartitionByDescription() const { return partition_by_description; }
+
+    size_t getScatterPartitions() const { return scatter_partitions; }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
@@ -146,9 +149,15 @@ public:
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
+    /// `scatter_partitions != 0` means a fixed-shard-count scatter (`convertToScatteredFullSort`, used by
+    /// `parallel_full_sorting_merge`); `scatter_partitions` is not on the wire, so such a sort must stay
+    /// unserializable rather than have a worker silently rebuild it as an ordinary partitioned sort.
+    bool isSerializable() const override
+    {
+        return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
+    }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

@@ -446,7 +446,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool cleanup,
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
-    bool need_prefix,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
@@ -524,7 +523,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         cleanup,
         std::move(merging_params),
-        need_prefix,
         projection,
         parent_part,
         nullptr,
@@ -545,8 +543,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextMutablePtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder,
-    bool need_prefix)
+    TableLockHolder & holder)
 {
     /// Building the mutation pipeline can run nested blocking pipelines via `CompletedPipelineExecutor` -
     /// most notably `KeyCondition::buildOrderedSetInplace` materializing the right side of `x IN (subquery)`
@@ -554,6 +551,8 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// query context's interactive-cancel callback, so without one it blocks server shutdown and
     /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
+    /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
+    /// distinguish a cancelled build from a completed one.
     const String partition_id = future_part->part_info.getPartitionId();
     auto is_cancelled = [&blocker = merges_blocker, merge_entry, partition_id]()
     {
@@ -570,18 +569,24 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
 
         return false;
     };
-    context->setInteractiveCancelCallback(is_cancelled);
+
+    auto throw_if_cancelled = [is_cancelled]
+    {
+        if (is_cancelled())
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+    };
+
+    context->setInteractiveCancelCallback(
+        [throw_if_cancelled]
+        {
+            throw_if_cancelled();
+            return false;
+        });
 
     /// The IO layer does not observe the callback above; it polls the thread's cancellation predicates,
     /// which are constant `false` for a merge/mutate group because they resolve through a process-list
     /// element it does not have. Installed here because this runs before the group's first attach.
-    (*merge_entry)->thread_group->setCancellationPredicates(
-        is_cancelled,
-        [is_cancelled]
-        {
-            if (is_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-        });
+    (*merge_entry)->thread_group->setCancellationPredicates(is_cancelled, throw_if_cancelled);
 
     return std::make_shared<MutateTask>(
         future_part,
@@ -595,8 +600,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker,
-        need_prefix);
+        merges_blocker);
 }
 
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
