@@ -46,7 +46,7 @@ SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc,
 SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc, host) (n)', 130) ORDER BY tags;
 
 SELECT '-- the shared argument is a range function, range';
-SELECT * FROM prometheusQueryRange('prometheus', 'sum(rate(m[20])) - max(rate(m[20]))', 110, 140, 10) ORDER BY tags;
+SELECT * FROM prometheusQueryRange('prometheus', 'sum(last_over_time(m[20])) - max(last_over_time(m[20]))', 110, 140, 10) ORDER BY tags;
 SELECT '-- nested aggregation pairs, instant';
 SELECT * FROM prometheusQuery('prometheus', '(sum(m) - max(m)) / sum(m)', 130) ORDER BY tags;
 SELECT '-- the shared argument matches no series, instant';
@@ -72,5 +72,10 @@ SELECT '-- not shared: one side is not an aggregation, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - m', 130) ORDER BY tags;
 SELECT '-- not shared: quantile is not a one-argument aggregation, instant';
 SELECT * FROM prometheusQuery('prometheus', 'quantile(0.5, m) - max(m)', 130) ORDER BY tags;
+
+SELECT '-- invalid: scalar argument is a user error, not a logical error, instant';
+SELECT * FROM prometheusQuery('prometheus', 'sum(1) - max(1)', 130) ORDER BY tags; -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT '-- invalid: range-vector argument is a user error, not a logical error, range';
+SELECT * FROM prometheusQueryRange('prometheus', 'sum(m[20]) - max(m[20])', 110, 140, 10) ORDER BY tags; -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 DROP TABLE prometheus;

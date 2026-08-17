@@ -11,6 +11,12 @@
 #include <algorithm>
 
 
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
+
+
 namespace DB::PrometheusQueryToSQL
 {
 
@@ -93,6 +99,17 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     auto right_transform = getOneArgumentAggregationTransform(right_aggregation->operator_name);
     chassert(left_transform && right_transform);
 
+    /// The fused path replaces two applyOneArgumentAggregationOperator calls, so it must preserve the same
+    /// argument-type contract: a scalar or range vector argument (for example `sum(1) - max(1)` or
+    /// `sum(m[5m]) - max(m[5m])`) is a user error, not a logical error from toVectorGrid.
+    if (argument.type != ResultType::INSTANT_VECTOR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Aggregation operator '{}' expects an argument of type {}, but expression {} has type {}",
+                        left_aggregation->operator_name, ResultType::INSTANT_VECTOR,
+                        getPromQLText(argument, context), argument.type);
+    }
+
     /// If the argument is empty then both aggregations are empty, and so is the result.
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
@@ -103,40 +120,59 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     res.node = operator_node;
     res.type = operator_node->result_type;
 
-    /// SELECT <group> AS group,
+    /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid ambiguity with the
+    /// input `group` column when the alias and the source column share the same name (see applyOneArgumentAggregationOperator).
+    ///
+    /// SELECT <group> AS new_group,
     ///        arrayMap((x, y) -> f(x, y), <left_aggregate>(values), <right_aggregate>(values)) AS values
     /// FROM argument
-    /// [GROUP BY group]
+    /// [GROUP BY new_group]
     /// HAVING notEmpty(values)
-    SelectQueryBuilder builder;
+    ASTPtr aggregation_query;
+    {
+        SelectQueryBuilder builder;
 
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
-    builder.from_table = context.subqueries.back().name;
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+        builder.from_table = context.subqueries.back().name;
 
-    ASTPtr new_group = transformGroupASTForAggregationOperator(
-        left_aggregation, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
+        ASTPtr new_group = transformGroupASTForAggregationOperator(
+            left_aggregation, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
-    builder.select_list.push_back(std::move(new_group));
-    builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(std::move(new_group));
+        builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-    builder.select_list.push_back(makeASTFunction(
-        "arrayMap",
-        makeASTFunction(
-            "lambda",
-            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
-            applyMathBinaryOperatorToAST(
-                operator_node->operator_name, make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
-        left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type),
-        right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type)));
-    builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.select_list.push_back(makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                applyMathBinaryOperatorToAST(
+                    operator_node->operator_name, make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
+            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type),
+            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type)));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (left_aggregation->by || left_aggregation->without)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        if (left_aggregation->by || left_aggregation->without)
+            builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-    /// Drop empty-values rows, see applyOneArgumentAggregationOperator().
-    builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        /// Drop empty-values rows, see applyOneArgumentAggregationOperator().
+        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
-    res.select_query = builder.getSelectQuery();
+        aggregation_query = builder.getSelectQuery();
+    }
+
+    /// Step 2: rename `new_group` back to `group`.
+    {
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
+
+        SelectQueryBuilder builder;
+        builder.from_table = context.subqueries.back().name;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+        res.select_query = builder.getSelectQuery();
+    }
 
     return res;
 }
