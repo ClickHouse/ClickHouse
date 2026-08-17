@@ -486,11 +486,17 @@ class _EventHiddenOnce:
     workers at the bottom, and the reap is the loop's exit condition. This forces
     the claim to land in that gap on every run instead of waiting for the parent
     to be descheduled there.
+
+    Hiding one observation is necessary but not sufficient: the reap only ends
+    the loop once every worker is dead, so the hidden observation must be spent
+    on an iteration that reaps the last one. Waiting for the children here makes
+    that a precondition rather than a scheduling accident.
     """
 
-    def __init__(self):
+    def __init__(self, timeout=30.0):
         self._inner = multiprocessing.Event()
         self._observations_after_set = 0
+        self._timeout = timeout
 
     def set(self):
         self._inner.set()
@@ -498,6 +504,14 @@ class _EventHiddenOnce:
     def is_set(self):
         if not self._inner.is_set():
             return False
+        if self._observations_after_set == 0:
+            for child in multiprocessing.active_children():
+                child.join(timeout=self._timeout)
+                if child.is_alive():
+                    raise AssertionError(
+                        f"worker {child.name} outlived the {self._timeout}s join, "
+                        "so the reap cannot end the loop on the hidden observation"
+                    )
         self._observations_after_set += 1
         return self._observations_after_set > 1
 

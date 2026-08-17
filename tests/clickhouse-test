@@ -1330,8 +1330,8 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the liveness check fails, because the SQL dump would
-    issue the same query the check just could not complete.  This keeps
+    Self-skips when the liveness check fails, because this dump is another
+    query over the path the check just could not complete.  This keeps
     callers honest: they can invoke this from any context (per-test
     timeout, end-of-run hung-check) without first probing the server
     themselves.
