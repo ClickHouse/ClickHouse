@@ -1,12 +1,14 @@
 """Tests for the config-time CIDB reachability invariant of the workflow filter hooks.
 
-`Config Workflow` is declared with `timeout=600` (`ci/praktika/native_jobs.py`), and
+`Config Workflow` is declared with `timeout=1200` (`ci/praktika/native_jobs.py`), and
 praktika marks every dependee job `DROPPED` when it fails. `CIDB.query` retries 5 times
 with a 60s per-request timeout and exponential backoff, so one query can take
 5 * 60 + (2 + 4 + 8 + 16) = 330s. The filter hooks run once per job
 (`ci/praktika/native_jobs.py`), so a single CIDB call in `should_skip_job` is multiplied
-by the number of jobs that reach it and can outlast the job's whole allowance - a
-transient CIDB slowdown then voids the entire test matrix.
+by the number of jobs that reach it: three such queries outlast the job's whole
+allowance, and a transient CIDB slowdown then voids the entire test matrix. Most of that
+allowance is already committed to populating the submodule cache
+(`SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC`), which leaves far less than 1200s of slack.
 
 The hooks must therefore issue no CIDB query at all. That is asserted here by
 monkeypatching `requests.post` in `ci.praktika.cidb` (the single network boundary of

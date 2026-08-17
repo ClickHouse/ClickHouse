@@ -41,7 +41,8 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    timeout=600,
+    # Must stay above SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC plus the rest of the job.
+    timeout=1200,
 )
 
 _docker_build_manifest_job = Job.Config(
@@ -259,11 +260,13 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             print(f"Submodule cache miss, creating: {s3_path}")
             Shell.check("git submodule sync", verbose=True, strict=True)
             Shell.check("git submodule init", verbose=True, strict=True)
+            # Bounded below the job's own timeout, so an overrun lands in the handler
+            # below rather than killing the job. No retries: the bound is per attempt.
             Shell.check(
+                f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
                 "git submodule update --depth=1 --single-branch --jobs 64",
                 verbose=True,
                 strict=True,
-                retries=3,
                 env=_submodule_auth_env(workflow),
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"

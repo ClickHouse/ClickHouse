@@ -113,6 +113,10 @@ class _Settings:
     # (required for private submodules); otherwise they run anonymously.
     ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
+    # Bound on the clone that populates the submodule cache. Exceeding it discards the
+    # cache and dependent jobs clone from GitHub instead.
+    SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 600
+
     CACHE_VERSION: int = 1
     CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
@@ -222,6 +226,7 @@ _USER_DEFINED_SETTINGS = [
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",
     "ENABLE_SUBMODULE_CLONE_AUTH",
+    "SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
