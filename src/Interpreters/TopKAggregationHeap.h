@@ -1,16 +1,13 @@
 #pragma once
 #include <algorithm>
 #include <limits>
-#include <memory>
-#include <string>
-#include <type_traits>
 #include <vector>
 
+#include <base/defines.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
-#include <base/defines.h>
-#include <Common/assert_cast.h>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVector.h>
@@ -113,7 +110,6 @@ struct TopKAggregationHeap
         heap_column = nullptr;
         heap_indices = {};
         hash_table_keys = {};
-        hash_table_key_storage = decltype(hash_table_key_storage){};
         skip_bitmap = {};
         trim_filter = {};
         trim_old_to_new = {};
@@ -172,7 +168,7 @@ struct TopKAggregationHeap
             new_idx = heap_column->size();
             heap_column->insertFrom(*source_columns[0], source_row);
         }
-        hash_table_keys.push_back(persistHashTableKey(hash_table_key));
+        hash_table_keys.push_back(hash_table_key);
         heap_indices.push_back(new_idx);
 
         std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
@@ -269,16 +265,6 @@ struct TopKAggregationHeap
                 compacted_hash_table_keys.push_back(std::move(hash_table_keys[i]));
         hash_table_keys = std::move(compacted_hash_table_keys);
 
-        if constexpr (std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>)
-        {
-            std::vector<std::unique_ptr<std::string>> compacted_hash_table_key_storage;
-            compacted_hash_table_key_storage.reserve(heap_indices.size());
-            for (size_t i = 0; i < col_size; ++i)
-                if (trim_filter[i])
-                    compacted_hash_table_key_storage.push_back(std::move(hash_table_key_storage[i]));
-            hash_table_key_storage = std::move(compacted_hash_table_key_storage);
-        }
-
         for (auto & idx : heap_indices)
             idx = trim_old_to_new[idx];
 
@@ -310,47 +296,6 @@ private:
     size_t tie_scan_size = 0;
 
     std::vector<size_t> low_cardinality_columns;
-
-    std::vector<std::unique_ptr<std::string>> hash_table_key_storage;
-
-    Key persistHashTableKey(const Key & key)
-    {
-        /// The key returned by `emplaceKey` can still refer to the source block:
-        /// string hash tables encode short keys inline and discard their arena
-        /// holder, while `ArenaPackedStringHolder` is rebased during emplacement
-        /// after its pre-emplace value was copied. The heap outlives the block, so
-        /// keep pointer-bearing keys in owned storage before saving them for erase.
-        if constexpr (std::is_same_v<Key, std::string_view>)
-        {
-            if (key.empty())
-            {
-                hash_table_key_storage.push_back(nullptr);
-                return {};
-            }
-            auto storage = std::make_unique<std::string>(key);
-            std::string_view persistent_key = *storage;
-            hash_table_key_storage.push_back(std::move(storage));
-            return persistent_key;
-        }
-        else if constexpr (std::is_same_v<Key, PackedStringRef>)
-        {
-            if (key.heapSize() == 0)
-            {
-                hash_table_key_storage.push_back(nullptr);
-                return key;
-            }
-            auto storage = std::make_unique<std::string>(static_cast<std::string_view>(key));
-            auto persistent_key = key;
-            if (persistent_key.isMedium())
-                persistent_key.setMediumPointer(storage->data());
-            else
-                persistent_key.setLargePointer(storage->data());
-            hash_table_key_storage.push_back(std::move(storage));
-            return persistent_key;
-        }
-        else
-            return key;
-    }
 
     void compactDictionaries()
     {
@@ -425,9 +370,6 @@ private:
         heap_indices.reserve(reserve_hint);
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
-        hash_table_key_storage.clear();
-        if constexpr (std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>)
-            hash_table_key_storage.reserve(reserve_hint);
         findLowCardinalityColumns();
         initNumericSkipFn();
     }
@@ -462,9 +404,6 @@ private:
         heap_indices.reserve(reserve_hint);
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
-        hash_table_key_storage.clear();
-        if constexpr (std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>)
-            hash_table_key_storage.reserve(reserve_hint);
         findLowCardinalityColumns();
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
