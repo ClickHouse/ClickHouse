@@ -3,6 +3,9 @@
 2
 -- fixed metric name survives a simple vector function
 1
+-- fixed metric name survives an aggregation that keeps __name__
+1
+2
 -- fixed metric name survives offset
 1
 -- a non-equality metric matcher keeps the duplicate check
