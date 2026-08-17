@@ -160,7 +160,7 @@ public:
     /// materialized view and rows are silently dropped. This resolves the forwarding chain to the concrete
     /// local target and reports whether it has any dependent view; it fails closed (returns true) when the
     /// ultimate target is not cheaply known here (`Distributed`, `Buffer`, unresolvable, or too deep).
-    static bool forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth = 0);
+    static bool forwardedInsertReachesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether inserting into `storage` can reach a dependent materialized view that is *hidden* from
     /// `collectAllDependencies`. An `Alias` executes a full nested `INSERT` into its target per sink
@@ -176,7 +176,12 @@ public:
     /// views also make the write fan-out bypass `parallel_view_processing = 0` (each branch's nested
     /// `INSERT` pushes the hidden views concurrently), so `InterpreterInsertQuery` also keeps the
     /// insert single-stream when this probe reports true and that setting is disabled.
-    static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
+    static bool forwardedInsertHidesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether `storage` has a dependent materialized view which the nested `INSERT` will execute.
+    /// This mirrors the pruning done by `collectAllDependencies` for unavailable views, dropped
+    /// targets, stale dependency entries, and errors ignored by `materialized_views_ignore_errors`.
+    static bool hasExecutableDependentView(const StoragePtr & storage, ContextPtr context);
 
     /// Whether the INSERT is a non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with
     /// `insert_quorum_parallel = 0`). Such an insert permits a single in-flight quorum part per table:

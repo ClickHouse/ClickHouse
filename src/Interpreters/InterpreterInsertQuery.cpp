@@ -395,9 +395,9 @@ static bool insertDeduplicationNeedsSingleStream(const StoragePtr & table, const
 
     const bool forwarded_dependent_mv_dedup_hazard = dedup_enabled_for_insert
         && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
-        && ((rebuilds_dedup_ids && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
+        && ((rebuilds_dedup_ids && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table, context))
             || (settings[Setting::use_strict_insert_block_limits]
-                && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table)));
+                && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context)));
 
     const bool forwards_to_separate_context =
         InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
@@ -506,7 +506,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     /// single-stream; the nested `INSERT` then observes the same settings and serializes its own
     /// view graph.
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
-        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context);
     const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
@@ -843,7 +843,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // deduplication hazard. (`Distributed` and `Buffer` also hide their dependent views, but they
     // are already kept single-stream by `forwards_to_separate_context`.)
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
-        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context);
 
     const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 

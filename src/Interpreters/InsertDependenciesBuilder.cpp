@@ -900,7 +900,7 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
 }
 
 
-bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -909,15 +909,15 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertReachesDependentView(proxy->getNested(), depth + 1);
+        return forwardedInsertReachesDependentView(proxy->getNested(), context, depth + 1);
 
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and `Buffer`
     /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view,
@@ -931,11 +931,11 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     /// (or a further view down the chain) actually deduplicates is not verified here - the outer parallel
     /// fan-out fails closed on the presence of a dependent view, keeping the write single-stream. A target
     /// with no dependent view can never lose rows to the fan-out, so `max_insert_threads` keeps applying.
-    return !DatabaseCatalog::instance().getDependentViews(storage->getStorageID()).empty();
+    return hasExecutableDependentView(storage, context);
 }
 
 
-bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -946,7 +946,7 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
 
     /// `Distributed` and `Buffer` forward the write through a separate (remote or background) `INSERT`
@@ -963,14 +963,51 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertHidesDependentView(target, depth + 1);
+        return !target || forwardedInsertHidesDependentView(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertHidesDependentView(proxy->getNested(), depth + 1);
+        return forwardedInsertHidesDependentView(proxy->getNested(), context, depth + 1);
 
     /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
     /// hazard scan over `storages` checks them (and whether their targets actually deduplicate)
     /// directly - nothing is hidden.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & storage, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        try
+        {
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+            if (!view)
+                continue;
+
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                return true;
+
+            const auto metadata = view->getInMemoryMetadataPtr(context, false);
+            if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+                continue;
+
+            if (!materialized_view->tryGetTargetTable()
+                && settings[Setting::ignore_materialized_views_with_dropped_target_table])
+                continue;
+
+            return true;
+        }
+        catch (...)
+        {
+            if (!settings[Setting::materialized_views_ignore_errors])
+                return true;
+        }
+    }
+
     return false;
 }
 bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
@@ -1152,18 +1189,33 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
 
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, init_context);
-        if (!view)
-            return true;
+        try
+        {
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, init_context);
+            if (!view)
+                continue;
 
-        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
-        if (!materialized_view)
-            return true;
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                return true;
 
-        auto target = materialized_view->tryGetTargetTable();
-        if (!target || storageMayWriteToReplicatedTable(target, depth + 1)
-            || dependentViewMayWriteToReplicatedTable(target, depth + 1))
-            return true;
+            const auto metadata = view->getInMemoryMetadataPtr(init_context, false);
+            if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+                continue;
+
+            auto target = materialized_view->tryGetTargetTable();
+            if (!target && ignore_materialized_views_with_dropped_target_table)
+                continue;
+
+            if (!target || storageMayWriteToReplicatedTable(target, depth + 1)
+                || dependentViewMayWriteToReplicatedTable(target, depth + 1))
+                return true;
+        }
+        catch (...)
+        {
+            if (!materialized_views_ignore_errors)
+                return true;
+        }
     }
 
     return false;
@@ -1380,7 +1432,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         if ((strict_insert_block_limits || storageRebuildsDeduplicationIdsOnInsert(entry.second))
             && storageDeduplicatesBlocksOnInsert(entry.second))
             return true;
-        return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second);
+        return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second, init_context);
     });
     /// A dependent-MV target that forwards its write through a nested `INSERT` in a *separate* context
     /// (`Buffer` flushes in its own context; `Distributed` writes on a remote shard that may itself
