@@ -631,14 +631,21 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
     db_input.SetName(namespace_name);
     create_request.SetDatabaseInput(db_input);
 
-    glue_client->CreateDatabase(create_request);
+    auto outcome = glue_client->CreateDatabase(create_request);
+    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ALREADY_EXISTS)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling CreateDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
 }
 
 void GlueCatalog::createTable(
@@ -648,8 +655,6 @@ void GlueCatalog::createTable(
     Poco::JSON::Object::Ptr metadata_content,
     DB::CompressionMethod metadata_compression_method) const
 {
-    createNamespaceIfNotExists(namespace_name);
-
     String effective_metadata_path = new_metadata_path;
 
     DB::ObjectStoragePtr written_metadata_storage;

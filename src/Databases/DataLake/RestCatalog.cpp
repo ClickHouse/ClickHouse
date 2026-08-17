@@ -1704,6 +1704,22 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
+
+    /// Check existence first: creation may be denied to a principal that is still
+    /// allowed to use a pre-provisioned namespace.
+    const std::string check_endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    try
+    {
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        return;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw;
+    }
+
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
@@ -1718,9 +1734,11 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        DB::tryLogCurrentException(log);
+        /// Lost the race to a concurrent creator.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw;
     }
 }
 
@@ -1733,16 +1751,7 @@ void RestCatalog::createTable(
     Poco::JSON::Object::Ptr metadata_content,
     DB::CompressionMethod /*metadata_compression_method*/) const
 {
-    String location = metadata_content->getValue<String>("location");
-
-    /// `location` is the table location (base/namespace/table). The namespace's default location must
-    /// point at the namespace base (base/namespace), not at this first table's directory; otherwise
-    /// later tables created in the same namespace without an explicit location could be placed under
-    /// the first table's directory. Strip the trailing table-name segment to get the namespace base.
-    String namespace_location = location;
-    if (const String table_suffix = "/" + table_name; namespace_location.ends_with(table_suffix))
-        namespace_location.resize(namespace_location.size() - table_suffix.size());
-    createNamespaceIfNotExists(namespace_name, namespace_location);
+    const String location = metadata_content->getValue<String>("location");
 
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();

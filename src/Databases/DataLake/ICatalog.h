@@ -250,7 +250,9 @@ public:
     /// Catalog-wide base location for new tables, e.g. `s3://warehouse/data`. Empty if unknown.
     virtual String getDefaultBaseLocation() const { return ""; }
 
-    /// Creates new table in catalog.
+    /// Creates new table in catalog. Callers must ensure the namespace exists before
+    /// writing any table files to storage: a catalog that shares its storage view with
+    /// the data refuses to create a namespace over a plain directory those files create.
     /// `metadata_compression_method` is the codec requested by `iceberg_metadata_compression_method`. It is
     /// only meaningful for catalogs that write the initial metadata file themselves (i.e. when
     /// `new_metadata_path` is empty): they must name the file `v1.<ext>.metadata.json` and compress its
@@ -261,6 +263,9 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr metadata_content,
         DB::CompressionMethod metadata_compression_method) const;
+
+    /// Creates the namespace unless it already exists.
+    virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
