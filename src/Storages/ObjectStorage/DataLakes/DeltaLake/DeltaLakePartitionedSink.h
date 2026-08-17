@@ -93,8 +93,7 @@ private:
     const size_t data_file_max_bytes;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
-    /// `partition_strategy->getFormatHeader()` with each column's type replaced by the Delta write-schema
-    /// type, so the data files are written to match the Delta log (e.g. a declared `UInt8` -> `short`).
+    const Block format_header;
     const SharedHeader write_format_header;
     const String write_format;
     const String write_compression_method;

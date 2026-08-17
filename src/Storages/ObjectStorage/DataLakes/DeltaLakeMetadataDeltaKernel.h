@@ -71,12 +71,14 @@ public:
     }
 
     /// Initialize a new Delta table by writing commit 0, or attach to an existing `_delta_log`; returns true if successfully created.
+    /// `delta_log_exists` is the (already computed) result of `deltaLogExists` for the target path, passed in to avoid a redundant listing.
     static bool createTable(
         const ObjectStoragePtr & object_storage_,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,
         const ColumnsDescription & columns,
         ASTPtr partition_by,
+        bool delta_log_exists,
         bool /* if_not_exists */);
 
     /// CREATE TABLE entry point when the kernel is enabled: validate the declared columns, write commit 0

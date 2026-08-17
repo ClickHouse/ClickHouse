@@ -2,12 +2,18 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
 
 #include <fmt/ranges.h>
+
+namespace ProfileEvents
+{
+    extern const Event DeltaLakeDeltaLogExistenceChecks;
+}
 
 namespace DB
 {
@@ -51,12 +57,10 @@ std::vector<String> listFiles(
 
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 {
-    /// List with the `_delta_log/` directory prefix (the trailing slash excludes sibling prefixes like
-    /// `_delta_log_backup/`) and fetch at most one object: we only need to know the directory is non-empty.
+    ProfileEvents::increment(ProfileEvents::DeltaLakeDeltaLogExistenceChecks);
+    /// The trailing slash on the `_delta_log/` prefix excludes sibling prefixes like `_delta_log_backup/`.
     const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
-    RelativePathsWithMetadata files;
-    object_storage.listObjects(delta_log_dir, files, /* max_keys */ 1);
-    return !files.empty();
+    return object_storage.existsOrHasAnyChild(delta_log_dir);
 }
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)

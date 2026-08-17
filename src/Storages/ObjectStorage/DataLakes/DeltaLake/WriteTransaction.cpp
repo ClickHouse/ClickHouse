@@ -291,13 +291,11 @@ void WriteTransaction::createTable(const DB::Names & partition_columns)
     DeltaLake::validateSchemaForDeltaCreate(table_schema);
 
     if (!partition_columns.empty())
-    {
-        /// Partition columns are kept only in ClickHouse metadata: the v0.23.0 FFI `get_create_table_builder` has no `with_data_layout(Partitioned)` setter yet.
-        LOG_WARNING(log,
-            "PARTITION BY columns are not yet persisted into the Delta log "
-            "(kernel FFI does not expose with_data_layout): {}",
+        /// The kernel FFI has no `with_data_layout(Partitioned)` setter yet, so reject rather than silently write an unpartitioned table.
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "PARTITION BY is not yet supported for DeltaLake CREATE TABLE (columns: {})",
             fmt::join(partition_columns, ", "));
-    }
 
     /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
     kernel_helper->prepareForTableCreation();
@@ -313,15 +311,14 @@ void WriteTransaction::createTable(const DB::Names & partition_columns)
     using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
 
-    /// If the visitor captured an exception (rather than unwinding through Rust frames), surface it before touching the result.
     auto builder_result = ffi::get_create_table_builder(
         DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
         &engine_schema,
         DeltaLake::KernelUtils::toDeltaString(engine_info),
         engine.get());
+    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder"));
     if (schema_state.exception)
         std::rethrow_exception(schema_state.exception);
-    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder"));
 
     /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
     KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(

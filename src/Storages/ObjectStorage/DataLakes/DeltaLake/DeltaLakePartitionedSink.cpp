@@ -201,7 +201,8 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
-    , write_format_header(makeWriteFormatHeader(partition_strategy->getFormatHeader(), delta_transaction_->getWriteSchema()))
+    , format_header(partition_strategy->getFormatHeader())
+    , write_format_header(makeWriteFormatHeader(format_header, delta_transaction_->getWriteSchema()))
     , write_format(write_format_)
     , write_compression_method(write_compression_method_)
 {
@@ -390,7 +391,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
         }
         auto & data_file = data_files.back();
         /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-        Chunk write_chunk = castChunkToWriteSchema(partition_chunk, partition_strategy->getFormatHeader(), *write_format_header);
+        Chunk write_chunk = castChunkToWriteSchema(partition_chunk, format_header, *write_format_header);
         data_file.written_bytes += write_chunk.bytes();
         data_file.written_rows += write_chunk.getNumRows();
         data_file.sink->consume(write_chunk);

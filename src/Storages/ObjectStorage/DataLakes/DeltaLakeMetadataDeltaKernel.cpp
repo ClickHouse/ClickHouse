@@ -727,6 +727,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     const ContextPtr & local_context,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
+    bool delta_log_exists,
     bool /* if_not_exists */)
 {
     auto log = getLogger("DeltaLakeMetadataDeltaKernel");
@@ -739,7 +740,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     /// columns are not required to match the table's schema: as with any DeltaLake read, ClickHouse adapts
     /// them to the data (a genuinely wrong column surfaces as a catchable error at read time).
     const auto data_path = configuration_ptr->getRawPath().path;
-    if (deltaLogExists(*object_storage_, data_path))
+    if (delta_log_exists)
     {
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
         return false;
@@ -846,7 +847,7 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     bool created_fresh = false;
     if (has_explicit_columns)
         created_fresh = createTable(
-            object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
+            object_storage, configuration, local_context, *columns, partition_by, delta_log_exists, if_not_exists);
     else if (!delta_log_exists)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
