@@ -143,8 +143,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     WhatIfIndexEstimator::IndexResult result;
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
-    result.total_parts = analysis.parts_before_pk;
-    result.total_marks = analysis.total_marks_pk;
+    result.total_parts = data.getActivePartsCount();
+    result.total_marks = data.getTotalMarksCount();
 
     /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])

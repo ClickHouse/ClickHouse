@@ -36,7 +36,6 @@ public:
         enum EstimateSource { Empirical, Statistical, ApplicabilityOnly };
         EstimateSource estimate_source = ApplicabilityOnly;
 
-        /// both pairs come from the same analysis, so sampled can never exceed total
         UInt64 sampled_parts = 0;
         UInt64 total_parts = 0;
         UInt64 sampled_marks = 0;
