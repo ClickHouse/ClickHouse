@@ -22,7 +22,7 @@ export const glossaryMetadata = {
   final: { aliases: ['still see duplicates', 'query-time merge'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
   granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
   'incremental-materialized-view': { aliases: ['insert trigger'], learnMore: '/materialized-view/incremental-materialized-view' },
-  json: { aliases: ['semi-structured', 'semi structured', 'VARIANT', 'STRUCT', 'RECORD'], code: true, learnMore: '/sql-reference/data-types/newjson' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
   'materialized-view': { aliases: ['MV', 'stored query', 'insert trigger', 'dynamic table', 'dynamic tables'], learnMore: '/materialized-views' },
   merge: { learnMore: '/merges' },
   mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
@@ -34,7 +34,6 @@ export const glossaryMetadata = {
   'primary-key': { aliases: ['ORDER BY', 'sorting key', 'unique key', 'unique constraint'], learnMore: '/concepts/core-concepts/primary-indexes' },
   projection: { aliases: ['projection vs materialized view', 'alternate ordering'], learnMore: '/data-modeling/projections' },
   'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view', 'scheduled query', 'scheduled queries'], learnMore: '/materialized-view/refreshable-materialized-view' },
-  'replica-aware-routing': { aliases: ['replica aware routing', 'sticky routing', 'sticky replica routing', 'sticky replicas', 'sticky sessions', 'session affinity'], learnMore: '/manage/replica-aware-routing' },
   replacingmergetree: { aliases: ['upsert', 'deduplication', 'still have duplicates', 'MERGE statement'], code: true, learnMore: '/guides/replacing-merge-tree' },
   'secondary-index': { learnMore: '/optimize/skipping-indexes' },
   'skipping-index': { learnMore: '/optimize/skipping-indexes' },
@@ -161,10 +160,6 @@ A refreshable materialized view periodically reruns its query over the full data
 ## Replica {#replica}
 
 A replica is a server or compute instance that maintains or accesses the same logical table data as other replicas for availability and query capacity. With `ReplicatedMergeTree`, replicas maintain independent copies of data; ClickHouse Cloud replicas using `SharedMergeTree` share object storage instead.
-
-## Replica-aware routing {#replica-aware-routing}
-
-Replica-aware routing in ClickHouse Cloud is a best-effort mechanism that routes HTTP requests with the same routing value to the same replica. It can preserve temporary tables or session state across related requests, improve reuse of replica-local caches, and provide read-after-write consistency. The mapping can change when the service's replica count changes, and it doesn't provide workload isolation.
 
 ## Secondary index {#secondary-index}
 

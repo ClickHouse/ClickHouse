@@ -48,19 +48,23 @@ export const Glossary = ({ children, metadata = {} }) => {
   }, []);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const normalizedDescriptionQuery = normalizedQuery.replace(/[^a-z0-9]+/g, ' ').trim();
   const visibleEntries = normalizedQuery
     ? entries
         .map((entry, index) => {
           const term = entry.term.toLocaleLowerCase();
           const aliases = (entry.aliases || []).map(alias => alias.toLocaleLowerCase());
-          const description = nodeText(entry.content).toLocaleLowerCase();
+          const description = nodeText(entry.content)
+            .toLocaleLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
           let rank;
 
           if (term === normalizedQuery) rank = 0;
           else if (term.includes(normalizedQuery)) rank = 1;
           else if (aliases.some(alias => alias === normalizedQuery)) rank = 2;
           else if (aliases.some(alias => alias.includes(normalizedQuery))) rank = 3;
-          else if (description.includes(normalizedQuery)) rank = 4;
+          else if (normalizedDescriptionQuery && ` ${description} `.includes(` ${normalizedDescriptionQuery} `)) rank = 4;
           else return null;
 
           return { entry, index, rank };
