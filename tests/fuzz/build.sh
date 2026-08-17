@@ -1,15 +1,14 @@
 #!/bin/bash -eu
 
-# copy fuzzer options
+# copy fuzzer options and dictionaries
+#
+# all.dict is not committed: the fuzzing configure step generates a
+# source-derived fallback into tests/fuzz/, and the nightly libFuzzer job
+# overwrites it with the authoritative binary-derived one (update_dict.sh).
+# Either way it is present here, so copy whichever is current instead of
+# generating a second one.
+cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
-
-# Some .options files reference all.dict. The authoritative all.dict is
-# generated at test time from a release binary (see tests/fuzz/update_dict.sh
-# and ci/jobs/libfuzzer_test_check.py) and overrides this one; stage a
-# source-derived dictionary for consumers that run the fuzzers straight from
-# the build output (local runs, OSS-Fuzz), where no binary-derived dictionary
-# is available.
-"$SRC/tests/fuzz/generate_source_dict.sh" "$SRC" "$OUT/all.dict"
 
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/
