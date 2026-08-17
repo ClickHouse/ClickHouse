@@ -759,7 +759,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
             default: break;
         }
-        uses_set_method = method_chosen != method_with_states;
+        /// A set method has no aggregate states, so it never takes the adaptive path: it cannot freeze,
+        /// and its kernels are written against a mapped value. Clear the flag here, where the method is
+        /// finally known, rather than at the transform - `initDataVariantsWithSizeHint` reads it first, and
+        /// would otherwise start the table deliberately undersized for a freeze that cannot happen,
+        /// forfeiting the cached size hint and the two-level initialization that come with it.
+        if (method_chosen != method_with_states)
+            params.enable_adaptive_aggregator = false;
     }
 
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`

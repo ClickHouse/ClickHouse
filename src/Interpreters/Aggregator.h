@@ -454,10 +454,6 @@ public:
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
 
-    /// Whether the chosen method is a set method - `GROUP BY` without aggregate functions over a key type
-    /// that has a set counterpart. Such a method has no aggregate states, which the adaptive aggregation
-    /// path is built around, so it is kept off that path.
-    bool usesSetMethod() const { return uses_set_method; }
 
 private:
 
@@ -481,7 +477,6 @@ private:
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
-    bool uses_set_method = false;
 
     /// The aggregation method used by the per-run in-order path (`executeOnBlockSmall` /
     /// `mergeOnBlockSmall`, called only from `AggregatingInOrderTransform`). It equals

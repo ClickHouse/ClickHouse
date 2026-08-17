@@ -1088,10 +1088,9 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
-    /// A set method (`GROUP BY` without aggregate functions) has no aggregate states, which is what the
-    /// adaptive path freezes and replicates, and its kernels are written against a mapped value. Without a
+    /// The aggregator clears the flag for a set method, which cannot take the adaptive path. Without a
     /// producer nothing is ever staged, so the merge-time drains find empty backlogs and do nothing.
-    if (many_data->adaptive_session && !params->aggregator.usesSetMethod())
+    if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
 }
 
