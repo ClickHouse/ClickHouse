@@ -89,11 +89,6 @@ struct BackupSettings
     /// This will avoid repeated data copy from original object storage to backup files. Instead of that, data will copy to destinated storage directly.
     bool experimental_lightweight_snapshot = false;
 
-    /// Batch limits for resumable `BACKUP FROM SNAPSHOT`, which is only available in ClickHouse Cloud.
-    /// They bound how much work a failed attempt repeats, by file count and by newly written bytes.
-    UInt64 resumable_backup_batch_size = 50000;
-    UInt64 resumable_backup_batch_size_bytes = 10ULL * 1024 * 1024 * 1024;
-
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
 

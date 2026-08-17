@@ -42,8 +42,6 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
-    M(UInt64, resumable_backup_batch_size) \
-    M(UInt64, resumable_backup_batch_size_bytes) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
@@ -88,11 +86,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 
     if (query.cluster_host_ids)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
-
-    if (res.resumable_backup_batch_size == 0)
-        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size` must be greater than 0");
-    if (res.resumable_backup_batch_size_bytes == 0)
-        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size_bytes` must be greater than 0");
 
     return res;
 }
