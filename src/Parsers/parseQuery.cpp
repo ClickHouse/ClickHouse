@@ -317,11 +317,15 @@ ASTPtr tryParseQuery(
     /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's `=~`)
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
-    if (parser.consumesRawText() || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    IParser::Pos set_lookahead(token_iterator);
+    /// Such a parser tries plain `SET ...` first and only falls back to raw text if that fails, so
+    /// a malformed `SET` still wants the ordinary lexical check instead of becoming dialect text.
+    const bool consumes_raw_text = parser.consumesRawText() && !ParserKeyword(Keyword::SET).ignore(set_lookahead);
+    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
-            if (lookahead->isError() && (!parser.consumesRawText() || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
+            if (lookahead->isError() && (!consumes_raw_text || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
             {
                 // Advance the position for further processing of possible test hint.
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
