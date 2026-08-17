@@ -53,6 +53,18 @@ public:
         return "(A1 : Any, ...) -> Tuple(A1, ...)";
     }
 
+    /// The signature is documentation-only: in particular, it cannot express
+    /// the zero-argument case or tuple element names. Keep both return-type
+    /// entry points on the authoritative implementation below.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())

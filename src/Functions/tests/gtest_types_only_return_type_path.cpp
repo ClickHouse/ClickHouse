@@ -168,6 +168,22 @@ TEST(TypesOnlyReturnTypePath, ValueDependentDocumentationSignaturesFallBackToNot
     }
 }
 
+TEST(TypesOnlyReturnTypePath, TupleAndVariantTypeUseTheirAuthoritativeResolvers)
+{
+    /// The signature of `tuple` requires one fixed argument before the trailing
+    /// ellipsis, but the implementation also supports `tuple()`.
+    EXPECT_EQ(typesOnlyReturnType("tuple", {})->getName(), "Tuple()");
+    EXPECT_EQ(typesOnlyReturnType("tuple", {"UInt8", "String"})->getName(), "Tuple(UInt8, String)");
+
+    /// The `variantType` result Enum8 is formed from the input Variant's members;
+    /// a documentation-only bare `Enum8` cannot represent that type.
+    const std::vector<String> variant_arguments{"Variant(String, UInt64)"};
+    EXPECT_EQ(
+        typesOnlyReturnType("variantType", variant_arguments)->getName(),
+        columnPathReturnType("variantType", variant_arguments)->getName());
+    EXPECT_EQ(typesOnlyReturnType("variantType", variant_arguments)->getName(), "Enum8('String' = 0, 'UInt64' = 1, 'None' = -1)");
+}
+
 /// `JSONOverloadResolver` builds its result type from `Impl::getReturnType`, which accepts shapes
 /// the advertised (documentation-only) signature does not describe: a `Dynamic` JSON argument, and
 /// a `Nullable` input whose wrapper the resolver adds itself. Both return-type entry points must

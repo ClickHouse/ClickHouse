@@ -43,6 +43,18 @@ public:
         return "(Variant) -> Enum8";
     }
 
+    /// The signature is documentation-only because the Enum8 members are
+    /// derived from the Variant alternatives. Route the types-only path to the
+    /// same resolver instead of attempting to construct a bare Enum8.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
