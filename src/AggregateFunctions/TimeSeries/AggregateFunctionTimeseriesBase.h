@@ -268,6 +268,41 @@ public:
         }
     }
 
+    /// The destructive merge of the two-level aggregation merge phase: the source state is
+    /// destroyed right after merging, so a bucket type with an `adopt` method (e.g. the raw-sample
+    /// buffers of rate/changes/deriv-style functions) steals the source's storage in O(1) instead
+    /// of copying every buffered sample.
+    void mergeAndDestroyBatch(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * rhs_places,
+        size_t size,
+        size_t offset,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        if constexpr (requires (Bucket & bucket) { bucket.adopt(std::move(bucket)); })
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                AggregateDataPtr dst = dst_places[i] + offset;
+                AggregateDataPtr rhs = rhs_places[i] + offset;
+                chassert(dst != rhs, "mergeAndDestroyBatch called with the same source and destination state");
+
+                auto & buckets = data(dst)->buckets;
+                auto & rhs_buckets = data(rhs)->buckets;
+                buckets.reserve(rhs_buckets.size());
+                for (auto & rhs_bucket : rhs_buckets)
+                    buckets[rhs_bucket.getKey()].adopt(std::move(rhs_bucket.getMapped()));
+
+                this->destroy(rhs);
+            }
+            return;
+        }
+
+        Base::mergeAndDestroyBatch(dst_places, rhs_places, size, offset, thread_pool, is_cancelled, arena);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
