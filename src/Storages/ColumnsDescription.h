@@ -119,8 +119,8 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    /// ALIAS and EPHEMERAL columns are computed on read and never stored, so they have no
-    /// on-disk representation and never appear in a block written to a part.
+    /// Not stored on disk, so never present in a block written to a part: ALIAS is computed on
+    /// read, EPHEMERAL is an insert-only input.
     bool isPhysical() const
     {
         return default_desc.kind != ColumnDefaultKind::Alias && default_desc.kind != ColumnDefaultKind::Ephemeral;

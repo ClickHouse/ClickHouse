@@ -1314,8 +1314,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    /// The statement stays usable on a table that carries a non-physical
-                    /// statistics declaration.
                     if (!column_desc.statistics.empty() && column_desc.isPhysical())
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);

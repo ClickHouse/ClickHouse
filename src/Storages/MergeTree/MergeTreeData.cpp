@@ -6102,7 +6102,10 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 continue;
             for (const auto & column_name : command.statistics_columns)
             {
-                if (columns.has(column_name) && !columns.get(column_name).isPhysical())
+                if (!columns.has(column_name))
+                    continue;
+                const auto & column = columns.get(column_name);
+                if (!column.statistics.empty() && !column.isPhysical())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
                         "Cannot materialize statistics of column '{}': it is not physically stored. "
                         "Please drop the statistics",

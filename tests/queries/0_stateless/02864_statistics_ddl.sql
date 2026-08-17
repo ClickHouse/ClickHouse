@@ -276,8 +276,9 @@ ALTER TABLE tab DROP STATISTICS b;
 DROP TABLE tab;
 
 -- MATERIALIZE STATISTICS ALL materializes the physical column and skips the alias one.
-CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
-INSERT INTO tab VALUES (1);
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab SETTINGS materialize_statistics_on_insert = 0 VALUES (1);
 ALTER TABLE tab MATERIALIZE STATISTICS ALL;
 SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
 DROP TABLE tab;
