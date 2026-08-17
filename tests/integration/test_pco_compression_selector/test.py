@@ -27,6 +27,14 @@ node_zxc_allowed = cluster.add_instance(
     main_configs=["configs/zxc_compression_selector.xml"],
     user_configs=["configs/allow_experimental_codecs.xml"],
 )
+# The global context applies `system_profile`, which deliberately disagrees with the
+# default profile here. The selector must follow the latter because it is a durable
+# server-level configuration policy.
+node_zxc_default_profile_allowed = cluster.add_instance(
+    "node_zxc_default_profile_allowed",
+    main_configs=["configs/zxc_compression_selector.xml", "configs/system_profile.xml"],
+    user_configs=["configs/default_profile_allowed_system_profile_disabled.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -94,6 +102,22 @@ def test_experimental_codec_in_compression_selector_is_allowed_by_the_policy(
     ).strip()
     assert "ZXC" in default_codec, default_codec
     node_zxc_allowed.query("DROP TABLE t_zxc_allowed")
+
+
+def test_compression_selector_uses_default_not_system_profile(start_cluster):
+    node_zxc_default_profile_allowed.query(
+        "CREATE TABLE t_zxc_default_profile (x UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_zxc_default_profile_allowed.query(
+        "INSERT INTO t_zxc_default_profile SELECT number FROM numbers(1000)"
+    )
+    assert (
+        node_zxc_default_profile_allowed.query(
+            "SELECT count() FROM t_zxc_default_profile"
+        )
+        == "1000\n"
+    )
+    node_zxc_default_profile_allowed.query("DROP TABLE t_zxc_default_profile")
 
 
 def test_normal_compression_selector_still_works(start_cluster):
