@@ -887,34 +887,49 @@ public:
     /// If the table contains too many uncompressed bytes in patches, throw an exception.
     void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
+    /// If the size of the table exceeds any of the limits from the 'max_table_size_rows',
+    /// 'max_table_size_bytes_compressed', 'max_table_size_bytes_uncompressed' settings, throw an exception.
+    /// The limit on the number of rows is checked against active data parts only, while the limits on the
+    /// number of bytes are checked across all active and inactive data parts, because the purpose of these
+    /// settings is to limit disk usage.
+    void throwIfTableSizeLimitsExceeded() const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
     /// Returns true if part was added. Returns false if part is covered by bigger part.
+    ///
+    /// If 'check_table_size_limits' is set, throws if the table size exceeds the limits from the
+    /// 'max_table_size_*' settings. It should be unset only when the part does not represent new data,
+    /// e.g. on replicated fetches, which get the data that has been already accepted by another replica.
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         Transaction & transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
     DataPartsVector renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         DataPartsLock & lock,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
     bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -2104,7 +2119,11 @@ private:
         Transaction & out_transaction,
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits);
+
+    /// The same as the public throwIfTableSizeLimitsExceeded, but for the callers that already hold a lock on the parts set.
+    void throwIfTableSizeLimitsExceeded(const DataPartsAnyLock & parts_lock) const;
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor

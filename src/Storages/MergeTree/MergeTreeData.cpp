@@ -304,6 +304,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
+    extern const MergeTreeSettingsUInt64 max_table_size_rows;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_compressed;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_uncompressed;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
@@ -416,6 +419,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -6546,7 +6550,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     Transaction & out_transaction,
     DataPartsLock & lock,
     DataPartsVector * out_covered_parts,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
@@ -6556,6 +6561,11 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     part->assertState({DataPartState::Temporary});
     checkPartPartition(part, lock);
     checkPartDuplicate(part, out_transaction, lock);
+
+    /// Empty parts do not add data and are used to remove it (e.g. by TRUNCATE or DROP PARTITION),
+    /// so they are always allowed regardless of the table size limits.
+    if (check_table_size_limits && part->rows_count != 0)
+        throwIfTableSizeLimitsExceeded(lock);
 
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Active, lock);
 
@@ -6598,28 +6608,31 @@ bool MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
-    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction);
+    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     auto lock = lockParts();
-    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction);
+    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     DataPartsLock & lock,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction);
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits);
     return covered_parts;
 }
 
@@ -6627,11 +6640,12 @@ bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits))
         return false;
 
     if (!covered_parts.empty())
@@ -7278,11 +7292,77 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
+void MergeTreeData::throwIfTableSizeLimitsExceeded() const
+{
+    const auto settings = getSettings();
+
+    /// Fast path to avoid taking the parts lock when the limits are not set.
+    if (!(*settings)[MergeTreeSetting::max_table_size_rows]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_compressed]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed])
+        return;
+
+    auto parts_lock = readLockParts();
+    throwIfTableSizeLimitsExceeded(parts_lock);
+}
+
+void MergeTreeData::throwIfTableSizeLimitsExceeded(const DataPartsAnyLock &) const
+{
+    const auto settings = getSettings();
+
+    if (const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows])
+    {
+        const UInt64 total_rows = getTotalActiveSizeInRows();
+        if (total_rows > max_rows)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
+                "which exceeds the 'max_table_size_rows' setting value ({})",
+                getLogName(), total_rows, max_rows);
+    }
+
+    const UInt64 max_bytes_compressed = (*settings)[MergeTreeSetting::max_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = (*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed];
+
+    if (max_bytes_compressed || max_bytes_uncompressed)
+    {
+        UInt64 total_bytes_compressed = 0;
+        UInt64 total_bytes_uncompressed = 0;
+
+        /// Inactive (outdated) parts are counted as well because the purpose of the limits is to restrict disk usage.
+        /// They are removed in the background, so the total size can decrease over time.
+        for (auto state : {DataPartState::Active, DataPartState::Outdated})
+        {
+            for (const auto & part : getDataPartsStateRange(state))
+            {
+                total_bytes_compressed += part->getBytesOnDisk();
+                total_bytes_uncompressed += part->getBytesUncompressedOnDisk();
+            }
+        }
+
+        if (max_bytes_compressed && total_bytes_compressed > max_bytes_compressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of compressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_compressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(total_bytes_compressed), ReadableSize(max_bytes_compressed));
+
+        if (max_bytes_uncompressed && total_bytes_uncompressed > max_bytes_uncompressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of uncompressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_uncompressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+    }
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
+
+    if (allow_throw)
+        throwIfTableSizeLimitsExceeded();
 
     const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
     const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
