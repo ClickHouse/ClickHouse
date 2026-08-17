@@ -14,6 +14,8 @@ plan: sibling alias still needed above — not pushed
 0
 plan: sibling alias below outer sort — not pushed
 0
+plan: sibling alias below outer sort and limit — not pushed
+0
 plan: small FixedString lengthUTF8 — not pushed
 0
 plan: array length — not pushed
