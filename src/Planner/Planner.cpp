@@ -2110,12 +2110,19 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+        /// `SETTINGS limit` and `offset` are applied after the final set-operation DISTINCT.
+        /// They consume its stream order, so this DISTINCT must not repartition its input.
+        const bool has_order_sensitive_post_distinct_limit = select_query_options.subquery_depth == 0
+            && !select_query_options.settings_limit_offset_done
+            && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0);
+
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
-            false /*pre distinct*/);
+            false /*pre distinct*/,
+            has_order_sensitive_post_distinct_limit);
         query_plan.addStep(std::move(distinct_step));
     }
 
