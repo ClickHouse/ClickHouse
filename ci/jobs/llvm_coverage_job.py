@@ -72,6 +72,92 @@ def get_lcov_summary(
 
 COVERAGE_DROP_TOLERANCE = 0.3
 
+# generate_diff_coverage_report.sh writes one of these tokens before every exit 0.
+DIFF_OUTCOME_MARKER_FILE = "diff_outcome.txt"
+
+
+class DiffOutcome:
+    """The mutually exclusive outcomes of generate_diff_coverage_report.sh.
+
+    REPORT_GENERATED..CURRENT_COVERAGE_EMPTY are the script's own exit-0 states,
+    reported by its marker file. FAILED and UNKNOWN are derived here: the script
+    dies under `set -euo pipefail` before naming an outcome.
+    """
+
+    REPORT_GENERATED = "report_generated"
+    NO_CPP_CHANGES = "no_cpp_changes"
+    NO_COVERAGE_DATA = "no_coverage_data"
+    CURRENT_COVERAGE_EMPTY = "current_coverage_empty"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+    SCRIPT_REPORTED = (
+        REPORT_GENERATED,
+        NO_CPP_CHANGES,
+        NO_COVERAGE_DATA,
+        CURRENT_COVERAGE_EMPTY,
+    )
+
+
+def read_diff_outcome_marker(temp_dir: str) -> str:
+    """Return the token the diff script reported, or "" if it reported none."""
+    marker = Path(temp_dir) / DIFF_OUTCOME_MARKER_FILE
+    if not marker.exists():
+        return ""
+    token = marker.read_text(encoding="utf-8", errors="replace").strip()
+    return token if token in DiffOutcome.SCRIPT_REPORTED else ""
+
+
+def classify_diff_outcome(script_ok: bool, marker: str, report_ready: bool) -> str:
+    """Which of the six outcomes the diff step had.
+
+    Exit status alone decides failure. A report is claimed only by a successful
+    run's marker, or by a complete report directory so that a script predating
+    the marker still reports one.
+    """
+    if not script_ok:
+        return DiffOutcome.FAILED
+    if marker == DiffOutcome.REPORT_GENERATED or report_ready:
+        return DiffOutcome.REPORT_GENERATED
+    if marker in DiffOutcome.SCRIPT_REPORTED:
+        return marker
+    return DiffOutcome.UNKNOWN
+
+
+_DIFF_OUTCOME_REASON = {
+    DiffOutcome.NO_CPP_CHANGES: "No C/C++ source files changed",
+    DiffOutcome.NO_COVERAGE_DATA: (
+        "No coverage data for the changed C/C++ source files"
+        " (they may be new or not instrumented)"
+    ),
+    DiffOutcome.CURRENT_COVERAGE_EMPTY: (
+        "Current coverage is empty for the changed C/C++ source files"
+        " (tests may have been removed or disabled)"
+    ),
+    DiffOutcome.FAILED: (
+        "bash ci/jobs/scripts/generate_diff_coverage_report.sh failed"
+        " (see the command log attached to this result)"
+    ),
+    DiffOutcome.UNKNOWN: (
+        "bash ci/jobs/scripts/generate_diff_coverage_report.sh reported no outcome"
+    ),
+}
+
+
+def diff_report_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Differential coverage report was not generated: {reason}."
+
+
+def uncovered_code_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Uncovered code analysis did not run: {reason}."
+
+
+def coverage_comment_message(outcome: str) -> str:
+    reason = _DIFF_OUTCOME_REASON[outcome]
+    return f"Skipping coverage comment: {reason}."
+
 
 def coverage_drop(baseline_cov: float, current_cov: float) -> float:
     """Return the line coverage drop in pp, rounded to two decimals.
@@ -230,10 +316,15 @@ if __name__ == "__main__":
             command=["bash ci/jobs/scripts/generate_diff_coverage_report.sh"],
         )
 
-        # The diff script exits 0 without running genhtml when no C/C++ files changed.
-        # Use the presence of its output directory as the authoritative indicator.
+        # The diff script leaves no report directory in four distinct outcomes, so
+        # the outcome comes from its own marker plus its exit status.
         _diff_report_dir = Path(TEMP_DIR) / "llvm_coverage_diff_html_report"
-        _diff_ran = _diff_report_dir.exists()
+        _diff_outcome = classify_diff_outcome(
+            script_ok=diff_res.is_ok(),
+            marker=read_diff_outcome_marker(TEMP_DIR),
+            report_ready=(_diff_report_dir / "index.html").exists(),
+        )
+        _diff_ran = _diff_outcome == DiffOutcome.REPORT_GENERATED
 
         b_line_cov = c_line_cov = b_function_cov = c_function_cov = b_branch_cov = c_branch_cov = delta = 0.0
         b_line_hit = b_line_total = c_line_hit = c_line_total = 0
@@ -292,7 +383,11 @@ if __name__ == "__main__":
             diff_res.files.extend(_diff_files)
             diff_res.assets.extend(_diff_assets)
         else:
-            print("No C/C++ source files changed — differential coverage report was not generated.")
+            _diff_msg = diff_report_message(_diff_outcome)
+            print(_diff_msg)
+            # A failed result's own info carries the command log, so keep it.
+            if diff_res.is_ok():
+                diff_res.info = _diff_msg
 
         results.append(diff_res)
 
@@ -309,11 +404,17 @@ if __name__ == "__main__":
             )
             print_res = Result.from_fs("Print Uncovered Code")
         else:
-            msg = "No C/C++ source files changed — skipping uncovered code analysis."
+            msg = uncovered_code_message(_diff_outcome)
             print(msg)
+            # Only a skip the script reported is a success; an analysis missed
+            # because the script failed is not.
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=Result.Status.OK,
+                status=(
+                    Result.Status.OK
+                    if _diff_outcome in DiffOutcome.SCRIPT_REPORTED
+                    else Result.Status.FAIL
+                ),
                 info=msg,
             )
             print_res.set_comment(msg)
@@ -357,13 +458,14 @@ if __name__ == "__main__":
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # the diff HTML report was generated (i.e. C/C++ source files changed).
+            # the diff HTML report was generated; there are no numbers to report in
+            # any other outcome.
             # Tests-only PRs never reach this job at all - the coverage family is
             # auto-skipped for them (see filter_job.py) since the compiled binary,
             # and therefore coverage, cannot have moved.
             _has_coverage_data = _diff_ran
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source changes) — skipping coverage comment.")
+                print(coverage_comment_message(_diff_outcome))
             else:
                 _comment_data = {
                     # GitHub comment fields
