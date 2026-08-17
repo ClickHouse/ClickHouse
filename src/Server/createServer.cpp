@@ -81,4 +81,37 @@ bool createServer(
     return false;
 }
 
+void startServers(std::vector<ProtocolServerAdapter> & servers, bool listen_try, LoggerRawPtr log)
+{
+    for (auto it = servers.begin(); it != servers.end();)
+    {
+        try
+        {
+            it->start();
+            LOG_INFO(log, "Listening for {}", it->getDescription());
+            ++it;
+        }
+        catch (const Poco::Exception &)
+        {
+            /// A protocol that binds when its server is created has already passed the `listen_try`
+            /// check in `createServer`, so a failure here is not a listen failure and must not be
+            /// swallowed.
+            if (!it->bindsOnStart())
+                throw;
+
+            if (!listen_try)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to listen for {}: {}",
+                    it->getDescription(), getCurrentExceptionMessage(false));
+
+            LOG_WARNING(log, "Failed to listen for {}: {}. If it is an IPv6 or IPv4 address and your host has disabled "
+                "IPv6 or IPv4, then consider to specify not disabled IPv4 or IPv6 address to listen in <listen_host> "
+                "element of configuration file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                " Example for disabled IPv4: <listen_host>::</listen_host>",
+                it->getDescription(), getCurrentExceptionMessage(false));
+
+            it = servers.erase(it);
+        }
+    }
+}
+
 }

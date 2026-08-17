@@ -1,0 +1,10 @@
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <!-- A `TEST-NET-1` address (RFC 5737): it is not assigned to any interface, so binding it always
+         fails, which is exactly what `listen_try` is for. -->
+    <listen_host>192.0.2.1</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <grpc_port>9100</grpc_port>
+</clickhouse>

@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- `0.0.0.0` is also listed by the common instance config, so both spellings of the wildcard
+         address end up in the merged `listen_host` list. -->
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- A plain socket cannot be bound to both wildcard addresses at once, which must stay a warning
+         instead of a startup failure. -->
+    <listen_try>1</listen_try>
+
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+</clickhouse>
