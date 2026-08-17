@@ -249,12 +249,12 @@ FETCHES_SERVER_PATH_RE = re.compile(
     r"(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue)\b)"
 )
 # The server data root fetched as `SELECT value` or a star projection from
-# `system.server_settings` where `name = 'path'`. The `value` token (or `*`) is required
+# `system.server_settings` where `name = 'path'` or `name IN ('path')`. The `value` token (or `*`) is required
 # so that queries that merely inspect the setting without materializing the path (e.g.
 # `SELECT count()`) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
     rf"(?i)(?:[`\"]?\bvalue\b[`\"]?|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.server_settings\b"
-    r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b)"
+    r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b|\bname\s+in\s*\(\s*'path'\s*\))"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,
 # their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), options that
