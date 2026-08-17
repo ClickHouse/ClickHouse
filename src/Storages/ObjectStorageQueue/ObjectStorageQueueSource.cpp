@@ -1531,10 +1531,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 max_block_size,
                 parser_shared_resources,
                 nullptr,
-                /* need_only_count */ false);
-
-            if (iterator_consumed)
-                iterator_consumed->store(true, std::memory_order_relaxed);
+                /* need_only_count */ false,
+                iterator_consumed);
 
             if (!reader)
             {
