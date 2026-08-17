@@ -25,9 +25,10 @@ timeout 300 $CLICKHOUSE_CLIENT --query_id="$query_id" --query "
 
 wait_for_query_to_start "$query_id"
 
-# Use async KILL (without SYNC) to avoid blocking if propagation is slow.
-# Kill the query while it's processing expressions
-$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+# Use an asynchronous KILL and explicitly disable waiting for query completion: the test harness
+# can randomize `http_wait_end_of_query`, which would otherwise make this control request wait for
+# the deliberately long-running target query.
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '$query_id' ASYNC" >/dev/null
 
 wait
 
