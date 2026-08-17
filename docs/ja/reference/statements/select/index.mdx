@@ -1,6 +1,6 @@
 ---
 description: 'SELECT クエリのドキュメント'
-sidebarTitle: 'SELECT'
+sidebarTitle: '概要'
 slug: /sql-reference/statements/select/
 title: 'SELECT クエリ'
 doc_type: 'reference'
@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-すべての句は省略可能です。ただし、`SELECT` の直後にある必須の式のリストは例外で、これについては[以下](#select-clause)で詳しく説明します。
+`SELECT` の直後にある式のリストは必須です。その他の句はすべて省略可能です。
 
-各オプション句の詳細は個別のセクションで扱っており、実行順に以下に示します (ただし、`SELECT` と `DISTINCT` は便宜上先頭に記載しています。これらの式は、[以下](#select-clause)で説明するように、先行する句の処理が完了した後にのみ評価されます) 。
+`SELECT` とそのオプション句は個別のセクションで扱います。
 
 * [WITH 句](/ja/reference/statements/select/with)
 * [SELECT 句](#select-clause)
@@ -61,6 +61,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [EXCEPT 句](/ja/reference/statements/select/except)
 * [INTO OUTFILE 句](/ja/reference/statements/select/into-outfile)
 * [FORMAT 句](/ja/reference/statements/select/format)
+
+クエリは、[パイプ演算子](/ja/reference/statements/select/pipe-operators)を使用して、変換を線形に連結する形式で記述することもできます。
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## SELECT 句
@@ -199,7 +208,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 クエリのどの部分でも、シノニム (`AS` 別名) を使用できます。
 
-`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
+`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
 
 <div id="implementation-details">
   ## 実装の詳細
