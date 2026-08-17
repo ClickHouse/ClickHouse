@@ -81,6 +81,7 @@
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -506,22 +507,27 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::max_streams_for_merge_tree_reading])
+    /// The `max_streams_for_merge_tree_reading` setting is bounded by `doSettingsSanityCheckClamp`.
+    if (const UInt64 max_streams_for_merge_tree_reading = settings[Setting::max_streams_for_merge_tree_reading])
     {
         if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            output_streams_limit = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
             /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
             /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
             if (requested_num_streams != 1)
-                requested_num_streams = std::max<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+                requested_num_streams = std::max<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
+    /// `requested_num_streams` drives pipes.reserve()/resize() downstream, which throws
+    /// std::length_error when unbounded. It can be amplified past any setting clamp via
+    /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
+    requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
     /// Add explicit description.
     std::string description = data.getStorageID().getFullNameNotQuoted();
