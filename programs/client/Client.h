@@ -64,9 +64,10 @@ protected:
 
 private:
     /// The endpoint that the last "Connecting to ..." message announced, if the connection it announced
-    /// has not been established yet. It keeps `connect` from announcing the same endpoint twice when the
-    /// first attempt only served to find out that the server requires a password.
+    /// has not been established yet. It keeps the immediate authentication retry from announcing the same
+    /// endpoint twice.
     String announced_endpoint;
+    bool preserve_announced_endpoint_for_retry = false;
 
     String getHelpHeader() const;
     String getHelpFooter() const;

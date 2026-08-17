@@ -434,6 +434,7 @@ try
             {
                 asked_password = true;
                 config().setBool("ask-password", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -447,6 +448,7 @@ try
                     config().setString("password", connection_parameters.password);
                 config().setBool("ask-password", false);
                 config().setBool("ask-password-2fa", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -547,6 +549,12 @@ void Client::login()
 
 void Client::connect()
 {
+    /// Only the immediate password or 2FA retry may reuse the previous announcement. Any later
+    /// reconnect is a separate attempt and must announce its endpoint, even if an earlier reconnect failed.
+    if (!preserve_announced_endpoint_for_retry)
+        announced_endpoint.clear();
+    preserve_announced_endpoint_for_retry = false;
+
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
@@ -763,8 +771,6 @@ void Client::connect()
                     /// client prompts for the password and attempts the very same endpoint again. Repeating
                     /// the announcement tells the user nothing and reads as if the client had connected
                     /// twice, so announce an endpoint only when it differs from the one announced last.
-                    /// The announcement is forgotten after a successful connection (see below), so a
-                    /// reconnect later in the session is announced again.
                     if (announcement != announced_endpoint)
                     {
                         announced_endpoint = announcement;
@@ -870,9 +876,6 @@ void Client::connect()
             }
 
             config().setString("host", connection_parameters.host);
-
-            /// The endpoint is announced once per connection, and a reconnect is a new connection.
-            announced_endpoint.clear();
 
             /// Remember the endpoint that has worked, so that a reconnect to the same address does not
             /// probe the ports again. It is remembered for this address only, and not in the global
