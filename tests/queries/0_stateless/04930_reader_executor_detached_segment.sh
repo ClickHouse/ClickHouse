@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_re_detached"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_re_detached (k UInt64, v String)
     ENGINE = MergeTree ORDER BY k
-    SETTINGS storage_policy = 's3_cache_04907', min_bytes_for_wide_part = 0"
+    SETTINGS storage_policy = 's3_cache_04930', min_bytes_for_wide_part = 0"
 
 ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO t_re_detached SELECT number, toString(number) FROM numbers(100000)
