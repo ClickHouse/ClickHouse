@@ -1562,7 +1562,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
     /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
     /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
     /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
