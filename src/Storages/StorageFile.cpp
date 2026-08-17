@@ -2531,28 +2531,42 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 const size_t min_bytes_to_split = ctx->getSettingsRef()[Setting::input_format_parquet_min_bytes_to_split];
                 const size_t min_bytes_per_bucket = ctx->getSettingsRef()[Setting::input_format_parquet_bytes_per_split_bucket];
 
-                /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
-                /// when the footer is already cached from a previous query against this file. The
-                /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
-                /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
-                buckets = trySplitParquetFileFromCacheOnly(
-                    max_num_streams, single_file_path, cache_etag, metadata_cache, requested_columns,
-                    min_bytes_to_split, min_bytes_per_bucket);
-                if (buckets.empty())
+                /// A free upper bound on the decision's own input, from the `stat` above. The
+                /// projected read is a sum of `total_compressed_size` over a subset of the file's
+                /// column chunks, so it cannot exceed the file size; when even the whole file is
+                /// below the floor, `computeBucketsByCountAndBytes` can only answer "do not split".
+                /// Skipping the decision then skips the footer parse, the projected-size walk and
+                /// all `FileMetaData` handling, which on a wide file with many row groups cost
+                /// milliseconds on a query that was never going to be split. `min_bytes_to_split`
+                /// of 0 disables the floor entirely, so it must not take this shortcut.
+                const bool below_split_floor
+                    = min_bytes_to_split > 0 && static_cast<size_t>(file_stat.st_size) < min_bytes_to_split;
+
+                if (!below_split_floor)
                 {
-                    auto buf = createReadBuffer(
-                        single_file_path, file_stat, false, -1, storage->compression_method, ctx);
-                    const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
-                    buckets = splitParquetFileWithCache(
-                        max_num_streams,
-                        single_file_path,
-                        cache_etag,
-                        *buf,
-                        format_settings,
-                        metadata_cache,
-                        requested_columns,
-                        min_bytes_to_split,
-                        min_bytes_per_bucket);
+                    /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
+                    /// when the footer is already cached from a previous query against this file. The
+                    /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
+                    /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
+                    buckets = trySplitParquetFileFromCacheOnly(
+                        max_num_streams, single_file_path, cache_etag, metadata_cache, requested_columns,
+                        min_bytes_to_split, min_bytes_per_bucket);
+                    if (buckets.empty())
+                    {
+                        auto buf = createReadBuffer(
+                            single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                        const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                        buckets = splitParquetFileWithCache(
+                            max_num_streams,
+                            single_file_path,
+                            cache_etag,
+                            *buf,
+                            format_settings,
+                            metadata_cache,
+                            requested_columns,
+                            min_bytes_to_split,
+                            min_bytes_per_bucket);
+                    }
                 }
             }
             else

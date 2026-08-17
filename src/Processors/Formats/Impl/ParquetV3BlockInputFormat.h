@@ -182,6 +182,14 @@ private:
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+
+    /// The metadata cache entry `getFileMetadata` read the footer from, when it came from the cache.
+    /// Kept so `getFileMetadataDigest` can reuse the entry's memoized digest instead of hashing the
+    /// whole footer again - a split read has one format instance per source, and each of them writes
+    /// the query condition cache, so recomputing it is O(sources) full footer walks per query.
+    /// Holding the entry also pins it against eviction for as long as this format is reading, which
+    /// is what we want: it is in use.
+    mutable ParquetMetadataCache::MappedPtr metadata_cell;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader

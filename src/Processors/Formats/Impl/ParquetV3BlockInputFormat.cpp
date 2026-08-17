@@ -195,8 +195,9 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         String file_name = object_with_metadata->getPath();
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        return metadata_cache->getOrSetMetadata(
+        metadata_cell = metadata_cache->getOrSetMetadataCell(
             cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        return metadata_cell->metadata;
     }
     else
     {
@@ -293,6 +294,11 @@ UInt64 ParquetV3BlockInputFormat::getFileMetadataDigest() const
 {
     if (!reader)
         return 0;
+    /// The reader's footer is exactly what `getFileMetadata` handed it, and `Parquet::Reader` never
+    /// mutates `file_metadata`, so when it came from the metadata cache the entry's memoized digest
+    /// is the same value - computed once per cached footer rather than once per source.
+    if (metadata_cell)
+        return metadata_cell->footerDigest();
     return computeParquetFooterDigest(reader->reader.file_metadata);
 }
 
@@ -795,6 +801,37 @@ void setFooterDigest(std::vector<FileBucketInfoPtr> & buckets, const parquet::fo
             parquet_bucket->footer_digest = digest;
 }
 
+/// Like `setFooterDigest`, but for the single-file split *decision*, whose result the caller
+/// (`StorageFile::read`) only uses when it produced at least two buckets - a lone full-file bucket is
+/// dropped and the file is read by one plain source, exactly as it would be without this feature.
+/// The digest exists to keep several sources reading one file consistent with each other, so
+/// computing it for a bucket that is about to be discarded is pure overhead - and not a cheap one:
+/// `computeParquetFooterDigest` hashes every column chunk of every row group including the
+/// per-column statistics, which on a wide file with many row groups costs milliseconds on *every*
+/// query that reads a column, whether or not it ends up split.
+///
+/// Deliberately not folded into `setFooterDigest`: the object-storage path
+/// (`ParquetBucketSplitter::splitToBuckets`) dispatches every bucket it returns as a read task,
+/// including a lone one, and there the digest is a live fail-close guard.
+void setFooterDigestIfSplit(std::vector<FileBucketInfoPtr> & buckets, const parquet::format::FileMetaData & file_metadata)
+{
+    if (buckets.size() < 2)
+        return;
+    setFooterDigest(buckets, file_metadata);
+}
+
+/// As above, but taking the digest from the cache cell that the footer was read from, so a split
+/// read computes it once per cached footer instead of once per query.
+void setFooterDigestIfSplit(std::vector<FileBucketInfoPtr> & buckets, const ParquetMetadataCacheCell & cell)
+{
+    if (buckets.size() < 2)
+        return;
+    const UInt64 digest = cell.footerDigest();
+    for (auto & bucket : buckets)
+        if (auto * parquet_bucket = dynamic_cast<ParquetFileBucketInfo *>(bucket.get()))
+            parquet_bucket->footer_digest = digest;
+}
+
 }
 
 UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata)
@@ -979,21 +1016,30 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     size_t min_bytes_to_split,
     size_t min_bytes_per_bucket)
 {
-    parquet::format::FileMetaData file_metadata;
+    /// The decision only reads the footer, so hold the cache cell and work through a reference into
+    /// it instead of copying `FileMetaData` out: the copy is one `ColumnChunk` per column per row
+    /// group, with their statistics strings, and costs milliseconds on a wide file. `owned` carries
+    /// the footer only on the uncached path, where there is no cell to borrow from.
+    ParquetMetadataCache::MappedPtr cell;
+    parquet::format::FileMetaData owned;
     if (metadata_cache && !file_path.empty() && !cache_etag.empty())
     {
         auto key = ParquetMetadataCache::createKey(file_path, cache_etag);
-        file_metadata = metadata_cache->getOrSetMetadata(
+        cell = metadata_cache->getOrSetMetadataCell(
             key, [&] { return parseFileMetadataNative(buf, format_settings); });
     }
     else
     {
-        file_metadata = parseFileMetadataNative(buf, format_settings);
+        owned = parseFileMetadataNative(buf, format_settings);
     }
+    const parquet::format::FileMetaData & file_metadata = cell ? cell->metadata : owned;
     auto buckets = computeBucketsByCountAndBytes(
         target_count, file_metadata.row_groups.size(), projectedCompressedBytes(file_metadata, requested_columns),
         min_bytes_to_split, min_bytes_per_bucket);
-    setFooterDigest(buckets, file_metadata);
+    if (cell)
+        setFooterDigestIfSplit(buckets, *cell);
+    else
+        setFooterDigestIfSplit(buckets, file_metadata);
     return buckets;
 }
 
@@ -1015,7 +1061,7 @@ std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     auto buckets = computeBucketsByCountAndBytes(
         target_count, cached->metadata.row_groups.size(), projectedCompressedBytes(cached->metadata, requested_columns),
         min_bytes_to_split, min_bytes_per_bucket);
-    setFooterDigest(buckets, cached->metadata);
+    setFooterDigestIfSplit(buckets, *cached);
     return buckets;
 }
 
