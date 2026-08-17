@@ -3114,6 +3114,7 @@ static const std::map<size_t, Strings> swapAggrs
          "maxIntersections",
          "maxIntersectionsPosition",
          "maxMappedArrays",
+         "mergedJSONPatch",
          "minMappedArrays",
          "quantileBFloat16Weighted",
          "quantileDeterministic",
@@ -3875,11 +3876,36 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                             "tupleElement", child->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(1 + fuzz_rand() % 3)));
                         break;
                     case 2: {
-                        /// Array index / Map key access: `c[N]`; 0 exercises the invalid-index
-                        /// path and -1 the from-the-end path
-                        static const std::vector<Int64> indexes = {-1, 0, 1, 2};
-                        new_child = makeASTFunction(
-                            "arrayElement", child->clone(), make_intrusive<ASTLiteral>(indexes[fuzz_rand() % indexes.size()]));
+                        /// Array index / Map key access: `c[N]`, occasionally `c[[N, ...]]`
+                        /// with a NULL position mixed in.
+                        static const std::vector<Int64> indexes = {0, 1, 2, 10, 100, 1000};
+                        const String fn = fuzz_rand() % 5 == 0 ? "arrayElementOrNull" : "arrayElement";
+                        auto pick_index = [&]() -> Int64
+                        {
+                            Int64 value = indexes[fuzz_rand() % indexes.size()];
+                            if (fuzz_rand() % 3 == 0)
+                                value = -value;
+                            return value;
+                        };
+                        ASTPtr index_node;
+                        if (fuzz_rand() % 3 == 0)
+                        {
+                            Array positions;
+                            const size_t n = fuzz_rand() % 4 + 1;
+                            for (size_t i = 0; i < n; ++i)
+                            {
+                                if (fuzz_rand() % 6 == 0)
+                                    positions.push_back(Null{});
+                                else
+                                    positions.push_back(pick_index());
+                            }
+                            index_node = make_intrusive<ASTLiteral>(std::move(positions));
+                        }
+                        else
+                        {
+                            index_node = make_intrusive<ASTLiteral>(pick_index());
+                        }
+                        new_child = makeASTFunction(fn, child->clone(), index_node);
                         break;
                     }
                     case 3: {
