@@ -9,3 +9,5 @@
 # Matching is case-insensitive.
 
 azat
+thevar1able
+rschu1ze
