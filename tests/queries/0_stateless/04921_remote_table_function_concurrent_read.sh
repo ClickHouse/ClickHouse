@@ -55,11 +55,17 @@ $CLICKHOUSE_CLIENT -q "
 # observe the unsynchronized access, at 32 it reports reliably. One process holds all 32 connections,
 # because an instrumented client costs a few hundred megabytes and the test's process group runs
 # under a 10 GiB memory limit on sanitizer builds.
+# Each exit status is checked, because a benchmark whose every query failed still leaves the
+# assertions below unchanged and would otherwise report nothing.
+reader_pids=()
 for table in r_two_args r_one_arg; do
     $CLICKHOUSE_BENCHMARK -c 32 -i 32 -d 0 \
         <<< "SELECT count() FROM $table SETTINGS prefer_localhost_replica = 1" >/dev/null 2>&1 &
+    reader_pids+=("$!")
 done
-wait
+for pid in "${reader_pids[@]}"; do
+    wait "$pid" || echo "concurrent reads failed with status $?"
+done
 
 # Read on the local shard, as the concurrent phase above does. The single-argument form resolves the
 # table against the current database, so a shard that received the query would look in its own.
