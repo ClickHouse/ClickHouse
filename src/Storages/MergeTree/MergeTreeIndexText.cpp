@@ -661,7 +661,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     auto cache_key = TextIndexTokensCache::hashPatternBypass(
         index_id_for_caches, condition_text.getSearchPatternsHash(), max_postings_to_read);
 
-    if (use_pattern_bypass_cache && TextIndexTokensCache::isNotFound(tokens_cache->get(cache_key)))
+    if (use_pattern_bypass_cache && TextIndexTokensCache::isPatternBypass(tokens_cache->get(cache_key)))
     {
         analyzer->bypassPatternQueries();
         ProfileEvents::increment(ProfileEvents::TextIndexPatternBypassCacheHits);
@@ -714,7 +714,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
             analyzer->bypassPatternQueries();
             if (use_pattern_bypass_cache)
-                tokens_cache->setNotFound(cache_key);
+                tokens_cache->setPatternBypass(cache_key);
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
             return;
         }
@@ -742,7 +742,11 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     {
         if (cached_infos[i])
         {
-            if (TextIndexTokensCache::isNotFound(cached_infos[i]))
+            if (TextIndexTokensCache::isPatternBypass(cached_infos[i]))
+            {
+                /// A different cache-entry kind cannot satisfy a token lookup.
+            }
+            else if (TextIndexTokensCache::isNotFound(cached_infos[i]))
             {
                 if (use_negative_tokens_cache)
                 {
