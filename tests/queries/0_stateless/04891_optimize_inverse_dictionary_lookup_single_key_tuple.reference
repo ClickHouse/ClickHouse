@@ -140,6 +140,36 @@ lossy key conversion, wrapped, in-range values, opt off
 2
 lossy key conversion, zero-match fold
 0
+NULL-keyed row match, tuple carrier - plan
+SELECT count() AS `count()`
+FROM default.data_nk AS __table1
+WHERE in(tupleElement(if(notEquals(__table1.id, 0), tuple(__table1.id), _CAST(NULL, \'Nullable(Nothing)\')), 1), _CAST([NULL], \'Array(Nullable(UInt64))\'))
+NULL-keyed row match, tuple carrier, projected
+0
+0
+NULL-keyed row match, tuple carrier, projected, opt off
+0
+0
+NULL-keyed row match, tuple carrier, NOT pred
+2
+NULL-keyed row match, tuple carrier, NOT pred, opt off
+2
+NULL-keyed row match, tuple carrier, isNull pred
+0
+NULL-keyed row match, tuple carrier, isNull pred, opt off
+0
+NULL-keyed row match, bare nullable key, NOT pred
+2
+NULL-keyed row match, bare nullable key, NOT pred, opt off
+2
+non-NULL single-key match on nullable-keyed dict - plan
+SELECT count() AS `count()`
+FROM default.data_nk AS __table1
+WHERE equals(toNullable(__table1.id), _CAST(1, \'Nullable(UInt64)\'))
+non-NULL single-key match on nullable-keyed dict
+1
+non-NULL single-key match on nullable-keyed dict, opt off
+1
 bare key, equals - plan
 SELECT count() AS `count()`
 FROM default.data AS __table1

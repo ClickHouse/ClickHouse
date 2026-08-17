@@ -546,8 +546,14 @@ public:
                     return;
                 }
 
-                /// Single key -> key_expr = <that key>
-                if (keys_size == 1)
+                /// Single key -> key_expr = <that key>.
+                /// Only for a non-NULL key. For the NULL key of a Nullable-keyed dictionary,
+                /// `key_expr = NULL` is NULL for every row, while `dictGet` misses the NULL
+                /// row for non-NULL keys and the predicate must be false there. The `IN`
+                /// form below preserves that: `x IN [NULL]` is false for non-NULL `x` and
+                /// NULL for NULL `x`, matching `dictGet` (a NULL key expression gives a NULL
+                /// result, so the comparison is NULL as well).
+                if (keys_size == 1 && !keys_array.front().isNull())
                 {
                     const Field & single_key_field = keys_array.front();
 
@@ -565,7 +571,7 @@ public:
                     return;
                 }
 
-                /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// Multiple keys (or a single NULL key) -> key_expr IN <constant array-of-keys>
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
 

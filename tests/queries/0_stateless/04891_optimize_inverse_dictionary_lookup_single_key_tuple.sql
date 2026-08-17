@@ -333,6 +333,78 @@ SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
+-- A dictionary key column can be Nullable, and the attribute value can belong to the
+-- NULL-keyed row. The single-match constant fold must not produce `key_expr = NULL`
+-- (NULL for every row): `dictGet` misses the NULL row for non-NULL keys, so the
+-- predicate must be false there, which the `IN [NULL]` form preserves.
+DROP DICTIONARY IF EXISTS dict_nullable_key;
+DROP TABLE IF EXISTS ref_nullable_key;
+DROP TABLE IF EXISTS data_nk;
+
+CREATE TABLE ref_nullable_key
+(
+    kn Nullable(UInt64),
+    attr String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO ref_nullable_key VALUES (1, 'foo'), (NULL, 'x');
+
+CREATE DICTIONARY dict_nullable_key
+(
+    kn Nullable(UInt64),
+    attr String DEFAULT 'none'
+)
+PRIMARY KEY kn
+SOURCE(CLICKHOUSE(TABLE 'ref_nullable_key'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(0);
+
+CREATE TABLE data_nk
+(
+    id UInt64
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO data_nk VALUES (1), (2);
+
+SELECT 'NULL-keyed row match, tuple carrier - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x';
+SELECT 'NULL-keyed row match, tuple carrier, projected';
+SELECT dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x' FROM data_nk ORDER BY id;
+SELECT 'NULL-keyed row match, tuple carrier, projected, opt off';
+SELECT dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x' FROM data_nk ORDER BY id
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'NULL-keyed row match, tuple carrier, NOT pred';
+SELECT count() FROM data_nk WHERE NOT (dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x');
+SELECT 'NULL-keyed row match, tuple carrier, NOT pred, opt off';
+SELECT count() FROM data_nk WHERE NOT (dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x')
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'NULL-keyed row match, tuple carrier, isNull pred';
+SELECT count() FROM data_nk WHERE isNull(dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x');
+SELECT 'NULL-keyed row match, tuple carrier, isNull pred, opt off';
+SELECT count() FROM data_nk WHERE isNull(dictGet('dict_nullable_key', 'attr', if(id != 0, tuple(id), NULL)) = 'x')
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+SELECT 'NULL-keyed row match, bare nullable key, NOT pred';
+SELECT count() FROM data_nk WHERE NOT (dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'x');
+SELECT 'NULL-keyed row match, bare nullable key, NOT pred, opt off';
+SELECT count() FROM data_nk WHERE NOT (dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'x')
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- Control: a non-NULL single-key match on the same dictionary keeps the equals fold.
+SELECT 'non-NULL single-key match on nullable-keyed dict - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'foo';
+SELECT 'non-NULL single-key match on nullable-keyed dict';
+SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'foo';
+SELECT 'non-NULL single-key match on nullable-keyed dict, opt off';
+SELECT count() FROM data_nk WHERE dictGet('dict_nullable_key', 'attr', toNullable(id)) = 'foo'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
 -- Control: the bare key form must keep working exactly as before.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
