@@ -8,6 +8,25 @@ node = cluster.add_instance("node", stay_alive=True)
 ROWS_PER_PART = 1000
 TOTAL_ROWS = 2 * ROWS_PER_PART
 
+# The wrong answer needs the direct-read rewrite to run and the skip index to be applied while
+# reading data; asserting ground truth cannot detect a default flip, so every asserting query
+# pins these explicitly.
+ARMING_SETTINGS = (
+    "use_skip_indexes = 1, "
+    "use_skip_indexes_on_data_read = 1, "
+    "query_plan_direct_read_from_text_index = 1"
+)
+
+# `EXPLAIN indexes = 1` reports granule counts from analysis, which only happens when the index
+# is not applied while reading data. A query-level setting is applied after EXPLAIN forces that
+# off internally, so asking for data-read-time application here would report every granule as
+# read and the pruning assertion could never fail.
+EXPLAIN_SETTINGS = (
+    "use_skip_indexes = 1, "
+    "use_skip_indexes_on_data_read = 0, "
+    "query_plan_direct_read_from_text_index = 1"
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -24,6 +43,23 @@ def part_path(table, part_name):
         f"WHERE database = currentDatabase() AND table = '{table}' "
         f"AND name = '{part_name}' AND active"
     ).strip()
+
+
+def stop_merges(table):
+    # A merge rebuilds an index that is not accounted in the source part, so it destroys the
+    # carrier as well as the part names. The lock is held on the storage instance, so it must be
+    # re-taken after every ATTACH.
+    node.query(f"SYSTEM STOP MERGES {table}")
+
+
+def assert_two_parts(table):
+    parts = node.query(
+        f"SELECT groupArray(name) FROM ("
+        f"  SELECT name FROM system.parts "
+        f"  WHERE database = currentDatabase() AND table = '{table}' AND active "
+        f"  ORDER BY name)"
+    ).strip()
+    assert parts == "['all_1_1_0','all_2_2_0']", f"part layout changed: {parts}"
 
 
 def make_partially_materialized(table, packed_max_bytes=0):
@@ -44,6 +80,7 @@ def make_partially_materialized(table, packed_max_bytes=0):
                  columns_and_secondary_indices_sizes_lazy_calculation = 0
         """
     )
+    stop_merges(table)
     node.query(
         f"INSERT INTO {table} SELECT number, 'alpha beta' FROM numbers({ROWS_PER_PART})"
     )
@@ -54,6 +91,12 @@ def make_partially_materialized(table, packed_max_bytes=0):
         f"INSERT INTO {table} SELECT number + {ROWS_PER_PART}, 'alpha beta' "
         f"FROM numbers({ROWS_PER_PART})"
     )
+
+
+def reattach(table):
+    node.query(f"DETACH TABLE {table}")
+    node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
 
 
 def inject_orphan_index_file(table, part_name="all_1_1_0"):
@@ -82,8 +125,7 @@ def inject_orphan_index_file(table, part_name="all_1_1_0"):
     ).strip()
     assert accounted == "0", "orphan index file must not be accounted in checksums.txt"
 
-    node.query(f"DETACH TABLE {table}")
-    node.query(f"ATTACH TABLE {table}")
+    reattach(table)
 
 
 def scalar(query):
@@ -96,6 +138,7 @@ def test_orphan_index_file_does_not_drop_rows(started_cluster):
     table = "orphan_read"
     make_partially_materialized(table)
     inject_orphan_index_file(table)
+    assert_two_parts(table)
 
     assert scalar(f"SELECT count() FROM {table}") == str(TOTAL_ROWS)
     assert (
@@ -110,14 +153,14 @@ def test_orphan_index_file_does_not_drop_rows(started_cluster):
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == str(TOTAL_ROWS)
     )
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE NOT hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "0"
     )
@@ -128,7 +171,7 @@ def test_orphan_index_file_does_not_drop_rows(started_cluster):
             f"SELECT groupArray((_part, c)) FROM ("
             f"  SELECT _part, count() AS c FROM {table} WHERE hasToken(s, 'alpha') "
             f"  GROUP BY _part ORDER BY _part "
-            f"  SETTINGS use_skip_indexes = 1, query_plan_optimize_count_from_text_index = 0)"
+            f"  SETTINGS {ARMING_SETTINGS}, query_plan_optimize_count_from_text_index = 0)"
         )
         == f"[('all_1_1_0',{ROWS_PER_PART}),('all_2_2_0',{ROWS_PER_PART})]"
     )
@@ -136,7 +179,7 @@ def test_orphan_index_file_does_not_drop_rows(started_cluster):
     assert (
         scalar(
             f"SELECT count() FROM (SELECT k, s FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1)"
+            f"SETTINGS {ARMING_SETTINGS})"
         )
         == str(TOTAL_ROWS)
     )
@@ -147,28 +190,28 @@ def test_no_orphan_is_unaffected(started_cluster):
     # correct, so a failure above cannot be blamed on the partially materialized index alone.
     table = "orphan_read_control"
     make_partially_materialized(table)
-    node.query(f"DETACH TABLE {table}")
-    node.query(f"ATTACH TABLE {table}")
+    reattach(table)
+    assert_two_parts(table)
 
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == str(TOTAL_ROWS)
     )
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE NOT hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "0"
     )
 
 
 def test_index_materialized_in_no_part(started_cluster):
-    # The index name is absent from the read tasks, which is the lookup-miss path of the read
-    # predicate. It must fall back to reading the base column rather than claim the index.
+    # An index materialized in no part disables the direct-read rewrite entirely, so no virtual
+    # column is created and the predicate answers through the ordinary row-level path.
     table = "orphan_read_unmaterialized"
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
@@ -187,14 +230,14 @@ def test_index_materialized_in_no_part(started_cluster):
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == str(TOTAL_ROWS)
     )
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE NOT hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "0"
     )
@@ -213,6 +256,7 @@ def test_fully_materialized_index_still_prunes(started_cluster):
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100
         """
     )
+    stop_merges(table)
     node.query(
         f"INSERT INTO {table} SELECT number, if(number < 400, 'alpha beta', 'gamma delta') "
         f"FROM numbers({ROWS_PER_PART})"
@@ -221,6 +265,7 @@ def test_fully_materialized_index_still_prunes(started_cluster):
         f"INSERT INTO {table} SELECT number + {ROWS_PER_PART}, "
         f"if(number < 200, 'alpha beta', 'gamma delta') FROM numbers({ROWS_PER_PART})"
     )
+    assert_two_parts(table)
 
     expected = scalar(
         f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') SETTINGS use_skip_indexes = 0"
@@ -229,15 +274,44 @@ def test_fully_materialized_index_still_prunes(started_cluster):
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == expected
     )
+    # The count above is the correct answer whether it came from the index or from the base
+    # column, so it cannot see the predicate refusing a materialized part. Reading the match
+    # from the index reads one byte per row of the virtual column, while falling back reads the
+    # whole string column, so the bytes read distinguish the two routes.
+    def bytes_read(direct_read):
+        log_comment = f"{table}_bytes_{direct_read}"
+        node.query(
+            f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
+            f"SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, "
+            f"query_plan_direct_read_from_text_index = {direct_read}, "
+            f"query_plan_optimize_count_from_text_index = 0, log_comment = '{log_comment}'"
+        )
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(
+            scalar(
+                f"SELECT ProfileEvents['SelectedBytes'] FROM system.query_log "
+                f"WHERE type = 'QueryFinish' AND current_database = currentDatabase() "
+                f"AND log_comment = '{log_comment}' "
+                f"ORDER BY event_time_microseconds DESC LIMIT 1"
+            )
+        )
+
+    from_index = bytes_read(1)
+    from_column = bytes_read(0)
+    assert from_index < from_column, (
+        f"the predicate refused a materialized part: {from_index} bytes read with direct read "
+        f"from the index, {from_column} without it"
+    )
+
     assert (
         scalar(
             f"SELECT count() > 0 FROM ("
             f"  EXPLAIN indexes = 1 SELECT * FROM {table} WHERE hasToken(s, 'alpha') "
-            f"  SETTINGS use_skip_indexes = 1) "
+            f"  SETTINGS {EXPLAIN_SETTINGS}) "
             f"WHERE explain ILIKE '%Name: tx%'"
         )
         == "1"
@@ -246,18 +320,18 @@ def test_fully_materialized_index_still_prunes(started_cluster):
     # names the index and then reads everything. Read the reader's own granule count from the
     # `Parts: N | Granules: M` line: the per-index `Granules: M/N` lines include the primary
     # key's, which never prunes here.
-    def granules_read(use_skip_indexes):
+    def granules_read(settings):
         return int(
             scalar(
                 f"SELECT extract(explain, 'Granules: (\\\\d+)$') FROM ("
                 f"  EXPLAIN indexes = 1 SELECT * FROM {table} WHERE hasToken(s, 'alpha') "
-                f"  SETTINGS use_skip_indexes = {use_skip_indexes}) "
+                f"  SETTINGS {settings}) "
                 f"WHERE explain ILIKE '%Parts:%|%Granules:%'"
             )
         )
 
-    with_index = granules_read(1)
-    without_index = granules_read(0)
+    with_index = granules_read(EXPLAIN_SETTINGS)
+    without_index = granules_read("use_skip_indexes = 0")
     assert with_index < without_index, (
         f"index did not prune granules: {with_index} read with the index, "
         f"{without_index} without it"
@@ -276,6 +350,7 @@ def test_partially_materialized_index_without_corruption(started_cluster):
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100
         """
     )
+    stop_merges(table)
     node.query(
         f"INSERT INTO {table} SELECT number, if(number < 400, 'alpha beta', 'gamma delta') "
         f"FROM numbers({ROWS_PER_PART})"
@@ -287,18 +362,19 @@ def test_partially_materialized_index_without_corruption(started_cluster):
         f"INSERT INTO {table} SELECT number + {ROWS_PER_PART}, "
         f"if(number < 200, 'alpha beta', 'gamma delta') FROM numbers({ROWS_PER_PART})"
     )
+    assert_two_parts(table)
 
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "600"
     )
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE NOT hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "1400"
     )
@@ -307,7 +383,7 @@ def test_partially_materialized_index_without_corruption(started_cluster):
             f"SELECT groupArray((_part, c)) FROM ("
             f"  SELECT _part, count() AS c FROM {table} WHERE hasToken(s, 'alpha') "
             f"  GROUP BY _part ORDER BY _part "
-            f"  SETTINGS use_skip_indexes = 1, query_plan_optimize_count_from_text_index = 0)"
+            f"  SETTINGS {ARMING_SETTINGS}, query_plan_optimize_count_from_text_index = 0)"
         )
         == "[('all_1_1_0',400),('all_2_2_0',200)]"
     )
@@ -326,6 +402,7 @@ def test_orphan_index_file_on_compact_part(started_cluster):
                  columns_and_secondary_indices_sizes_lazy_calculation = 0
         """
     )
+    stop_merges(table)
     node.query(
         f"INSERT INTO {table} SELECT number, 'alpha beta' FROM numbers({ROWS_PER_PART})"
     )
@@ -344,18 +421,19 @@ def test_orphan_index_file_on_compact_part(started_cluster):
         == "Compact"
     )
     inject_orphan_index_file(table)
+    assert_two_parts(table)
 
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == str(TOTAL_ROWS)
     )
     assert (
         scalar(
             f"SELECT count() FROM {table} WHERE NOT hasToken(s, 'alpha') "
-            f"SETTINGS use_skip_indexes = 1"
+            f"SETTINGS {ARMING_SETTINGS}"
         )
         == "0"
     )
