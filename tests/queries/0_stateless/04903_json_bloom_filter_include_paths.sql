@@ -57,7 +57,7 @@ SELECT trim(explain) FROM
     SELECT count() FROM json_bf_include_paths WHERE j.request_id = 'missing'
     SETTINGS force_data_skipping_indices = 'exact_idx'
 )
-WHERE explain LIKE '%Granules:%';
+WHERE trim(explain) = 'Granules: 0/2';
 
 SELECT trim(explain) FROM
 (
@@ -65,7 +65,7 @@ SELECT trim(explain) FROM
     SELECT count() FROM json_bf_include_paths WHERE j.created_at = 'missing'
     SETTINGS force_data_skipping_indices = 'regexp_idx'
 )
-WHERE explain LIKE '%Granules:%';
+WHERE trim(explain) = 'Granules: 0/2';
 
 SELECT groupArray(id) FROM json_bf_include_paths WHERE j.request = 'request-1';
 SELECT groupArray(id) FROM json_bf_include_paths WHERE j.request = 'request-1'

@@ -17,7 +17,7 @@ INSERT INTO json_bf_array_json_size_field FORMAT JSONEachRow
 
 SELECT groupArray(id)
 FROM json_bf_array_json_size_field
-WHERE has(j.arr[].inner.size0, 92::Int64)
+WHERE has(j.arr[].inner.size0, 92::UInt64)
 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE json_bf_array_json_size_field;

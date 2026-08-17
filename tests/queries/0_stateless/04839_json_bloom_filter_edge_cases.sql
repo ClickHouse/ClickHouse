@@ -65,12 +65,12 @@ SELECT 'reserved items field', groupArray(id) FROM json_bf_edges WHERE has(j.ite
 SELECT 'array has', groupArray(id) FROM json_bf_edges WHERE has(j.arr, 4) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array hasAny', groupArray(id) FROM json_bf_edges WHERE hasAny(j.arr, [2, 99]) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array hasAll', groupArray(id) FROM json_bf_edges WHERE hasAll(j.arr, [3, 4]) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'dynamic array integer', groupArray(id) FROM json_bf_edges WHERE has(j.dyn_arr, toInt64(2)) SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'dynamic array integer', groupArray(id) FROM json_bf_edges WHERE has(j.dyn_arr, toUInt64(2)) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic array string', groupArray(id) FROM json_bf_edges WHERE has(j.dyn_arr, 'one') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic array bool', groupArray(id) FROM json_bf_edges WHERE has(j.dyn_arr, true) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic array literal type', groupArray(id) FROM json_bf_edges WHERE has(j.dyn_arr, 2) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic array hasAny literal type', groupArray(id) FROM json_bf_edges WHERE hasAny(j.dyn_arr, [2, 99]) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'dynamic array hasAny typed', groupArray(id) FROM json_bf_edges WHERE hasAny(j.dyn_arr, [toInt64(2), toInt64(99)]) SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'dynamic array hasAny typed', groupArray(id) FROM json_bf_edges WHERE hasAny(j.dyn_arr, [toUInt64(2), toUInt64(99)]) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'map string key', groupArray(id) FROM json_bf_edges WHERE j.map_s['second'] = 7 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'map string key unoptimized', groupArray(id) FROM json_bf_edges WHERE j.map_s['second'] = 7 SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT 'map key separation', groupArray(id) FROM json_bf_edges WHERE j.map_s['missing'] = 7 SETTINGS force_data_skipping_indices = 'idx';
@@ -119,7 +119,7 @@ SELECT count() FROM json_bf_dynamic_edges WHERE j.value = 'x' SETTINGS force_dat
 SELECT 'dynamic negative zero', groupArray(id) FROM json_bf_dynamic_edges WHERE j.zero = 0.0 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'scalar role', groupArray(id) FROM json_bf_dynamic_edges WHERE j.poly = 7 SETTINGS force_data_skipping_indices = 'idx', dynamic_throw_on_type_mismatch = 0;
 SELECT 'nested path', groupArray(id) FROM json_bf_dynamic_edges WHERE j.nested.leaf = 'beta' SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'array json leaf', groupArray(id) FROM json_bf_dynamic_edges WHERE has(j.items[].leaf, toInt64(12)) SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'array json leaf', groupArray(id) FROM json_bf_dynamic_edges WHERE has(j.items[].leaf, toUInt64(12)) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_bf_dynamic_edges WHERE j.value LIKE '%foo%'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM json_bf_dynamic_edges WHERE multiSearchAny(j.value, ['foo']); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 SELECT 'unsupported dynamic is conservative', groupArray(id) FROM json_bf_dynamic_edges WHERE j.value = 999 SETTINGS force_data_skipping_indices = 'idx', dynamic_throw_on_type_mismatch = 0;

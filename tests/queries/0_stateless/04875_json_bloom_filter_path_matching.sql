@@ -20,7 +20,7 @@ INSERT INTO json_bf_path_matching FORMAT JSONEachRow
 
 SELECT groupArray(id) FROM json_bf_path_matching WHERE j.key_1 = 2 SETTINGS force_data_skipping_indices = 'idx';
 SELECT groupArray(id) FROM json_bf_path_matching WHERE j.obj.key_7 = 257 SETTINGS force_data_skipping_indices = 'idx';
-SELECT groupArray(id) FROM json_bf_path_matching WHERE has(j.a1[][].x, [42::Int64]) SETTINGS force_data_skipping_indices = 'idx';
-SELECT groupArray(id) FROM json_bf_path_matching WHERE has(j.a[].f[][].g, [[43::Int64]]) SETTINGS force_data_skipping_indices = 'idx';
+SELECT groupArray(id) FROM json_bf_path_matching WHERE has(j.a1[][].x, [42::UInt64]) SETTINGS force_data_skipping_indices = 'idx';
+SELECT groupArray(id) FROM json_bf_path_matching WHERE has(j.a[].f[][].g, [[43::UInt64]]) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE json_bf_path_matching;
