@@ -19,6 +19,7 @@ job). They drive the probe with a stub instead of an unresponsive server, so the
 do not wait out the probe's real 65-165 s retry budget.
 """
 
+import ast
 import contextlib
 import http.client
 import io
@@ -173,6 +174,47 @@ def test_lock_scope_probe_rejects_an_unlocked_read_modify_write():
         assert "outside the lock" in str(e), e
     else:
         raise AssertionError("the probe accepted an unlocked read-modify-write")
+
+
+def test_every_carrier_write_goes_through_the_locked_helper():
+    """No site assigns the carrier directly.
+
+    The arms above pin the helper's own semantics, but each site starts from an
+    empty carrier and writes before anything competes, so a plain
+    `stop_exit_code.value = CODE` at any of them produces the same values and
+    keeps every test green. Only the write's spelling separates the two, so that
+    is what this asserts, over the whole file rather than a listed set of lines.
+    """
+    tree = ast.parse(_CLICKHOUSE_TEST.read_text(encoding="utf-8"))
+    helper = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "try_claim_stop_cause"
+    )
+    inside_helper = {n for n in ast.walk(helper)}
+
+    direct = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and node not in inside_helper
+        for target in node.targets
+        if isinstance(target, ast.Attribute)
+        and target.attr == "value"
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "stop_exit_code"
+    ]
+    assert not direct, f"carrier assigned outside try_claim_stop_cause at {direct}"
+
+    claims = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "try_claim_stop_cause"
+    ]
+    # Positive control: zero direct assignments is also what a file with no
+    # carrier writes at all would report.
+    assert len(claims) >= 5, f"expected every decision site to claim, found {claims}"
 
 
 # --- The four decision sites --------------------------------------------------
