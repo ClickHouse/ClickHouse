@@ -200,7 +200,8 @@ namespace
             {
                 Int64 timestamp = timestamps.getInt(j);
                 Float64 value = values.getFloat64(j);
-                Int64 timestamp_ms = DecimalUtils::convertTo<Decimal64>(3, Decimal64{timestamp}, timestamp_scale).value;
+                Int64 timestamp_ms = convertDecimals<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal64>>(
+                    Decimal64{timestamp}, timestamp_scale, 3).value;
                 auto & new_sample = *new_time_series.add_samples();
                 new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);
