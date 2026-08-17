@@ -356,6 +356,11 @@ CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
     }
 
     /// Acquire the role for the tail. Never nested (one claim per write), so we do not already hold it.
+    /// Diagnostic for the detached-segment claim race: a sibling read may have completed and removed this
+    /// shared segment while our non-owning writer_view still points at it, and `getOrSetDownloader` below
+    /// aborts (LOGICAL_ERROR) on a detached segment. Log the segment identity so a CI recurrence is traceable.
+    if (seg.isDetached())
+        LOG_ERROR(log, "claimLeadRole: file segment unexpectedly DETACHED before acquiring the downloader role: {}", seg.getInfoForLog());
     chassert(!seg.isDownloader());
     const bool won = seg.getOrSetDownloader() == FileSegment::getCallerId();
 

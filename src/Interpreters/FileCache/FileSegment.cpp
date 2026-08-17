@@ -1454,6 +1454,7 @@ bool FileSegment::isCompleted(bool sync) const
 
 void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
 {
+    LOG_TRACE(getLog(), "setDetachedState: {}", getInfoForLogUnlocked(lock));
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     queue_iterator = nullptr;
