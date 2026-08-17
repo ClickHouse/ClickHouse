@@ -845,24 +845,18 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
             for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
                 required_columns_by_readers.insert(name);
 
-        Names retained_columns;
+        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
         std::erase_if(result.removed_columns, [&](const String & column)
         {
             if (!required_columns_by_readers.contains(column))
                 return false;
 
-            retained_columns.push_back(column);
-            return true;
-        });
-
-        /// A retained column stays in the read header but is no longer read by this DAG, so make it an
-        /// input: an unmatched header column would otherwise be appended to the step's output header.
-        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
-        for (const auto & column : retained_columns)
-        {
+            /// ActionsDAG::updateHeader appends a header column that is not an input of the DAG,
+            /// which would widen this step's output header.
             if (read_header.has(column))
                 filter_dag.addInput(read_header.getByName(column));
-        }
+            return true;
+        });
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
