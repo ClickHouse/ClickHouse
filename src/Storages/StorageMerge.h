@@ -216,6 +216,11 @@ public:
     /// that the expansion never happens for a `Merge` the caller would leave local anyway.
     std::optional<QueryPlan> expandForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
+    /// Undo of `expandForParallelReplicas`, for a caller which put this step back into the plan because the
+    /// reads it exposed are not distributed after all. The child plans were moved into the union, so they are
+    /// dropped here and built again on the next read of them.
+    void resetChildPlansForRebuild();
+
     void addFilter(FilterDAGInfo filter);
 
 private:

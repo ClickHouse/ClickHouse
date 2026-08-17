@@ -103,6 +103,20 @@ FROM (
     WHERE step IN ('Aggregating', 'MergingAggregated', 'Union', 'Join', 'ReadFromMerge', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
 );
 
+-- A `FULL` join is not distributed at all: concatenating the per-replica results of one coordinated side
+-- would duplicate the unmatched rows of the other one. The `Merge` read must then be left as it is, instead
+-- of being expanded into a union which nothing distributes.
+SELECT '-- Merge FULL JOIN MergeTree, nothing is distributed';
+SELECT count(), sum(m.v) FROM m_pbmj AS m FULL JOIN t_pbmj_dim AS d ON m.k = d.k;
+SELECT count(), sum(m.v) FROM m_pbmj AS m FULL JOIN t_pbmj_dim AS d ON m.k = d.k SETTINGS enable_parallel_replicas = 0;
+SELECT arrayStringConcat(groupArray(step), ' ')
+FROM (
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
+          SELECT count(), sum(m.v) FROM m_pbmj AS m FULL JOIN t_pbmj_dim AS d ON m.k = d.k)
+    WHERE step IN ('Aggregating', 'MergingAggregated', 'Union', 'Join', 'ReadFromMerge', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
+);
+
 SELECT '-- merge() table function INNER JOIN MergeTree';
 SELECT count(), sum(m.v) FROM merge(currentDatabase(), '^t_pbmj_[12]$') AS m INNER JOIN t_pbmj_dim AS d ON m.k = d.k;
 SELECT count(), sum(m.v) FROM merge(currentDatabase(), '^t_pbmj_[12]$') AS m INNER JOIN t_pbmj_dim AS d ON m.k = d.k SETTINGS enable_parallel_replicas = 0;

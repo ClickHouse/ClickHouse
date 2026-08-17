@@ -2182,6 +2182,15 @@ std::optional<QueryPlan> ReadFromMerge::expandForParallelReplicas(
     return union_plan;
 }
 
+void ReadFromMerge::resetChildPlansForRebuild()
+{
+    /// The plans themselves were moved into the union, so what is left of them is unusable. Everything the
+    /// build depends on lives on this step - the pushed down filters and the filter DAG `applyFilters` set -
+    /// so `filterTablesAndCreateChildrenPlans` produces the same children again when it is next called.
+    child_plans.reset();
+    selected_tables.clear();
+}
+
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;

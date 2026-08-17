@@ -131,6 +131,19 @@ FROM (SELECT trimLeft(explain) AS explain FROM (EXPLAIN pretty = 0, description 
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 SELECT count(), sum(k), sum(v) FROM m_pbm SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0;
 
+-- The reads of a union which reads one table twice cannot be coordinated: the coordinator drives every read
+-- of a shipped fragment and cannot tell the two announcements of that table apart. Here the second branch
+-- reads a table the `Merge` matches, so the expansion is what would create the duplicate - and the `Merge`
+-- read is left as it is instead.
+SELECT '-- a union which reads a child of the Merge again';
+SELECT
+    countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
+    countIf(explain = 'ReadFromMerge') > 0 AS merge_read_not_expanded
+FROM (SELECT trimLeft(explain) AS explain
+      FROM (EXPLAIN pretty = 0, description = 0 SELECT count() FROM (SELECT k FROM m_pbm UNION ALL SELECT k FROM t_pbm_1)));
+SELECT count(), sum(k) FROM (SELECT k FROM m_pbm UNION ALL SELECT k FROM t_pbm_1);
+SELECT count(), sum(k) FROM (SELECT k FROM m_pbm UNION ALL SELECT k FROM t_pbm_1) SETTINGS enable_parallel_replicas = 0;
+
 -- A `Merge` matching no table at all has nothing to distribute either.
 SELECT '-- Merge over no tables';
 CREATE TABLE m_pbm_over_nothing (k UInt64, v UInt64) ENGINE = Merge(currentDatabase(), '^t_pbm_no_such_tables');

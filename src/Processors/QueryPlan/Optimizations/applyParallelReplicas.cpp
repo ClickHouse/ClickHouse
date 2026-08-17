@@ -456,11 +456,16 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
 /// first, so that the rest of the pass treats a `Merge` exactly like a `UNION ALL` over its underlying
 /// tables. Ineligible ones (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read)
 /// are left as they are and read by a single replica.
-static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
+///
+/// Returns every expanded node together with the step it replaced, so that an expansion which turns out to
+/// distribute nothing can be undone - see `restoreExpandedMergeReads`.
+using ExpandedMergeReads = std::vector<std::pair<QueryPlan::Node *, QueryPlanStepPtr>>;
+
+static ExpandedMergeReads expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
 {
     auto * root = query_plan.getRootNode();
     if (!root)
-        return;
+        return {};
 
     /// Collect first: the expansion replaces the step of a visited node.
     std::vector<QueryPlan::Node *> merge_nodes;
@@ -475,6 +480,7 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
                 merge_nodes.push_back(&node);
         });
 
+    ExpandedMergeReads expanded_merge_reads;
     for (auto * node : merge_nodes)
     {
         auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
@@ -482,7 +488,38 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
         /// would drop must keep its own step, so that a query which is not distributed keeps the plan it has
         /// without the expansion.
         if (auto expanded = merge.expandForParallelReplicas(mergeTreeReadCanBeShipped))
+        {
+            /// Keep the step alive: `replaceNodeWithPlan` overwrites it, and it is the only way back if the
+            /// reads turn out not to be distributed after all.
+            auto merge_step = std::move(node->step);
             query_plan.replaceNodeWithPlan(node, std::move(*expanded));
+            expanded_merge_reads.emplace_back(node, std::move(merge_step));
+        }
+    }
+
+    return expanded_merge_reads;
+}
+
+/// Whether a `Merge` is worth expanding cannot be decided per read: `collectReadsToDistribute` rejects whole
+/// topologies, a `FULL`/`CROSS` join yielding nothing and a union being rejected outright when two of its
+/// branches read the same table - which the expansion itself can cause, by turning a `Merge` into a union of
+/// the very tables a sibling branch reads. So when the plan distributes nothing at all, put every expanded
+/// `Merge` back, and let a query which is executed on a single replica be executed by the plan it would have
+/// without the feature.
+///
+/// The decision is per plan and not per `Merge` on purpose: a `Merge` on the broadcast side of a join has no
+/// read of its own to distribute - `collectReadsToDistribute` follows only the coordinated side - and must
+/// stay expanded regardless, because that side is shipped inside the fragment and read in full by every
+/// replica.
+///
+/// Only the steps are put back; the union nodes stay in the plan as unreachable orphans.
+static void restoreExpandedMergeReads(ExpandedMergeReads & expanded_merge_reads)
+{
+    for (auto & [node, merge_step] : expanded_merge_reads)
+    {
+        node->step = std::move(merge_step);
+        node->children.clear();
+        typeid_cast<ReadFromMerge &>(*node->step).resetChildPlansForRebuild();
     }
 }
 
@@ -507,13 +544,16 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     /// Expand the `Merge` reads before collecting the reads to distribute, so that a `Merge` participates in
     /// the same union and aggregation splitting as a plain `MergeTree` table. Done after the bail-outs above
     /// so that the plan of a query which is not distributed anyway is left alone.
-    expandMergeReadsForParallelReplicas(query_plan);
+    auto expanded_merge_reads = expandMergeReadsForParallelReplicas(query_plan);
 
     std::unordered_set<const QueryPlan::Node *> eligible;
     for (auto * node : collectReadsToDistribute(root))
         eligible.insert(node);
     if (eligible.empty())
+    {
+        restoreExpandedMergeReads(expanded_merge_reads);
         return;
+    }
 
     /// The split step is created directly above the read. When converting the split marker into a
     /// distributed fragment, the fragment's execution context is taken from the ReadFromMergeTree step.

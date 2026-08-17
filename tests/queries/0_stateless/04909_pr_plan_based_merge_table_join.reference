@@ -17,6 +17,10 @@ MergingAggregated Union Aggregating Join ReadFromMergeTree Union ReadFromMergeTr
 20	13500
 20	13500
 MergingAggregated Union Aggregating Join Union ReadFromMergeTree ReadFromMergeTree Union ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+-- Merge FULL JOIN MergeTree, nothing is distributed
+2000	1498500
+2000	1498500
+Aggregating Join ReadFromMerge ReadFromMergeTree ReadFromMergeTree ReadFromMergeTree
 -- merge() table function INNER JOIN MergeTree
 20	13500
 20	13500

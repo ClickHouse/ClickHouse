@@ -39,6 +39,10 @@
 -- Merge over non-replicated tables which may not be read remotely
 0	1
 2000	1999000	1498500
+-- a union which reads a child of the Merge again
+0	1
+3000	2498500
+3000	2498500
 -- Merge over no tables
 0	0
 0	0	0
