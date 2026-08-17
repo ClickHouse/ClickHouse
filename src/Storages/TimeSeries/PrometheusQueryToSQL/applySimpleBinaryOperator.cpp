@@ -89,13 +89,23 @@ namespace
         /// FROM right
         /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
         ///
+        /// If the join key of a side is the bare `group` column (which happens whenever the metric name
+        /// has already been dropped from that side and there is no on()/ignoring() label surgery -
+        /// for example both sides of `sum(a) / sum(b)` or `sum by (pod) (a) / sum by (pod) (b)`),
+        /// the step above would be a pure rename `SELECT group AS original_group, group AS join_group, values`,
+        /// so it's skipped entirely and step 3 references the `group` column of that side directly.
         bool metric_name_dropped_from_join_group = false;
 
-        for (auto & side : sides)
+        /// The names of the columns of each side to be used in step 3 as the join key and the original group.
+        String join_group_columns[2] = {ColumnNames::JoinGroup, ColumnNames::JoinGroup};
+        String original_group_columns[2] = {ColumnNames::OriginalGroup, ColumnNames::OriginalGroup};
+
+        for (size_t side_index = 0; side_index != 2; ++side_index)
         {
+            String & side = sides[side_index];
             SelectQueryBuilder builder;
 
-            bool metric_name_dropped_from_group = (side == left) ? left_argument.metric_name_dropped : right_argument.metric_name_dropped;
+            bool metric_name_dropped_from_group = (side_index == 0) ? left_argument.metric_name_dropped : right_argument.metric_name_dropped;
             bool metric_name_dropped_from_join_group_on_side = metric_name_dropped_from_group;
 
             /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
@@ -110,13 +120,24 @@ namespace
             /// If the metric name has dropped from the `join_group` either on left or on right then it's dropped.
             metric_name_dropped_from_join_group |= metric_name_dropped_from_join_group_on_side;
 
+            if (tryGetIdentifierName(join_group.get()) == ColumnNames::Group)
+            {
+                /// The join key is the bare `group` column, so this step would be a pure rename
+                /// (and no duplicate check is needed: values of `group` are already unique, see StoreMethod::VECTOR_GRID).
+                /// Skip the step and use the `group` column directly in step 3.
+                join_group_columns[side_index] = ColumnNames::Group;
+                original_group_columns[side_index] = ColumnNames::Group;
+                continue;
+            }
+
             /// If neither group_left not group_right is specified then it's one-to-one match.
             /// If there is group_left then it's many-to-one match.
             /// If there is group_right then it's one-to-many match.
-            bool group_on_side = (side == left) ? group_left : group_right;
+            bool group_on_side = (side_index == 0) ? group_left : group_right;
 
-            /// If `join_group` is the same as `group` then we already know it's unique.
-            bool check_side_one = !group_on_side && (tryGetIdentifierName(join_group.get()) != ColumnNames::Group);
+            /// `join_group` is computed here (it's not the bare `group` column), so its values
+            /// may collide and the side "one" needs the duplicate check.
+            bool check_side_one = !group_on_side;
 
             /// We add column `original_group` because we may need it at step 3.
             ASTPtr original_group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
@@ -207,7 +228,8 @@ namespace
 
                 if (can_use_join_group_in_result)
                 {
-                    new_group = make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup);
+                    /// The left side's join key is used; it's equal to the right side's join key on every joined row.
+                    new_group = make_intrusive<ASTIdentifier>(Strings{left, join_group_columns[0]});
                     metric_name_dropped_from_result = metric_name_dropped_from_join_group;
                 }
                 else
@@ -215,7 +237,7 @@ namespace
                     metric_name_dropped_from_result = left_argument.metric_name_dropped;
                     new_group = transformGroupASTForBinaryOperator(
                         operator_node,
-                        make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::OriginalGroup}),
+                        make_intrusive<ASTIdentifier>(Strings{left, original_group_columns[0]}),
                         drop_metric_name,
                         metric_name_dropped_from_result);
                 }
@@ -241,15 +263,15 @@ namespace
 
                 /// Either group_left or group_right is specified.
                 /// There are two sides: "one" and "many".
-                String side_many;
-                String side_one;
+                size_t side_many_index;
+                size_t side_one_index;
                 bool metric_name_dropped_from_side_many = false;
                 bool metric_name_dropped_from_side_one = false;
 
                 if (group_left)
                 {
-                    side_many = left;
-                    side_one = right;
+                    side_many_index = 0;
+                    side_one_index = 1;
                     metric_name_dropped_from_side_many = left_argument.metric_name_dropped;
                     metric_name_dropped_from_side_one = right_argument.metric_name_dropped;
 
@@ -259,8 +281,8 @@ namespace
                 else
                 {
                     chassert(group_right);
-                    side_many = right;
-                    side_one = left;
+                    side_many_index = 1;
+                    side_one_index = 0;
                     metric_name_dropped_from_side_many = right_argument.metric_name_dropped;
                     metric_name_dropped_from_side_one = left_argument.metric_name_dropped;
 
@@ -268,10 +290,13 @@ namespace
                     join_kind = JoinKind::Right;
                 }
 
+                const String & side_many = sides[side_many_index];
+                const String & side_one = sides[side_one_index];
+
                 join_strictness = JoinStrictness::Semi;
 
                 /// Drop the metric name from the side "many".
-                new_group = make_intrusive<ASTIdentifier>(Strings{side_many, ColumnNames::OriginalGroup});
+                new_group = make_intrusive<ASTIdentifier>(Strings{side_many, original_group_columns[side_many_index]});
 
                 metric_name_dropped_from_result = metric_name_dropped_from_side_many;
 
@@ -304,7 +329,7 @@ namespace
                     new_group = makeASTFunction(
                         "timeSeriesCopyTags",
                         new_group,
-                        make_intrusive<ASTIdentifier>(Strings{side_one, ColumnNames::OriginalGroup}),
+                        make_intrusive<ASTIdentifier>(Strings{side_one, original_group_columns[side_one_index]}),
                         make_intrusive<ASTLiteral>(Array{tags_to_copy.begin(), tags_to_copy.end()}));
 
                     check_no_duplicate_groups = true;
@@ -337,8 +362,8 @@ namespace
 
             builder.join_on = makeASTFunction(
                 "equals",
-                make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::JoinGroup}),
-                make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::JoinGroup}));
+                make_intrusive<ASTIdentifier>(Strings{left, join_group_columns[0]}),
+                make_intrusive<ASTIdentifier>(Strings{right, join_group_columns[1]}));
 
             if (check_no_duplicate_groups)
             {
