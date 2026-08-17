@@ -39,6 +39,20 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i
     WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3)
 SETTINGS optimize_inverse_dictionary_lookup = 0;
+-- The rows above are equal either way, so they cannot witness the rewrite. These two assert that the
+-- rewrite is what plants the set: a set step exists only when the rewrite is enabled.
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_main AS o WHERE EXISTS (
+        SELECT 1 FROM t_main AS i
+        WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3)
+    SETTINGS optimize_inverse_dictionary_lookup = 1
+) WHERE explain ILIKE '%CreatingSets%';
+SELECT count() FROM (
+    EXPLAIN SELECT count() FROM t_main AS o WHERE EXISTS (
+        SELECT 1 FROM t_main AS i
+        WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3)
+    SETTINGS optimize_inverse_dictionary_lookup = 0
+) WHERE explain ILIKE '%CreatingSets%';
 
 SELECT '-- plain IN (SELECT ...) inside a correlated EXISTS';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -67,13 +81,16 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val > 200));
 
 SELECT '-- per-row equality against the constant-set rewrite';
+-- Each arm selects a strict subset of the outer rows, so a per-row divergence would surface as a
+-- non-zero symmetric difference. `join_use_nulls` is required: without it the unmatched side is
+-- filled with defaults and `IS NULL` never holds.
 SELECT count() FROM (
     SELECT o.k FROM t_main AS o WHERE EXISTS (
-        SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6))
+        SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (SELECT val FROM t_src WHERE val = 3))
 ) AS a
 FULL JOIN (
     SELECT o.k FROM t_main AS o WHERE EXISTS (
-        SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (0, 1, 2, 3, 4, 5, 6))
+        SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (3))
 ) AS b ON a.k = b.k
 WHERE a.k IS NULL OR b.k IS NULL
 SETTINGS join_use_nulls = 1;
@@ -154,12 +171,14 @@ SELECT count() FROM t_main AS o WHERE o.g >= (
     ) GROUP BY g);
 
 SELECT '-- two independent IN sets in one body';
+-- Both sets must narrow the result: dropping either one changes the count (80 without the g-set,
+-- 40 without the k-set), so neither conjunct is implied by `i.k < 8`.
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8
-      AND i.g IN (SELECT val FROM t_src WHERE val = 3)
-      AND i.k IN (SELECT id FROM t_src WHERE id < 50));
+      AND i.g IN (SELECT val FROM t_src WHERE val IN (3, 4))
+      AND i.k IN (SELECT id FROM t_src WHERE id < 4));
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8 AND i.g IN (3) AND i.k < 50);
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8 AND i.g IN (3, 4) AND i.k < 4);
 
 SELECT '-- two-level nested correlated subquery, IN set in the inner body';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -177,7 +196,10 @@ SELECT '-- an ordinary CTE body without an IN set is unaffected';
 WITH c AS (SELECT k, g, s FROM t_main)
 SELECT count() FROM t_main AS o WHERE EXISTS (SELECT 1 FROM c AS i WHERE i.s = o.s);
 
-SELECT '-- unchanged with parallel replicas enabled';
+SELECT '-- unchanged when parallel replicas are requested';
+-- Parallel replicas are declined for this shape whatever is requested: the query-tree path disables
+-- them for any correlated query, and the plan-based path runs a plan carrying an unmaterialized set
+-- locally. So this asserts the request is harmless, not that replicas were used.
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6))
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3;

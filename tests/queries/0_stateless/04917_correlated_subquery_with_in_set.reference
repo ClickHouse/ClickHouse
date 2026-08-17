@@ -1,6 +1,8 @@
 -- dictGet comparison rewritten to an IN set inside a correlated EXISTS
 100
 100
+1
+0
 -- plain IN (SELECT ...) inside a correlated EXISTS
 100
 100
@@ -58,7 +60,7 @@
 -- a correlated set subquery is still rejected
 -- an ordinary CTE body without an IN set is unaffected
 100
--- unchanged with parallel replicas enabled
+-- unchanged when parallel replicas are requested
 100
 -- the delayed step is expanded before execution and does not survive
 1
