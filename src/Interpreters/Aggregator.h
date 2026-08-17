@@ -173,13 +173,15 @@ public:
 
         struct TopKParams
         {
+            /// LIMIT values above this never get the optimization; keeps the heap
+            /// arithmetic and preallocation trivially safe.
+            static constexpr size_t max_k = 100000;
+
             size_t k = 0;                           /// the query's LIMIT K (heap capacity)
             std::vector<int> directions;            /// per-column ORDER BY directions
             std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
-            /// Tuning knobs (see the group_by_top_k_optimization_* settings).
-            Float64 load_factor = 1.5;              /// heap slack before a trim, as a multiple of `k`
-            UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it
+            UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
         };
         std::optional<TopKParams> top_k;
 

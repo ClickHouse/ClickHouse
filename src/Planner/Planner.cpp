@@ -743,6 +743,15 @@ void applyTopKPushdownToPartialAggregation(
         && limit > settings[Setting::query_plan_max_limit_for_top_k_optimization])
         return;
 
+    if (limit > Aggregator::Params::TopKParams::max_k)
+    {
+        LOG_DEBUG(
+            getLogger("Planner"),
+            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
+            limit, Aggregator::Params::TopKParams::max_k);
+        return;
+    }
+
     /// These consume all groups on the initiator, so local pruning would change
     /// their input: HAVING / QUALIFY filter ranked groups back in, window
     /// functions and TOTALS/ROLLUP/CUBE aggregate across all of them.
@@ -801,7 +810,6 @@ void applyTopKPushdownToPartialAggregation(
             .directions = std::move(directions),
             .nulls_directions = std::move(nulls_directions),
             .key_columns = sort_description.size(),
-            .load_factor = 1.5,
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
         });
 }

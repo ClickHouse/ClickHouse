@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <limits>
 #include <memory>
 #include <string_view>
 #include <type_traits>
@@ -51,14 +50,12 @@ struct TopKAggregationHeap
         size_t query_k,
         const std::vector<int> & dirs,
         const std::vector<int> & null_dirs,
-        Float64 load_factor,
         UInt64 observation_rows)
     {
         if (heap_column)
             return;
 
         is_prefix_mode = heap_key_count < total_group_by_keys;
-        trim_load_factor = std::max(1.0, load_factor);
 
         if (heap_key_count == 1)
         {
@@ -77,12 +74,7 @@ struct TopKAggregationHeap
         /// The window must cover at least one full fill of the heap plus as
         /// much again, so the skip rate is judged on a heap that had a chance
         /// to establish its boundary.
-        if (observation_rows == 0)
-            profitability_window = 0;
-        else if (next_trim_size >= std::numeric_limits<UInt64>::max() / 2)
-            profitability_window = std::numeric_limits<UInt64>::max();
-        else
-            profitability_window = std::max<UInt64>(observation_rows, 2 * next_trim_size);
+        profitability_window = observation_rows == 0 ? 0 : std::max<UInt64>(observation_rows, 2 * next_trim_size);
     }
 
     size_t size() const { return heap_indices.size(); }
@@ -319,11 +311,10 @@ private:
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
 
     /// Growth and trim control.
-    static constexpr size_t max_preallocated_rows = 1ULL << 20;    /// caps the initial reserve for a huge `LIMIT` and sets the tie allowance
-    Float64 trim_load_factor = 1.5;         /// how far past `k` the heap may grow before a trim
-    size_t trim_slack = 0;                  /// `k * (trim_load_factor - 1)`, at least 1; amortizes the O(heap) compaction
+    static constexpr size_t max_tie_rows = 1ULL << 20;    /// rows an untrimmable boundary tie-set may add past `k` before the heap freezes
+    size_t trim_slack = 0;                  /// `k / 2` (the 1.5 load factor), at least 1; amortizes the O(heap) compaction
     size_t next_trim_size = 0;              /// the `needsTrim` threshold; raised when a tie plateau blocks trimming
-    size_t tie_overflow_limit = 0;          /// `k + max_preallocated_rows`; growing past it from an untrimmable tie-set sets `tie_overflow`
+    size_t tie_overflow_limit = 0;          /// `k + max_tie_rows`; growing past it from an untrimmable tie-set sets `tie_overflow`
     bool tie_overflow = false;              /// sticky; makes `shouldFreeze` true regardless of the profitability window
     size_t tie_scan_size = 0;               /// heap size at the last failed O(heap) plateau scan; suppresses rescans until the heap ~doubles
 
@@ -415,26 +406,9 @@ private:
     {
         k = query_k;
         tie_scan_size = 0;
-
-        const auto slack_f = static_cast<Float64>(k) * (trim_load_factor - 1.0);
-        trim_slack = slack_f >= static_cast<Float64>(std::numeric_limits<size_t>::max())
-            ? std::numeric_limits<size_t>::max()
-            : std::max<size_t>(1, static_cast<size_t>(slack_f));
-        next_trim_size = k > std::numeric_limits<size_t>::max() - trim_slack
-            ? std::numeric_limits<size_t>::max()
-            : k + trim_slack;
-        chassert(next_trim_size >= k);
-
-        tie_overflow_limit = k > std::numeric_limits<size_t>::max() - max_preallocated_rows
-            ? std::numeric_limits<size_t>::max()
-            : k + max_preallocated_rows;
-    }
-
-    size_t reserveHint() const
-    {
-        const size_t hint = next_trim_size >= max_preallocated_rows ? max_preallocated_rows : next_trim_size + 1;
-        chassert(hint <= max_preallocated_rows);
-        return hint;
+        trim_slack = std::max<size_t>(1, k / 2);
+        next_trim_size = k + trim_slack;
+        tie_overflow_limit = k + max_tie_rows;
     }
 
     void init(
@@ -448,7 +422,7 @@ private:
         is_composite = false;
         setK(query_k);
         heap_column = source_column.cloneEmpty();
-        const size_t reserve_hint = reserveHint();
+        const size_t reserve_hint = next_trim_size + 1;
         heap_column->reserve(reserve_hint);
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
@@ -482,7 +456,7 @@ private:
         for (const auto * col : source_columns)
             sub_columns.emplace_back(col->cloneEmpty());
         heap_column = ColumnTuple::create(std::move(sub_columns));
-        const size_t reserve_hint = reserveHint();
+        const size_t reserve_hint = next_trim_size + 1;
         heap_column->reserve(reserve_hint);
 
         heap_indices.clear();

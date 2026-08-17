@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/logger_useful.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -82,6 +83,15 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
         return 0;
+
+    if (limit > Aggregator::Params::TopKParams::max_k)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeGroupByTopK"),
+            "Skipping GROUP BY top-K optimization: the requested heap size {} is larger than the maximum {}",
+            limit, Aggregator::Params::TopKParams::max_k);
+        return 0;
+    }
 
     if (parent_node->children.size() != 1)
         return 0;
@@ -199,7 +209,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             .directions = std::move(directions),
             .nulls_directions = std::move(nulls_directions),
             .key_columns = num_key_columns,
-            .load_factor = 1.5,
             .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
         });
 
