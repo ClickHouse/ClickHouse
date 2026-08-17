@@ -8460,7 +8460,7 @@ When the pre-aggregation resize is split into `G` groups (see `min_outstreams_pe
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
 
-The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...` and aggregation reading from aggregate projections keep using the strict resize, so they build one partial state per stream (per grouping set, respectively) regardless of this setting.
+The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...`, aggregation reading from aggregate projections, and sharded aggregation (`enable_sharding_aggregator = 1`) keep using the strict resize, so they build one partial state per stream (per grouping set or shard, respectively) regardless of this setting.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
 Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams in this stage are activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate all aggregation streams in the pre-aggregation stage at once.
@@ -8469,7 +8469,7 @@ When the pre-aggregation resize is split into `G` groups (see `min_outstreams_pe
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected.
 
-The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...` and aggregation reading from aggregate projections keep using the strict resize, so they build one partial state per stream (per grouping set, respectively) regardless of this setting.
+The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...`, aggregation reading from aggregate projections, and sharded aggregation (`enable_sharding_aggregator = 1`) keep using the strict resize, so they build one partial state per stream (per grouping set or shard, respectively) regardless of this setting.
 )", 0) \
     DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.

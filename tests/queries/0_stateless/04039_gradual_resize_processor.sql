@@ -46,6 +46,18 @@ FROM
 )
 WHERE explain LIKE '%GradualResize%';
 
+-- Sharded aggregation owns the pre-aggregation routing stage. It deliberately
+-- keeps its strict per-shard resize even when gradual-resize thresholds are set.
+SELECT countIf(explain LIKE '%ShardByHashTransform%') > 0 AND countIf(explain LIKE '%GradualResize%') = 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count()
+    FROM test_gradual_resize
+    GROUP BY k
+    SETTINGS enable_sharding_aggregator = 1
+);
+
 -- Global aggregation has no grouping keys, so it must keep the strict resize even
 -- when gradual-resize thresholds are enabled. Check both that `GradualResize` is
 -- absent and that the ordinary `Resize` remains in the pipeline.
