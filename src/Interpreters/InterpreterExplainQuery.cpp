@@ -508,6 +508,7 @@ struct QueryAnalyzeSettings
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
+        {"matches", query_plan_options.matches},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -810,6 +811,11 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
     result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
+
+    /// This is the only place that turns join statistics on, and it must happen before any interpreter
+    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
+    planning_context->setJoinAnalyzeMode(
+        result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 
     Stopwatch watch;
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1259,7 +1265,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
             watch.restart();

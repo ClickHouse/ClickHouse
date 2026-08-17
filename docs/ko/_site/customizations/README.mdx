@@ -17,7 +17,7 @@ Mintlify 사이트의 외관과 동작을 사용자 지정하는 스크립트입
 
 * `ask-ai-button.js` — Ask-AI 버튼의 스타일과 동작을 조정합니다.
 * `custom-footer.js` — 사용자 지정 사이트 푸터(`#ch-custom-footer`)를 렌더링합니다.
-* `galaxy.js` — ClickHouse Galaxy analytics를 초기화하고, Mintlify SPA 탐색 전반에서 문서 및 지식 베이스 페이지 수명 주기 이벤트를 추적하며, 정규 `https://clickhouse.com/docs` 트래픽은 production Galaxy API로, `.mintlify.app` 미리보기 트래픽은 개발 Galaxy API로 전송합니다(`localhost` 및 알 수 없는 origin에서는 비활성화). 또한 정규 production 문서에서만 ClickHouse Cloud 링크에 attribution과 Galaxy 방문자 ID를 추가합니다.
+* `galaxy.js` — ClickHouse Galaxy analytics를 초기화하고, 마케팅 웹사이트와 동일한 30일 last-touch, non-direct referrer 및 UTM attribution 모델을 모든 이벤트에 적용하며, Mintlify SPA 탐색 전반에서 문서 및 지식 베이스 페이지 수명 주기 이벤트를 추적하고, 정규 `https://clickhouse.com/docs` 트래픽은 production Galaxy API로, `.mintlify.app` 미리보기 트래픽은 개발 Galaxy API로 전송합니다(`localhost` 및 알 수 없는 origin에서는 비활성화). 또한 정규 production 문서에서만 저장된 캠페인 매개변수와 Galaxy 방문자 ID를 ClickHouse Cloud 링크에 추가합니다.
 * `inkeep-init.js` — Mintlify의 네이티브 검색(⌘K / 내비게이션 바 검색창)을 Inkeep 검색 모달로 대체합니다. 검색 전용이며 AI Chat은 계속 Kapa를 사용합니다.
 * `kapa-init.js` — Kapa.ai RAG 위젯의 초기 설정을 수행합니다.
 * `navbar-cta.js` — 내비게이션 바에 &quot;Get started&quot; CTA를 추가합니다.
