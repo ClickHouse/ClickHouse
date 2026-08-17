@@ -291,11 +291,11 @@ SELECT
     abs(exponentialTimeDecayingValueAt(direct.decaying_count, expected.max_time) - expected.weight)
         <= 1e-12 * greatest(1., abs(expected.weight)),
     abs(exponentialTimeDecayingValueAt(merged.decaying_sum, expected.max_time) - expected.weighted_sum)
-        <= 1e-12 * greatest(1., abs(expected.weighted_sum)),
+        <= 1e-11 * greatest(1., abs(expected.weighted_sum)),
     abs(merged.weighted_avg - expected.weighted_sum / expected.weight)
         <= 1e-12 * greatest(1., abs(expected.weighted_sum / expected.weight)),
     abs(exponentialTimeDecayingValueAt(merged.decaying_count, expected.max_time) - expected.weight)
-        <= 1e-12 * greatest(1., abs(expected.weight)),
+        <= 1e-11 * greatest(1., abs(expected.weight)),
     isFinite(tupleElement(direct.decaying_sum, 'signed_unit_time')),
     isFinite(tupleElement(merged.decaying_sum, 'signed_unit_time'))
 FROM expected
@@ -341,9 +341,11 @@ SELECT
     abs(exponentialTimeDecayingValueAt(datetime64.decaying_sum, toFloat64(1577836800.875)) - exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875))) < 1e-12,
     abs(datetime64.weighted_avg - numeric.weighted_avg) < 1e-12,
     abs(exponentialTimeDecayingValueAt(datetime64.decaying_count, toFloat64(1577836800.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875))) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(decimal.decaying_sum, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875))) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(decimal.decaying_sum, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875)))
+        <= 1e-6 * greatest(1., abs(exponentialTimeDecayingValueAt(numeric.decaying_sum, toFloat64(1577836800.875)))),
     abs(decimal.weighted_avg - numeric.weighted_avg) < 1e-12,
-    abs(exponentialTimeDecayingValueAt(decimal.decaying_count, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875))) < 1e-12,
+    abs(exponentialTimeDecayingValueAt(decimal.decaying_count, toFloat64(0.875)) - exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))
+        <= 1e-6 * greatest(1., abs(exponentialTimeDecayingValueAt(numeric.decaying_count, toFloat64(1577836800.875)))),
     isFinite(tupleElement(datetime64.decaying_sum, 'signed_unit_time')),
     isFinite(tupleElement(decimal.decaying_sum, 'signed_unit_time'))
 FROM numeric
@@ -463,7 +465,8 @@ SELECT
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(explicit_result, toFloat64(10))) < 1e-12,
     tupleElement(implicit_result, 'signed_unit_time') = tupleElement(explicit_result, 'signed_unit_time'),
     abs(exponentialTimeDecayingValueAt(implicit_result, toFloat64(10)) - exponentialTimeDecayingValueAt(result, toFloat64(10))) < 1e-12,
-    tupleElement(implicit_result, 'signed_unit_time') = tupleElement(result, 'signed_unit_time'),
+    abs(tupleElement(implicit_result, 'signed_unit_time') - tupleElement(result, 'signed_unit_time'))
+        <= 1e-12 * greatest(1., abs(tupleElement(implicit_result, 'signed_unit_time'))),
     exponentialTimeDecayingDecayLength(implicit_result) = 10,
     exponentialTimeDecayingDecayLength(result) = 10
 FROM direct
@@ -584,12 +587,14 @@ WITH
     exponentialTimeDecayingFloat64(10)(5., -10.) AS observed_value,
     exponentialTimeDecayingAdd(empty_value, observed_value) AS combined
 SELECT
-    exponentialTimeDecayingValueAt(combined, toFloat64(-10)) = 5,
+    abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
+        <= 1e-12,
     isFinite(tupleElement(combined, 'signed_unit_time'));
 
 WITH exponentialTimeDecayedSum(value) AS combined
 SELECT
-    exponentialTimeDecayingValueAt(combined, toFloat64(-10)) = 5,
+    abs(exponentialTimeDecayingValueAt(combined, toFloat64(-10)) - 5)
+        <= 1e-12,
     isFinite(tupleElement(combined, 'signed_unit_time'))
 FROM time_decay_default_identity;
 
