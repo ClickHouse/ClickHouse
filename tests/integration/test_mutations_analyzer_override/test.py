@@ -95,3 +95,62 @@ def test_override_forces_old_analyzer(start_cluster):
         assert count_old_analyzer_log_lines(table) >= 1
     finally:
         set_override("true")
+
+
+def test_queued_statistics_mutation_drains(start_cluster):
+    """A MATERIALIZE STATISTICS queued while the column was still physical must drain after the
+    column becomes an alias. Only the old mutation analyzer reaches the readonly stage that
+    resolves the name, so this needs the server-level override."""
+    set_override("false")
+    try:
+        table = "t_queued_statistics"
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest))
+            ENGINE = MergeTree ORDER BY tuple()
+            SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+            """
+        )
+        node.query(f"INSERT INTO {table} VALUES (1, 1)")
+        node.query(f"SYSTEM STOP MERGES {table}")
+        node.query(
+            f"ALTER TABLE {table} MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0"
+        )
+        node.query(
+            f"ALTER TABLE {table} MODIFY COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest) SETTINGS mutations_sync = 0"
+        )
+        node.query(f"SYSTEM START MERGES {table}")
+
+        # query_with_retry returns the last result rather than raising when the callback never
+        # holds, so the assertion below is the oracle: a wedged mutation reports a non-zero count.
+        node.query_with_retry(
+            f"SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = '{table}' AND NOT is_done",
+            check_callback=lambda result: result.strip() == "0",
+            retry_count=60,
+            sleep_time=1,
+        )
+        assert (
+            node.query(
+                f"SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = '{table}' AND NOT is_done"
+            ).strip()
+            == "0"
+        )
+        assert node.query(f"SELECT a, b FROM {table}").strip() == "1\t2"
+
+        node.query("SYSTEM FLUSH LOGS")
+        assert (
+            int(
+                node.query(
+                    f"""
+                    SELECT count()
+                    FROM system.text_log
+                    WHERE logger_name = 'MutationsInterpreter(default.{table})'
+                      AND message = 'Column b is not physically stored, skipping statistics materialization'
+                    """
+                ).strip()
+            )
+            >= 1
+        )
+    finally:
+        set_override("true")
