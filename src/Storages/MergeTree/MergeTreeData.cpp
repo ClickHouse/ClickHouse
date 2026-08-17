@@ -12275,7 +12275,6 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
-
     const auto physical_columns = storage_columns.getAllPhysical();
     serialization_hints = SerializationInfoByName(physical_columns, settings);
 
@@ -12312,6 +12311,36 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto physical_columns = storage_columns.getAllPhysical();
+
+    SerializationInfo::Settings settings
+    {
+        static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        true,
+        (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        (*getSettings())[MergeTreeSetting::serialization_info_version],
+        (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*getSettings())[MergeTreeSetting::map_serialization_version],
+        (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries for newly added automatically encoded parts, just as `resetSerializationHints`
+    /// does for the full active-part set. Otherwise the first INSERT leaves no table-level hint, and
+    /// query analysis can rewrite a read to an unsupported subcolumn before a table reload rebuilds it.
+    for (const auto & part : added_parts)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : added_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
