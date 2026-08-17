@@ -73,6 +73,11 @@ static void testFilter()
 
         if (!checkFilter(flit, *vector_column, *res_column))
             throw Exception(error_code, "VectorColumn filter failure, type: {}", typeid(T).name());
+
+        auto in_place_column = createColumn<T>(rows);
+        in_place_column->filter(flit);
+        if (!checkFilter(flit, *vector_column, *in_place_column))
+            throw Exception(error_code, "VectorColumn in-place filter failure, type: {}", typeid(T).name());
     };
 
     try

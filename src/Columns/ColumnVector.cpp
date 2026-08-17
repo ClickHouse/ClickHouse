@@ -871,11 +871,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
                     }
 
                     const size_t run_length = std::countr_one(shifted_mask);
-
-                    if (run_length == 1)
-                        inserter.insertSingle(data_pos[index]);
-                    else
-                        inserter.insertRange(data_pos + index, data_pos + index + run_length);
+                    inserter.insertRange(data_pos + index, data_pos + index + run_length);
 
                     if (run_length == 64)
                         mask = 0;

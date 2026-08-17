@@ -20,7 +20,8 @@ enum class FilterPattern
 static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
 {
     IColumn::Filter filter;
-    filter.resize_fill(rows, 0);
+    const UInt8 initial_value = pattern == FilterPattern::DenseWithHole ? 1 : 0;
+    filter.resize_fill(rows, initial_value);
 
     switch (pattern)
     {
@@ -51,7 +52,6 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
                 filter[i] = 1;
             break;
         case FilterPattern::DenseWithHole:
-            filter.resize_fill(rows, 1);
             for (size_t block = 0; block < rows; block += 64)
                 if (block + 32 < rows)
                     filter[block + 32] = 0;
@@ -61,21 +61,22 @@ static IColumn::Filter createFilter(size_t rows, FilterPattern pattern)
     return filter;
 }
 
+template <typename T>
 static MutableColumnPtr createColumn(size_t rows)
 {
-    auto column = ColumnUInt128::create();
+    auto column = ColumnVector<T>::create();
     auto & data = column->getData();
     data.resize(rows);
     for (size_t i = 0; i < rows; ++i)
-        data[i] = i;
+        data[i] = static_cast<T>(i);
     return column;
 }
 
-template <FilterPattern pattern>
+template <typename T, FilterPattern pattern>
 static void BM_filter(benchmark::State & state)
 {
     const size_t rows = state.range(0);
-    auto column = createColumn(rows);
+    auto column = createColumn<T>(rows);
     auto filter = createFilter(rows, pattern);
 
     for ([[maybe_unused]] auto _ : state)
@@ -87,9 +88,45 @@ static void BM_filter(benchmark::State & state)
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * rows);
 }
 
+template <typename T, FilterPattern pattern>
+static void BM_filter_in_place(benchmark::State & state)
+{
+    const size_t rows = state.range(0);
+    auto filter = createFilter(rows, pattern);
+
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+        auto column = createColumn<T>(rows);
+        state.ResumeTiming();
+
+        column->filter(filter);
+        benchmark::DoNotOptimize(column->size());
+
+        state.PauseTiming();
+        column.reset();
+        state.ResumeTiming();
+    }
+
+    state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * rows);
 }
 
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Clustered)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Random)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::Alternating)->Arg(1 << 20);
-BENCHMARK_TEMPLATE(BM_filter, FilterPattern::DenseWithHole)->Arg(1 << 20);
+}
+
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Clustered)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Random)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::Alternating)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20);
+
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Clustered)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Random)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::Alternating)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt8, FilterPattern::DenseWithHole)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Clustered)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Random)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::Alternating)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt64, FilterPattern::DenseWithHole)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Clustered)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Random)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::Alternating)->Arg(1 << 20);
+BENCHMARK_TEMPLATE(BM_filter_in_place, UInt128, FilterPattern::DenseWithHole)->Arg(1 << 20);
