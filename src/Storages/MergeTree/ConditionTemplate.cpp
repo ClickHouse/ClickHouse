@@ -36,9 +36,10 @@ void fillPartitionConstantsSubstitution(
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
     const ActionsDAG & predicate_dag,
     const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
     const MergeTreePartition & partition)
 {
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, context);
     const auto & key_dag = partition_key.expression->getActionsDAG();
     const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
     const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
@@ -89,14 +90,15 @@ ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const MergeTreePartition & partition,
     const std::string & partition_id,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
 {
     chassert(predicate_node);
 
     auto dag = ActionsDAG::cloneSubDAG({predicate_node}, /*remove_aliases=*/false);
 
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, partition);
+    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, context, partition);
     fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, partition_id, partition);
 
     dag.substitute(substitutions);
@@ -190,18 +192,19 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 }
 
 template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartition & partition) const
+const Cond & ConditionTemplate<Cond>::generateForPart(const MergeTreeDataPartPtr & part) const
 {
-    if (skip_folding || !dag || !dag->predicate)
+    if (skip_folding || !dag || !dag->predicate || part->isProjectionPart())
         return generateUnsubstituted();
 
-    const std::string partition_id = partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+    const auto & partition = part->partition;
+    const auto & partition_id = part->info.getPartitionId();
     if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 
     try
     {
-        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot);
+        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot, context);
         chassert(!specialized.getOutputs().empty());
 
         Cond produced = generate(&specialized, specialized.getOutputs().front());
