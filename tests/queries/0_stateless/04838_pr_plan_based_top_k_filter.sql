@@ -32,21 +32,30 @@ SET automatic_parallel_replicas_mode = 0;
 
 -- Sorting on a non-primary-key column: this threw `Unknown function __topKFilter` on the replica. Results
 -- must match non-parallel execution, in both directions.
-SELECT 'asc',  b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'asc',  b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
-SELECT 'desc', b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'desc', b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- ORDER BY b, a LIMIT 5, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY b, a LIMIT 5, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- ORDER BY b DESC, a DESC LIMIT 5, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b DESC, a DESC LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- A deep OFFSET: per-replica Top-K filtering must not drop a row that belongs in the global window.
-SELECT 'offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- deep OFFSET, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- deep OFFSET, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
 
 -- With a filter, so the Top-K filter has to coexist with a real predicate in the same read.
-SELECT 'where', b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'where', b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- WHERE + ORDER BY b, a LIMIT 5, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- WHERE + ORDER BY b, a LIMIT 5, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- Skip-index-on-data-read Top-K uses the same shared threshold tracker, so exercise it too.
-SELECT 'skip idx', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5
+SELECT '--- use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5
 SETTINGS parallel_replicas_plan_based = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1;
 
 -- The shape assertions below pin every knob that decides whether Top-K applies at all: CI randomizes
@@ -60,14 +69,17 @@ SET parallel_replicas_plan_based = 1;
 
 -- Top-K wins over distributing this read: the `__topKFilter` cannot be serialized, so the read is kept out
 -- of the shipped fragment and the query runs locally with Top-K still applied.
-SELECT 'top_k_kept', countIf(explain LIKE '%topKFilter%') > 0 AS has_top_k
+SELECT '--- explain: Top-K kept in the plan ---';
+SELECT countIf(explain LIKE '%topKFilter%') > 0 AS has_top_k
 FROM (EXPLAIN actions = 1 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5);
-SELECT 'not_distributed', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
+SELECT '--- explain: read not distributed ---';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5);
 
 -- Top-K is not lost merely because the setting is on: with Top-K disabled the same read distributes as usual,
 -- so the exclusion above is scoped to reads that actually carry the filter.
-SELECT 'distributed_without_top_k', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
+SELECT '--- explain: read distributed with use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0 ---';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5)
 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
@@ -77,11 +89,15 @@ SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 SET use_skip_indexes_for_top_k = 0;
 
-SELECT 'no_top_k', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'no_top_k', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- Top-K disabled, ORDER BY b, a LIMIT 5, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 SETTINGS parallel_replicas_plan_based = 1;
 
 -- A deep OFFSET, which is applied once above the merge while each replica still ships `LIMIT` + `OFFSET` rows.
-SELECT 'no_top_k offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'no_top_k offset', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
+SELECT '--- Top-K disabled, deep OFFSET, plan_based = 0 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 0;
+SELECT '--- Top-K disabled, deep OFFSET, plan_based = 1 ---';
+SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5 OFFSET 4997 SETTINGS parallel_replicas_plan_based = 1;
 
 DROP TABLE t_pr_top_k;

@@ -1,102 +1,130 @@
-count+sum	1	1
-asc  limit	0	0
-asc  limit	1	1
-asc  limit	2	2
-asc  limit	3	3
-asc  limit	4	4
-asc  limit	0	0
-asc  limit	1	1
-asc  limit	2	2
-asc  limit	3	3
-asc  limit	4	4
-desc limit	99999	9
-desc limit	99998	8
-desc limit	99997	7
-desc limit	99996	6
-desc limit	99995	5
-desc limit	99999	9
-desc limit	99998	8
-desc limit	99997	7
-desc limit	99996	6
-desc limit	99995	5
-asc  offset	49997
-asc  offset	49998
-asc  offset	49999
-asc  offset	50000
-asc  offset	50001
-asc  offset	49997
-asc  offset	49998
-asc  offset	49999
-asc  offset	50000
-asc  offset	50001
-desc offset	50002
-desc offset	50001
-desc offset	50000
-desc offset	49999
-desc offset	49998
-desc offset	50002
-desc offset	50001
-desc offset	50000
-desc offset	49999
-desc offset	49998
-with ties	10000	499950000
-with ties	10000	499950000
-limit by	0
-limit by	1
-limit by	2
-limit by	3
-limit by	4
-limit by	5
-limit by	0
-limit by	1
-limit by	2
-limit by	3
-limit by	4
-limit by	5
-asc  where	103
-asc  where	113
-asc  where	123
-asc  where	133
-asc  where	143
-asc  where	103
-asc  where	113
-asc  where	123
-asc  where	133
-asc  where	143
-desc where	99893
-desc where	99883
-desc where	99873
-desc where	99863
-desc where	99853
-desc where	99893
-desc where	99883
-desc where	99873
-desc where	99863
-desc where	99853
-split	1	1	1
-read_type asc	1
-read_type desc	1
-in_order_pool asc	1
-in_order_pool desc	1
-local_top_n exact=0	1
-local_top_n exact=1	0
-exact asc	0
-exact asc	1
-exact asc	2
-exact asc	3
-exact asc	4
-exact asc	0
-exact asc	1
-exact asc	2
-exact asc	3
-exact asc	4
-exact desc	99999
-exact desc	99998
-exact desc	99997
-exact desc	99996
-exact desc	99995
-exact desc	99999
-exact desc	99998
-exact desc	99997
-exact desc	99996
-exact desc	99995
+--- every row read exactly once, plan_based = 1 ---
+1	1
+--- ORDER BY a LIMIT 5, plan_based = 0 ---
+0	0
+1	1
+2	2
+3	3
+4	4
+--- ORDER BY a LIMIT 5, plan_based = 1 ---
+0	0
+1	1
+2	2
+3	3
+4	4
+--- ORDER BY a DESC LIMIT 5, plan_based = 0 ---
+99999	9
+99998	8
+99997	7
+99996	6
+99995	5
+--- ORDER BY a DESC LIMIT 5, plan_based = 1 ---
+99999	9
+99998	8
+99997	7
+99996	6
+99995	5
+--- ORDER BY a, deep OFFSET, plan_based = 0 ---
+49997
+49998
+49999
+50000
+50001
+--- ORDER BY a, deep OFFSET, plan_based = 1 ---
+49997
+49998
+49999
+50000
+50001
+--- ORDER BY a DESC, deep OFFSET, plan_based = 0 ---
+50002
+50001
+50000
+49999
+49998
+--- ORDER BY a DESC, deep OFFSET, plan_based = 1 ---
+50002
+50001
+50000
+49999
+49998
+--- WITH TIES, plan_based = 0 ---
+10000	499950000
+--- WITH TIES, plan_based = 1 ---
+10000	499950000
+--- LIMIT BY, plan_based = 0 ---
+0
+1
+2
+3
+4
+5
+--- LIMIT BY, plan_based = 1 ---
+0
+1
+2
+3
+4
+5
+--- WHERE + ORDER BY a, plan_based = 0 ---
+103
+113
+123
+133
+143
+--- WHERE + ORDER BY a, plan_based = 1 ---
+103
+113
+123
+133
+143
+--- WHERE + ORDER BY a DESC, plan_based = 0 ---
+99893
+99883
+99873
+99863
+99853
+--- WHERE + ORDER BY a DESC, plan_based = 1 ---
+99893
+99883
+99873
+99863
+99853
+--- explain: has_union, has_remote_read, has_local_read ---
+1	1	1
+--- explain: ReadType InOrder for ORDER BY a ---
+1
+--- explain: ReadType InReverseOrder for ORDER BY a DESC ---
+1
+--- explain pipeline: in-order read pool for ORDER BY a ---
+1
+--- explain pipeline: in-order read pool for ORDER BY a DESC ---
+1
+--- explain: local top-N shipped, exact_rows_before_limit = 0 ---
+1
+--- explain: local top-N shipped, exact_rows_before_limit = 1 ---
+0
+--- exact_rows_before_limit = 1, ORDER BY a, plan_based = 0 ---
+0
+1
+2
+3
+4
+--- exact_rows_before_limit = 1, ORDER BY a, plan_based = 1 ---
+0
+1
+2
+3
+4
+--- exact_rows_before_limit = 1, ORDER BY a DESC, plan_based = 0 ---
+99999
+99998
+99997
+99996
+99995
+--- exact_rows_before_limit = 1, ORDER BY a DESC, plan_based = 1 ---
+99999
+99998
+99997
+99996
+99995

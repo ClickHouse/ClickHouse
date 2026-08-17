@@ -33,38 +33,46 @@ SET automatic_parallel_replicas_mode = 0;
 
 -- Aggregation on the primary-key prefix must match non-parallel execution exactly. Aggregating the
 -- per-group results keeps the reference small while still failing on any dropped or duplicated range.
-SELECT 'group by pk', count(), sum(cnt), sum(s) FROM
+SELECT '--- GROUP BY pk, plan_based = 0, local_plan = 1 ---';
+SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
 SETTINGS parallel_replicas_plan_based = 0, parallel_replicas_local_plan = 1;
-SELECT 'group by pk', count(), sum(cnt), sum(s) FROM
+SELECT '--- GROUP BY pk, plan_based = 1, local_plan = 1 ---';
+SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
 SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
-SELECT 'group by pk', count(), sum(cnt), sum(s) FROM
+SELECT '--- GROUP BY pk, plan_based = 1, local_plan = 0 ---';
+SELECT count(), sum(cnt), sum(s) FROM
     (SELECT a, count() AS cnt, sum(b) AS s FROM t_pr_aggr_in_order GROUP BY a)
 SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
 
 -- The first groups in key order, so a wrong in-order merge shows up as reordered or merged groups rather
 -- than only as a bad total.
-SELECT 'head', a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
+SELECT '--- first groups in key order, plan_based = 0 ---';
+SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
 SETTINGS parallel_replicas_plan_based = 0;
-SELECT 'head', a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
+SELECT '--- first groups in key order, plan_based = 1 ---';
+SELECT a, count() AS cnt FROM t_pr_aggr_in_order GROUP BY a ORDER BY a LIMIT 5
 SETTINGS parallel_replicas_plan_based = 1;
 
 -- The 04009 shape: force every replica to announce, including ones that end up with no parts. That is what
 -- makes an initiator/worker coordination-mode disagreement deterministic rather than racy - the initiator
 -- with 0 parts takes a separate announcement path that derives the mode from `input_order_info`.
 -- The failpoint is ONCE, so it has to be re-armed before each query.
+SELECT '--- all replicas announce (empty result expected), plan_based = 1, local_plan = 1 ---';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SELECT 'empty ranges', a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
+SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
 SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 
+SELECT '--- all replicas announce (empty result expected), plan_based = 1, local_plan = 0 ---';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SELECT 'empty ranges', a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
+SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
 SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 0;
 
 -- Same, with the filter pushdown that 04009 additionally exercises.
+SELECT '--- all replicas announce with filter pushdown (empty result expected), plan_based = 1 ---';
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SELECT 'empty ranges pushdown', a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
+SELECT a FROM t_pr_aggr_in_order GROUP BY a HAVING materialize(0)
 SETTINGS parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1, parallel_replicas_filter_pushdown = 1;
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
@@ -77,8 +85,8 @@ SET parallel_replicas_local_plan = 1;
 
 -- The split engaged, and the aggregation was split into a partial aggregation (shipped inside the fragment)
 -- and a `MergingAggregated` above the union on the initiator.
+SELECT '--- explain: has_union, has_remote_read, has_merging_aggregated ---';
 SELECT
-    'split',
     countIf(explain LIKE '%Union%') > 0 AS has_union,
     countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
     countIf(explain LIKE '%MergingAggregated%') > 0 AS has_merging_aggregated
@@ -88,8 +96,8 @@ FROM (EXPLAIN pretty = 0, description = 0 SELECT a, count() FROM t_pr_aggr_in_or
 -- the fragment, so both sides derive an in-order read and the coordinator runs in `WithOrder` mode. This is
 -- the assertion that would catch a silent degradation to `Default` (which is what 04836 records for
 -- `ORDER BY`), and equally a regression where only one side degrades and the coordinator throws.
+SELECT '--- explain pipeline: in_order_pool, aggregating_in_order ---';
 SELECT
-    'in_order',
     countIf(explain LIKE '%ReadPoolParallelReplicasInOrder%') > 0 AS in_order_pool,
     countIf(explain LIKE '%AggregatingInOrder%') > 0 AS aggregating_in_order
 FROM (EXPLAIN PIPELINE SELECT a, count() FROM t_pr_aggr_in_order GROUP BY a);
