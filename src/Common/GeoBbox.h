@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -266,7 +267,11 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         return acc.found;
     }
 
-    /// String — try WKB parsing.
+    /// String — try WKB parsing. Whether the predicate accepts a WKB payload at this argument
+    /// position at all is decided before this, by `extractSpatialPredicateNodeBbox`'s kind check
+    /// (`constGeoKindName` reports a `String` under the kind name `String`) -- none of the
+    /// builtins accepts one, so only a predicate that does, such as an `isSpatialPredicate()`
+    /// WASM UDF reading raw WKB, ever gets here with a `String`.
     if (type == Field::Types::String)
     {
         const auto & sv = field.safeGet<String>();
@@ -385,15 +390,31 @@ enum class NodeBboxStatus
 /// here, before flattening, rather than guessed from the `Field`'s shape. Returns an empty name
 /// when nothing further can be said (e.g. a raw array literal, which has no custom name and is
 /// interpreted the same, shape-only way by the predicate itself).
+///
+/// A plain `String` (a WKB payload, the geometry encoding every `Parquet`/`Iceberg` geo column
+/// uses on disk) is reported under the kind name `String`: it has no custom name of its own, yet
+/// it is just as much a declared geometry encoding as `Point` or `Polygon`, and a predicate knows
+/// perfectly well whether it accepts one -- none of the builtins does (`pointInPolygon` raises
+/// `ILLEGAL_TYPE_OF_ARGUMENT`, `polygonsIntersectCartesian`/`polygonsWithinCartesian` raise
+/// `BAD_ARGUMENTS` from `callOnGeometryDataType`'s dispatch), while an `isSpatialPredicate()` WASM
+/// UDF reading raw WKB does, and keeps its default `rejectsConstGeometryKind` of false. Without
+/// this, the WKB branch of `extractBboxFromFieldValue` derived a bbox from a payload the predicate
+/// is guaranteed to reject at execution time; see the `String` kind's own note there.
+inline std::string geoKindNameOfType(const IDataType & type)
+{
+    if (const auto * custom_name = type.getCustomName())
+        return custom_name->getName();
+    if (WhichDataType(type).isString())
+        return "String";
+    return {};
+}
+
 inline std::string constGeoKindName(const ActionsDAG::Node & node)
 {
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(node.result_type.get());
     const auto * dynamic_type = variant_type ? nullptr : typeid_cast<const DataTypeDynamic *>(node.result_type.get());
     if (!variant_type && !dynamic_type)
-    {
-        const auto * custom_name = node.result_type->getCustomName();
-        return custom_name ? custom_name->getName() : std::string{};
-    }
+        return geoKindNameOfType(*node.result_type);
 
     if (!node.column)
         return {};
@@ -412,8 +433,7 @@ inline std::string constGeoKindName(const ActionsDAG::Node & node)
         if (!row_type)
             return {};
 
-        const auto * row_custom_name = row_type->getCustomName();
-        return row_custom_name ? row_custom_name->getName() : std::string{};
+        return geoKindNameOfType(*row_type);
     }
 
     const auto * variant_col = typeid_cast<const ColumnVariant *>(data_col);
@@ -424,8 +444,7 @@ inline std::string constGeoKindName(const ActionsDAG::Node & node)
     if (discr == ColumnVariant::NULL_DISCRIMINATOR || discr >= variant_type->getVariants().size())
         return {};
 
-    const auto * alt_custom_name = variant_type->getVariants()[discr]->getCustomName();
-    return alt_custom_name ? alt_custom_name->getName() : std::string{};
+    return geoKindNameOfType(*variant_type->getVariants()[discr]);
 }
 
 /// Extract the (single) `Field` value of a constant `ActionsDAG` `COLUMN` node, for combining

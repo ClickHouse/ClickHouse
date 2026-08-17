@@ -257,9 +257,16 @@ public:
     /// constant arguments, see `rejectsColumnGeometryKind`'s own comment); it is never queried
     /// for the first (point) argument, which that override answers on its own -- only `Point` is
     /// accepted there.
+    /// A WKB-encoded `String` payload (reported under the kind name `String`, see
+    /// `constGeoKindName` in `Common/GeoBbox.h`) is one more kind no polygon-component position
+    /// accepts -- `parseConstPolygon` never reads WKB. The first (point) argument rejects it too,
+    /// via `rejectsColumnGeometryKind`'s "only `Point` is accepted there" answer below:
+    /// `getReturnTypeImpl`'s `validate_tuple(0, ...)` raises `ILLEGAL_TYPE_OF_ARGUMENT` for a
+    /// `String` just as it does for an `Array`.
     bool rejectsConstGeometryKind(std::string_view kind_name) const override
     {
-        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
+        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString"
+            || kind_name == "MultiPoint" || kind_name == "String";
     }
 
     /// A `Point` (whether a constant or a COLUMN) in the first (point) argument position is

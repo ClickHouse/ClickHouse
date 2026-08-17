@@ -73,10 +73,13 @@ public:
     /// Both arguments must be `Ring`/`Polygon`/`MultiPolygon` (see the documented argument types
     /// below) -- unlike `pointInPolygon`, there is no argument position where a `Point` is ever
     /// legitimate. `callOnGeometryDataType`'s dispatch on the argument's actual type rejects any
-    /// other named kind with `ILLEGAL_TYPE_OF_ARGUMENT`, regardless of argument position.
+    /// other named kind with `ILLEGAL_TYPE_OF_ARGUMENT`, regardless of argument position -- and a
+    /// WKB-encoded `String` payload (reported under the kind name `String`, see `constGeoKindName`
+    /// in `Common/GeoBbox.h`) with `BAD_ARGUMENTS`, so it must fail bbox-pruning closed too.
     bool rejectsConstGeometryKind(std::string_view kind_name) const override
     {
-        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
+        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString"
+            || kind_name == "MultiPoint" || kind_name == "String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
