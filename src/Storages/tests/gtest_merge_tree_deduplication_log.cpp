@@ -2130,9 +2130,9 @@ TEST(MergeTreeDeduplicationLog, OrphanNeutralizationFailureFailsClosedUntilHeale
         /// section). The insert must fail - retryably - not carry on.
         EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
 
-        /// Reading is unaffected: the committed block still deduplicates (probing a
-        /// duplicate writes no record).
-        EXPECT_FALSE(log.addPart({"block1"}, part("all_10_10_0")).empty());
+        /// Duplicate inserts also run the recovery barrier. They must fail closed
+        /// while the stale orphan cannot be neutralized.
+        EXPECT_ANY_THROW(log.addPart({"block1"}, part("all_10_10_0")));
 
         /// The disk recovers. The first operation retries the neutralization, removes
         /// the orphan, and the inserts go through. Without the fail-closed behavior the
@@ -2981,11 +2981,11 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryFailsOperationsClosed)
     EXPECT_ANY_THROW(log.addPart({"block5"}, part("all_5_5_0")));
     EXPECT_ANY_THROW(log.dropPart(part("all_1_1_0")));
 
-    /// Once the fence can be armed, even a no-op drop must run the recovery barrier.
-    /// It must not leave the fence process-local until a later write or shutdown.
+    /// Once the disk recovers, even a no-op drop must run the recovery barrier.
+    /// A successful compaction heals the diverged history and clears the marker.
     disk->marker_writable = true;
     log.dropPart(part("all_9_9_0"));
-    EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+    EXPECT_FALSE(std::filesystem::exists(marker_path));
     EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
 
     log.shutdown();
@@ -3032,10 +3032,10 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
             else
             {
                 /// A duplicate fast path is a successful operation too. It must
-                /// persist the fence before returning without writing a new record.
+                /// heal the fenced history before returning without writing a record.
                 EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
             }
-            EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+            EXPECT_FALSE(std::filesystem::exists(marker_path));
             log.shutdown();
         }
 
