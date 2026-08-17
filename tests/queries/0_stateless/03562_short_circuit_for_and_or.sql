@@ -82,6 +82,15 @@ SELECT (SELECT throwIf(1)) AND 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NO
 SELECT 'Test nondeterministic functions fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(1) WHERE throwIf(randConstant() % 1 = 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
+SELECT 'Test comparison non-placeholder expressions stay eager';
+SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+SELECT 'Test view-backed count subqueries fall back to normal analysis';
+DROP VIEW IF EXISTS test_03562_view;
+CREATE VIEW test_03562_view AS SELECT number FROM numbers(1) WHERE throwIf(1) = 0;
+SELECT 1 OR ((SELECT count() FROM test_03562_view) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+DROP VIEW test_03562_view;
+
 SELECT 'Test disabled short-circuit evaluation is respected';
 SELECT 1 OR (SELECT throwIf(1)) SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
