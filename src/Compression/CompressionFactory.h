@@ -37,6 +37,9 @@ struct CodecValidationSettings
     {
     }
 
+    /// The stored pointer would dangle when constructed from a temporary.
+    explicit CodecValidationSettings(Settings &&) = delete;
+
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
