@@ -82,6 +82,7 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
