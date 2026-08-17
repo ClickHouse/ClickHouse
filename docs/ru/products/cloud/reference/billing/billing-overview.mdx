@@ -17,7 +17,7 @@ keywords: ['ClickHouse Cloud', 'тарификация', 'биллинг', 'об
 
 <Note>
   * Цены указаны по тарифам AWS для региона us-east-1.
-  * Сведения о действующих тарифах на передачу данных и ClickPipes см. [здесь](/ru/products/cloud/reference/billing/network-data-transfer).
+  * Сведения о действующих тарифах на передачу данных см. [здесь](/ru/products/cloud/reference/billing/network-data-transfer).
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 В журнале запросов ClickHouse сохраняются [ключевые метрики](/ru/reference/system-tables/query_log), которые можно использовать для оценки стоимости выполнения рабочей нагрузки в ClickHouse Cloud.
-Подробнее о миграции с самоуправляемого развертывания в ClickHouse Cloud см. в [документации по миграции](/ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud). Если у вас останутся дополнительные вопросы, обратитесь в [службу поддержки ClickHouse Cloud](https://console.clickhouse.cloud/support).
+Чтобы перейти с самоуправляемого ClickHouse на ClickHouse Cloud, используйте [`remoteSecure`](/ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) или [`BACKUP` и `RESTORE`](/ru/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Если у вас останутся дополнительные вопросы, обратитесь в [службу поддержки ClickHouse Cloud](https://console.clickhouse.cloud/support).
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### Какие варианты оплаты доступны для ClickHouse Cloud?
@@ -351,8 +351,7 @@ ClickHouse Cloud поддерживает следующие варианты о
   ### Если я добавлю свою кредитную карту и перейду на платный тариф до окончания пробного периода и до исчерпания кредитов, будет ли с меня взиматься плата?
 </div>
 
-Если пользователь переходит с пробного тарифа на платный до окончания 30-дневного пробного периода и у него при этом остаются кредиты из пробного лимита,
-мы продолжаем сначала расходовать эти пробные кредиты в течение первоначального 30-дневного пробного периода, а затем начинаем списывать средства с кредитной карты.
+Когда пользователь добавляет кредитную карту во время пробного периода, мы продолжаем расходовать пробные кредиты, пока они не будут исчерпаны или не истекут — в зависимости от того, что наступит раньше. Срок действия пробных кредитов истекает в конце 30-дневного пробного периода, даже после добавления способа оплаты. После исчерпания или истечения срока действия пробных кредитов средства будут списываться с сохранённой кредитной карты. Вы можете проверить дату истечения срока действия пробных кредитов на странице Billing в консоли ClickHouse Cloud.
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### Как отслеживать свои расходы?
@@ -492,4 +491,4 @@ ClickHouse Cloud поддерживает следующие варианты о
   ## Стоимость ClickPipes
 </div>
 
-Информацию об оплате ClickPipes см. в специальном разделе [«Оплата ClickPipes»](/ru/products/cloud/reference/billing/clickpipes/index).
+Информацию об оплате ClickPipes см. в специальном разделе [«ClickPipes»](/ru/products/cloud/reference/billing/clickpipes/index).

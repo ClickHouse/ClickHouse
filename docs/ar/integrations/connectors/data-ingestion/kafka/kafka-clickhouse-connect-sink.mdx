@@ -25,15 +25,21 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
   ### متطلبات البيئة
 </div>
 
-يجب أن يكون إطار عمل [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) بالإصدار 2.7 أو أحدث مثبّتًا في البيئة.
+يجب أن يكون إطار عمل [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) بالإصدار 2.7 أو أحدث مثبّتًا في البيئة، وأن يعمل على Java 11 أو أحدث.
 
 <div id="version-compatibility-matrix">
   ### مصفوفة توافق الإصدارات
 </div>
 
-| إصدار ClickHouse Kafka Connect | إصدار ClickHouse | Kafka Connect | Confluent Platform |
-| ------------------------------ | ---------------- | ------------- | ------------------ |
-| 1.0.0                          | &gt; 23.3        | &gt; 2.7      | &gt; 6.1           |
+| إصدار ClickHouse Kafka Connect | إصدار ClickHouse | Kafka Connect | Confluent Platform | عميل Java لـ ClickHouse |
+| ------------------------------ | ---------------- | ------------- | ------------------ | ----------------------- |
+| 1.4.x (الأحدث)                 | 23.3+            | 2.7+          | 6.1+               | 0.9.5                   |
+| 1.3.x                          | 23.3+            | 2.7+          | 6.1+               | 0.8.0 إلى 0.9.5         |
+| 1.2.x                          | 23.3+            | 2.7+          | 6.1+               | 0.6.3 إلى 0.8.0         |
+| 1.1.x                          | 23.3+            | 2.7+          | 6.1+               | 0.6.0 إلى 0.6.1         |
+| 1.0.x                          | 23.3+            | 2.7+          | 6.1+               | 0.4.6 إلى 0.6.0         |
+
+يرفض الموصل البدء عند استخدام خوادم ClickHouse بإصدار أقدم من 23.3. استخدم دائمًا [أحدث إصدار](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest)، ما لم يكن لديك سبب لتثبيت إصدار أقدم.
 
 <div id="main-features">
   ### الميزات الرئيسية
@@ -136,6 +142,7 @@ schemas.enable=false
 | `bufferCount` (اعتبارًا من v1.3.6)                   | عدد السجلات المطلوب تخزينها مؤقتًا في الذاكرة قبل إرسالها إلى ClickHouse. تؤدي القيمة `0` إلى تعطيل التخزين المؤقت الداخلي. لا يُدعم التخزين المؤقت عند استخدام `exactlyOnce=true`.                                                                                           | `"0"`                                                    |
 | `bufferFlushTime` (اعتبارًا من v1.3.6)               | الحد الأقصى للوقت، بالملي ثانية، لتخزين السجلات مؤقتًا قبل التفريغ عندما يكون `exactlyOnce=false`. تؤدي القيمة `0` إلى تعطيل التفريغ المستند إلى الوقت. القيمة الافتراضية هي `0`. مطلوب فقط لعتبة زمنية. ويكون فعالًا فقط عندما يكون `bufferCount > 0`.                       | `"0"`                                                    |
 | `reportInsertedOffsets` (اعتبارًا من الإصدار v1.3.6) | يتيح إرجاع الإزاحات التي نجح إدراجها فقط من `preCommit` (بدلًا من `currentOffsets`) عندما يكون `exactlyOnce=false`. ولا ينطبق ذلك عندما يكون `ignorePartitionsWhenBatching=true`، إذ تظل `currentOffsets` هي المُعادة.                                                        | `"false"`                                                |
+| `client_version` (اعتبارًا من v1.2.0)                | يحدد [ClickHouse Java client](/ar/integrations/language-clients/java/client) الذي يستخدمه الموصل. القيم الصالحة هي `"V1"` و`"V2"`.                                                                                                                                               | `"V1"`                                                   |
 
 <div id="target-tables">
   ### الجداول المستهدفة
@@ -469,7 +476,7 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 
 مخططات Protobuf التالية غير مدعومة في الموصل:
 
-* بُنى union متعددة الرسائل (**قبل الإصدار 26.1 من CH**)
+* بُنى اتحاد متعددة الرسائل (**قبل الإصدار 26.1 من CH**)
 
 ```protobuf
 syntax = "proto3";
@@ -494,7 +501,7 @@ message TwoRecords {
 }
 ```
 
-اعتبارًا من الإصدار 26.1 من CH وما بعده، أصبح هذا المخطط مدعومًا عند ضبط `allow_experimental_nullable_tuple_type=1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
+اعتبارًا من الإصدار 26.1 من CH وما بعده، أصبح هذا المخطط مدعومًا عند ضبط `allow_experimental_nullable_tuple_type=1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 <div id="json-schema-support">
   ### دعم مخطط JSON
@@ -983,16 +990,34 @@ SETTINGS
   #### تجميع الاتصالات والمهل الزمنية
 </div>
 
-يحتفظ الموصّل باتصالات HTTP مع ClickHouse. اضبط قيم المهلة للشبكات ذات زمن الوصول المرتفع:
+يحتفظ الموصّل باتصالات HTTP مع ClickHouse. اضبط قيم المهلة للشبكات ذات زمن الاستجابة المرتفع:
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 * **`socket_timeout`** (الافتراضي: 30000 مللي ثانية): الحد الأقصى لمدة عمليات القراءة
 * **`connection_timeout`** (الافتراضي: 10000 مللي ثانية): الحد الأقصى للوقت اللازم لإنشاء الاتصال
 
 ارفع هذه القيم إذا واجهت أخطاء انتهاء المهلة مع الدفعات الكبيرة.
+
+<div id="client-network-buffer">
+  #### مخزن الشبكة المؤقت للعميل
+</div>
+
+عند استخدام العميل V2 (`"client_version": "V2"`)، تُنسخ البيانات بين المقبس وذاكرة التطبيق عبر مخزن مؤقت يتحكم فيه `client_network_buffer_size` (بالبايت). الحجم الافتراضي هو `300000` بايت. يمكن أن يؤدي استخدام مخزن مؤقت أكبر إلى تحسين معدل النقل عبر الوصلات ذات زمن الاستجابة المرتفع أو النطاق الترددي العالي، لكنه يزيد من استخدام الذاكرة لكل مهمة اتصال.
+
+تُضبط جميع خيارات العميل عبر `jdbcConnectionProperties` بدلاً من `clickhouseSettings`. على سبيل المثال:
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+إذا كنت بحاجة إلى ضبط عدة خصائص للعميل، فافصل بينها باستخدام `&`:
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 <div id="monitoring-performance">
   #### مراقبة الأداء واستكشاف المشكلات
