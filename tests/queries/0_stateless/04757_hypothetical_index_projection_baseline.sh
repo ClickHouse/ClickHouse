@@ -17,7 +17,7 @@ echo "--- projection-served read: baseline is reported, candidate is not_applica
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42;
-" 2>&1 | grep -oE "Baseline \(after PK \+ partition \+ existing indexes\):|status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
+" 2>&1 | grep -oE "Baseline \(after PK \+ partition \+ existing indexes\):|est_bytes:.*|status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
 
 echo "--- and the statement succeeds ---"
 $CLICKHOUSE_CLIENT -q "

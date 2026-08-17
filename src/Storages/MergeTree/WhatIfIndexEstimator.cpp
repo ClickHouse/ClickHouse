@@ -384,7 +384,9 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
 
-    if (analysis.selected_rows > 0)
+    /// The average row size is the parent table's, so it says nothing about rows selected from a
+    /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
+    if (analysis.selected_rows > 0 && !analysis.readFromProjection())
     {
         auto total_bytes = data.getTotalActiveSizeInBytes();
         auto total_rows = data.getTotalActiveSizeInRows();
