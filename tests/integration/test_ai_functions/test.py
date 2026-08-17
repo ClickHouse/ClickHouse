@@ -588,6 +588,18 @@ def test_classify_anthropic_structured_output(started_cluster):
     assert result.strip() == "positive"
 
 
+def test_generate_anthropic_tool_use_rejected(started_cluster):
+    """A plain `aiGenerate` request sends no tools, so an Anthropic-compatible endpoint returning
+    `stop_reason="tool_use"` is signalling a tool-call turn, not a final answer, and must be rejected.
+    `tool_use` is only a completed answer for the forced structured-output path
+    (test_classify_anthropic_structured_output)."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_tool_use'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+
+
 def last_request():
     return json.loads(
         instance.exec_in_container(
