@@ -69,7 +69,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
             {
                 auto * base_aggregate_function_type = aggregate_function_type;
-                while(base_aggregate_function_type->getNestedFunction() != nullptr)
+                while (base_aggregate_function_type->getNestedFunction() != nullptr)
                 {
                     base_aggregate_function_type = base_aggregate_function_type->getNestedFunction()
                 }
