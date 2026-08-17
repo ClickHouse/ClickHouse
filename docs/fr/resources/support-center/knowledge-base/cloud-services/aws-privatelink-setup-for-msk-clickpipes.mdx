@@ -1,6 +1,6 @@
 ---
-title: Configuration d’AWS PrivateLink pour exposer MSK à ClickPipes
-description: Étapes de configuration pour exposer un cluster MSK privé à ClickPipes via la connectivité MSK multi-VPC.
+title: Configuration d'AWS PrivateLink pour exposer MSK à ClickPipes
+description: Étapes de configuration pour exposer un MSK privé à ClickPipes via la connectivité multi-VPC de MSK.
 date: 2025-4-15
 tags: ['Sécurité et authentification', 'Gestion du Cloud']
 keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
@@ -10,13 +10,13 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
   ## Vue d’ensemble
 </div>
 
-Ce guide vous aidera à démarrer la configuration d’un **MSK multi-VPC** à utiliser avec le [point de terminaison privé inverse de ClickPipes](/fr/integrations/clickpipes/aws-privatelink#msk-multi-vpc).
+Ce guide vous aidera à démarrer la configuration d’un **MSK multi-VPC** à utiliser avec le [point de terminaison privé inverse de ClickPipes](/fr/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc).
 
 <div id="requirements">
   ## Exigences
 </div>
 
-Le VPC de votre cluster MSK doit être situé dans l’une de nos régions ClickPipes. Consultez [les régions ClickPipes](/fr/integrations/clickpipes/aws-privatelink#aws-privatelink-regions) pour obtenir la liste des régions prises en charge.
+Le VPC de votre cluster MSK doit être situé dans l’une de nos régions ClickPipes. Consultez [les régions ClickPipes](/fr/integrations/clickpipes/networking/aws-privatelink#aws-privatelink-regions) pour obtenir la liste des régions prises en charge.
 
 <div id="enabling-multi-vpc-connectivity">
   ## Activation de la connectivité multi-VPC
@@ -65,4 +65,4 @@ Le VPC de votre cluster MSK doit être situé dans l’une de nos régions Click
   ## Création d’un point de terminaison privé inverse
 </div>
 
-Suivez les étapes de création d’un point de terminaison privé inverse dans la [documentation ClickPipes](/fr/integrations/clickpipes/aws-privatelink#creating-clickpipe).
+Suivez les étapes de création d’un point de terminaison privé inverse dans la [documentation ClickPipes](/fr/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe).

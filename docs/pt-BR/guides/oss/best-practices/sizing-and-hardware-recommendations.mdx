@@ -92,7 +92,7 @@ O volume necessário de RAM geralmente depende de:
 * Da quantidade de dados processados nas consultas.
 
 No entanto, em geral, quanto mais memória você tiver, mais rápido suas consultas serão executadas.
-Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
+Se o seu caso de uso for sensível a custos, quantidades menores de memória também podem funcionar, pois é possível habilitar configurações ([`max_bytes_before_external_group_by`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) e [`max_bytes_before_external_sort`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir o spill de dados para disco, mas observe que isso pode afetar significativamente o desempenho das consultas.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### Qual deve ser a proporção entre memória e armazenamento?
