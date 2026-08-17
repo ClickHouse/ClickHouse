@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Columns/ColumnConst.h>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB::QueryPlanOptimizations
@@ -167,23 +166,6 @@ std::unordered_set<const ActionsDAG::Node *> collectPromotableNotNullFilters(con
     return to_promote;
 }
 
-bool onlyPassesInputThrough(const ActionsDAG & actions_dag)
-{
-    for (const auto * output : actions_dag.getOutputs())
-        if (output->type != ActionsDAG::ActionType::INPUT)
-            return false;
-
-    return true;
-}
-
-/// Replace the node by its child.
-void dropStep(QueryPlan::Node & node)
-{
-    auto * child = node.children.front();
-    node.step = std::move(child->step);
-    node.children = std::move(child->children);
-}
-
 }
 
 void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
@@ -208,7 +190,7 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
 
     auto to_promote = collectPromotableNotNullFilters(node, conjuncts, settings);
 
-    const auto input_header = node.children.front()->step->getOutputHeader();
+    const auto input_header = filter->getInputHeaders().front();
 
     /// Promoted markers are replaced by the filter they wrap, the remaining ones are dropped.
     ActionsDAG::NodeMapping node_map;
@@ -225,20 +207,16 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
             new_conjuncts.push_back(new_conjunct->children.front());
     }
 
-    auto & outputs = new_actions_dag.getOutputs();
-    std::erase(outputs, node_map.at(filter_output));
+    new_actions_dag.removeUnusedResult(filter->getFilterColumnName());
 
-    /// Nothing is left to filter by. Drop the step, unless it also computes columns its parent needs.
+    /// Nothing is left to filter by, the step becomes an expression.
     if (new_conjuncts.empty())
     {
-        new_actions_dag.removeUnusedActions();
-        if (onlyPassesInputThrough(new_actions_dag) && blocksHaveEqualStructure(*node.step->getOutputHeader(), *input_header))
-        {
-            dropStep(node);
-            return;
-        }
+        new_actions_dag.removeUnusedActions(/*allow_remove_inputs=*/false);
 
+        /// Ensure no planner-only filters remain in the actions of the step.
         chassert(!new_actions_dag.hasPlannerOnlyFilters());
+
         node.step = std::make_unique<ExpressionStep>(input_header, std::move(new_actions_dag));
         return;
     }
@@ -251,9 +229,9 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
     }
 
     new_actions_dag.addOrReplaceInOutputs(*new_filter);
-    new_actions_dag.removeUnusedActions();
+    new_actions_dag.removeUnusedActions(/*allow_remove_inputs=*/false);
 
-    /// Ensure no planner-only filters remain in the whole action dag at the end of the pass.
+    /// Ensure no planner-only filters remain in the actions of the step.
     chassert(!new_actions_dag.hasPlannerOnlyFilters());
 
     node.step = std::make_unique<FilterStep>(input_header, std::move(new_actions_dag), new_filter->result_name, /*remove_filter=*/true);
