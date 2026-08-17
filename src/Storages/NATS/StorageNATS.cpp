@@ -957,19 +957,18 @@ void resolveCredentialSource(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
 
-    /// `libnats` sends all configured authentication fields in its `CONNECT` frame. Do not let a
-    /// query add one authentication family to a named collection that already defines the other:
-    /// it would layer query-selected credentials on top of the credentials selected by the
-    /// collection. Inline credentials may replace a configured credentials file, because they are
-    /// two representations of the same authentication family.
-    const bool inline_credentials_in_collection = !credential_file_in_collection.empty() || !credentials_in_collection.empty();
-    const bool basic_credentials_in_collection = !username_in_collection.empty() || !password_in_collection.empty() || !token_in_collection.empty();
-    const bool basic_credentials_assigned_by_query = username_assigned_by_query || password_assigned_by_query || token_assigned_by_query;
+    /// `libnats` sends all configured authentication fields in its `CONNECT` frame. The final
+    /// effective settings must therefore select exactly one authentication family. This is checked
+    /// independently of provenance: query overrides can otherwise combine methods on an auth-empty
+    /// named collection, and a named collection itself can store the ambiguous configuration.
+    /// A credentials file and inline credentials are the two representations of one family; their
+    /// query-side replacement is handled below.
+    const bool has_inline_credentials = !nats_settings[NATSSetting::nats_credential_file].value.empty() || credentials_set;
+    const bool has_basic_credentials = !nats_settings[NATSSetting::nats_username].value.empty()
+        || !nats_settings[NATSSetting::nats_password].value.empty() || !nats_settings[NATSSetting::nats_token].value.empty();
 
-    if ((credentials_assigned_by_query && basic_credentials_in_collection)
-        || (basic_credentials_assigned_by_query && inline_credentials_in_collection))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Credentials from different authentication methods cannot be combined in a named collection");
+    if (has_inline_credentials && has_basic_credentials)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Credentials from different authentication methods cannot be combined");
 
     /// Credentials read from a named collection in the server configuration are secrets selected
     /// by the operator. They must not be sent to an endpoint selected by the query. The global

@@ -18,6 +18,8 @@
 DROP NAMED COLLECTION IF EXISTS 04665_nats_credential_file;
 DROP NAMED COLLECTION IF EXISTS 04665_nats_credentials;
 DROP NAMED COLLECTION IF EXISTS 04665_nats_both;
+DROP NAMED COLLECTION IF EXISTS 04665_nats_no_auth;
+DROP NAMED COLLECTION IF EXISTS 04665_nats_mixed_auth;
 
 CREATE NAMED COLLECTION 04665_nats_credential_file AS
     nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
@@ -32,11 +34,34 @@ CREATE NAMED COLLECTION 04665_nats_both AS
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
     nats_credential_file = '/var/nats.creds', nats_credentials = 'user JWT and seed';
 
+CREATE NAMED COLLECTION 04665_nats_no_auth AS
+    nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1;
+
+CREATE NAMED COLLECTION 04665_nats_mixed_auth AS
+    nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
+    nats_credentials = 'user JWT and seed', nats_token = 'token';
+
 -- Both sources specified in the query at once: ambiguous.
 CREATE TABLE nats_both_in_settings (key UInt64) ENGINE = NATS
 SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
     nats_credential_file = '/var/nats.creds', nats_credentials = 'user JWT and seed'; -- { serverError BAD_ARGUMENTS }
+
+-- Inline user credentials and token authentication are different authentication families and
+-- cannot be combined, whether the settings come directly from SQL, an auth-empty collection with
+-- query overrides, or the collection itself.
+CREATE TABLE nats_inline_credentials_and_token_in_settings (key UInt64) ENGINE = NATS
+SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
+    nats_credentials = 'user JWT and seed', nats_token = 'token'; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_inline_credentials_and_token_over_no_auth_collection (key UInt64)
+ENGINE = NATS(04665_nats_no_auth, nats_credentials = 'user JWT and seed', nats_token = 'token'); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_inline_credentials_and_token_in_collection (key UInt64)
+ENGINE = NATS(04665_nats_mixed_auth); -- { serverError BAD_ARGUMENTS }
 
 -- An empty path without a named collection is a no-op, retained for compatibility with queries that
 -- conditionally specify the setting. It cannot access a server-side file.
@@ -86,3 +111,5 @@ SET allow_named_collection_override_by_default = 1;
 DROP NAMED COLLECTION 04665_nats_credential_file;
 DROP NAMED COLLECTION 04665_nats_credentials;
 DROP NAMED COLLECTION 04665_nats_both;
+DROP NAMED COLLECTION 04665_nats_no_auth;
+DROP NAMED COLLECTION 04665_nats_mixed_auth;
