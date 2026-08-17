@@ -416,6 +416,16 @@ StorageURLSource::StorageURLSource(
             /// QueryStatus is marked before its cancellation is delivered to the processors, so
             /// check it as well as the source-local cancellation before starting new I/O.
             CurrentThread::checkIfNotCancelled();
+
+            /// `checkTimeLimit` returns false for a soft timeout with the `break` overflow mode.
+            /// Record it in the source-local token immediately instead of waiting for a processor
+            /// to observe it, so no new `eof`, metadata, or input-format I/O can start meanwhile.
+            if (auto query_status = getContext()->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+            {
+                cancellation->cancel(true);
+                return true;
+            }
+
             return cancellation->isCancelled();
         };
         do

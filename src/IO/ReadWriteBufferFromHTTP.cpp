@@ -61,13 +61,15 @@ namespace DB
 namespace
 {
 
-void checkQueryTimeLimit()
+bool isQueryTimeLimitReached()
 {
     CurrentThread::checkIfNotCancelled();
 
     if (auto query_context = CurrentThread::tryGetQueryContext())
         if (auto query_status = query_context->getProcessListElementSafe())
-            query_status->checkTimeLimit();
+            return !query_status->checkTimeLimit();
+
+    return false;
 }
 
 }
@@ -360,8 +362,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         /// The callers cannot protect the interval after their last cancellation check and before
         /// this attempt starts. Do not issue a request after cancellation in that interval.
         FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
-        CurrentThread::checkIfNotCancelled();
-        if (isReadCancelled())
+        const bool soft_time_limit_reached = isQueryTimeLimitReached();
+        if (soft_time_limit_reached && cancellation)
+            cancellation->cancel(true);
+
+        if (soft_time_limit_reached || isReadCancelled())
             throw ReadInterruptedException(exception);
 
         /// `waitBeforeRetry` also cannot protect the interval after it returns and before a retry
@@ -369,8 +374,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            checkQueryTimeLimit();
-            if (isReadCancelled())
+            const bool soft_time_limit_reached = isQueryTimeLimitReached();
+            if (soft_time_limit_reached && cancellation)
+                cancellation->cancel(true);
+
+            if (soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
         }
 
@@ -441,8 +449,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// cancellation error could mask the failure that tore the pipeline down. Marking the
             /// error lets that reader tell it from a failure the cancellation has nothing to do
             /// with, which it must not discard.
-            checkQueryTimeLimit();
-            if (isReadCancelled())
+            const bool soft_time_limit_reached = isQueryTimeLimitReached();
+            if (soft_time_limit_reached && cancellation)
+                cancellation->cancel(true);
+
+            if (soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
 
             std::rethrow_exception(exception);
@@ -468,9 +479,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
             /// instead of the network error we happen to have at hand, the same way as it is done for S3.
-            CurrentThread::checkIfNotCancelled();
+            const bool soft_time_limit_reached = isQueryTimeLimitReached();
+            if (soft_time_limit_reached && cancellation)
+                cancellation->cancel(true);
 
-            if (cancelled)
+            if (cancelled || soft_time_limit_reached)
             {
                 /// The read was cancelled for another reason: the pipeline is being torn down because
                 /// something else in the query has already failed, the client has disconnected, or the
