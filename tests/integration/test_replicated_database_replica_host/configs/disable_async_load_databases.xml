@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Make database initialization complete before restart_clickhouse returns. -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>

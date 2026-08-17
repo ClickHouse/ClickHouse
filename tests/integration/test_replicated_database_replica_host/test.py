@@ -26,6 +26,7 @@ node1 = cluster.add_instance(
 # Node without replica_host (uses hostname fallback)
 node2 = cluster.add_instance(
     "node2",
+    main_configs=["configs/disable_async_load_databases.xml"],
     with_zookeeper=True,
     macros={"replica": "node2", "shard": "shard1"},
     stay_alive=True,
