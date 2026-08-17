@@ -1445,7 +1445,10 @@ arrow::Status ArrowFlightServer::DoAction(
             ARROW_RETURN_NOT_OK(arrow::flight::GetSessionOptionsRequest::Deserialize(body_view));
             arrow::flight::GetSessionOptionsResult result;
 
-            auto execute_res = executeSQLtoTable(session, "SELECT name, value FROM system.settings");
+            auto execute_res = executeSQLtoTable(
+                session,
+                "SELECT name, value FROM system.settings",
+                [&context]() -> bool { return !context.is_cancelled(); });
             ARROW_RETURN_NOT_OK(execute_res);
             auto [_, table] = execute_res.ValueUnsafe();
             const auto & names = table->column(0);
@@ -1511,6 +1514,7 @@ arrow::Status ArrowFlightServer::DoAction(
 
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId("");
+            query_context->setConnectionAliveCheck([&context]() -> bool { return !context.is_cancelled(); });
             QueryScope query_scope = QueryScope::create(query_context);
 
             /// Parse the substituted query to validate syntax and determine query type.

@@ -256,6 +256,71 @@ ProcessList::EntryPtr ProcessList::insert(
                 UInt64(500), UInt64(10000));
         }
 
+        /// Replacing a query must happen before taking an admission slot. The old query can take up to
+        /// `replace_running_query_max_wait_ms` to leave the process list; occupying a FIFO slot during
+        /// that wait would block unrelated queries despite no replacement query executing yet.
+        if (auto user_process_list = user_to_queries.find(client_info.current_user);
+            user_process_list != user_to_queries.end())
+        {
+            auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
+            if (running_query != user_process_list->second.queries.end())
+            {
+                if (!settings[Setting::replace_running_query])
+                    throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
+
+                const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
+                const auto replace_deadline = std::chrono::steady_clock::now()
+                    + std::chrono::milliseconds(replace_running_query_max_wait_ms);
+                auto old_query_finished = [&]
+                {
+                    running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                    if (running_query == user_process_list->second.queries.end())
+                        return true;
+                    running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                    return false;
+                };
+
+                /// Ask the old query to cancel before every wait, including the first one.
+                if (!old_query_finished())
+                {
+                    if (!replace_running_query_max_wait_ms)
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
+
+                    if (is_alive && alive_check_interval_ms > 0)
+                    {
+                        while (!old_query_finished())
+                        {
+                            auto now = std::chrono::steady_clock::now();
+                            if (now >= replace_deadline)
+                                break;
+
+                            auto chunk = std::min(
+                                std::chrono::milliseconds(alive_check_interval_ms),
+                                std::chrono::duration_cast<std::chrono::milliseconds>(replace_deadline - now));
+                            query_finished.wait_for(lock, chunk, old_query_finished);
+
+                            if (!old_query_finished() && !is_alive())
+                                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                                "Query replacement cancelled: client disconnected while waiting for the old query");
+                        }
+                    }
+                    else if (!query_finished.wait_until(lock, replace_deadline, old_query_finished))
+                    {
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
+                    }
+
+                    if (!old_query_finished())
+                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                        "Query with id = {} is already running and can't be stopped",
+                                        client_info.current_query_id);
+                }
+            }
+        }
+
         if (needs_admission && admission_running >= max_size)
         {
             /// Stack-allocate a waiter and enqueue it (FIFO).
@@ -568,32 +633,6 @@ ProcessList::EntryPtr ProcessList::insert(
                             settings[Setting::max_concurrent_queries_for_user].toString());
                 }
 
-                auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
-
-                if (running_query != user_process_list->second.queries.end())
-                {
-                    if (!settings[Setting::replace_running_query])
-                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
-
-                    /// Ask queries to cancel. They will check this flag.
-                    running_query->second->is_killed.store(true, std::memory_order_relaxed);
-
-                    const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
-                    if (!replace_running_query_max_wait_ms || !query_finished.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
-                        [&]
-                        {
-                            running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                            if (running_query == user_process_list->second.queries.end())
-                                return true;
-                            running_query->second->is_killed.store(true, std::memory_order_relaxed);
-                            return false;
-                        }))
-                    {
-                        throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
-                                        "Query with id = {} is already running and can't be stopped",
-                                        client_info.current_query_id);
-                    }
-                }
             }
         }
 
