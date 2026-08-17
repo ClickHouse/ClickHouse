@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT \
     --query_id "$QUERY_ID" \
     --query "CREATE TABLE t_dl_single (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet)"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 # Exactly one `_delta_log` existence check for the fresh create.
 $CLICKHOUSE_CLIENT --query "
