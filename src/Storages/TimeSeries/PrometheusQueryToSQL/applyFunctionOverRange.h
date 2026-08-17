@@ -23,7 +23,7 @@ SQLQueryPiece applyFunctionOverRange(
 const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument);
 
 /// Returns the grid a range function is aggregated on: its own evaluation range, or - when the range-vector argument
-/// carries a fixed @ modifier - the single point (step 0) at which PromQL evaluates such a function exactly once.
+/// carries a fixed @ modifier - the single point (step 0) at the fixed timestamp, where PromQL freezes the window.
 NodeEvaluationRange getRangeAggregationRange(
     const PrometheusQueryTree::Offset * fixed_at_node, const NodeEvaluationRange & node_range, ConverterContext & context);
 

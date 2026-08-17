@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -145,6 +146,18 @@ SQLQueryPiece applyFunctionPredictLinear(
     auto argument = std::move(arguments[0]);
 
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+
+    if (fixed_at_node)
+    {
+        /// A fixed @ freezes only the sample window; PromQL still evaluates a step-invariant predict_linear at the
+        /// range start. The fit is linear, so predicting that much further ahead moves the origin there exactly.
+        const Float64 evaluation_time_shift = DecimalUtils::convertTo<Float64>(
+            DurationType{start_time.value - aggregation_range.start_time.value}, context.timestamp_scale);
+
+        if (evaluation_time_shift != 0)
+            predict_offset_ast = makeASTFunction(
+                "plus", std::move(predict_offset_ast), make_intrusive<ASTLiteral>(evaluation_time_shift));
+    }
 
     SQLQueryPiece res = argument;
     res.node = function_node;

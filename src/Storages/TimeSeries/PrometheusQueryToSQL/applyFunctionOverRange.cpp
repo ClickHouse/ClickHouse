@@ -164,8 +164,8 @@ NodeEvaluationRange getRangeAggregationRange(
     if (!fixed_at_node)
         return node_range;
 
-    /// Under a fixed @ modifier the range function is evaluated once at the fixed timestamp, while the
-    /// range-vector argument retains its own inner grid.
+    /// Under a fixed @ modifier the range function's sample window is frozen at the fixed timestamp, while
+    /// the range-vector argument retains its own inner grid.
     const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
     chassert(fixed_range.start_time == fixed_range.end_time);
     return NodeEvaluationRange{fixed_range.start_time, fixed_range.end_time, DurationType{0}, node_range.window};
