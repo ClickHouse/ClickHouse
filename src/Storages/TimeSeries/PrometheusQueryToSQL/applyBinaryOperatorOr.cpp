@@ -21,6 +21,7 @@ namespace
         return identifier && identifier->name() == ColumnNames::Group;
     }
 
+    /// Merge two unique VECTOR_GRID inputs by group, preferring non-NULL values from the left input.
     ASTPtr makeOrMergeQuery(const String & left, const String & right)
     {
         SelectQueryBuilder builder;

@@ -3571,6 +3571,19 @@ def test_set_binary_operators():
         ],
     )
 
+    # Empty ignoring() keeps the same matching key for already grouped inputs.
+    do_query_test(
+        '(sum by (shape, size) (last_over_time(foo{shape="circle"}[10])) or ignoring() sum by (shape, size) (last_over_time(bar{shape="circle"}[10])))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [120, "16"], [130, "16"], [150, "16"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+        ],
+    )
+
     do_query_test(
         "(last_over_time(foo[10]) and on(shape) last_over_time(bar[10]))[50:10]",
         150,
