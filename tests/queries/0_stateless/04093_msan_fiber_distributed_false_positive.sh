@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-asan, no-tsan, no-ubsan, no-msan
+# Tags: long, no-fasttest, no-asan, no-tsan, no-ubsan
 # Tag no-fasttest: needs remote() with multiple addresses
 # Tags no-asan, no-tsan, no-ubsan: this test is specifically for MSan on ARM
 

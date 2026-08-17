@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long, no-asan, no-ubsan, no-tsan, no-debug, no-flaky-check, no-msan
+-- Tags: no-fasttest, long, no-asan, no-ubsan, no-tsan, no-debug, no-flaky-check
 -- ^^ Disable test for slow builds: generating data takes time but a sufficiently large data set
 -- is necessary for different hnsw_candidate_list_size_for_search settings to make a difference
 
