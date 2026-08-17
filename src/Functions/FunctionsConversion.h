@@ -506,9 +506,11 @@ struct ToDateTransformFromTime64
 {
     static constexpr auto name = "toDate";
 
-    static UInt16 execute(Int64 seconds, const DateLUTImpl & time_zone)
+    static UInt16 execute(Int64 seconds, const DateLUTImpl &)
     {
-        return ToDateImpl<date_time_overflow_behavior>::execute(seconds, time_zone);
+        /// `Time64` has no timezone. Preserve the historical Parquet `TIME` conversion,
+        /// which used a `DateTime64` value in UTC before converting to `Date`.
+        return ToDateImpl<date_time_overflow_behavior>::execute(seconds, DateLUT::instance("UTC"));
     }
 };
 
@@ -516,9 +518,9 @@ struct ToDate32TransformFromTime64
 {
     static constexpr auto name = "toDate32";
 
-    static Int32 execute(Int64 seconds, const DateLUTImpl & time_zone)
+    static Int32 execute(Int64 seconds, const DateLUTImpl &)
     {
-        return ToDate32Impl::execute(seconds, time_zone);
+        return ToDate32Impl::execute(seconds, DateLUT::instance("UTC"));
     }
 };
 

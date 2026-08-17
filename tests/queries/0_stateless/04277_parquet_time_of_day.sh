@@ -28,6 +28,7 @@ table = pa.table({
     't_ms': pa.array([3723456],          type=pa.time32('ms')),     # 01:02:03.456
     't_us': pa.array([3723456789],       type=pa.time64('us')),     # 01:02:03.456789
     't_ns': pa.array([3723456789012],    type=pa.time64('ns')),     # 01:02:03.456789012
+    't_late': pa.array([84600000],       type=pa.time32('ms')),     # 23:30:00
     'ts_us': pa.array([1700000000000000],type=pa.timestamp('us', tz='UTC')),
 })
 pq.write_table(table, '$DATA_FILE')
@@ -90,6 +91,10 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
         FROM file('$DATA_FILE', 'Parquet', 't_us Date');
     SELECT 'Date32 (t_us)' AS hint, toString(t_us) AS v
         FROM file('$DATA_FILE', 'Parquet', 't_us Date32');
+    SELECT 'Date (t_late)' AS hint, toString(t_late) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_late Date');
+    SELECT 'Date32 (t_late)' AS hint, toString(t_late) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_late Date32');
 "
 
 echo "=== Insert into Date / Date32 columns ==="
@@ -100,7 +105,7 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
     ) ENGINE = Memory;
 
     INSERT INTO test_parquet_time_date (d, d32)
-        SELECT t_ms, t_us FROM file('$DATA_FILE', 'Parquet');
+        SELECT t_late, t_late FROM file('$DATA_FILE', 'Parquet');
     SELECT * FROM test_parquet_time_date;
 "
 
