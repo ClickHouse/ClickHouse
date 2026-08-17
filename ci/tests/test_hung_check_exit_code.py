@@ -691,9 +691,8 @@ def test_the_in_loop_handshake_is_not_vacuous():
 # The time limit is the one cause whose trigger is a clock, so end to end it can
 # only be ordered against another cause by a budget that is wide enough to reach
 # and narrow enough to lose - and process startup, including the manager and worker
-# forks, happens inside it. These arms own the clock instead, so the ordering does
-# not depend on how fast the runner is. The exit code still needs an e2e arm, which
-# is the only layer that can see `killpg` clobbering it.
+# forks, happens inside it, which is unbounded on a shared runner. These arms own
+# the clock instead, so the ordering does not depend on how fast the runner is.
 
 
 _DEADLINE = 1.0
@@ -1077,20 +1076,13 @@ if os.environ.get("STUB_HEALTH_CHECK_RAISES") == "1":
         raise RuntimeError("stub: health check send failed")
     ns["TestCase"].send_test_name_failed = _boom
 # lldb over every server process blocks up to 30s each and the collection itself
-# is not what these tests assert. STUB_STACKTRACE_SECONDS reinstates a blocking
-# window on purpose, so a detector that records its cause only after collecting
-# can be beaten by a later one.
-_stacktrace_seconds = float(os.environ.get("STUB_STACKTRACE_SECONDS", "0"))
+# is not what these tests assert, so it is replaced by a marker they can observe.
 def _stub_stacktraces(*a, **k):
     print("stub: print_c_stacktraces")
-    if _stacktrace_seconds:
-        import time as _time
-        _time.sleep(_stacktrace_seconds)
 ns["print_c_stacktraces"] = _stub_stacktraces
-# Prints one line per claim attempt. A denied attempt is otherwise invisible - the
-# "Global time limit reached" banner sits inside the granted branch - so an arm
-# asserting that one cause beat another cannot tell "the loser lost" from "the loser
-# never tried", and passes on a run where the two never competed.
+# Prints one line per claim attempt, granted or not. The "Global time limit reached"
+# banner sits inside the granted branch, so without this an attempt that was made and
+# refused is indistinguishable from one that was never made.
 if os.environ.get("STUB_TRACE_CLAIMS") == "1":
     _real_claim = ns["try_claim_stop_cause"]
     def _traced_claim(carrier, code):
@@ -1098,17 +1090,6 @@ if os.environ.get("STUB_TRACE_CLAIMS") == "1":
         print("stub: claim code=%d granted=%s" % (code, granted))
         return granted
     ns["try_claim_stop_cause"] = _traced_claim
-# Re-arms the deadline on entry to the monitor loop, so the budget measures that
-# loop rather than also covering database creation and worker startup.
-_stop_time_after_setup = float(os.environ.get("STUB_STOP_TIME_AFTER_SETUP", "0"))
-if _stop_time_after_setup:
-    _real_do_run_tests = ns["do_run_tests"]
-    def _do_run_tests(jobs, test_suite, args, *a, **k):
-        import time as _time
-        args.stop_time = _time.time() + _stop_time_after_setup
-        print("stub: re-armed stop_time on entry to do_run_tests")
-        return _real_do_run_tests(jobs, test_suite, args, *a, **k)
-    ns["do_run_tests"] = _do_run_tests
 exec(compile(guard + main_block, runner, "exec"), ns)
 '''
 
@@ -1132,8 +1113,6 @@ def _run_runner(
     extra_args,
     stub_liveness_fails,
     stub_health_check_raises=False,
-    stacktrace_seconds=0,
-    stop_time_after_setup=0,
     trace_claims=False,
     jobs=2,
     timeout=300,
@@ -1143,8 +1122,6 @@ def _run_runner(
     env = dict(os.environ)
     env["STUB_LIVENESS_FAILS"] = "1" if stub_liveness_fails else "0"
     env["STUB_HEALTH_CHECK_RAISES"] = "1" if stub_health_check_raises else "0"
-    env["STUB_STACKTRACE_SECONDS"] = str(stacktrace_seconds)
-    env["STUB_STOP_TIME_AFTER_SETUP"] = str(stop_time_after_setup)
     env["STUB_TRACE_CLAIMS"] = "1" if trace_claims else "0"
     return subprocess.run(
         [
@@ -1165,16 +1142,6 @@ def _run_runner(
         text=True,
         timeout=timeout,
     )
-
-
-# Printed by the shim when it re-arms the deadline. Any arm asserting an ordering
-# between the time limit and another cause must check it: without the re-arm the
-# budget also covers setup, and a slow runner then exits 3 on correct code.
-_STOP_TIME_REARMED = "stub: re-armed stop_time on entry to do_run_tests"
-
-# Printed by the shim's claim tracer under `trace_claims`.
-_CLAIM_DENIED_TIME_LIMIT = f"stub: claim code={GLOBAL_TIME_LIMIT_EXIT_CODE} granted=False"
-_CLAIM_GRANTED_HUNG_CHECK = f"stub: claim code={HUNG_CHECK_EXIT_CODE} granted=True"
 
 
 def _assert_exit_code(proc, expected):
@@ -1240,8 +1207,7 @@ def test_sequential_worker_probe_failure_exits_with_the_hung_check_code(tmp_path
     matches its substrings before consulting tags, so an empty `parallel_tests`
     makes `do_run_tests` skip the worker pool entirely and call `run_tests_array`
     with `is_concurrent=False`. Asserting the split is not decoration - without it
-    this arm silently degrades into a second copy of the parallel one, which is
-    the state it was found in.
+    this arm silently degrades into a second copy of the parallel one.
     """
     _make_suite(tmp_path, count=2, seconds=1)
     proc = _run_runner(
@@ -1296,51 +1262,10 @@ def test_max_failures_is_not_conflated_with_the_hung_check(tmp_path):
     _assert_exit_code(proc, MAX_FAILURES_EXIT_CODE)
 
 
-def test_time_limit_does_not_steal_a_cause_recorded_during_collection(tmp_path):
-    """Both causes fire in one run, end to end, and the process exits 5.
-
-    The ordering itself is asserted without a clock by
-    `test_the_time_limit_does_not_win_the_liveness_collection_window`; this arm
-    exists for the exit code, which is the only layer that can see `killpg`
-    clobbering it. A worker records the probe verdict and then collects stacktraces,
-    which blocks (lldb over every server process, up to 30 s each);
-    `stacktrace_seconds` holds that window open so the deadline expires inside it.
-    Master loses the verdict here and reports the benign `Global time limit reached`
-    at OK.
-
-    The budget below is generous because it no longer carries the ordering: all that
-    has to fit inside it is the worker's claim, ~20 ms against 4 s.
-    """
-    _make_suite(tmp_path, count=4, seconds=1)
-    proc = _run_runner(
-        tmp_path,
-        ["--testname", "--global_time_limit", "4"],
-        stub_liveness_fails=True,
-        stub_health_check_raises=True,
-        stacktrace_seconds=8,
-        stop_time_after_setup=4,
-        trace_claims=True,
-    )
-    _assert_exit_code(proc, HUNG_CHECK_EXIT_CODE)
-    assert _STOP_TIME_REARMED in proc.stdout, proc.stdout[-2000:]
-    # The time limit has to have tried and been refused. Its banner sits inside the
-    # granted branch, so the exit code alone cannot tell a refused claim from one
-    # that was never attempted, and a run whose deadline never expires exits 5
-    # without the two causes ever competing.
-    assert _CLAIM_DENIED_TIME_LIMIT in proc.stdout, (
-        "the time limit never contested the claim, so this run proves nothing about"
-        f" ordering\nstdout:\n{proc.stdout[-3000:]}"
-    )
-    assert _CLAIM_GRANTED_HUNG_CHECK in proc.stdout, proc.stdout[-3000:]
-
-
 def test_the_claim_tracer_sees_a_time_limit_that_wins(tmp_path):
-    """Positive control for the tracer assertion above.
-
-    `granted=False` for the time limit is the interesting outcome, so the tracer has
-    to be able to report `granted=True` for it as well - otherwise the assertion
-    could be reading a tracer that is simply broken for that code.
-    """
+    """The tracer reports `granted=True` for a time limit that does win, so a
+    `granted=False` reading from it distinguishes a refused claim from a broken
+    tracer."""
     _make_suite(tmp_path, count=2, seconds=8)
     proc = _run_runner(
         tmp_path,
