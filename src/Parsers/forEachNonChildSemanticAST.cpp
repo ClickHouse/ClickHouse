@@ -122,6 +122,17 @@ namespace
             visit_if(settings_profile->alter_settings);
             visit_if(settings_profile->to_roles);
         }
+        else if (auto * settings = node.template as<ASTSettingsProfileElements>())
+        {
+            for (auto & element : settings->elements)
+                visit_if(element);
+        }
+        else if (auto * alter_settings = node.template as<ASTAlterSettingsProfileElements>())
+        {
+            visit_if(alter_settings->add_settings);
+            visit_if(alter_settings->modify_settings);
+            visit_if(alter_settings->drop_settings);
+        }
         else if (auto * quota = node.template as<ASTCreateQuotaQuery>())
         {
             visit_if(quota->roles);

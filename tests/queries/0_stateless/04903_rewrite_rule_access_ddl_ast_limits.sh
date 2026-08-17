@@ -14,6 +14,7 @@ cleanup()
 {
     $CLICKHOUSE_CLIENT --query "DROP RULE IF EXISTS ${ACTIVE}" 2>/dev/null
     $CLICKHOUSE_CLIENT --query "DROP RULE IF EXISTS ${ROLE}" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "DROP RULE IF EXISTS ${PROFILE}" 2>/dev/null
 }
 
 trap cleanup EXIT
