@@ -24,5 +24,9 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localho
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'), '', 'data.parquet', 'Parquet');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorageCluster('c', 'http://localhost:11111/devstoreaccount1/cont?sv=2025-01-05&sig=SEKRIT_SIGNATURE', '', 'data.parquet', 'Parquet');
 
+-- A computed named override key can evaluate to storage_account_url. Hide its value whole when the
+-- key cannot be reconstructed from the AST, before the named collection is resolved.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage(nc_04909_missing, concat('storage_account_', 'url') = concat('http://localhost:11111/devstoreaccount1/cont?sig=', 'SEKRIT_SIGNATURE'));
+
 -- A url with no signature in it is left alone.
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM azureBlobStorage('http://localhost:11111/devstoreaccount1/cont', 'cont', 'data.parquet', 'Parquet');

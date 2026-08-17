@@ -565,8 +565,12 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
                 continue;
 
             String key;
-            if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true)
-                || (key != "connection_string" && key != "storage_account_url"))
+            if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                continue;
+            }
+            if (key != "connection_string" && key != "storage_account_url")
                 continue;
 
             String value;
