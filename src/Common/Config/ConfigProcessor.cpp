@@ -657,10 +657,9 @@ void ConfigProcessor::doIncludesRecursive(
                 ///    `<http_handlers from_zk=.../>`. This is kept for backward compatibility:
                 ///    earlier versions always interpreted a `from_zk` value as XML.
                 ///  - A value that does not begin with '<' is parsed as a YAML subtree only for
-                ///    `<include from_zk="..." yaml="true"/>`. The explicit opt-in avoids
-                ///    confusing the generic `<include>` leaf-replacement form with a subtree
-                ///    splice: for example, `<password><include from_zk="/secret"/></password>`
-                ///    must preserve a secret whose value happens to be malformed YAML. In a build
+                ///    `<include from_zk="..." yaml="true"/>`. This explicitly opts in to YAML
+                ///    parsing wherever the generic `<include>` form is used, including inside a
+                ///    leaf element; it must not be used for a literal secret or setting. In a build
                 ///    without `yaml-cpp` (`ENABLE_YAML_CPP=0`, so `USE_YAML_CPP` is 0), an opted-in
                 ///    YAML substitution reports that YAML parsing is unavailable.
                 ///  - Any other value that does not begin with '<' is kept as literal text using
@@ -718,12 +717,19 @@ void ConfigProcessor::doIncludesRecursive(
             if (env_val == nullptr)
                 return nullptr;
 
-            /// An environment variable is always a plain text value, never an XML fragment
-            /// (unlike `from_zk`, which may hold an XML subtree). So we always escape its
-            /// XML special characters and embed it as text content. Escaping unconditionally
-            /// keeps the substitution unambiguous: the value is interpreted as literal text
-            /// regardless of whether it happens to be parseable as XML.
-            env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+            if (node->nodeName() == "include")
+            {
+                /// Keep the established `<include from_env=.../>` behavior: its value is an XML
+                /// fragment whose children are spliced into the parent element. Direct `from_env`
+                /// substitutions remain literal text, so an XML-looking scalar is not reinterpreted.
+                env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+            }
+            else
+            {
+                /// A direct environment substitution is always a plain-text value. Escape XML
+                /// special characters so the scalar remains literal even when it resembles XML.
+                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+            }
 
             return getRootNode(env_document.get());
         };

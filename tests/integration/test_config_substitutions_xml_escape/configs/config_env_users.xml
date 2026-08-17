@@ -18,6 +18,9 @@
     <profile_env_cdata>
         <log_comment from_env="ENV_CDATA_END" />
     </profile_env_cdata>
+    <profile_env_subtree>
+        <include from_env="ENV_XML_SUBTREE" />
+    </profile_env_subtree>
   </profiles>
   <users>
       <env_special>
@@ -35,5 +38,10 @@
           <profile>profile_env_cdata</profile>
           <quota>default</quota>
       </env_cdata>
+      <env_subtree>
+          <password></password>
+          <profile>profile_env_subtree</profile>
+          <quota>default</quota>
+      </env_subtree>
   </users>
 </clickhouse>

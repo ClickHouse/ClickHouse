@@ -25,6 +25,7 @@ node_env = cluster.add_instance(
         "ENV_XML_SPECIAL": "a&b<c>d",
         "ENV_XML_FRAGMENT": "<a>1</a>",
         "ENV_CDATA_END": "a]]>b",
+        "ENV_XML_SUBTREE": "<log_comment>subtree value</log_comment>",
     },
 )
 # from_zk substitutions into user profiles (one user/profile per case), plus a from_zk
@@ -183,6 +184,11 @@ def test_config_env_cdata_end_sequence(start_cluster):
     assert get_log_comment(node_env, "env_cdata") == "a]]>b\n"
 
 
+def test_config_env_include_keeps_xml_subtree_behavior(start_cluster):
+    """An `<include from_env=.../>` keeps importing XML children for compatibility."""
+    assert get_log_comment(node_env, "env_subtree") == "subtree value\n"
+
+
 def test_config_zk_yaml_is_parsed_with_explicit_opt_in(start_cluster):
     """A structural <include from_zk=... yaml="true"> parses a non-XML value as YAML."""
     assert (
@@ -192,6 +198,17 @@ def test_config_zk_yaml_is_parsed_with_explicit_opt_in(start_cluster):
         )
         == "99999\n"
     )
+
+
+def test_config_zk_yaml_include_in_leaf_uses_yaml_semantics(start_cluster):
+    """`yaml="true"` explicitly enables YAML parsing even in a leaf `<include>` form.
+
+    The generic `<include>` form always splices its children into the parent. Therefore a YAML
+    mapping stored at ZooKeeper is structural in this position too; it is not suitable for a
+    literal setting or secret. The explicit attribute makes that behavior intentional rather
+    than silently preserving the YAML-looking source text.
+    """
+    assert get_log_comment(node_zk, "zk_yaml_include_in_leaf") == "99999\n"
 
 
 def test_config_zk_scalar_keeps_literal_text(start_cluster):
