@@ -280,6 +280,18 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
     /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
     EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+
+    /// `NATS` accepts the same credential source in the `SETTINGS` clause. This is formatted
+    /// through `ASTSetQuery`, rather than `FunctionSecretArgumentsFinder`, and must be hidden too.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS "
+        "SETTINGS nats_credentials = 'plain_settings_user_jwt_and_seed'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
