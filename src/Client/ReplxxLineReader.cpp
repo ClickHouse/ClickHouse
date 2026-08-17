@@ -437,6 +437,19 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             hint_completions_context.clear();
             hint_completions_context_size = 0;
 
+            /// A line that was just displayed programmatically (recalled from history, found by a
+            /// history search, pasted, brought back from the editor) must not pop hints by itself:
+            /// with hints visible, the next Up/Down press would navigate the hints instead of the
+            /// history. The display armed the one-shot and pinned the displayed text (the same
+            /// display can regenerate the hints once more when replxx replays a throttled
+            /// refresh); the first run for an edited text unpins and shows the hints again.
+            if (suppress_hints_once || (!suppress_hints_for_text.empty() && suppress_hints_for_text == rx.get_state().text()))
+            {
+                suppress_hints_once = false;
+                return replxx::Replxx::hints_t{};
+            }
+            suppress_hints_for_text.clear();
+
             /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
             /// every suggestion, and this callback runs on every zero-delay repaint, so we must not
             /// fold and stable-sort the whole dictionary only to drop the result here.
@@ -487,12 +500,23 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// The modify callback runs on every dispatched action, so reset the mirror here to track
         /// replxx; the hint-navigation keys re-set it *after* invoking, so a real navigation stays.
         rx.set_modify_callback([this] (std::string &, int &) { hint_selection = -1; });
+
+        /// A pasted query is also a whole new line displayed at once, so it does not pop hints
+        /// either (replxx's default binding for the paste marker just invokes the same action;
+        /// the action reads the whole paste, so the buffer holds the pasted text afterwards).
+        rx.bind_key(Replxx::KEY::PASTE_START, [this](char32_t code)
+        {
+            suppress_hints_once = true;
+            auto result = rx.invoke(Replxx::ACTION::BRACKETED_PASTE, code);
+            suppressHintsForDisplayedLine();
+            return result;
+        });
     }
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
-    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
-    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     if (options.ignore_shell_suspend)
@@ -561,7 +585,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
+            return historyNavigate(Replxx::ACTION::LINE_NEXT, code);
         };
         /// Up navigates the hints only once a hint is selected; before that it keeps recalling
         /// command history, so the hints do not shadow it.
@@ -574,7 +598,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+            return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code);
         };
         rx.bind_key(Replxx::KEY::DOWN, hint_next);
         rx.bind_key(Replxx::KEY::UP, hint_previous);
@@ -589,7 +613,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+            return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code);
         });
 
         /// Right accepts the chosen hint (the single one shown, or the one selected by navigating);
@@ -670,13 +694,20 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.invoke(Replxx::ACTION::REPAINT, code);
 
             if (!new_query.empty())
+            {
+                /// The picked query is a whole new line displayed at once - do not pop hints on it
+                /// (see historyNavigate).
+                suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            }
 
             if (bracketed_paste_enabled)
                 enableBracketedPaste();
 
             rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
-            return rx.invoke(Replxx::ACTION::REPAINT, code);
+            auto result = rx.invoke(Replxx::ACTION::REPAINT, code);
+            suppressHintsForDisplayedLine();
+            return result;
         };
 
         rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
@@ -691,7 +722,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
-        return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+        /// The found entry is a whole new line displayed at once - do not pop hints on it (see
+        /// historyNavigate).
+        suppress_hints_once = true;
+        auto result = rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
+        suppressHintsForDisplayedLine();
+        return result;
     });
 
     /// Change cursor style for overwrite mode to blinking (see console_codes(5))
@@ -733,6 +769,24 @@ bool ReplxxLineReader::hintChosen()
     /// one by navigating. In both cases accepting it inserts text rather than popping the
     /// old-style completion list.
     return hintPopupActive() && (hint_selection >= 0 || hint_count == 1);
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
+{
+    /// The recalled entry is displayed (and its hints regenerated) inside the action, so the
+    /// suppression must be armed before it; the pin below keeps later regenerations of the
+    /// recalled text hintless (the refresh inside the action may be throttled and replayed after
+    /// this returns) and is cleared by the first edit.
+    suppress_hints_once = true;
+    auto result = rx.invoke(action, code);
+    suppressHintsForDisplayedLine();
+    return result;
+}
+
+void ReplxxLineReader::suppressHintsForDisplayedLine()
+{
+    suppress_hints_once = false;
+    suppress_hints_for_text = rx.get_state().text();
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -807,6 +861,9 @@ void ReplxxLineReader::openEditor(bool format_query)
         if (editor_exit_code == EXIT_SUCCESS)
         {
             const std::string & new_query = readFile(editor_file.getPath());
+            /// The edited query is a whole new line displayed at once - do not pop hints on it
+            /// (see historyNavigate).
+            suppress_hints_once = true;
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
         }
         else
@@ -823,6 +880,7 @@ void ReplxxLineReader::openEditor(bool format_query)
 
     rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
     rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
+    suppressHintsForDisplayedLine();
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
@@ -846,6 +904,12 @@ void ReplxxLineReader::setInitialText(const String & text)
     if (!text.empty())
     {
         rx.set_preload_buffer(text);
+        /// The preloaded query is displayed at once - do not pop hints on it (see
+        /// historyNavigate). The one-shot is consumed at the first render of the line inside
+        /// input(); the pin is set to the raw text (replxx may normalize whitespace in the
+        /// preload, in which case it just stays inert).
+        suppress_hints_once = true;
+        suppress_hints_for_text = text;
     }
 }
 
