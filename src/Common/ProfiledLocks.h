@@ -62,21 +62,22 @@ private:
     ProfileEvents::Event wait_event;
 };
 
-/// RAII lock guard that measures wait-time on contention only for exclusive (write) locks on SharedMutex.
+/// RAII lock guard that measures wait-time on contention only for exclusive (write) locks on shared mutexes.
+template <typename Mutex = SharedMutex>
 class TSA_SCOPED_LOCKABLE ProfiledExclusiveLock final : private boost::noncopyable
 {
 public:
-    ProfiledExclusiveLock(SharedMutex & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE(mutex)
+    ProfiledExclusiveLock(Mutex & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE(mutex)
         : wait_event(wait_event_)
     {
         if (mutex.try_lock())
         {
-            underlying_lock = std::unique_lock<SharedMutex>(mutex, std::adopt_lock);
+            underlying_lock = std::unique_lock<Mutex>(mutex, std::adopt_lock);
         }
         else
         {
             Stopwatch wait_watch;
-            std::unique_lock<SharedMutex> l(mutex);
+            std::unique_lock<Mutex> l(mutex);
             ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
             underlying_lock = std::move(l);
         }
@@ -104,16 +105,20 @@ public:
     }
 
 private:
-    std::unique_lock<SharedMutex> underlying_lock;
+    std::unique_lock<Mutex> underlying_lock;
     ProfileEvents::Event wait_event;
 };
 
+template <typename Mutex>
+ProfiledExclusiveLock(Mutex &, ProfileEvents::Event) -> ProfiledExclusiveLock<Mutex>;
 
-/// RAII lock guard that measures wait-time on contention only for shared (read) locks on SharedMutex.
+
+/// RAII lock guard that measures wait-time on contention only for shared (read) locks on shared mutexes.
+template <typename Mutex = SharedMutex>
 class TSA_SCOPED_LOCKABLE ProfiledSharedLock final : private boost::noncopyable
 {
 public:
-    ProfiledSharedLock(SharedMutex & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE_SHARED(mutex)
+    ProfiledSharedLock(Mutex & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE_SHARED(mutex)
         : underlying_lock(mutex, std::try_to_lock), wait_event(wait_event_)
     {
         if (!underlying_lock.owns_lock())
@@ -124,7 +129,7 @@ public:
         }
     }
 
-    ProfiledSharedLock(SharedMutex & mutex, ProfileEvents::Event wait_event_, std::defer_lock_t)
+    ProfiledSharedLock(Mutex & mutex, ProfileEvents::Event wait_event_, std::defer_lock_t)
         : underlying_lock(mutex, std::defer_lock), wait_event(wait_event_)
     {}
 
@@ -150,8 +155,14 @@ public:
     }
 
 private:
-    std::shared_lock<SharedMutex> underlying_lock;
+    std::shared_lock<Mutex> underlying_lock;
     ProfileEvents::Event wait_event;
 };
+
+template <typename Mutex>
+ProfiledSharedLock(Mutex &, ProfileEvents::Event) -> ProfiledSharedLock<Mutex>;
+
+template <typename Mutex>
+ProfiledSharedLock(Mutex &, ProfileEvents::Event, std::defer_lock_t) -> ProfiledSharedLock<Mutex>;
 
 }

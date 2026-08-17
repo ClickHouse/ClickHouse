@@ -99,7 +99,13 @@ public:
     void setForceSerialStartupReadForTesting(bool value);
 
 private:
-    mutable SharedMutex changelog_lock;
+#if defined(USE_NSYNC) && USE_NSYNC
+    using ChangelogMutex = NsyncSharedMutex;
+#else
+    using ChangelogMutex = SharedMutex;
+#endif
+
+    mutable ChangelogMutex changelog_lock;
     LoggerPtr log;
     Changelog changelog TSA_GUARDED_BY(changelog_lock);
 };

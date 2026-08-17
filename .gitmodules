@@ -402,6 +402,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/ClickHouse/xsimd
+[submodule "contrib/nsync"]
+	path = contrib/nsync
+	url = https://github.com/google/nsync
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
 	url = https://github.com/ClickHouse/simdutf

@@ -22,6 +22,8 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
    but is not possible to satisfy" ON)
 
+option(USE_NSYNC "Enable google/nsync synchronization primitives" ON)
+
 # This allows to compile some code conditionally in the private build while having byte-identical source files.
 set (CLICKHOUSE_CLOUD 0)
 
