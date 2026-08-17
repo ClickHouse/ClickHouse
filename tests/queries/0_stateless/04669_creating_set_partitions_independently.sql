@@ -170,6 +170,20 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 SELECT (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_skewed_partitions) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_skewed_partitions) SETTINGS allow_creating_set_partitions_independently = 1, force_creating_set_partitions_independently = 1);
 DROP TABLE test_in_skewed_partitions;
 
+-- Nullable key: with the default transform_null_in = 0 the set fill skips rows with a NULL key, and the
+-- preliminary deduplication drops them the same way; with transform_null_in = 1 NULL is a regular set
+-- element. The partition key maps every NULL into one partition, so the layout stays balanced only when
+-- NULLs are few.
+DROP TABLE IF EXISTS test_in_nullable_key;
+CREATE TABLE test_in_nullable_key (a Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() PARTITION BY coalesce(a, 0) % 8;
+SYSTEM STOP MERGES test_in_nullable_key;
+INSERT INTO test_in_nullable_key SELECT if(number % 16 = 0, NULL, number % 64) FROM numbers_mt(400);
+INSERT INTO test_in_nullable_key SELECT if(number % 16 = 0, NULL, number % 64) FROM numbers_mt(400);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
+SELECT (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1);
+SELECT (SELECT count() FROM (SELECT if(number % 16 = 0, NULL, number % 64) AS n FROM numbers(100)) WHERE n IN (SELECT a FROM test_in_nullable_key) SETTINGS transform_null_in = 1, allow_creating_set_partitions_independently = 0) = (SELECT count() FROM (SELECT if(number % 16 = 0, NULL, number % 64) AS n FROM numbers(100)) WHERE n IN (SELECT a FROM test_in_nullable_key) SETTINGS transform_null_in = 1, allow_creating_set_partitions_independently = 1);
+DROP TABLE test_in_nullable_key;
+
 -- NEGATIVE: the lazy FINAL optimization builds an internal primary-key set through the same
 -- `CreatingSetStep`; the per-partition pre-deduplication is scoped to `IN (subquery)` set fills and must
 -- stay out of it. The `LazyFinalKeyAnalysis` marker pins that the lazy FINAL plan actually formed.
