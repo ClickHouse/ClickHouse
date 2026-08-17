@@ -85,11 +85,11 @@ open(path, 'wb').write(bytes(data))
 EOF
 
     echo "--- ${FORMAT}: subset SELECT of the intact column succeeds ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT small FROM file('${DATA_FILE}', '${FORMAT}') ORDER BY small"
 
     echo "--- ${FORMAT}: SELECT of the corrupt column fails ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT big FROM file('${DATA_FILE}', '${FORMAT}') FORMAT Null" 2>&1 \
         | grep -oF 'out of the message body' | head -1 || echo 'FAIL: expected an out-of-bounds error'
 

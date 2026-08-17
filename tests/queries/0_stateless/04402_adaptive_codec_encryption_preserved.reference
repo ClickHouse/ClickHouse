@@ -1,0 +1,6 @@
+encrypted	x	0	0	1
+encrypted	y	0	0	1
+read	2000000	2000000
+1
+plain	x	0	1
+plain	y	1	0

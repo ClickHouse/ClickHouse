@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -28,22 +30,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace Setting
+{
+    extern const SettingsBool enable_materialized_cte;
+}
+
 namespace
 {
 
 /// Read a required String literal argument as a value, without materializing a `Field`.
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
-    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
+    const auto value = evaluateConstantExpressionAsColumn(arg, context);
     /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
     /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
     /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
     /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
-    if (column->isNullAt(0))
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
+    if (value.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(column->getDataAt(0));
+    return String(value.getDataAt());
 }
 
 }
@@ -185,7 +192,19 @@ void StoragePrometheusQuery::readImpl(
 
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
-    InterpreterSelectQueryAnalyzer interpreter(select_query, context, options, column_names);
+
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    auto query_context = context;
+    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
+    {
+        auto context_copy = Context::createCopy(context);
+        context_copy->setSetting("enable_materialized_cte", true);
+        query_context = context_copy;
+    }
+
+    InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
 }

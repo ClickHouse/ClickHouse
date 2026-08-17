@@ -1,6 +1,8 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: depends on the server-level query condition cache entry written by the
 -- pre-warm query still being resident for the measured query (same reason as 04065, 04275).
+-- Tag no-parallel-replicas: parallel replicas read the full mark set and bypass the QCC
+-- granule drop, so the single-node PK-analysis mark-count assertion below would fire.
 
 -- Previously, the logs looked like this:
 --

@@ -7,6 +7,9 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -251,6 +254,29 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 내장 인증자의 권한 한도는 `default_role` 역할(role)과 `default` 사용자(user)로 설정됩니다. 즉, 모든 JWT 사용자의 유효 권한은 이 두 엔터티가 보유한 권한 부여와의 교집합으로 제한되므로, 토큰은 `default_role` 및 `default`에 허용된 범위를 넘어 권한을 상승시킬 수 없습니다.
 
 이 인증자를 사용하기 위해 별도로 구성할 것은 없습니다. 서비스가 생성될 때 자동으로 프로비저닝됩니다.
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## 서비스에 JWT 인증 활성화하기
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" support="true" />
+
+기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있는 베타 기능입니다. 활성화하려면 다음 설정 정보를 포함해 [지원 티켓](https://clickhouse.com/support/program)을 제출하십시오.
+
+| 매개변수         | 설명                                                                                                                                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 서비스 ID       | JWT 인증을 활성화할 ClickHouse Cloud 서비스의 UUID입니다. 서비스를 열면 Cloud Console URL에서 확인할 수 있습니다.                                                                                                                                                                 |
+| Issuer       | IdP(Identity Provider)가 발급한 토큰의 `iss` 클레임 값으로, 일반적으로 IdP의 URL입니다(예: `https://your-tenant.okta.com`). ClickHouse는 발급자가 이 값과 일치하지 않는 토큰을 거부합니다.                                                                                                  |
+| 대상     | IdP(Identity Provider)가 이 서비스를 대상으로 하는 토큰에 넣는 `aud` 클레임 값입니다. ClickHouse는 다른 대상을 대상으로 발급된 토큰을 거부합니다.                                                                                                                                        |
+| JWKS URL     | IdP(Identity Provider)가 JSON Web Key Set을 게시하는 HTTPS 엔드포인트입니다(예: `https://idp.example.com/.well-known/jwks.json`). ClickHouse는 토큰 서명을 확인하기 위해 이 엔드포인트에서 public key를 가져옵니다. [필수 클레임](#required-claims)에 설명된 대로 JWKS 검증은 RSA 키(`RS256`)에서만 작동합니다. |
+| 역할 클레임  | 임시 사용자의 ClickHouse 역할을 포함하는 토큰 클레임의 이름입니다(기본값은 `clickhouse:roles`). 이 클레임에는 역할 이름으로 구성된 JSON 배열이 포함되어야 합니다(예: `["analyst", "reader"]`).                                                                                                 |
+| 권한 부여 클레임 | 임시 사용자의 SQL `GRANT` fragment를 포함하는 토큰 클레임의 이름입니다(기본값은 `clickhouse:grants`). 이 클레임에는 권한 부여 fragment로 구성된 JSON 배열이 포함되어야 합니다(예: `["SELECT ON analytics.*", "INSERT ON analytics.events"]`).                                               |
+
+역할 클레임에 지정된 역할은 서비스에 미리 존재해야 합니다(`CREATE ROLE`로 생성). [접근 권한](#access-rights)에 설명된 대로 권한 한도은 역할 및 권한 부여 클레임에서 얻는 유효 접근 권한을 제한합니다.
 
 <div id="interserver-communication">
   ## 서버 간 통신

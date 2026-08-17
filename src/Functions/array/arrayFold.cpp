@@ -3,6 +3,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
@@ -123,12 +124,7 @@ class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayFold>(context); }
-
-    explicit FunctionArrayFold(ContextPtr context)
-        : process_list_element(context ? context->getProcessListElement() : nullptr)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -186,6 +182,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
         const auto & lambda_function_with_type_and_name = arguments[0];
 
         if (!lambda_function_with_type_and_name.column)
@@ -346,7 +348,7 @@ public:
         {
             /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
             if ((i & 0xFFFFF) == 0)
-                checkQueryTimeLimit();
+                checkQueryTimeLimit(process_list_element);
 
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
@@ -398,7 +400,7 @@ public:
             /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
             /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
             /// per-iteration check is negligible.
-            checkQueryTimeLimit();
+            checkQueryTimeLimit(process_list_element);
 
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
@@ -484,14 +486,12 @@ public:
     }
 
 private:
-    QueryStatusPtr process_list_element;
-
     /// checkTimeLimit() throws for KILL QUERY and the 'throw' overflow mode; for the 'break' overflow
     /// mode it returns false instead. A fold has no meaningful partial result (a half-folded accumulator
     /// is a wrong value, not a smaller one), so we throw on the false (break) return to stop the runaway
     /// fold. In 'break' mode the pipeline absorbs this timeout into a clean cancellation, so the query
     /// ends without a client-visible error and yields no rows for the cancelled fold.
-    void checkQueryTimeLimit() const
+    static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element)
     {
         if (process_list_element && !process_list_element->checkTimeLimit())
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);

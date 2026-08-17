@@ -464,7 +464,8 @@ void updateConfigurationFromConfig(
     }
 
 #if USE_KRB5
-    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
+    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
+    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     kafka_config.set("sasl.kerberos.kinit.cmd", "");
@@ -580,7 +581,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
-        if (property.first.find("password") != std::string::npos)
+        if (property.first.contains("password"))
             continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }
