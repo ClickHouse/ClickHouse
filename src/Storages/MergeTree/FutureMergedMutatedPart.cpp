@@ -65,7 +65,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
 
     for (const auto & patch : patch_parts)
     {
-        Int64 max_patch_version = patch->getSourcePartsSet().getMaxDataVersion();
+        Int64 max_patch_version = patch->getPatchPartIndex().getMaxDataVersion();
         max_mutation = std::max(max_mutation, max_patch_version);
     }
 
