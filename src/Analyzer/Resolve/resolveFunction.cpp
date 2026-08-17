@@ -428,6 +428,22 @@ bool containsQueryOrUnion(const QueryTreeNodePtr & node)
     return false;
 }
 
+bool containsCountFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function = node->as<FunctionNode>(); function && function->getFunctionName() == "count")
+        return true;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        if (containsCountFunction(constant->getSourceExpression()))
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsCountFunction(child))
+            return true;
+
+    return false;
+}
+
 bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
 {
     const auto & name = function.getFunctionName();
@@ -441,8 +457,8 @@ bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
     if (arguments.size() != 2)
         return false;
 
-    const bool first_is_scalar = containsQueryOrUnion(arguments[0]);
-    const bool second_is_scalar = containsQueryOrUnion(arguments[1]);
+    const bool first_is_scalar = containsQueryOrUnion(arguments[0]) || containsCountFunction(arguments[0]);
+    const bool second_is_scalar = containsQueryOrUnion(arguments[1]) || containsCountFunction(arguments[1]);
     if (first_is_scalar == second_is_scalar)
         return false;
 
