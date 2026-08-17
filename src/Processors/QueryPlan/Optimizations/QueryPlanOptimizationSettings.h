@@ -50,6 +50,7 @@ struct QueryPlanOptimizationSettings
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
+    bool aggregation_bucket_top_k;
     bool split_filter;
     bool merge_expressions;
     bool merge_filters;
@@ -99,6 +100,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
+    bool read_in_order_through_spilling_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;

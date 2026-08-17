@@ -98,6 +98,10 @@ namespace ErrorCodes
 }
 
 
+/// An absolute upper bound on `kafka_num_consumers`, enforced regardless of `kafka_disable_num_consumers_limit`.
+/// A single consumer can read any number of partitions, so no realistic setup ever needs this many.
+static constexpr UInt64 MAX_KAFKA_NUM_CONSUMERS = 10000;
+
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -219,6 +223,18 @@ void registerStorageKafka(StorageFactory & factory)
         if (num_consumers < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
+        }
+        /// `kafka_disable_num_consumers_limit` only lifts the limit derived from the CPU count, so that a large
+        /// machine can use more consumers. It must not let an absurd value through: the storage allocates one
+        /// consumer slot and one scheduling task per consumer, so a huge value ends up in a failed allocation
+        /// instead of a sensible error message.
+        if (num_consumers > MAX_KAFKA_NUM_CONSUMERS)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The number of consumers can not be bigger than {}, got {}",
+                MAX_KAFKA_NUM_CONSUMERS,
+                num_consumers);
         }
 
         if ((*kafka_settings)[KafkaSetting::kafka_max_block_size].changed && (*kafka_settings)[KafkaSetting::kafka_max_block_size].value < 1)
