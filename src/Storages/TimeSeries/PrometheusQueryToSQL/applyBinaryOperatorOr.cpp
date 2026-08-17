@@ -37,7 +37,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
-    /// The left grid is read twice - by the per-group counting step (Step 1) and by the final merge join (Step 3) -
+    /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
     /// so it's added as a materialized CTE to be evaluated once.
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
     String left = context.subqueries.back().name;
@@ -49,7 +49,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     /// Step 1: Build the per-step presence mask per `join_group` on the left side.
     ///
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        maxForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
     /// GROUP BY join_group
     /// FROM left
     ///

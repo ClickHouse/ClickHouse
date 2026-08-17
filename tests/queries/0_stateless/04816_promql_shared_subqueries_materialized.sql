@@ -60,17 +60,17 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 
 SELECT '-- and uses a compact per-step presence mask';
-SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
        countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) and last_over_time(n[10])', 100, 130, 10));
 
 SELECT '-- or uses a compact per-step presence mask';
-SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
        countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 
 SELECT '-- unless uses a compact per-step presence mask';
-SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+SELECT countIf(explain LIKE '%groupBitOrForEach%') > 0 AS uses_presence_mask,
        countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) unless last_over_time(n[10])', 100, 130, 10));
 

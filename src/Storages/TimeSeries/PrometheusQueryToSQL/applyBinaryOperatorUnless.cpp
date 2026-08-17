@@ -43,7 +43,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
     /// Step 1:
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        maxForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
+    ///        groupBitOrForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
     /// GROUP BY join_group
     /// FROM right
     ///
