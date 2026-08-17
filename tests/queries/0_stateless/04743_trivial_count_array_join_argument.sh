@@ -78,6 +78,8 @@ rm -rf "${tmp_dir:?}"
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS t_04743_old;
 DROP TABLE IF EXISTS p_04743_old;
+DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_aj;
+CREATE FUNCTION ${CLICKHOUSE_DATABASE}_aj AS (x) -> arrayJoin(x);
 CREATE TABLE t_04743_old (A Array(UInt32), n UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_04743_old VALUES ([1,2,3],1), ([4,5],2), ([6],3);
 CREATE TABLE p_04743_old (n UInt32) ENGINE = MergeTree PARTITION BY n ORDER BY tuple();
@@ -93,12 +95,44 @@ SELECT count(arrayJoin(A)) FROM t_04743_old SETTINGS enable_analyzer = 0, optimi
 SELECT count(arrayJoin([n, n])) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 SELECT count(arrayJoin([n, n])) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 0;
 
+-- a SQL UDF is inlined before this decision, so the expanded body reaches the same test
+SELECT count(${CLICKHOUSE_DATABASE}_aj([10, 20])) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+
 -- aggregates without arrayJoin keep the optimization on both paths
 SELECT count() FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 SELECT count(n) FROM t_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 SELECT count() FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 SELECT count(n) FROM p_04743_old SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 
+-- plans: the refusal and the kept cases, so a destroyed optimization is visible too
+SELECT count() > 0 FROM (EXPLAIN SELECT count(arrayJoin([10, 20])) FROM t_04743_old)
+WHERE explain ILIKE '%Optimized trivial count%'
+SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count() > 0 FROM (EXPLAIN SELECT count(arrayJoin([n, n])) FROM p_04743_old)
+WHERE explain ILIKE '%Optimized trivial count%'
+SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t_04743_old)
+WHERE explain ILIKE '%Optimized trivial count%'
+SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+SELECT count() > 0 FROM (EXPLAIN SELECT count(n) FROM p_04743_old)
+WHERE explain ILIKE '%Optimized trivial count%'
+SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+"
+
+# The alias carries the canonical name only after normalize_function_names rewrites it, so the
+# eligibility filter must recognise it either way. Declining leaves the exception the same query
+# already throws when the optimization is off, instead of a row count.
+alias_out=$(${CLICKHOUSE_CLIENT} -q "
+SELECT count(unnest([10, 20])) FROM t_04743_old
+SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1, normalize_function_names = 0;
+" 2>&1 | tr '\n' ' ')
+case "$alias_out" in
+    *FUNCTION_IS_SPECIAL*) echo "FUNCTION_IS_SPECIAL" ;;
+    *) echo "UNEXPECTED: ${alias_out}" ;;
+esac
+
+${CLICKHOUSE_CLIENT} -q "
 DROP TABLE t_04743_old;
 DROP TABLE p_04743_old;
+DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_aj;
 "
