@@ -109,14 +109,14 @@ namespace
         IDType get(size_t i) const { return unalignedLoad<UInt128>(data + sizeof(UInt128) * i); }
     };
 
-    /// Gets identifiers stored in a two-element tuple column.
-    template <typename FirstType, typename SecondType>
+    /// Gets identifiers stored in a two-element tuple column by combining two component getters.
+    template <typename FirstGetter, typename SecondGetter>
     struct TwoComponentID
     {
-        using IDType = std::pair<decltype(toIDComponent(FirstType{})), decltype(toIDComponent(SecondType{}))>;
-        const FirstType * first;
-        const SecondType * second;
-        IDType get(size_t i) const { return {toIDComponent(first[i]), toIDComponent(second[i])}; }
+        using IDType = std::pair<typename FirstGetter::IDType, typename SecondGetter::IDType>;
+        FirstGetter first;
+        SecondGetter second;
+        IDType get(size_t i) const { return {first.get(i), second.get(i)}; }
     };
 
     /// Calls `func` with the typed id getter matching the column's layout and returns true,
@@ -156,22 +156,32 @@ namespace
         const auto * first = typeid_cast<const ColumnUInt64 *>(&column_tuple->getColumn(0));
         if (!first)
             return false;
+        OneComponentID<UInt64> first_getter{first->getData().data()};
 
         const IColumn & second_column = column_tuple->getColumn(1);
         if (const auto * second_uint64 = typeid_cast<const ColumnUInt64 *>(&second_column))
         {
-            func(TwoComponentID<UInt64, UInt64>{first->getData().data(), second_uint64->getData().data()});
+            func(TwoComponentID{first_getter, OneComponentID<UInt64>{second_uint64->getData().data()}});
             return true;
         }
         if (const auto * second_uint128 = typeid_cast<const ColumnUInt128 *>(&second_column))
         {
-            func(TwoComponentID<UInt64, UInt128>{first->getData().data(), second_uint128->getData().data()});
+            func(TwoComponentID{first_getter, OneComponentID<UInt128>{second_uint128->getData().data()}});
             return true;
         }
         if (const auto * second_uuid = typeid_cast<const ColumnUUID *>(&second_column))
         {
-            func(TwoComponentID<UInt64, UUID>{first->getData().data(), second_uuid->getData().data()});
+            func(TwoComponentID{first_getter, OneComponentID<UUID>{second_uuid->getData().data()}});
             return true;
+        }
+        if (const auto * second_fixed_string = typeid_cast<const ColumnFixedString *>(&second_column))
+        {
+            if (second_fixed_string->getN() == sizeof(UInt128))
+            {
+                func(TwoComponentID{first_getter, FixedString16ID{second_fixed_string->getChars().data()}});
+                return true;
+            }
+            return false;
         }
 
         return false;
