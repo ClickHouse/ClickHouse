@@ -64,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # Control: Iceberg implements optimize, so it keeps its own setting gate.
 echo "-- iceberg control"
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=0 --query "
     DROP TABLE IF EXISTS t_iceberg;
     CREATE TABLE t_iceberg (k Int32) ENGINE = IcebergLocal('${ROOT}/iceberg/');
     OPTIMIZE TABLE t_iceberg;
