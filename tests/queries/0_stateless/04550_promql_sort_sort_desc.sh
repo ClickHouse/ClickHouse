@@ -113,12 +113,9 @@ promql_client()
 }
 
 echo "-- or breaks ties within a side carrying no order of its own using a content hash of each row's tags"
-# The suffix rows come from a plain selector, so their relative order is decided by the
-# `timeSeriesGroupToSamplingKey(group)` fallback tiebreak (see applyBinaryOperatorOr.cpp).
-# The hash order is not hardcoded here (computing a CityHash64 by hand is guesswork): the
-# reference encodes the sorted row *set*, and a second run under deliberately different
-# max_threads/query_plan_join_swap_table settings must produce byte-identical raw output.
-query='sort_desc(up{instance="host1"}) or up{instance=~"host2|host3"}'
+# The suffix has no order of its own, so the sampling-key tiebreak decides it: the reference pins
+# the sorted set and two runs must match. `unless` avoids `=~`, unusable in the dialect (#115071).
+query='sort_desc(up{instance="host1"}) or (up unless up{instance="host1"})'
 default_output=$(promql_client -q "$query")
 echo "$default_output" | LC_ALL=C sort
 diff <(echo "$default_output") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"
