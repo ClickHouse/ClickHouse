@@ -99,12 +99,15 @@ def test_override_forces_old_analyzer(start_cluster):
 
 def test_queued_statistics_mutation_drains(start_cluster):
     """A MATERIALIZE STATISTICS queued while the column was still physical must drain after the
-    column becomes an alias. Only the old mutation analyzer reaches the readonly stage that
-    resolves the name, so this needs the server-level override."""
+    column becomes an alias, both when it names the column and as part of ALL. Only the old
+    mutation analyzer reaches the readonly stage that resolves the name, so this needs the
+    server-level override."""
     set_override("false")
     try:
         table = "t_queued_statistics"
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        # Wide parts keep the mutation on the hardlinking path, which is the only one that
+        # consults the interpreter's set of statistics to materialize.
         node.query(
             f"""
             CREATE TABLE {table} (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest))
@@ -112,10 +115,17 @@ def test_queued_statistics_mutation_drains(start_cluster):
             SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
             """
         )
-        node.query(f"INSERT INTO {table} VALUES (1, 1)")
+        # Statistics of `a` must not be pre-built, or the assertion that the mutation built them
+        # is satisfied by carry-over.
+        node.query(
+            f"INSERT INTO {table} SETTINGS materialize_statistics_on_insert = 0 VALUES (1, 1)"
+        )
         node.query(f"SYSTEM STOP MERGES {table}")
         node.query(
             f"ALTER TABLE {table} MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0"
+        )
+        node.query(
+            f"ALTER TABLE {table} MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 0"
         )
         node.query(
             f"ALTER TABLE {table} MODIFY COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest) SETTINGS mutations_sync = 0"
@@ -137,6 +147,19 @@ def test_queued_statistics_mutation_drains(start_cluster):
             == "0"
         )
         assert node.query(f"SELECT a, b FROM {table}").strip() == "1\t2"
+
+        # ALL materialized the physical column and skipped the alias one.
+        assert (
+            node.query(
+                f"""
+                SELECT column, has(statistics, 'TDigest')
+                FROM system.parts_columns
+                WHERE database = currentDatabase() AND table = '{table}' AND active
+                ORDER BY column
+                """
+            ).strip()
+            == "a\t1"
+        )
 
         node.query("SYSTEM FLUSH LOGS")
         assert (
