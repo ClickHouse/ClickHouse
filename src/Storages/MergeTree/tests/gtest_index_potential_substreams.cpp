@@ -29,7 +29,7 @@ bool hasSubstream(const MergeTreeIndexSubstreams & substreams, MergeTreeIndexSub
 
 }
 
-/// getPotentialSubstreams() is what mark-cache eviction enumerates, so it must cover every
+/// `getPotentialSubstreams` is what mark-cache eviction enumerates, so it must cover every
 /// substream any index version could have written -- it may not be narrowed to the current
 /// index definition, and it must stay I/O-free (it takes neither a part nor a storage).
 TEST(MergeTreeIndexPotentialSubstreams, MinMaxCoversLegacyExtension)
@@ -41,7 +41,7 @@ TEST(MergeTreeIndexPotentialSubstreams, MinMaxCoversLegacyExtension)
     MergeTreeIndexMinMax index(nullptr, description);
 
     /// Writers emit `.idx2` (v2) only, but a part written by an older version holds `.idx` (v1)
-    /// and getPhysicalFormat() may return either, so both have to be evicted.
+    /// and `getPhysicalFormat` may return either, so both have to be evicted.
     EXPECT_TRUE(hasSubstream(index.getSubstreams(), MergeTreeIndexSubstream::Type::Regular, "", ".idx2"));
     EXPECT_FALSE(hasSubstream(index.getSubstreams(), MergeTreeIndexSubstream::Type::Regular, "", ".idx"));
 
