@@ -415,6 +415,19 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     return matcher && matcher->isUnqualified();
 }
 
+bool containsQueryOrUnion(const QueryTreeNodePtr & node)
+{
+    const auto type = node->getNodeType();
+    if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsQueryOrUnion(child))
+            return true;
+
+    return false;
+}
+
 bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
 {
     const auto & name = function.getFunctionName();
@@ -428,8 +441,8 @@ bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
     if (arguments.size() != 2)
         return false;
 
-    const bool first_is_scalar = arguments[0]->getNodeType() == QueryTreeNodeType::QUERY;
-    const bool second_is_scalar = arguments[1]->getNodeType() == QueryTreeNodeType::QUERY;
+    const bool first_is_scalar = containsQueryOrUnion(arguments[0]);
+    const bool second_is_scalar = containsQueryOrUnion(arguments[1]);
     if (first_is_scalar == second_is_scalar)
         return false;
 
