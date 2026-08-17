@@ -4843,6 +4843,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         M(nullable_serialized_void)            \
         M(prealloc_serialized_void)            \
         M(nullable_prealloc_serialized_void)   \
+        M(nullable_key64)                 \
+        M(nullable_keys128)               \
+        M(nullable_keys256)               \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \
