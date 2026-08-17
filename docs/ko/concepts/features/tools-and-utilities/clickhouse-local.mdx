@@ -72,6 +72,13 @@ ClickHouse는 파일 이름 확장자를 보고 해당 파일이 탭으로 구�
   ```
 </Tip>
 
+데이터가 로컬에 있을 필요는 없습니다. 파일 이름 대신 URL을 사용할 수 있으며, URL 스킴에 따라 해당 테이블 엔진이 선택됩니다(`http://` 및 `https://`는 [url](/ko/reference/functions/table-functions/url) 함수처럼, `s3://`는 [s3](/ko/reference/functions/table-functions/s3) 함수처럼, `file://`는 [file](/ko/reference/functions/table-functions/file) 함수처럼 읽습니다):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
