@@ -7,6 +7,7 @@ SET optimize_functions_to_subcolumns = 1;
 DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;
 DROP TABLE IF EXISTS f1;
+DROP TABLE IF EXISTS f2;
 DROP TABLE IF EXISTS m_all;
 DROP TABLE IF EXISTS m_mixed;
 DROP TABLE IF EXISTS m_empty;
@@ -53,6 +54,30 @@ SELECT 'two storages, opting-out side first', count()
 FROM (EXPLAIN QUERY TREE SELECT length(arr) FROM m_mixed UNION ALL SELECT length(arr) FROM mt1)
 WHERE explain ILIKE '%size0%';
 
+-- A File storage answers the two support predicates differently: it refuses every transformer
+-- except tuple element access. The two answers must stay separate per storage, so in one query
+-- the tuple element is rewritten and length() is not, whichever node is visited first.
+CREATE TABLE f2 (id UInt64, t Tuple(a UInt64, b UInt64), arr Array(UInt64)) ENGINE = File(CSV);
+INSERT INTO f2 VALUES (1, (10, 20), [1, 2, 3]);
+
+SELECT 'tuple element first, tuple rewritten', count()
+FROM (EXPLAIN QUERY TREE SELECT tupleElement(t, 'a'), length(arr) FROM f2)
+WHERE explain ILIKE '%t.a%';
+
+SELECT 'tuple element first, length not rewritten', count()
+FROM (EXPLAIN QUERY TREE SELECT tupleElement(t, 'a'), length(arr) FROM f2)
+WHERE explain ILIKE '%size0%';
+
+SELECT 'length first, tuple rewritten', count()
+FROM (EXPLAIN QUERY TREE SELECT length(arr), tupleElement(t, 'a') FROM f2)
+WHERE explain ILIKE '%t.a%';
+
+SELECT 'length first, length not rewritten', count()
+FROM (EXPLAIN QUERY TREE SELECT length(arr), tupleElement(t, 'a') FROM f2)
+WHERE explain ILIKE '%size0%';
+
+SELECT 'mixed capability, values', tupleElement(t, 'a'), length(arr) FROM f2;
+
 -- An empty match set has no child that opts out, so the answer is vacuously true.
 CREATE TABLE m_empty AS mt1 ENGINE = Merge(currentDatabase(), '^nomatch_zzz$');
 
@@ -76,6 +101,7 @@ DROP TABLE m_nested;
 DROP TABLE m_empty;
 DROP TABLE m_mixed;
 DROP TABLE m_all;
+DROP TABLE f2;
 DROP TABLE f1;
 DROP TABLE mt2;
 DROP TABLE mt1;
