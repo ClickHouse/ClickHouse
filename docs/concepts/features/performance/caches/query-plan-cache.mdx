@@ -26,7 +26,7 @@ SET allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1;
 
 A `SELECT` query can use the plan cache when all of the following hold:
 
-- The query is a top-level `SELECT` (possibly with `UNION`), run with the analyzer (`enable_analyzer = 1`) and without parallel replicas.
+- The query is a top-level `SELECT` (possibly with `UNION`), run with the analyzer (`enable_analyzer = 1`) and without parallel replicas. The plan cache is disabled for the whole session when `allow_experimental_parallel_reading_from_replicas` is nonzero, including for a local query that would not otherwise use parallel replicas.
 - Queries over **views, joins, subqueries and `IN` subqueries are supported**: views are inlined into the cached plan, and
   subquery/`IN`-set sub-plans re-execute on every run.
 - The query contains no non-deterministic functions (e.g. `now`, `rand`), including inside expanded view bodies.

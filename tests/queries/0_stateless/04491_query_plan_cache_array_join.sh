@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
-# Regression test: a query using `arrayJoin` must be cacheable. `arrayJoin` reports
-# `isDeterministic() = false` because it is multi-valued, but it is pure, so the plan cache
-# exempts it. Without the exemption in the post-analysis eligibility check, the second run
-# below would not hit the cache. The query plan cache is a single, server-wide cache inspected
-# via `SYSTEM DROP QUERY PLAN CACHE` and exact `QueryPlanCacheHits`, so this test runs in
-# isolation (see 04489 for the full rationale of the tags).
+# Regression test: queries using `arrayJoin` and its `unnest` alias must be cacheable.
+# `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is pure, so
+# the plan cache exempts it. Without canonicalizing the name before the exemption in the
+# post-analysis eligibility check, the second run below would not hit the cache. The query plan
+# cache is a single, server-wide cache inspected via `SYSTEM DROP QUERY PLAN CACHE` and exact
+# `QueryPlanCacheHits`, so this test runs in isolation (see 04489 for the full rationale of the
+# tags).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +25,7 @@ $CLICKHOUSE_CLIENT --query "
     CREATE VIEW v_arr AS SELECT id, arrayJoin(xs) AS x FROM t_arr;
 "
 
-QUERY="SELECT id, x + arrayJoin([0, 100]) AS v FROM v_arr ORDER BY id, v"
+QUERY="SELECT id, x + UNNEST([0, 100]) AS v FROM v_arr ORDER BY id, v"
 
 run_query()
 {
@@ -40,7 +41,7 @@ hits_of_last_run()
         FROM system.query_log
         WHERE current_database = currentDatabase()
           AND type = 'QueryFinish'
-          AND query LIKE 'SELECT id, x + arrayJoin%'
+          AND query LIKE 'SELECT id, x + UNNEST%'
         ORDER BY event_time_microseconds DESC
         LIMIT 1"
 }
@@ -51,7 +52,7 @@ echo "-- first run (cold, miss)"
 run_query
 echo "-- hits: $(hits_of_last_run)"
 
-echo "-- second run: arrayJoin query must hit the plan cache"
+echo "-- second run: unnest query must hit the plan cache"
 run_query
 echo "-- hits: $(hits_of_last_run)"
 

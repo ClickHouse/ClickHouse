@@ -321,7 +321,7 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
 /// pure (same argument - same set of rows), so it is safe for the plan cache.
 bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr & context)
 {
-    if (function.name == "arrayJoin")
+    if (getFunctionCanonicalNameIfAny(function.name) == "arrayJoin")
         return false;
 
     /// Checked before `FunctionFactory`, mirroring the resolution order of the analyzer.
