@@ -26,7 +26,7 @@
         FORMAT Null
     </query>
 
-    <!-- Exercise the untouched vector-vector transformTags2() path with many unique pairs. -->
+    <!-- Exercise the vector-vector transformTags2() path with many unique pairs. -->
     <query>
         WITH
             (
