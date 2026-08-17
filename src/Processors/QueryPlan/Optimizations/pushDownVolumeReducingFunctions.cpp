@@ -492,6 +492,36 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 
             if (has_surfaced_sibling)
                 continue;
+
+            /// A `FilterStep` can pass an unmatched input column through even when its actions do
+            /// not surface that column. Inspect the expression below the filter as well: it knows
+            /// whether another name in the filter input header is an alias of the same source.
+            /// Replacing only one of those names would leave the wide payload in the filter.
+            if (child_filter)
+            {
+                const auto * filter_input_actions = findActionsBelowHeaderPreservingSteps(child_node->children.front());
+                if (filter_input_actions)
+                {
+                    const auto * filter_input_source = filter_input_actions->tryFindInOutputs(name_below);
+                    if (filter_input_source)
+                    {
+                        filter_input_source = resolveAliases(filter_input_source);
+                        if (filter_input_source->type != ActionsDAG::ActionType::INPUT)
+                            continue;
+
+                        bool has_passthrough_sibling = false;
+                        for (const auto * output : filter_input_actions->getOutputs())
+                            if (output->result_name != name_below && resolveAliases(output) == filter_input_source)
+                            {
+                                has_passthrough_sibling = true;
+                                break;
+                            }
+
+                        if (has_passthrough_sibling)
+                            continue;
+                    }
+                }
+            }
         }
         else if (const auto * sorting_input_actions = findActionsBelowHeaderPreservingSteps(child_node->children.front()))
         {
