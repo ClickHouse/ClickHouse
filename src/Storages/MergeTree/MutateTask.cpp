@@ -202,12 +202,16 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
 static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
-    const MutationsInterpreter * interpreter)
+    const MutationsInterpreter * interpreter,
+    MergeTreeDataPartStorageType future_storage_type)
 {
     return haveMutationsOfDynamicColumns(source_part, commands_for_part)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
         || !isWidePart(source_part)
         || !isFullPartStorage(source_part->getDataPartStorage())
+        /// Per-file hardlink reuse needs source and result to share the storage format; a differing
+        /// format (e.g. the packing threshold changed) needs a full rewrite.
+        || source_part->getDataPartStorage().getType() != future_storage_type
         || (interpreter && interpreter->isAffectingAllColumns());
 }
 
@@ -2627,8 +2631,7 @@ private:
                     hardlinked_files.insert(pathToGenericString(file_name_with_projection_prefix));
                 }
 
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
             }
         }
 
@@ -2953,8 +2956,7 @@ private:
                     }
                 }
 
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
             }
         }
 
@@ -4018,7 +4020,7 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get());
+        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
