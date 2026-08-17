@@ -1807,7 +1807,7 @@ class JobConfigs:
             include_paths=build_digest_config.include_paths
             + [
                 "./ci/jobs/sign_macos_binary.py",
-                "./ci/signing",
+                "./ci/jobs/scripts/sign_macos_binary",
             ],
             with_git_submodules=True,
         ),

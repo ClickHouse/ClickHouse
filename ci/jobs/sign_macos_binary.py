@@ -13,8 +13,9 @@ from ci.praktika.utils import Shell, Utils
 RCODESIGN = "/rust/cargo/bin/rcodesign"
 PKCS11_PROXY = "/usr/lib/x86_64-linux-gnu/p11-kit-proxy.so"
 
-CERTIFICATE_CHAIN = Path("./ci/signing/apple-developer-id-chain.pem")
-ENTITLEMENTS = Path("./ci/signing/entitlements.plist")
+ASSETS_DIR = Path("./ci/jobs/scripts/sign_macos_binary")
+CERTIFICATE_CHAIN = ASSETS_DIR / "apple-developer-id-chain.pem"
+ENTITLEMENTS = ASSETS_DIR / "entitlements.plist"
 
 TEMP_DIR = Path(f"{Utils.cwd()}/ci/tmp")
 INPUT_BINARY = TEMP_DIR / "clickhouse"
