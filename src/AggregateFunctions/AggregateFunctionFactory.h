@@ -33,7 +33,7 @@ class ASTFunction;
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings *)>;
-using AggregateFunctionAvailabilityCheck = std::function<void(const String &, const Settings *)>;
+using AggregateFunctionExecutionAvailabilityCheck = std::function<void(const String &, const Settings *)>;
 
 struct AggregateFunctionWithProperties
 {
@@ -45,8 +45,8 @@ struct AggregateFunctionWithProperties
     AggregateFunctionProperties properties;
     /// Optional properties for window_creator when the aggregate and OVER forms have different semantics.
     std::optional<AggregateFunctionProperties> window_properties;
-    /// Optional availability check for the normal aggregate creator. Data-type reconstruction skips it.
-    AggregateFunctionAvailabilityCheck availability_check;
+    /// Optional execution check for the normal aggregate creator. Data-type reconstruction skips it.
+    AggregateFunctionExecutionAvailabilityCheck execution_availability_check;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -60,13 +60,13 @@ struct AggregateFunctionWithProperties
         AggregateFunctionProperties properties_ = {},
         AggregateFunctionCreator window_creator_ = {},
         std::optional<AggregateFunctionProperties> window_properties_ = {},
-        AggregateFunctionAvailabilityCheck availability_check_ = {}) /// NOLINT
+        AggregateFunctionExecutionAvailabilityCheck execution_availability_check_ = {}) /// NOLINT
         : creator(std::forward<Creator>(creator_))
         , window_creator(std::move(window_creator_))
         , documentation(std::move(documentation_))
         , properties(std::move(properties_))
         , window_properties(std::move(window_properties_))
-        , availability_check(std::move(availability_check_))
+        , execution_availability_check(std::move(execution_availability_check_))
     {
     }
 };
@@ -116,6 +116,10 @@ public:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties) const;
+
+    /// True when this aggregate function, or the base function beneath its
+    /// combinator suffixes, has an execution-availability check.
+    bool hasExecutionAvailabilityCheck(const String & name) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(

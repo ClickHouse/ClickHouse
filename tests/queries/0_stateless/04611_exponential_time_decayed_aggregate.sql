@@ -5,6 +5,11 @@ FROM VALUES('value Float64, time Float64', (1, 0));
 -- The new aggregate-function form is experimental and disabled by default.
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+CREATE TABLE exponential_time_decay_disabled_combinator
+(
+    value AggregateFunction(exponentialTimeDecayedSumIf(10), Float64, Float64, UInt8)
+)
+ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 
 -- Boolean keywords enable and disable the aggregate-function forms.
 SET allow_experimental_time_decay_aggregate_functions = true;

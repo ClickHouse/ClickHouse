@@ -53,16 +53,15 @@ struct ExponentialTimeDecayedState
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
-    bool initialized = false;
+    bool empty() const { return weight == 0; }
 
     void add(Float64 value, Float64 time, Float64 decay_length)
     {
-        if (!initialized)
+        if (empty())
         {
             weighted_sum = value;
             weight = 1;
             max_time = time;
-            initialized = true;
             return;
         }
 
@@ -88,10 +87,10 @@ struct ExponentialTimeDecayedState
 
     void merge(const ExponentialTimeDecayedState & rhs, Float64 decay_length)
     {
-        if (!rhs.initialized)
+        if (rhs.empty())
             return;
 
-        if (!initialized)
+        if (empty())
         {
             *this = rhs;
             return;
@@ -123,7 +122,6 @@ struct ExponentialTimeDecayedState
         writeBinaryLittleEndian(weighted_sum, buf);
         writeBinaryLittleEndian(weight, buf);
         writeBinaryLittleEndian(max_time, buf);
-        writeBinaryLittleEndian(initialized, buf);
     }
 
     void read(ReadBuffer & buf)
@@ -131,7 +129,6 @@ struct ExponentialTimeDecayedState
         readBinaryLittleEndian(weighted_sum, buf);
         readBinaryLittleEndian(weight, buf);
         readBinaryLittleEndian(max_time, buf);
-        readBinaryLittleEndian(initialized, buf);
     }
 };
 
@@ -238,7 +235,7 @@ public:
                 : state.weight;
             Tuple decaying_value{
                 Field(result),
-                Field(state.initialized ? state.max_time : std::numeric_limits<Float64>::quiet_NaN()),
+                Field(state.empty() ? std::numeric_limits<Float64>::quiet_NaN() : state.max_time),
                 Field(decay_length)};
             to.insert(Field(decaying_value));
         }

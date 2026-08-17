@@ -270,6 +270,30 @@ std::optional<String> AggregateFunctionFactory::getAssociatedNameUnderCombinator
 }
 
 
+bool AggregateFunctionFactory::hasExecutionAvailabilityCheck(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
+        return static_cast<bool>(it->second.execution_availability_check);
+
+    const String case_insensitive_name = Poco::toLower(name);
+    if (auto it = case_insensitive_aggregate_functions.find(case_insensitive_name);
+        it != case_insensitive_aggregate_functions.end())
+        return static_cast<bool>(it->second.execution_availability_check);
+
+    if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        const String & suffix = combinator->getName();
+        String nested_name = name.substr(0, name.size() - suffix.size());
+        if (!nested_name.empty())
+            return hasExecutionAvailabilityCheck(nested_name);
+    }
+
+    return false;
+}
+
+
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const String & name_param,
     NullsAction action,
@@ -329,8 +353,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             function = found.window_creator(name, argument_types, parameters, settings);
         else
         {
-            if (!is_data_type_reconstruction && found.availability_check)
-                found.availability_check(name, settings);
+            if (!is_data_type_reconstruction && found.execution_availability_check)
+                found.execution_availability_check(name, settings);
             function = found.creator(name, argument_types, parameters, settings);
         }
 
