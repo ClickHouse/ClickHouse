@@ -96,13 +96,17 @@ inline bool isMultiPolygonArray(const Array & array)
 }
 
 /// Append the points of `array` (a ring, per `isRingArray`) to `out_ring`. Returns false if any
-/// element is not a well-formed 2D point.
+/// element is not a well-formed 2D point. A vertex with more than two coordinates fails the
+/// extraction rather than silently using its first two: `Ring` is `Array(Tuple(Float64, Float64))`,
+/// so `callOnGeometryDataType` raises `BAD_ARGUMENTS` ("Unknown geometry type") for a wider vertex
+/// type, and a bbox derived from it would let pruning discard every granule and hide that
+/// exception.
 inline bool appendRing(const Array & array, Polygon<CartesianPoint>::ring_type & out_ring)
 {
     for (const auto & elem : array)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        if (tuple.size() < 2)
+        if (tuple.size() != 2)
             return false;
         auto x = fieldToDouble(tuple[0]);
         auto y = fieldToDouble(tuple[1]);
@@ -172,7 +176,12 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         if (!allow_point_tuple)
             return false;
         const auto & tuple = field.safeGet<Tuple>();
-        if (tuple.size() < 2)
+        /// Exactly two coordinates, matching `pointInPolygon`'s own `validate_tuple`, which raises
+        /// `BAD_ARGUMENTS` ("must have exactly two elements") for anything wider. A wider tuple
+        /// reaches this code through a `Dynamic`/`Variant` constant, which passes argument
+        /// type-checking during analysis, so a bbox derived from its first two coordinates would
+        /// prune every granule and hide the exception the predicate raises once evaluated.
+        if (tuple.size() != 2)
             return false;
         auto x = fieldToDouble(tuple[0]);
         auto y = fieldToDouble(tuple[1]);
