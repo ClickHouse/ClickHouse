@@ -2,7 +2,7 @@
 A single test's timeout must not abort the whole run.
 
 `timeout_handler` in `tests/clickhouse-test` fires from a per-test SIGALRM. It
-used to call `stop_tests()`, whose `killpg` broadcasts SIGTERM to our own
+used to call `stop_tests`, whose `killpg` broadcasts SIGTERM to our own
 process group - which every parallel worker and the parent share. One test
 exceeding its own deadline therefore terminated the entire run, and the job
 side relabelled the result as "Server died" (exit -15 is in
@@ -14,22 +14,52 @@ broadcasts to our own group must be 0, while the out-of-group child must still
 be killed. A third check pins the whole-run callers, which still need the
 broadcast.
 
+Surviving the alarm is only half the contract: the run must then REPORT the
+timed-out test. The last test drives the real `run_tests_array` through the one
+window where `run` cannot convert the alarm into a result (inside its own
+`except` arms, past its spent `socket.timeout` arm) and asserts a per-test
+FAIL/TIMEOUT is produced, using the production `process_result`.
+
 No server and no wall-clock: the real handler body is exec'd against the real
 module globals with `killpg` / `pgrep` / `getpgid` faked.
 """
 
+import ast
 import inspect
 import io
+import multiprocessing
 import os
+import re
 import runpy
 import signal
+import socket
 import textwrap
+import types
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
+
+
+def _results_pattern():
+    """The job-side leaf regex, read from its own source.
+
+    Importing the module would pull in `praktika`, which is not importable
+    here, and a copied regex would rot independently of the parser.
+    """
+    src = (
+        _REPO_ROOT / "ci" / "jobs" / "scripts" / "functional_tests_results.py"
+    ).read_text(encoding="utf-8")
+    body = re.search(
+        r"TEST_RESULT_PATTERN = re\.compile\((.*?)\n\)", src, re.S
+    ).group(1)
+    return re.compile(ast.literal_eval("(" + body.strip() + ")"))
+
+
+_TEST_RESULT_PATTERN = _results_pattern()
 
 _ct = runpy.run_path(_CLICKHOUSE_TEST)
 # `runpy.run_path` returns a COPY of the executed namespace, while the functions
@@ -134,6 +164,183 @@ def test_per_test_timeout_still_kills_the_tests_own_clients(rec, monkeypatch):
         "timeout_handler must kill the timing-out test's own out-of-group "
         f"clients, got {rec.killed_groups}"
     )
+
+
+def _parsed_leaf(report):
+    """The report's per-test leaf, as the job-side parser would match it."""
+    for line in report.splitlines():
+        match = _TEST_RESULT_PATTERN.match(line)
+        if match:
+            return match
+    return None
+
+
+def _drive_run_tests_array(monkeypatch, run_impl, process_result=None):
+    """Run the real `run_tests_array` over one test whose `run` is `run_impl`.
+
+    Returns (stdout, exit_code.value). Everything else is production code: the
+    result is formatted by the real `TestCase.process_result`.
+    """
+    real_test_case = _ct["TestCase"]
+
+    class _Case(real_test_case):
+        effective_settings: dict = {}
+        effective_merge_tree_settings: dict = {}
+
+        def __init__(self, suite, case, args, is_concurrent):
+            # pylint: disable=super-init-not-called
+            self.name = "00001_probe.sql"
+            self.case = case
+            self.args = args
+            self.suite = suite
+            self.testcase_args = None
+            self.runs_count = 0
+
+        run = run_impl
+
+    if process_result is not None:
+        _Case.process_result = process_result
+
+    class _Args:
+        timeout = 60
+        testname = False
+        max_failures = 0
+        max_failures_chain = 10**9
+        stop_time = None
+        hung_check = False
+        jobs = 1
+        database = None
+
+        def __getattr__(self, _name):
+            return None
+
+    monkeypatch.setitem(_CT_GLOBALS, "TestCase", _Case)
+    monkeypatch.setitem(
+        _CT_GLOBALS, "save_random_settings_artifact", lambda *a, **k: None
+    )
+    monkeypatch.setitem(_CT_GLOBALS, "get_next_test_progress", lambda c, t: "")
+    monkeypatch.setitem(_CT_GLOBALS, "trim_for_log", lambda s, n: s)
+    monkeypatch.setitem(_CT_GLOBALS, "colored", lambda s, *a, **k: s)
+
+    exit_code = multiprocessing.Value("i", 0)
+    suite = types.SimpleNamespace(
+        suite="probe",
+        sequential_tests=[],
+        parallel_tests=[],
+        blacklist_check=set(),
+        suite_tmp_path="/tmp",
+    )
+    params = (
+        ["00001_probe.sql"],
+        1,
+        suite,
+        True,
+        _Args(),
+        exit_code,
+        multiprocessing.Event(),
+        multiprocessing.Value("i", 0),
+        [],
+        0,
+        multiprocessing.Value("i", 0),
+        multiprocessing.Value("i", 0),
+        1,
+        multiprocessing.Value("i", 0),
+    )
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        _ct["run_tests_array"](params)
+    return out.getvalue(), exit_code.value
+
+
+def test_timed_out_test_is_reported_when_run_cannot_catch_the_alarm(
+    rec, monkeypatch
+):
+    """The alarm fires inside `TestCase.run`'s own `except` arm, so its
+    `socket.timeout` arm is already spent and cannot build a result. The
+    reporting path still needs one: without it `test_result` stays None and the
+    worker dies on `test_result.description` instead of reporting a TIMEOUT."""
+
+    def run(self, args, suite, client_options):
+        try:
+            raise ConnectionError("transient")
+        except socket.timeout:  # already spent: cannot catch our alarm
+            raise AssertionError("unreachable") from None
+        except ConnectionError:
+            # Stands in for `check_server_liveness`, whose worst case (165 s)
+            # outlasts the per-test alarm (int(60*1.1)+60 = 126 s).
+            signal.setitimer(signal.ITIMER_REAL, 0.05)
+            while True:
+                pass
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+
+    report, exit_code = _drive_run_tests_array(monkeypatch, run)
+    leaf = _parsed_leaf(report)
+
+    assert leaf, (
+        "a test whose alarm fired where `run` could not catch it must still "
+        f"produce a leaf the job side can parse, got:\n{report}"
+    )
+    assert leaf.group(2) == "[ FAIL ]", f"expected FAIL, got {leaf.group(2)}"
+    assert "Timeout" in report, f"the reason must be TIMEOUT:\n{report}"
+    # The duration must be measured, like every other path in `run`, not the
+    # configured `--timeout`. Bounding it below that value is enough to tell the
+    # two apart here and keeps the assertion off the wall clock.
+    assert float(leaf.group(3)) < 60, (
+        "the leaf must report the measured duration, not the configured "
+        f"--timeout, got {leaf.group(3)} sec"
+    )
+    assert exit_code == 1, (
+        f"the timed-out test must count as a failure, exit_code={exit_code}"
+    )
+
+
+def test_alarm_between_run_and_formatting_still_yields_a_parseable_leaf(
+    rec, monkeypatch
+):
+    """The alarm can also land after `run` produced a result but before
+    `process_result` stamped the status marker. The real verdict must be kept
+    AND formatted: an unstamped description matches no leaf pattern, so the job
+    side would attribute the failure to `clickhouse-test` instead of the test.
+
+    `process_result` raises the alarm on its first call, so the timeout is
+    guaranteed to hit that exact window; a wall-clock timer would expire
+    somewhere else and prove nothing."""
+    calls = []
+
+    def run(self, args, suite, client_options):
+        return _ct["TestResult"](
+            self.name,
+            _ct["TestStatus"].FAIL,
+            _ct["FailureReason"].RESULT_DIFF,
+            1.0,
+            "\nreal verdict preserved\n",
+        )
+
+    def process_result(self, result, messages):
+        calls.append(result.reason)
+        if len(calls) == 1:
+            raise TimeoutError("Test execution timed out")
+        return _ct["TestCase"].process_result(self, result, messages)
+
+    report, exit_code = _drive_run_tests_array(
+        monkeypatch, run, process_result=process_result
+    )
+    leaf = _parsed_leaf(report)
+
+    assert len(calls) == 2, (
+        f"the interrupted formatting must be completed once, calls={calls}"
+    )
+    assert calls[1] is _ct["FailureReason"].RESULT_DIFF, (
+        f"the real verdict was replaced by the placeholder: {calls}"
+    )
+    assert leaf, f"no parseable leaf for the real verdict:\n{report}"
+    assert leaf.group(2) == "[ FAIL ]", f"expected FAIL, got {leaf.group(2)}"
+    assert "real verdict preserved" in report, (
+        f"the real description was lost:\n{report}"
+    )
+    assert exit_code == 1, f"the real FAIL must still count, exit_code={exit_code}"
 
 
 def test_whole_run_teardown_still_broadcasts_to_the_group(rec):

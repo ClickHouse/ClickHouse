@@ -4845,7 +4845,7 @@ def run_tests_array(
                         # end-of-run.
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
-                        # This test's own clients only. `stop_tests()` would
+                        # This test's own clients only. `stop_tests` would
                         # `killpg` the shared group, so one test's deadline
                         # would kill every worker and the parent (143).
                         kill_out_of_group_children(os.getpid())
@@ -4854,10 +4854,29 @@ def run_tests_array(
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
+                formatted = False
+                attempt_start = datetime.now()
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
                     test_result = test_case.process_result(test_result, MESSAGES)
+                    formatted = True
                 except TimeoutError:
+                    # The alarm lands wherever the worker was, which may be
+                    # before a result exists or before its status marker is
+                    # stamped. Reporting needs both, so complete what is missing.
+                    signal.alarm(0)
+                    if test_result is None:
+                        test_result = TestResult(
+                            test_case.name,
+                            TestStatus.FAIL,
+                            FailureReason.TIMEOUT,
+                            (datetime.now() - attempt_start).total_seconds(),
+                            "\nTest execution timed out\n",
+                        )
+                    if not formatted:
+                        test_result = test_case.process_result(
+                            test_result, MESSAGES
+                        )
                     break
                 finally:
                     signal.alarm(0)
