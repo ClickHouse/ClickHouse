@@ -351,6 +351,45 @@ DROP TABLE IF EXISTS test_lc_nullable_date_nonnull;
 -- =====================================================
 DROP TABLE IF EXISTS test_lc_nullable_datetime_all_nulls;
 
+-- =====================================================
+-- Cases 16-17: Non-`Nullable` LowCardinality date/time partition keys.
+-- `MinMaxIndex::update` materializes these columns before taking extremes, so
+-- the preferred scan must unwrap `LowCardinality` too. Otherwise the actual
+-- bounds are written, but `minmax_idx_*_column_pos` remains -1 and
+-- `system.parts` reports epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_lc_datetime_nonnull;
+
+CREATE TABLE test_lc_datetime_nonnull (id UInt64, event_time LowCardinality(DateTime('UTC')))
+ENGINE = MergeTree()
+PARTITION BY event_time
+ORDER BY id;
+
+INSERT INTO test_lc_datetime_nonnull (id, event_time) VALUES (1, toDateTime('2024-06-15 12:00:00', 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_datetime_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_lc_datetime_nonnull;
+
+DROP TABLE IF EXISTS test_lc_date_nonnull;
+
+CREATE TABLE test_lc_date_nonnull (id UInt64, event_date LowCardinality(Date))
+ENGINE = MergeTree()
+PARTITION BY event_date
+ORDER BY id;
+
+INSERT INTO test_lc_date_nonnull (id, event_date) VALUES (1, toDate('2024-06-15'));
+
+SELECT
+    min_date = toDate('2024-06-15') AS min_matches,
+    max_date = toDate('2024-06-15') AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_date_nonnull' AND active;
+
+DROP TABLE IF EXISTS test_lc_date_nonnull;
+
 CREATE TABLE test_lc_nullable_datetime_all_nulls (id UInt64, event_time LowCardinality(Nullable(DateTime('UTC'))))
 ENGINE = MergeTree()
 PARTITION BY event_time

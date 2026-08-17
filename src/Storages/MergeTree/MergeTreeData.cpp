@@ -1526,13 +1526,21 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
         }
     };
 
-    /// First prefer a non-`Nullable` Date/DateTime/DateTime64 column. This reproduces the historical
-    /// selection exactly for every partition key that already had such a column, so a mixed key like
-    /// `(d Date, nd Nullable(Date))` keeps populating `min_date` / `max_date` from `d` instead of
-    /// treating both columns as candidates and resetting the position to -1.
-    scan([](const DataTypePtr & type) { return isDate(type); }, has_date_column, minmax_idx_date_column_pos);
+    /// First prefer a non-`Nullable` Date/DateTime/DateTime64 column. Unwrap `LowCardinality`, because
+    /// the minmax writer materializes that wrapper before taking extremes. This reproduces the historical
+    /// selection exactly for every plain partition-key candidate, so a mixed key like `(d Date, nd
+    /// Nullable(Date))` keeps populating `min_date` / `max_date` from `d` instead of treating both
+    /// columns as candidates and resetting the position to -1.
+    scan([](const DataTypePtr & type) { return isDate(removeLowCardinality(type)); }, has_date_column, minmax_idx_date_column_pos);
     if (!has_date_column)
-        scan([](const DataTypePtr & type) { return isDateTime(type) || isDateTime64(type); }, has_datetime_column, minmax_idx_time_column_pos);
+        scan(
+            [](const DataTypePtr & type)
+            {
+                const auto nested = removeLowCardinality(type);
+                return isDateTime(nested) || isDateTime64(nested);
+            },
+            has_datetime_column,
+            minmax_idx_time_column_pos);
 
     /// Only when there is no non-`Nullable` candidate at all — e.g. an all-`Nullable` date/time
     /// partition key (issue #92834) — fall back to `Nullable(...)` and `LowCardinality(Nullable(...))`
