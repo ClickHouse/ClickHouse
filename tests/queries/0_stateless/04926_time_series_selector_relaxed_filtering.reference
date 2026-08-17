@@ -1,0 +1,20 @@
+-- the generated WHERE carries everything under indexHint, no row-level filter
+1	0
+-- PromQL results are identical with relaxed and exact filtering
+[]	1970-01-01 00:04:10.000	22
+[]	1970-01-01 00:04:10.000	22
+[('env','dev')]	1970-01-01 00:06:40.000	1
+[('env','prod')]	1970-01-01 00:06:40.000	1
+[('env','dev')]	1970-01-01 00:06:40.000	1
+[('env','prod')]	1970-01-01 00:06:40.000	1
+-- a matrix result gets an explicit timestamp filter: no out-of-range samples leak
+[('__name__','foo'),('env','dev')]	[('1970-01-01 00:04:10.000',20)]
+[('__name__','foo'),('env','prod')]	[('1970-01-01 00:03:20.000',2),('1970-01-01 00:05:00.000',3)]
+[('__name__','foo'),('env','dev')]	[('1970-01-01 00:04:10.000',20)]
+[('__name__','foo'),('env','prod')]	[('1970-01-01 00:03:20.000',2),('1970-01-01 00:05:00.000',3)]
+-- unknown identifiers map to the sentinel group instead of an error
+18446744073709551615
+-- exact filtering on demand: a direct call returns exactly the matching samples
+2
+10
+20

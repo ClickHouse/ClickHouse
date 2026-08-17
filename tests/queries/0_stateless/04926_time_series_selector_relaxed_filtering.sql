@@ -40,8 +40,8 @@ SELECT * FROM prometheusQuery(ts_relaxed, 'sum by (env) (resets(foo[3m]))', 400)
 
 SELECT '-- a matrix result gets an explicit timestamp filter: no out-of-range samples leak';
 
-SELECT * FROM prometheusQueryRange(ts_relaxed, 'foo[2m]', 300, 300, 100) ORDER BY ALL;
-SELECT * FROM prometheusQueryRange(ts_relaxed, 'foo[2m]', 300, 300, 100) ORDER BY ALL SETTINGS time_series_selector_relaxed_filtering = 0;
+SELECT * FROM prometheusQuery(ts_relaxed, 'foo[2m]', 300) ORDER BY ALL;
+SELECT * FROM prometheusQuery(ts_relaxed, 'foo[2m]', 300) ORDER BY ALL SETTINGS time_series_selector_relaxed_filtering = 0;
 
 SELECT '-- unknown identifiers map to the sentinel group instead of an error';
 
