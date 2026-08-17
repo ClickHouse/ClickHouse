@@ -394,7 +394,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
   ### 쇼트서킷 함수 평가와의 비호환성
 </div>
 
-[쇼트서킷 함수 평가](/ko/reference/settings/session-settings#short_circuit_function_evaluation)는 `if`, `multiIf`, `and`, `or`와 같은 특정 함수에서 복잡한 표현식의 실행을 최적화하는 기능입니다. 이 기능은 이러한 함수를 실행하는 동안 0으로 나누기와 같은 잠재적인 예외가 발생하지 않도록 합니다.
+[쇼트서킷 함수 평가](/ko/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation)는 `if`, `multiIf`, `and`, `or`와 같은 특정 함수에서 복잡한 표현식의 실행을 최적화하는 기능입니다. 이 기능은 이러한 함수를 실행하는 동안 0으로 나누기와 같은 잠재적인 예외가 발생하지 않도록 합니다.
 
 `arrayJoin`은 항상 실행되며 쇼트서킷 함수 평가를 지원하지 않습니다. 이는 `arrayJoin`이 쿼리 분석 및 실행 과정에서 다른 모든 함수와 별도로 처리되는 고유한 함수이고, 쇼트서킷 함수 실행과는 호환되지 않는 추가 로직이 필요하기 때문입니다. 또한 결과의 행 수는 `arrayJoin`의 결과에 따라 달라지므로, `arrayJoin`의 지연 실행을 구현하는 것은 지나치게 복잡하고 비용도 많이 듭니다.
 
