@@ -1031,6 +1031,10 @@ namespace
         add_column(TimeSeriesColumnNames::TimeSeries,
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
 
+        /// One flag per element of `time_series`; an empty array means no sample of that row is a stale marker.
+        add_column(TimeSeriesColumnNames::IsStaleMarker,
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()));
+
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Unit, std::make_shared<DataTypeString>());

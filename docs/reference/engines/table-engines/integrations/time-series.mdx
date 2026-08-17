@@ -63,6 +63,7 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `time_series` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and scalar element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)) |
+| `is_stale_marker` | `Array(UInt8)` | One flag per element of `time_series` marking that sample as a Prometheus stale marker. An empty array (the default) means none of the row's samples is a marker |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -185,6 +186,7 @@ CREATE TABLE my_table
     `metric_name` String,
     `tags` Map(String, String),
     `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `is_stale_marker` Array(UInt8),
     `metric_family` String,
     `type` String,
     `unit` String,

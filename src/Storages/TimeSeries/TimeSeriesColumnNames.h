@@ -15,6 +15,8 @@ struct TimeSeriesColumnNames
     /// `isPrometheusStaleMarker`). Such rows are kept (instead of being dropped at ingest) so that a bare
     /// PromQL instant selector can still see exactly where a series went stale and stop its lookback there,
     /// while every numeric `_over_time` function simply excludes them (see fromSelector.cpp).
+    /// The TimeSeries table has an outer column of the same name, an `Array(UInt8)` parallel to `time_series`,
+    /// because the marker's NaN payload doesn't survive a `value Float32` column and can't be recovered here.
     static constexpr const char * IsStaleMarker = "is_stale_marker";
 
     /// Internal column used only while evaluating a bare instant selector (see fromSelector.cpp): whether

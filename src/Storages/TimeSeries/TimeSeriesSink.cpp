@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
@@ -32,7 +31,6 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
-#include <bit>
 #include <ranges>
 
 
@@ -142,37 +140,23 @@ namespace
         }
     }
 
-    /// Returns true if `value` is the Prometheus "stale marker": the specific NaN payload
-    /// (`math.Float64frombits(0x7ff0000000000002)` in Prometheus's own Go code) that scrapers and
-    /// remote-write clients use to mark a series as stale (e.g. a scrape target disappeared). Real
-    /// Prometheus's query engine (`value.IsStaleNaN`) recognizes exactly this bit pattern and treats any
-    /// sample carrying it as if the series had no sample at that point ("absent"), never as a literal NaN
-    /// datapoint flowing into aggregations - unlike an ordinary user-supplied NaN, which must still
-    /// propagate as NaN.
-    ///
-    /// The marker can only be recognized while the value is still a Float64: narrowing this exact bit
-    /// pattern to Float32 collapses it to the same canonical quiet-NaN bit pattern (0x7fc00000) that any
-    /// other NaN also narrows to (verified empirically), so the marker becomes indistinguishable from a
-    /// genuine user NaN once stored - there is no reliable way to detect it later at query time.
-    bool isPrometheusStaleMarker(Float64 value)
-    {
-        return std::bit_cast<UInt64>(value) == 0x7FF0000000000002ULL;
-    }
-
     /// Fills columns id, timestamp, value, and (if the samples table has it) is_stale_marker for the "samples" table.
+    /// The stale-marker flags come from the outer `is_stale_marker` column, which carries one flag per sample
+    /// (see isPrometheusStaleMarker() in PrometheusRemoteWriteProtocol.cpp); an empty array means none are markers.
     void fillSamplesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
         const IColumn & ts_timestamps,
         const IColumn & ts_values,
         const ColumnArray::Offsets & ts_offsets,
+        const ColumnArray & ts_is_stale_markers,
         IColumn & out_id_column,
         IColumn & out_timestamp_column,
         IColumn & out_value_column,
         IColumn * out_is_stale_marker_column)
     {
-        /// Stale markers are only recognizable from a Float64 values column (see isPrometheusStaleMarker()).
-        const auto * float64_values = typeid_cast<const ColumnFloat64 *>(&ts_values);
+        const auto & markers_offsets = ts_is_stale_markers.getOffsets();
+        const auto & markers_data = ts_is_stale_markers.getData();
 
         size_t id_index = 0;
         for (size_t i = 0; i < filter.size(); ++i)
@@ -198,14 +182,16 @@ namespace
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
                 if (out_is_stale_marker_column)
                 {
-                    if (float64_values)
-                    {
-                        const auto & values_data = float64_values->getData();
-                        for (size_t j = ts_start; j != ts_end; ++j)
-                            out_is_stale_marker_column->insert(isPrometheusStaleMarker(values_data[j]) ? 1u : 0u);
-                    }
-                    else
+                    size_t markers_start = (i == 0) ? 0 : markers_offsets[i - 1];
+                    size_t num_markers = markers_offsets[i] - markers_start;
+                    if (num_markers == 0)
                         out_is_stale_marker_column->insertManyDefaults(num_samples);
+                    else if (num_markers == num_samples)
+                        out_is_stale_marker_column->insertRangeFrom(markers_data, markers_start, num_samples);
+                    else
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Column `{}` has {} flags for a time series with {} samples, it must be empty or have one flag per sample",
+                            TimeSeriesColumnNames::IsStaleMarker, num_markers, num_samples);
                 }
             }
 
@@ -648,6 +634,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
+    const auto & is_stale_marker_col = block.getByName(TimeSeriesColumnNames::IsStaleMarker);
+    const auto * ts_is_stale_markers = typeid_cast<const ColumnArray *>(is_stale_marker_col.column.get());
+    if (!ts_is_stale_markers)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the {} column, got {}",
+            TimeSeriesColumnNames::IsStaleMarker, is_stale_marker_col.column->getName());
+
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
 
@@ -782,7 +774,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
         fillSamplesColumns(
             filter,
-            *id_column, ts_timestamps, ts_values, ts_offsets,
+            *id_column, ts_timestamps, ts_values, ts_offsets, *ts_is_stale_markers,
             *samples_id_column, *timestamp_column, *value_column,
             is_stale_marker_column.get());
 

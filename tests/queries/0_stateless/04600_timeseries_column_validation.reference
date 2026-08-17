@@ -4,6 +4,7 @@ Array(Tuple(UInt32, Float32))
 metric_name	String
 tags	Map(String, String)
 time_series	Array(Tuple(DateTime64(3), Float64))
+is_stale_marker	Array(UInt8)
 metric_family	String
 type	String
 unit	String
