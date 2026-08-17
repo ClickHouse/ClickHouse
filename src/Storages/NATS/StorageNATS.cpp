@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -340,6 +341,12 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
+bool StorageNATS::consumersNeedResubscribe()
+{
+    std::lock_guard lock(consumers_mutex);
+    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+}
+
 void StorageNATS::unsubscribeConsumers()
 {
     std::lock_guard lock(consumers_mutex);
@@ -639,6 +646,14 @@ void StorageNATS::threadFunc()
 
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
+
+    /// A consumer whose subscription the NATS client has closed never receives another message,
+    /// so drop the subscriptions here and let the cycle below subscribe again.
+    if (consumers_ready && consumersNeedResubscribe())
+    {
+        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
+        unsubscribeConsumers();
+    }
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
