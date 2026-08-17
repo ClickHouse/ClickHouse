@@ -57,13 +57,13 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
 " < /dev/null
 
 # A materialized CTE runs its inner `PushingPipelineExecutor` from an outer
-# pipeline worker. One 2 GiB reservation fits under this 3 GiB server limit,
+# pipeline worker. One 32 GiB reservation fits under this 64 GiB server limit,
 # whereas two reservations on that physical worker do not. The nested executor
 # must therefore reuse the outer reservation.
 cat > "$CONFIG_FILE" <<'EOF'
 <clickhouse>
-    <max_server_memory_usage>3221225472</max_server_memory_usage>
-    <additional_memory_tracking_per_thread>2147483648</additional_memory_tracking_per_thread>
+    <max_server_memory_usage>68719476736</max_server_memory_usage>
+    <additional_memory_tracking_per_thread>34359738368</additional_memory_tracking_per_thread>
 </clickhouse>
 EOF
 
