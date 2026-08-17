@@ -15,6 +15,12 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    bool isExactGroup(const ASTPtr & group)
+    {
+        const auto * identifier = group->as<ASTIdentifier>();
+        return identifier && identifier->name() == ColumnNames::Group;
+    }
+
     ASTPtr makeOrMergeQuery(const String & left, const String & right)
     {
         SelectQueryBuilder builder;
@@ -102,8 +108,7 @@ SQLQueryPiece applyBinaryOperatorOr(
         /*drop_metric_name=*/ true,
         right_metric_name_dropped);
 
-    const bool exact_group_match = tryGetIdentifierName(left_join_group.get()) == ColumnNames::Group
-        && tryGetIdentifierName(right_join_group.get()) == ColumnNames::Group;
+    const bool exact_group_match = isExactGroup(left_join_group) && isExactGroup(right_join_group);
 
     context.subqueries.emplace_back(SQLSubquery{
         context.subqueries.size(),
