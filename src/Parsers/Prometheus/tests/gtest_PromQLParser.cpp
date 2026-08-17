@@ -1418,7 +1418,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
 TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
 {
-    for (const auto query : {
+    for (const auto * const query : {
              "sum by (job,) (up)",
              "sum by (job, instance,) (up)",
              "sum without (instance,) (up)",
@@ -1431,7 +1431,7 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
         EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
     }
 
-    for (const auto query : {
+    for (const auto * const query : {
              "sum by (,) (up)",
              "sum by (job,,) (up)",
          })
