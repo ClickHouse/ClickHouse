@@ -79,10 +79,16 @@ enum class MetricFormat : UInt8
     Time,
     Percent,
     Ratio,
+    /// Selectivities are too small for the fixed-precision Ratio format.
+    Selectivity,
 };
 
 std::string_view toString(MetricGroupKey key);
 std::string_view toString(MetricKey key);
+
+/// The text printed for a metric with no value: the estimates are absent because the optimizer
+/// had no statistics, while the actual counters are absent because they were not collected.
+std::string_view missingValueText(MetricKey key);
 
 MetricFormat formatOf(MetricKey key);
 

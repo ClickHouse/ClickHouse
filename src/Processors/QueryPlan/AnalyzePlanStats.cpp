@@ -5,6 +5,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinBranchCosts.h>
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
@@ -26,7 +27,7 @@ namespace
 String formatStepMetricValue(const StepMetric & metric)
 {
     if (std::holds_alternative<std::monostate>(metric.value))
-        return "not collected";
+        return String(missingValueText(metric.key));
 
     const MetricFormat format = formatOf(metric.key);
 
@@ -63,6 +64,8 @@ String formatStepMetricValue(const StepMetric & metric)
             return fmt::format("{:.2f}%", numeric);
         case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
+        case MetricFormat::Selectivity:
+            return fmt::format("{:.4g}", numeric);
         case MetricFormat::Raw:
             return {};
     }
@@ -283,18 +286,23 @@ void AnalyzeStepsStats::computeJoinBranchCosts(const QueryPlan & plan)
         if (!join_step || !join_step->getJoin())
             continue;
 
-        StepProcessors step_processors;
-        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-            step_processors = processors_it->second;
+        StepProcessors step_processors = processors_by_step.at(step);
 
-        /// The raw report and `kind` are both in the physical orientation of the join, so they agree.
-        const auto report = step->getAnalysisReport(step_processors);
+        auto report = step->getAnalysisReport(step_processors);
         const auto & table_join = join_step->getJoin()->getTableJoin();
-        if (const auto matched = joinMatchedOutputRows(report, io_stats.output_rows, table_join.kind(), table_join.strictness()))
-            cardinality_by_join_step[join_step] = *matched;
+        cardinality_by_join_step[join_step] = joinMatchedOutputRows(report, io_stats.output_rows, table_join.kind(), table_join.strictness());
+
+        join_raw_reports.emplace(step, std::move(report));
     }
 
-    join_branch_costs = JoinBranchCosts(plan, cardinality_by_join_step);
+    const JoinBranchCosts join_branch_costs(plan, cardinality_by_join_step);
+    for (auto & [step, report] : join_raw_reports)
+    {
+        const auto * join_step = typeid_cast<const JoinStep *>(step);
+        MetricGroup cost_group{MetricGroupKey::Cost, {}};
+        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(join_step)));
+        report.push_back(std::move(cost_group));
+    }
 }
 
 StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) const
@@ -311,19 +319,24 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
         if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
 
-    if (const auto * join_step = typeid_cast<const JoinStep *>(step))
-        context.join_actual_branch_cost = join_branch_costs.getBranchCost(join_step);
-
     return context;
 }
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    StepProcessors step_processors;
-    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-        step_processors = processors_it->second;
+    StepAnalysisReport raw_report;
+    if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
+    {
+        raw_report = report_it->second;
+    }
+    else
+    {
+        StepProcessors step_processors;
+        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+            step_processors = processors_it->second;
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
+        raw_report = step->getAnalysisReport(step_processors);
+    }
 
     auto context_for_step = makeContext(step);
     StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);

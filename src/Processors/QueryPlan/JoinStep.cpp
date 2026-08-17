@@ -367,7 +367,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
     }
 
     if (settings.pretty && !settings.inside_explain_analyze)
-        QueryPlanFormat::formatJoinOutputColumns(settings.out, *this, prefix);
+        QueryPlanFormat::formatJoinInputColumns(settings.out, *this, prefix);
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -377,9 +377,6 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
     for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
-
-    describeJoinEstimation(estimation, map);
-
     if (swap_streams)
         map.add("Swapped", true);
     if (!primary_key_sharding.empty())

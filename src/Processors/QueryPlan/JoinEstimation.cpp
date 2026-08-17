@@ -1,8 +1,8 @@
 #include <Processors/QueryPlan/JoinEstimation.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 #include <Common/formatReadable.h>
 
 #include <fmt/format.h>
@@ -10,52 +10,35 @@
 namespace DB
 {
 
-namespace
+String rowsEstimateToString(const std::optional<UInt64> & value)
 {
-
-String rowsToString(const std::optional<UInt64> & value)
-{
-    return value ? fmt::format("{}", *value) : String("missing stats");
+    return value ? formatReadableQuantity(static_cast<double>(*value)) : String(missingValueText(MetricKey::RowsEstimated));
 }
 
-String costToString(const std::optional<double> & value)
+String costEstimateToString(const std::optional<double> & value)
 {
-    return value ? fmt::format("{:g}", *value) : String("missing stats");
+    return value ? formatReadableQuantity(*value) : String(missingValueText(MetricKey::Estimated));
 }
 
-String selectivityToString(const std::optional<double> & value)
+String selectivityEstimateToString(const std::optional<double> & value)
 {
-    return value ? fmt::format("{:.4g}", *value) : String("missing stats");
+    return value ? fmt::format("{:.4g}", *value) : String(missingValueText(MetricKey::EstimatedNDV));
 }
 
-String rowsToReadable(const std::optional<UInt64> & value)
-{
-    return value ? formatReadableQuantity(static_cast<double>(*value)) : String("missing stats");
-}
-
-String costToReadable(const std::optional<double> & value)
-{
-    return value ? formatReadableQuantity(*value) : String("missing stats");
-}
-
-}
-
+/// Uses the same group and metric names as the EXPLAIN ANALYZE report of the join,
+/// so both explains stay in one format.
 void describeJoinEstimation(const JoinEstimation & estimation, WriteBuffer & out, const String & prefix)
 {
-    out << prefix << "Estimated rows: output " << rowsToReadable(estimation.output_rows)
-        << " · left " << rowsToReadable(estimation.left_rows)
-        << " · right " << rowsToReadable(estimation.right_rows) << '\n';
-    out << prefix << "Estimated cost: " << costToReadable(estimation.cost) << '\n';
-    out << prefix << "Estimated selectivity (NDV): " << selectivityToString(estimation.selectivity) << '\n';
-}
-
-void describeJoinEstimation(const JoinEstimation & estimation, JSONBuilder::JSONMap & map)
-{
-    map.add("Estimated output rows", rowsToString(estimation.output_rows));
-    map.add("Estimated left rows", rowsToString(estimation.left_rows));
-    map.add("Estimated right rows", rowsToString(estimation.right_rows));
-    map.add("Estimated cost", costToString(estimation.cost));
-    map.add("Estimated selectivity (NDV)", selectivityToString(estimation.selectivity));
+    out << prefix << toString(MetricGroupKey::Cost) << ": "
+        << toString(MetricKey::Estimated) << ' ' << costEstimateToString(estimation.cost) << '\n';
+    out << prefix << toString(MetricGroupKey::Selectivity) << ": "
+        << toString(MetricKey::EstimatedNDV) << ' ' << selectivityEstimateToString(estimation.selectivity) << '\n';
+    out << prefix << toString(MetricGroupKey::Output) << ": "
+        << toString(MetricKey::Estimated) << ' ' << rowsEstimateToString(estimation.output_rows) << '\n';
+    out << prefix << toString(MetricGroupKey::Left) << ": "
+        << toString(MetricKey::RowsEstimated) << ' ' << rowsEstimateToString(estimation.left_rows) << '\n';
+    out << prefix << toString(MetricGroupKey::Right) << ": "
+        << toString(MetricKey::RowsEstimated) << ' ' << rowsEstimateToString(estimation.right_rows) << '\n';
 }
 
 }

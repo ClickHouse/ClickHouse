@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/JoinBranchCosts.h>
 #include <Processors/QueryPlan/StepStatsModel.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
@@ -32,6 +31,7 @@ class AnalyzeStepsStats
     using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
     using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
     AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
@@ -52,7 +52,7 @@ private:
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
 
-    JoinBranchCosts join_branch_costs;
+    ReportsByStep join_raw_reports;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

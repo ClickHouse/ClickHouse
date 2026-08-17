@@ -64,10 +64,6 @@ struct StepStatsContext
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
     StepGroupStatsByGroupId group_stats;
-
-    /// For a join step: the actual cost of its join-reorder cluster branch, accumulated by
-    /// `JoinBranchCosts` over the whole plan; compared with the optimizer's estimated cost.
-    std::optional<double> join_actual_branch_cost;
 };
 
 }

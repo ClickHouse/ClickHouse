@@ -33,6 +33,7 @@
 #include <fmt/ranges.h>
 #include <optional>
 #include <string_view>
+#include <variant>
 
 namespace DB
 {
@@ -79,51 +80,6 @@ namespace QueryPlanFormat
         return result;
     }
 
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
-    {
-        const auto & input_headers = step.getInputHeaders();
-        if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
-            return;
-
-        out << prefix << "Output:\n";
-
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
-        {
-            out << prefix << "  Left:  Empty\n";
-            out << prefix << "  Right: Empty\n";
-            return;
-        }
-
-        const auto & output = *step.getOutputHeader();
-        const auto & left_input = *input_headers[0];
-        const auto & right_input = *input_headers[1];
-
-        std::vector<String> left_columns;
-        std::vector<String> right_columns;
-
-        for (const auto & col : output)
-        {
-            if (left_input.has(col.name))
-                left_columns.push_back(trimColumnIdentifier(col.name));
-            else if (right_input.has(col.name))
-                right_columns.push_back(trimColumnIdentifier(col.name));
-        }
-
-        out << prefix << "  Left:  ";
-        if (left_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(left_columns, ", "));
-        out << "\n";
-
-        out << prefix << "  Right: ";
-        if (right_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(right_columns, ", "));
-        out << "\n";
-    }
-
     std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step)
     {
         const auto & input_headers = step.getInputHeaders();
@@ -149,6 +105,18 @@ namespace QueryPlanFormat
         groups.emplace_back(side_group(MetricGroupKey::InputLeft, *input_headers[0]));
         groups.emplace_back(side_group(MetricGroupKey::InputRight, *input_headers[1]));
         return groups;
+    }
+
+    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix)
+    {
+        for (const auto & group : collectJoinInputColumns(step))
+        {
+            out << prefix << toString(group.key) << ": ";
+            for (const auto & metric : group.metrics)
+                if (const auto * text = std::get_if<String>(&metric.value))
+                    out << *text;
+            out << '\n';
+        }
     }
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)

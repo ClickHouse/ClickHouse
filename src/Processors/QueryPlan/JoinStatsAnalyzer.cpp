@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -13,7 +14,6 @@
 #include <optional>
 #include <type_traits>
 #include <variant>
-#include <fmt/format.h>
 
 namespace DB
 {
@@ -190,14 +190,6 @@ MetricValue optionalDouble(const std::optional<double> & value)
     return std::monostate{};
 }
 
-/// Selectivities are usually far below the precision of the Ratio format, so pre-format them.
-MetricValue selectivityValue(const std::optional<double> & value)
-{
-    if (value)
-        return fmt::format("{:.4g}", *value);
-    return std::monostate{};
-}
-
 std::optional<double> cartesianSelectivity(
     const JoinSideRows & left_side, const JoinSideRows & right_side, std::optional<UInt64> matched_output_rows)
 {
@@ -216,13 +208,17 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
         static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
 }
 
-/// Pair the optimizer estimation with the measured run: per-side estimated rows next to the actual
-/// counters, plus Cost/Selectivity/Output groups comparing estimated and actual values.
-/// `report` must already be in the logical (unswapped) orientation, like `estimation`.
 void prependEstimationComparison(
     StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
 {
     const JoinEstimation & estimation = join_step.getEstimation();
+
+    std::optional<UInt64> actual_branch_cost;
+    if (const auto cost_it = std::ranges::find(report, MetricGroupKey::Cost, &MetricGroup::key); cost_it != report.end())
+    {
+        actual_branch_cost = findQuantity(*cost_it, MetricKey::Actual);
+        report.erase(cost_it);
+    }
 
     auto * left_group = findGroup(report, MetricGroupKey::Left);
     auto * right_group = findGroup(report, MetricGroupKey::Right);
@@ -237,12 +233,12 @@ void prependEstimationComparison(
 
     MetricGroup cost{MetricGroupKey::Cost, {}};
     cost.metrics.emplace_back(MetricKey::Estimated, optionalDouble(estimation.cost));
-    cost.metrics.emplace_back(MetricKey::Actual, optionalDouble(context.join_actual_branch_cost));
+    cost.metrics.emplace_back(MetricKey::Actual, optionalQuantity(actual_branch_cost));
 
     MetricGroup selectivity{MetricGroupKey::Selectivity, {}};
-    selectivity.metrics.emplace_back(MetricKey::EstimatedNDV, selectivityValue(estimation.selectivity));
+    selectivity.metrics.emplace_back(MetricKey::EstimatedNDV, optionalDouble(estimation.selectivity));
     selectivity.metrics.emplace_back(
-        MetricKey::ActualCartesian, selectivityValue(cartesianSelectivity(left_side, right_side, matched_output_rows)));
+        MetricKey::ActualCartesian, optionalDouble(cartesianSelectivity(left_side, right_side, matched_output_rows)));
 
     MetricGroup output{MetricGroupKey::Output, {}};
     output.metrics.emplace_back(MetricKey::Estimated, optionalQuantity(estimation.output_rows));
@@ -302,6 +298,9 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     {
         prependEstimationComparison(report, *join_step, context, matched_output_rows);
 
+        /// Ad hoc solution since we don't have generic infrastructure for rendering EXPLAIN PLAN
+        /// and EXPLAIN ANALYZE at the moment. That is why we pull the part for the collecting the input columns
+        /// and instead put it in here
         for (auto & group : QueryPlanFormat::collectJoinInputColumns(*join_step))
             report.push_back(std::move(group));
     }

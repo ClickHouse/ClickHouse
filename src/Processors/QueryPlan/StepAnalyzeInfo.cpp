@@ -70,6 +70,19 @@ std::string_view toString(MetricKey key)
     }
 }
 
+std::string_view missingValueText(MetricKey key)
+{
+    switch (key)
+    {
+        case MetricKey::RowsEstimated:
+        case MetricKey::Estimated:
+        case MetricKey::EstimatedNDV:
+            return "no stats";
+        default:
+            return "not collected";
+    }
+}
+
 MetricFormat formatOf(MetricKey key)
 {
     switch (key)
@@ -77,10 +90,11 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::Unnamed:
         case MetricKey::Compressed:
         case MetricKey::Storage:
-        /// Selectivities are pre-formatted: they are too small for the fixed-precision Ratio format.
+            return MetricFormat::Raw;
+
         case MetricKey::EstimatedNDV:
         case MetricKey::ActualCartesian:
-            return MetricFormat::Raw;
+            return MetricFormat::Selectivity;
 
         case MetricKey::InputRows:
         case MetricKey::OutputRows:

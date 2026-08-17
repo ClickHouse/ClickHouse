@@ -80,9 +80,10 @@ namespace QueryPlanFormat
 {
     String trimColumnIdentifier(std::string_view name);
     void formatOutputColumns(const PrettyColumnNameMap & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
     /// Input column lists of a join as metric groups, appended to its EXPLAIN ANALYZE report.
     std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step);
+    /// The same input column lists rendered as text for EXPLAIN PLAN, in the format of the report groups.
+    void formatJoinInputColumns(WriteBuffer & out, const JoinStep & step, const String & prefix);
 
     String formatNodePretty(
         const ActionsDAG::Node * node,
