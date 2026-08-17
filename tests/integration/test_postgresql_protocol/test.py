@@ -195,6 +195,69 @@ def test_psql_client(started_cluster):
         ]
     )
 
+
+def test_psql_describe(started_cluster):
+    node = cluster.instances["node"]
+
+    started_cluster.copy_file_to_container(
+        started_cluster.postgres_id,
+        os.path.join(SCRIPT_DIR, "queries", "query8.sql"),
+        "/query8.sql",
+    )
+
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+    ]
+    # -F same as --field-separator
+    cmd_prefix += ["--no-align", "-F", " "]
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query8.sql"], shell=True
+    )
+    logging.debug(res)
+    # \d lists the tables of the current database (with their types and owner),
+    # \dt lists only the tables. The exact psql chrome (headers, row counts)
+    # varies between psql versions, so check the rows themselves.
+    assert "db_psql_describe t_described table user_with_sha256" in res
+    assert "db_psql_describe v_described view user_with_sha256" in res
+    # The view must not be listed by \dt: expect exactly one more listing of the
+    # table (from \dt) than of the view (only from \d).
+    assert res.count("t_described table") == 2
+    assert res.count("v_described view") == 1
+
+
+def test_query_error_keeps_connection(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="default",
+    )
+    cur = ch.cursor()
+
+    # A failed query must not tear the connection down: the server sends
+    # ErrorResponse and returns to the ReadyForQuery state, like PostgreSQL.
+    with pytest.raises(Exception) as exc:
+        cur.execute("SELECT this is not valid SQL")
+    assert "Query execution failed" in str(exc.value)
+
+    cur.execute("SELECT 1")
+    assert int(cur.fetchone()[0]) == 1
+
+    # Same for an error from query execution (not parsing).
+    with pytest.raises(Exception) as exc:
+        cur.execute("SELECT throwIf(1)")
+
+    cur.execute("SELECT 2")
+    assert int(cur.fetchone()[0]) == 2
+
+    ch.close()
+
+
 def test_psql_client_secure(started_cluster):
     node = cluster.instances["node_secure"]
 
