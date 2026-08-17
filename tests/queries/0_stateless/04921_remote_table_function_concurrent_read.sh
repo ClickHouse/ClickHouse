@@ -75,10 +75,17 @@ $CLICKHOUSE_CLIENT --query_id "$OPT_QUERY_ID" -q "
     SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0
 "
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+# A query the shard ran carries `current_database = 'default'`, not the initiator's database, so the
+# child row is scoped to this test through its initiator instead.
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM system.query_log
-    WHERE event_date >= yesterday() AND initial_query_id = '$OPT_QUERY_ID'
-      AND is_initial_query = 0 AND type = 'QueryFinish' AND query LIKE 'INSERT INTO%merge(%'
+    WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
+      AND query LIKE 'INSERT INTO%merge(%'
+      AND initial_query_id IN (
+          SELECT query_id FROM system.query_log
+          WHERE event_date >= yesterday() AND current_database = currentDatabase()
+            AND is_initial_query = 1 AND query_id = '$OPT_QUERY_ID'
+      )
     SETTINGS enable_parallel_replicas = 0
 "
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_dst"
