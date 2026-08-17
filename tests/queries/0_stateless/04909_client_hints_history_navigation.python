@@ -159,7 +159,7 @@ def main():
         args + [f"--history_file={history}"],
         "down_navigates_history",
         [b"\x1b[A", b"\x1b[A", b"\x1b[B", b"\r"],
-        lambda o: re.search(r"(?:│\s*222\s*│|\r?\n222\r?\n)", o) is not None,
+        lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
     )
 
     # 3. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
