@@ -96,6 +96,13 @@ namespace ExportPartitionUtils
     /// Validates that source columns can be exported into the destination with the
     /// same positional CAST matching as `INSERT INTO dest SELECT * FROM src`. Lossy
     /// casts are rejected unless `export_merge_tree_part_allow_lossy_cast` is set.
+    ///
+    /// By default the source and destination must have the same number of columns.
+    /// If `export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'`, a
+    /// source with more columns than the destination is allowed: the extra trailing
+    /// source columns (by position) are excluded from the comparison here, matching
+    /// what `ExportPartTask::addExportConvertingActions` drops from the actual data.
+    ///
     /// Throws BAD_ARGUMENTS on any violation.
     void verifyExportSchemaCastable(
         const StorageMetadataPtr & source_metadata,
