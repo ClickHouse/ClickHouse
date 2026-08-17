@@ -1,0 +1,30 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!-- 400 histograms with 20 buckets and 300 samples per bucket: 2.4M input samples. -->
+    <create_query>
+        CREATE TABLE promql_histogram_quantile_ts ENGINE = TimeSeries
+    </create_query>
+
+    <fill_query>
+        INSERT INTO promql_histogram_quantile_ts (metric_name, tags, time_series)
+        SELECT
+            'http_request_duration_seconds_bucket',
+            map(
+                'instance', toString(intDiv(number, 20)),
+                'job', 'api',
+                'le', if(number % 20 = 19, '+Inf', toString(number % 20))),
+            arrayMap(step ->
+                (toDateTime64(100 + step * 10, 3),
+                 toFloat64((step + 1) * (number % 20 + 1))),
+                range(300))
+        FROM numbers_mt(400 * 20)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQueryRange('promql_histogram_quantile_ts', 'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[60s]))', 100, 3090, 10) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_histogram_quantile_ts</drop_query>
+</test>

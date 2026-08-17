@@ -4615,6 +4615,34 @@ def test_histogram_quantile():
     )
 
 
+def test_histogram_quantile_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32_histogram "
+        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_histogram (metric_name, tags, time_series) VALUES"
+            " ('rate_bucket', {'le': '0.1'}, [(toDateTime64(300, 3), toFloat32(10)), (toDateTime64(330, 3), toFloat32(15)), (toDateTime64(360, 3), toFloat32(20))]),"
+            " ('rate_bucket', {'le': '0.5'}, [(toDateTime64(300, 3), toFloat32(30)), (toDateTime64(330, 3), toFloat32(45)), (toDateTime64(360, 3), toFloat32(60))]),"
+            " ('rate_bucket', {'le': '1.0'}, [(toDateTime64(300, 3), toFloat32(50)), (toDateTime64(330, 3), toFloat32(75)), (toDateTime64(360, 3), toFloat32(100))]),"
+            " ('rate_bucket', {'le': '+Inf'}, [(toDateTime64(300, 3), toFloat32(60)), (toDateTime64(330, 3), toFloat32(90)), (toDateTime64(360, 3), toFloat32(120))])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_f32_histogram, "
+                "'histogram_quantile(0.5, rate(rate_bucket[60s]))', 360)"
+            ),
+            [["[]", "1970-01-01 00:06:00.000", "0.5"]],
+            eps=1e-6,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_histogram SYNC")
+
+
 def test_label_manipulation_functions():
     # Add a new label using a regex capture from an existing label.
     do_query_test(
