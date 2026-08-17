@@ -61,23 +61,17 @@ Text-to-Chart 需要一个 [Anthropic API 密钥](https://console.anthropic.com/
 </div>
 
 <Steps>
-  <Step>
-    ### 前往Chart Explorer
-
+  <Step title="前往Chart Explorer" id="navigate-chart-explorer">
     在 HyperDX 中，从左侧菜单选择 **Chart Explorer**。
   </Step>
 
-  <Step>
-    ### 选择数据源
-
+  <Step title="选择数据源" id="select-data-source">
     选择要可视化的数据源，例如 **日志**、**链路追踪** 或 **指标**。
 
     <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="图表浏览器" />
   </Step>
 
-  <Step>
-    ### 输入文本提示词
-
+  <Step title="输入文本提示词" id="enter-text-prompt">
     在Chart Explorer顶部找到 **AI 助手** 输入框。输入你想创建的图表的自然语言描述。例如：
 
     * `按 service 查看过去 24 小时的错误率`
@@ -140,7 +134,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
   ## 延伸阅读
 </div>
 
-* [从文本到图表：用 ClickStack 更快实现可视化](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 介绍该功能的博客文章
-* [仪表盘和可视化](/zh/clickstack/features/dashboards/overview) — 使用 Chart Explorer 手动创建图表
+* [从文本到图表：借助 ClickStack 更快实现可视化](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 介绍该功能的博文
+* [仪表盘与可视化](/zh/clickstack/features/dashboards/overview) — 使用 Chart Explorer 手动创建图表
 * [搜索](/zh/clickstack/features/search) — 全文搜索和属性搜索语法
-* [配置](/zh/clickstack/managing/config) — ClickStack 的所有环境变量
+* [配置](/zh/clickstack/managing/config) — 所有 ClickStack 环境变量

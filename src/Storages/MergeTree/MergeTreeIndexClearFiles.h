@@ -78,8 +78,10 @@ bool skipIndexHasFilesInPackedArchive(
 /// skip-index filenames present in `skp_idx.packed`.
 NameSet getDroppedSkipIndexArchiveFileNames(
     const NameSet & dropped_index_names,
+    const std::set<MergeTreeIndexPtr> & surviving_indexes,
     bool escape_index_filenames,
     const String & mrk_extension,
+    const IMergeTreeDataPart & part,
     const DataPartStorageOnDiskBase & storage);
 
 struct PartFileCopyOptions
@@ -89,6 +91,7 @@ struct PartFileCopyOptions
     bool copy_instead_of_hardlinks = false;
     bool fail_on_temporary_projection_directories = false;
     bool fail_on_projection_subdirectories = false;
+    bool checkpoint_after_projection = false;
     std::function<void()> cancellation_callback;
 };
 

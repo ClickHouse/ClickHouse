@@ -27,11 +27,11 @@ ClickStack 使用 ClickHouse Cloud 进行身份验证。分配 ClickStack 角色
 1. **已被邀请加入你的 ClickHouse Cloud 组织。** 组织管理员可通过 Cloud 控制台邀请用户。详情请参阅 [管理云用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
 2. **拥有该服务的 SQL 控制台访问权限。** 前往该服务的 **设置** → **SQL 控制台访问**，并设置适当的权限级别：
 
-| Cloud SQL 控制台访问权限                     | ClickStack 访问权限                                                      |
-| ------------------------------------- | -------------------------------------------------------------------- |
+| Cloud SQL 控制台访问权限                     | ClickStack 访问权限                                                         |
+| ------------------------------------- | ----------------------------------------------------------------------- |
 | **SQL Console Admin** (Full Access)   | 拥有 ClickStack 的完全访问权限。启用 [告警](/zh/clickstack/features/alerts) 时必须具备此权限。 |
-| **SQL Console Read Only** (Read Only) | 可查看可观测性数据并创建仪表盘。                                                     |
-| **No access**                         | 无法访问 ClickStack。                                                     |
+| **SQL Console Read Only** (Read Only) | 可查看可观测性数据并创建仪表盘。                                                        |
+| **无权限**                         | 无法访问 ClickStack。                                                        |
 
 用户获得 Cloud 访问权限后，就会显示在 ClickStack **团队设置** 页面中，你可以在其中为其分配 ClickStack 角色。
 
@@ -81,30 +81,24 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 </div>
 
 <Steps>
-  <Step>
-    ### 前往 团队设置
-
+  <Step title="前往 团队设置" id="step-navigate">
     打开 **团队设置**，然后向下滚动到 **RBAC Roles**。
 
     <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
   </Step>
 
-  <Step>
-    ### 添加新角色
-
+  <Step title="添加新角色" id="step-add-role">
     点击 **+ Add Role**。输入 **Role Name**，并可选填 **Description**。
   </Step>
 
-  <Step>
-    ### 配置权限并保存
-
+  <Step title="配置权限并保存" id="step-configure">
     为该角色设置权限，然后点击 **Create Role**。
 
     <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="添加角色模态框" size="md" />
   </Step>
 </Steps>
 
-自定义角色会与系统角色一同显示在 **RBAC Roles** 部分，并带有 **Edit** 和 **Delete** 按钮。
+自定义角色会与系统内置角色一同显示在 **RBAC Roles** 部分，并带有 **Edit** 和 **Delete** 按钮。
 
 <div id="role-permissions">
   ## 角色权限
@@ -165,13 +159,13 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 每条访问规则都由一个**条件**和一个**访问级别**组成。条件会根据资源属性匹配资源：
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件提示：可按名称或标签（显示在标题中），或按 ID（可在 URL 中找到）匹配资源" size="md" />
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件提示：可按名称或标签（可从标题判断），或按 ID（可在 URL 中找到）匹配资源" size="md" />
 
-| 条件字段   | 运算符              | 匹配内容                                                      | 示例                                              |
-| ------ | ---------------- | --------------------------------------------------------- | ----------------------------------------------- |
-| **名称** | `is`, `contains` | 资源的显示名称，例如仪表盘标题。                                          | 名称包含 `production` —— 匹配标题中包含“production”的任意仪表盘。 |
-| **标签** | `is`, `contains` | 通过资源视图右上角标签面板分配给资源的标签。仅适用于仪表盘、已保存搜索 和 Notebooks。 | 标签为 `critical` —— 匹配带有“critical”标签的资源。          |
-| **ID** | `is`, `contains` | 资源标识符，可在打开资源时的 URL 栏中找到。                                  | ID 为 `abc123` —— 匹配某个特定的单个资源。                   |
+| 条件字段   | 运算符              | 匹配内容                                     | 示例                                              |
+| ------ | ---------------- | ---------------------------------------- | ----------------------------------------------- |
+| **名称** | `is`, `contains` | 资源的显示名称，例如仪表盘标题。                         | 名称包含 `production` —— 匹配标题中包含“production”的任意仪表盘。 |
+| **标签** | `is`, `contains` | 通过资源视图右上角标签面板分配给资源的标签。仅适用于仪表盘、已保存搜索和笔记本。 | 标签为 `critical` —— 匹配带有“critical”标签的资源。          |
+| **ID** | `is`, `contains` | 资源标识符，可在打开资源时的 URL 栏中找到。                 | ID 为 `abc123` —— 匹配某个特定资源。                      |
 
 下图同时显示了 URL 栏中高亮显示的仪表盘 ID，以及标签面板 (右上角) 中可见的“TESTING”标签。
 
@@ -181,14 +175,14 @@ ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。
 
 <Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="使用 OR 逻辑的访问规则提示" size="md" />
 
-**示例**：要为某个角色授予测试仪表盘的只读访问权限，请展开仪表盘，切换到 细粒度控制，然后添加两条规则：
+**示例**：要为某个角色授予测试仪表盘的只读访问权限，请展开仪表盘，切换到细粒度控制，然后添加两条规则：
 
-* **名称** `contains` `testing`，访问级别为 **Read**
-* **标签** `is` `testing`，访问级别为 **Read**
+* **名称** `contains` `testing`，访问级别为 **只读**
+* **标签** `is` `testing`，访问级别为 **只读**
 
 匹配任意一条规则的仪表盘都可以访问。
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="两条通过 OR 连接的细粒度访问规则：名称包含 testing 且访问级别为 Read，以及标签为 testing 且访问级别为 Read" size="md" />
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="两条通过 OR 连接的细粒度访问规则：名称包含 testing 且访问级别为 只读，以及标签为 testing 且访问级别为 只读" size="md" />
 
 <div id="security-policies">
   ## 安全策略

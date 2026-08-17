@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 import CommunityMonitoring from '/snippets/_community_monitoring.mdx';
-import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 ## Datadog integration {#direct-datadog}
 
@@ -17,7 +17,7 @@ To monitor your ClickHouse deployment in Datadog, ClickHouse offers several inte
 | Integration | Docs | Deployment | Signals |
 |---|---|---|---|
 | [ClickHouse Cloud Datadog API integration](#clickhouse-cloud-datadog-api-integration) *(recommended)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/) | Cloud | Metrics |
-| [ClickHouse Cloud Prometheus integration](#clickhouse-cloud-prometheus-integration) | [clickhouse.com/docs](/integrations/prometheus) | Cloud | Metrics |
+| [ClickHouse Cloud Prometheus integration](#clickhouse-cloud-prometheus-integration) | [clickhouse.com/docs](/products/cloud/features/monitoring/prometheus) | Cloud | Metrics |
 | [ClickHouse Datadog Agent integration](#clickhouse-datadog-agent-integration) | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host) | OSS / Cloud | Logs, Metrics |
 | [ClickHouse Datadog DBM](#clickhouse-datadog-dbm) | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | Logs, Metrics, Query Insights |
 
@@ -40,7 +40,7 @@ For onboarding steps, see [Datadog's ClickHouse Cloud integration guide](https:/
 
 The most common and universal way to collect service-level and org-level telemetry from ClickHouse Cloud.
 
-You configure the Datadog Agent with the [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/) to periodically poll the ClickHouse Cloud API and collect metrics. See the [Prometheus integration page](/integrations/prometheus#integrating-with-datadog) for configuration details.
+You configure the Datadog Agent with the [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/) to periodically poll the ClickHouse Cloud API and collect metrics. See the [Prometheus integration page](/products/cloud/features/monitoring/prometheus#integrating-with-datadog) for configuration details.
 
 - **Cloud only** — not suitable for OSS ClickHouse
 - Metrics are treated as **custom metrics** by Datadog

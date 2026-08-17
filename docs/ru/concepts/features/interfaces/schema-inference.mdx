@@ -150,7 +150,7 @@ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM
 Это может повысить производительность вставки, поскольку определение схемы может занимать некоторое время. Кроме того, это полезно, если у таблицы оптимизированная схема, поэтому
 преобразования между типами не потребуются.
 
-Существует специальная настройка [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ru/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions),
+Существует специальная настройка [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ru/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions),
 которая управляет этим поведением. У неё есть 3 возможных значения:
 
 * 0 - табличная функция будет извлекать структуру из данных.
@@ -1829,7 +1829,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Примечание: при автоматическом определении схемы обработка значений даты и времени учитывает настройку [date&#95;time&#95;input&#95;format](/ru/reference/settings/formats#date_time_input_format)
+Примечание: при автоматическом определении схемы обработка значений даты и времени учитывает настройку [date&#95;time&#95;input&#95;format](/ru/reference/settings/formats/date-time#date_time_input_format)
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2023,7 +2023,7 @@ $$)
 | `string (uuid)` *                  | [UUID](/ru/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/ru/reference/data-types/decimal)                        |
 
-* [Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+* [Логические типы Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Другие типы Avro не поддерживаются.
 
@@ -2109,6 +2109,7 @@ $$)
 | `List`                               | [Array](/ru/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/ru/reference/data-types/tuple)           |
 | `Map`                                | [Map](/ru/reference/data-types/map)               |
+| `Union`                              | [Variant](/ru/reference/data-types/variant)       |
 
 Другие типы ORC не поддерживаются.
 

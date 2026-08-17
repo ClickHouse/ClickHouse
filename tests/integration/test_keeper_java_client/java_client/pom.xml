@@ -17,7 +17,7 @@
         <dependency>
             <groupId>org.apache.zookeeper</groupId>
             <artifactId>zookeeper</artifactId>
-            <version>3.8.4</version>
+            <version>3.8.6</version>
         </dependency>
     </dependencies>
 

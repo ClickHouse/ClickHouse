@@ -5,6 +5,8 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -23,7 +25,9 @@ public:
             StreamingHandleErrorMode handle_error_mode_,
             bool nack_broken_messages_,
             bool ack_in_suffix,
-            LoggerPtr log_);
+            LoggerPtr log_,
+            std::optional<UInt64> cancel_epoch_ = {},
+            bool drive_loop_on_worker_ = false);
 
     ~RabbitMQSource() override;
 
@@ -37,7 +41,9 @@ public:
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
-    bool sendNack();
+    bool sendNack(bool requeue = false);
+
+    bool wasConsumptionAborted() const { return consumption_aborted; }
 
 private:
     StorageRabbitMQ & storage;
@@ -50,14 +56,20 @@ private:
     const bool nack_broken_messages;
 
     bool is_finished = false;
+    bool consumption_aborted = false;
+    /// Set only for a REFRESH-while-stopped background cycle; see driveLoopUntilMessage.
+    bool drive_loop_on_worker = false;
     const Block non_virtual_header;
     const Block virtual_header;
+    const UInt64 cancel_epoch;
 
     LoggerPtr log;
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+    /// Per-source deadline for the self-driving REFRESH cycle (see driveLoopUntilMessage).
+    std::optional<Stopwatch> drive_stopwatch;
 
     RabbitMQConsumer::CommitInfo commit_info;
 
@@ -72,9 +84,19 @@ private:
         StreamingHandleErrorMode handle_error_mode_,
         bool nack_broken_messages_,
         bool ack_in_suffix,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        std::optional<UInt64> cancel_epoch_ = {},
+        bool drive_loop_on_worker_ = false);
 
     Chunk generateImpl();
+
+    /// Absolute budget bounding the whole self-driving REFRESH cycle: the flush interval when set, else
+    /// a finite default (the flush interval may be 0, i.e. no per-cycle time budget).
+    uint64_t driveBudgetMs() const;
+
+    /// Drive the AMQP loop on this worker until a message is pending (bounded, cancel-aware).
+    /// Returns true if a message is now pending, false if it timed out / was cancelled / stopped.
+    bool driveLoopUntilMessage();
 };
 
 }

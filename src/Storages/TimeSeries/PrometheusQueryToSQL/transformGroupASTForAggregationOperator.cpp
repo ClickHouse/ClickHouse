@@ -9,7 +9,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 ASTPtr transformGroupASTForAggregationOperator(
-    const PQT::AggregationOperator * operator_node,
+    const PrometheusQueryTree::AggregationOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
     bool & metric_name_dropped)

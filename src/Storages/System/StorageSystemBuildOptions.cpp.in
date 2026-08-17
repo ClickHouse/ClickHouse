@@ -33,7 +33,7 @@ const char * auto_config_build[]
     "USE_MYSQL", "@USE_MYSQL@",
     "USE_RDKAFKA", "@USE_RDKAFKA@",
     "USE_CAPNP", "@USE_CAPNP@",
-    "USE_BASE64", "@USE_BASE64@",
+    "USE_SIMDUTF", "@USE_SIMDUTF@",
     "USE_HDFS", "@USE_HDFS@",
     "USE_SNAPPY", "@USE_SNAPPY@",
     "USE_PARQUET", "@USE_PARQUET@",

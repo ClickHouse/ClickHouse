@@ -94,18 +94,12 @@ NameSet getSkipIndexSubstreamFileNames(
     NameSet result;
     for (const auto & index : indexes)
     {
-        for (const auto & substream : index->getSubstreams())
+        const String file_name = index->getFileName();
+        for (const auto & substream : index->getAllSubstreamsInPart(checksums, file_name, storage))
         {
-            const String stream_name = index->getFileName() + substream.suffix;
-
-            /// Current logical names.
+            const String stream_name = file_name + substream.suffix;
             result.insert(stream_name + substream.extension);
             result.insert(stream_name + mrk_extension);
-
-            /// Legacy / compatible data-file names. Minmax moved from `.idx` to `.idx2`;
-            /// DROP/CLEAR INDEX must probe both when removing inherited files/checksums.
-            result.insert(stream_name + ".idx");
-            result.insert(stream_name + ".idx2");
 
             auto add_actual_name = [&](const String & extension)
             {
@@ -117,8 +111,6 @@ NameSet getSkipIndexSubstreamFileNames(
             };
 
             add_actual_name(substream.extension);
-            add_actual_name(".idx");
-            add_actual_name(".idx2");
             add_actual_name(mrk_extension);
         }
     }
@@ -199,13 +191,28 @@ bool skipIndexHasFilesInPackedArchive(
 
 NameSet getDroppedSkipIndexArchiveFileNames(
     const NameSet & dropped_index_names,
+    const std::set<MergeTreeIndexPtr> & surviving_indexes,
     bool escape_index_filenames,
     const String & mrk_extension,
+    const IMergeTreeDataPart & part,
     const DataPartStorageOnDiskBase & storage)
 {
-    NameSet result;
+    NameSet surviving_index_owned_files;
+    for (const auto & index : surviving_indexes)
+    {
+        if (!part.isSkipIndexInPackedArchive(*index))
+            continue;
 
-    static constexpr std::array<const char *, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        const String file_name = index->getFileName();
+        for (const auto & substream : index->getAllSubstreamsInPart(part.checksums, file_name, &part.getDataPartStorage()))
+        {
+            surviving_index_owned_files.insert(file_name + substream.suffix + substream.extension);
+            surviving_index_owned_files.insert(file_name + substream.suffix + mrk_extension);
+        }
+    }
+
+    NameSet result;
+    static constexpr std::array<const char *, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
     static constexpr std::array<const char *, 2> known_index_extensions = {".idx2", ".idx"};
 
     for (const auto & index_name : dropped_index_names)
@@ -216,12 +223,14 @@ NameSet getDroppedSkipIndexArchiveFileNames(
             for (const auto * extension : known_index_extensions)
             {
                 const String candidate = index_file_name + substream_suffix + extension;
-                if (storage.isFileInPackedSkipIndicesArchive(candidate))
+                if (!surviving_index_owned_files.contains(candidate)
+                    && storage.isFileInPackedSkipIndicesArchive(candidate))
                     result.insert(candidate);
             }
 
             const String mark_candidate = index_file_name + substream_suffix + mrk_extension;
-            if (storage.isFileInPackedSkipIndicesArchive(mark_candidate))
+            if (!surviving_index_owned_files.contains(mark_candidate)
+                && storage.isFileInPackedSkipIndicesArchive(mark_candidate))
                 result.insert(mark_candidate);
         }
     }
@@ -348,6 +357,9 @@ std::optional<NameSet> copyPartFilesWithSkip(
                 hardlinked_files.insert((std::filesystem::path(projection_src->getPartDirectory()) / projection_file).string());
             }
         }
+
+        if (options.checkpoint_after_projection)
+            destination_storage.checkpointTransaction();
     }
 
     return hardlinked_files;

@@ -138,7 +138,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   o que será equivalente à seguinte URL JDBC:
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -299,7 +299,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
 
   As regras gerais de mapeamento para arrays são:
 
-  | Tipo ClickHouse                            | `getBaseTypeName()`                               | `getBaseType()`                        |
+  | Tipo do ClickHouse                         | `getBaseTypeName()`                               | `getBaseType()`                        |
   | ------------------------------------------ | ------------------------------------------------- | -------------------------------------- |
   | `Array(<Tipo Primitivo>)`                  | `<Tipo Primitivo>`                                | `<Tipo Primitivo JDBC>`                |
   | `Array(<Tipo Parametrizado>(<N>))`         | `<Tipo parametrizado>(<N>)`                       | `<tipo JDBC do tipo básico>`           |
@@ -399,7 +399,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -754,7 +754,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   * `net.inet.tcp.always_keepalive`: 1
   * `net.ipv4.tcp_keepalive_intvl`: 75
   * `net.ipv4.tcp_keepalive_probes`: 9
-  * `net.ipv4.tcp_keepalive_time`: 60 (Você pode considerar reduzir esse valor em relação ao valor padrão de 300 segundos)
+  * `net.ipv4.tcp_keepalive_time`: 60 (Você pode considerar reduzir esse valor em relação ao padrão de 300 segundos)
 
   2. Após modificar os parâmetros do kernel, aplique as alterações executando o seguinte comando:
 
@@ -919,7 +919,7 @@ import WideTableWrapper from "/snippets/pt-BR/components/WideTableWrapper/WideTa
   | IPv4                    | ✅                 | OTHER              | java.net.Inet4Address   | VARCHAR            | java.net.Inet4Address   |
   | IPv6                    | ✅                 | OTHER              | java.net.Inet6Address   | VARCHAR            | java.net.Inet6Address   |
   | Dynamic                 | ❌                 | OTHER              | java.Object             | não suportado      | não suportado           |
-  | Variant                 | ❌                 | OTHER              | java.Object             | não compatível     | não compatível          |
+  | Variant                 | ❌                 | OTHER              | java.Object             | não suportado      | não suportado           |
 
   * A V1 usa `VARCHAR` para `UUID`, mas sempre retorna um objeto `java.util.UUID`. A V2 corrige isso mapeando `UUID` para `OTHER` e retornando um objeto `java.util.UUID`.
   * A V1 usa `VARCHAR` para `IPv4` e `IPv6`, mas sempre retorna objetos `java.net.Inet4Address` e `java.net.Inet6Address`. A V2 corrige isso ao mapear `IPv4` e `IPv6` para `OTHER` e retornar objetos `java.net.Inet4Address` e `java.net.Inet6Address`.
