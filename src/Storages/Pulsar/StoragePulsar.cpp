@@ -28,7 +28,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ScopeExit.h>
+#include <base/scope_guard.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
