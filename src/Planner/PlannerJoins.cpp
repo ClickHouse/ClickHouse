@@ -1461,11 +1461,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Can't execute {} {} JOIN with any of the algorithms enabled by the 'join_algorithm' setting [{}] "
-                    "for the given right table storage type",
+                    "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+                    "with the given right table storage type",
+                    fmt::join(enabled_algorithm_names, ", "),
                     toString(table_join->strictness()),
-                    toString(table_join->kind()),
-                    fmt::join(enabled_algorithm_names, ", "));
+                    toString(table_join->kind()));
 }
 
 }
