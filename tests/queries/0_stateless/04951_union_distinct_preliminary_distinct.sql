@@ -2,17 +2,28 @@
 -- SELECT DISTINCT over UNION ALL rewrite. INTERSECT/EXCEPT DISTINCT already emit a
 -- single stream, so they keep the single final DISTINCT.
 
+-- The counts below are exact: one preliminary step per branch, and one DistinctTransform per
+-- branch plus the final one. A presence-only assertion would also pass on a step that is
+-- labelled preliminary but merges the streams, which is the whole regression.
+SET query_plan_lift_up_union = 1;
+
 SET enable_analyzer = 1;
 
-SELECT '-- analyzer: UNION DISTINCT has a preliminary DISTINCT';
-SELECT count() > 0 FROM (
+SELECT '-- analyzer: UNION DISTINCT has one preliminary DISTINCT per branch';
+SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x SETTINGS max_threads = 4
+) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: the rewrite plans the same way';
-SELECT count() > 0 FROM (
+SELECT count() FROM (
     EXPLAIN PLAN SELECT DISTINCT * FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x)
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT DISTINCT * FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) SETTINGS max_threads = 4
+) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT';
 SELECT count() FROM (
@@ -24,10 +35,13 @@ SELECT count() FROM (
 
 SET enable_analyzer = 0;
 
-SELECT '-- old analyzer: UNION DISTINCT has a preliminary DISTINCT';
-SELECT count() > 0 FROM (
+SELECT '-- old analyzer: UNION DISTINCT has one preliminary DISTINCT per branch';
+SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x UNION DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary DISTINCT%';
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT 1 AS x UNION DISTINCT SELECT 2 AS x SETTINGS max_threads = 4
+) WHERE explain ILIKE '%DistinctTransform%';
 
 SET enable_analyzer = 1;
 
@@ -109,13 +123,15 @@ SELECT count() FROM (
 );
 
 SELECT '-- size limits are enforced the same way as in the rewrite';
+-- The source is numbers(), not src: a Memory table ignores max_block_size, so the whole 600 rows
+-- arrive as one chunk and the limit is only checked after they are all emitted.
 SELECT count() FROM (
-    (SELECT i AS x FROM src) UNION DISTINCT (SELECT i AS x FROM src)
+    (SELECT number AS x FROM numbers(600)) UNION DISTINCT (SELECT number AS x FROM numbers(600))
 ) SETTINGS max_rows_in_distinct = 100, distinct_overflow_mode = 'break', max_block_size = 50;
 SELECT count() FROM (SELECT DISTINCT * FROM (
-    (SELECT i AS x FROM src) UNION ALL (SELECT i AS x FROM src)
+    (SELECT number AS x FROM numbers(600)) UNION ALL (SELECT number AS x FROM numbers(600))
 )) SETTINGS max_rows_in_distinct = 100, distinct_overflow_mode = 'break', max_block_size = 50;
 
 SELECT count() FROM (
-    (SELECT i AS x FROM src) UNION DISTINCT (SELECT i AS x FROM src)
+    (SELECT number AS x FROM numbers(600)) UNION DISTINCT (SELECT number AS x FROM numbers(600))
 ) SETTINGS max_rows_in_distinct = 100, distinct_overflow_mode = 'throw'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }

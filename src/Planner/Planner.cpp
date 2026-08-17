@@ -2102,8 +2102,8 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
-        /// UNION keeps one stream per branch, so a preliminary DISTINCT deduplicates each of them in
-        /// parallel and shrinks what the final single-stream DISTINCT has to merge. INTERSECT/EXCEPT
+        /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
+        /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
         /// already narrow their output to one stream, so a preliminary step there is pure overhead.
         const bool add_pre_distinct = union_mode == SelectUnionMode::UNION_DISTINCT;
 

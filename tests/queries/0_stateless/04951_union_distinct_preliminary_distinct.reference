@@ -1,12 +1,15 @@
--- analyzer: UNION DISTINCT has a preliminary DISTINCT
-1
+-- analyzer: UNION DISTINCT has one preliminary DISTINCT per branch
+2
+3
 -- analyzer: the rewrite plans the same way
-1
+2
+3
 -- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT
 0
 0
--- old analyzer: UNION DISTINCT has a preliminary DISTINCT
-1
+-- old analyzer: UNION DISTINCT has one preliminary DISTINCT per branch
+2
+3
 -- results match the rewrite, per type
 300	13284647348874942505
 300	13284647348874942505
@@ -32,5 +35,5 @@
 [0,1,2,3,4]
 14
 -- size limits are enforced the same way as in the rewrite
-600
-600
+100
+100
