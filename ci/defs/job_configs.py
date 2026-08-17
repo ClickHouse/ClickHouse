@@ -1799,7 +1799,7 @@ class JobConfigs:
 
     sign_macos_binary_jobs = Job.Config(
         name=JobNames.SIGN_MACOS,
-        runs_on=RunnerLabels.RELEASE_MAKER_AMD,
+        runs_on=["self-hosted", "amd-release-maker"],
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,
