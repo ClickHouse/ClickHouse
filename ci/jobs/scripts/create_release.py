@@ -755,6 +755,8 @@ class PackageDownloader:
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
+        with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
+        self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
         self.s3_release_prefix = release_packages.s3_release_prefix(release)
@@ -765,7 +767,9 @@ class PackageDownloader:
         self.rpm_package_files = []
         self.tgz_package_files = []
         self.macos_package_files = ["clickhouse-macos", "clickhouse-macos-aarch64"]
-        self.macos_signed_files = [f"{f}.zip" for f in self.macos_package_files]
+        self.macos_signed_files = (
+            [f"{f}.zip" for f in self.macos_package_files] if with_signed_macos else []
+        )
         self.file_to_job_name = {}
         self.macos_binary_to_job_name = {}
         self.macos_signed_to_job_name = {}
@@ -788,10 +792,16 @@ class PackageDownloader:
             assert dest_bin in self.macos_package_files
             self.macos_binary_to_job_name[dest_bin] = job_name_darwin
 
-        for package_arch, job_name_sign in release_packages.iter_macos_signed_objects():
-            dest_zip = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}.zip"
-            assert dest_zip in self.macos_signed_files
-            self.macos_signed_to_job_name[dest_zip] = job_name_sign
+        if with_signed_macos:
+            for (
+                package_arch,
+                job_name_sign,
+            ) in release_packages.iter_macos_signed_objects():
+                dest_zip = (
+                    f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}.zip"
+                )
+                assert dest_zip in self.macos_signed_files
+                self.macos_signed_to_job_name[dest_zip] = job_name_sign
 
     def get_deb_packages_files(self):
         return self.deb_package_files

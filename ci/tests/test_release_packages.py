@@ -11,6 +11,7 @@ is skipped where that dependency is absent, like `test_create_release.py`.
 """
 
 import os
+import subprocess
 import sys
 import unittest
 
@@ -28,7 +29,7 @@ class TestReleasePackagesEnumeration(unittest.TestCase):
         # Releases use the `REFs/<branch>` prefix and `build_<arch>_release` /
         # `build_<arch>_darwin` job dirs.
         self.assertEqual(rp.s3_release_prefix("26.3"), "REFs/26.3")
-        objs = rp.expected_s3_objects("26.3.9.100")
+        objs = rp.expected_s3_objects("26.3.9.100", with_signed_macos=True)
         self.assertEqual(
             set(objs),
             {
@@ -59,6 +60,51 @@ class TestReleasePackagesEnumeration(unittest.TestCase):
         self.assertIn("clickhouse-server-26.3.9.100.aarch64.rpm", arm)
 
 
+class TestReleasePackagesWithoutSigning(unittest.TestCase):
+    """A release branch cut before signing existed runs its own
+    `ReleaseBranchCI`, which never uploads the signed zips. Requiring them for
+    such a commit would reject every candidate and block its patch releases."""
+
+    def test_signed_zips_absent_from_the_contract(self):
+        objs = rp.expected_s3_objects("26.3.9.100", with_signed_macos=False)
+        self.assertEqual(
+            set(objs),
+            {
+                "build_amd_release",
+                "build_arm_release",
+                "build_amd_darwin",
+                "build_arm_darwin",
+            },
+        )
+        self.assertEqual(sum(len(v) for v in objs.values()), 50)
+
+    def test_ready_without_the_signed_zips_in_s3(self):
+        prefix = rp.s3_release_prefix("26.3")
+        keys = [
+            f"{prefix}/deadbeef/{job}/{name}"
+            for job, files in rp.expected_s3_objects(
+                "26.3.9.100", with_signed_macos=False
+            ).items()
+            for name in files
+        ]
+        self.assertTrue(
+            rp.release_build_artifacts_ready(
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100", False
+            )
+        )
+        self.assertFalse(
+            rp.release_build_artifacts_ready(
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100", True
+            )
+        )
+
+
+class TestCommitHasMacosSigning(unittest.TestCase):
+    def test_raises_on_a_commit_absent_from_the_repository(self):
+        with self.assertRaises(RuntimeError):
+            rp.commit_has_macos_signing("0" * 40)
+
+
 class _FakeS3:
     """Minimal `list_prefix` stand-in: returns the keys present under a prefix."""
 
@@ -73,7 +119,9 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
     def _all_keys(self, release, commit_sha, version):
         prefix = rp.s3_release_prefix(release)
         keys = []
-        for job, files in rp.expected_s3_objects(version).items():
+        for job, files in rp.expected_s3_objects(
+            version, with_signed_macos=True
+        ).items():
             for name in files:
                 keys.append(f"{prefix}/{commit_sha}/{job}/{name}")
         return keys
@@ -82,7 +130,7 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
         keys = self._all_keys("26.3", "deadbeef", "26.3.9.100")
         self.assertTrue(
             rp.release_build_artifacts_ready(
-                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100"
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100", True
             )
         )
 
@@ -93,7 +141,7 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
         keys = [k for k in keys if not k.endswith("/build_arm_darwin/clickhouse")]
         self.assertFalse(
             rp.release_build_artifacts_ready(
-                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100"
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100", True
             )
         )
 
@@ -108,7 +156,7 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
         ]
         self.assertFalse(
             rp.release_build_artifacts_ready(
-                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100"
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100", True
             )
         )
 
@@ -123,7 +171,15 @@ class TestPackageDownloaderCoupling(unittest.TestCase):
         from ci.jobs.scripts.create_release import PackageDownloader
 
         release, version = "26.3", "26.3.9.100"
-        pd = PackageDownloader(release=release, commit_sha="deadbeef", version=version)
+        # A real commit, because PackageDownloader derives the signed-macOS part
+        # of the contract from the commit's own tree.
+        commit_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        pd = PackageDownloader(release=release, commit_sha=commit_sha, version=version)
         # Rebuild PackageDownloader's S3-object view: deb/rpm/tgz files by
         # job, plus the fixed `clickhouse` object under each darwin job.
         pd_objects = {}  # type: dict[str, set]
@@ -135,7 +191,9 @@ class TestPackageDownloaderCoupling(unittest.TestCase):
             pd_objects.setdefault(job, set()).add(rp.MACOS_SIGNED_S3_OBJECT)
         self.assertEqual(
             pd_objects,
-            rp.expected_s3_objects(version),
+            rp.expected_s3_objects(
+                version, with_signed_macos=rp.commit_has_macos_signing(commit_sha)
+            ),
             f"PackageDownloader vs expected_s3_objects drift for {release}",
         )
 
