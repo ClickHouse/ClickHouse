@@ -256,6 +256,7 @@ public:
     {
         std::lock_guard lock(interval_index_mutex);
         ++global_generation;
+        part_generations.clear();
         Base::clear();
         interval_index.clear();
         sets_since_compaction = 0;

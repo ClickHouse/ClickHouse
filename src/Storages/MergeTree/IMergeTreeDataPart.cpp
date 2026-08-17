@@ -1078,7 +1078,10 @@ void IMergeTreeDataPart::clearCaches()
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 
     /// Remove deserialized columns from cache
-    if (auto columns_cache = storage.getContext()->getColumnsCache())
+    if (getType() == MergeTreeDataPartType::Wide
+        && !isProjectionPart()
+        && storage.getStorageID().uuid != UUIDHelpers::Nil
+        && (auto columns_cache = storage.getContext()->getColumnsCache()))
         columns_cache->removePart(storage.getStorageID().uuid, name);
 }
 

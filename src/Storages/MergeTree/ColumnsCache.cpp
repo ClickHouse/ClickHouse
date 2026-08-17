@@ -340,6 +340,7 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     /// deferred set() from a reader that captured an older generation is rejected
     /// and cannot repopulate the cache with stale data after this invalidation.
     ++table_generations[table_uuid];
+    std::erase_if(part_generations, [&](const auto & item) { return item.first.table_uuid == table_uuid; });
 
     std::vector<PartIdentifier> parts_to_remove;
     std::vector<Key> keys_to_remove;
