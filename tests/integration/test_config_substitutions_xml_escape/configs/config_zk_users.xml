@@ -14,6 +14,11 @@
     <profile_zk_yaml_sequence>
         <include from_zk="/profile_settings_yaml_sequence" yaml="true" />
     </profile_zk_yaml_sequence>
+    <profile_zk_yaml_include_in_leaf>
+        <log_comment>
+            <include from_zk="/profile_settings_yaml" yaml="true" />
+        </log_comment>
+    </profile_zk_yaml_include_in_leaf>
     <!-- The ZooKeeper node holds a value that is a valid YAML mapping ("abc: def"), but it is
          used as a leaf substitution (not a structural <include>), so it must be kept as literal
          text and not expanded into an <abc>def</abc> sub-element. This is how existing scalar
@@ -72,6 +77,11 @@
           <profile>profile_zk_yaml_sequence</profile>
           <quota>default</quota>
       </zk_yaml_sequence>
+      <zk_yaml_include_in_leaf>
+          <password></password>
+          <profile>profile_zk_yaml_include_in_leaf</profile>
+          <quota>default</quota>
+      </zk_yaml_include_in_leaf>
       <zk_leaf_mapping>
           <password></password>
           <profile>profile_zk_leaf_mapping</profile>
