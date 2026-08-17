@@ -130,9 +130,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -144,9 +144,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
 {
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -250,7 +250,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
     {
@@ -261,9 +261,14 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    return ThreadGroupPtr(new ThreadGroup(parent_thread_group));
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group)
+{
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent_thread_group));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
