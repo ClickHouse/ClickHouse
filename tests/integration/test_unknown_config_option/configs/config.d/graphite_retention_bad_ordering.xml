@@ -1,0 +1,26 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose `<pattern>` carries two
+        `<retention>` blocks whose `age` and `precision` do not grow together (age ascends while
+        precision descends). Every child name is a recognized rollup key and both blocks have a valid
+        `<age>`/`<precision>`, but `appendGraphitePattern` finishes by sorting the retentions with
+        `compareRetentions`, which throws `BAD_ARGUMENTS` ("Age and precision should only grow up") for
+        such a rule, so the section would never load. The unknown-key validator must mirror that
+        ordering check (not merely accept two well-formed `<retention>` blocks) and reject the whole
+        section as an unknown top-level key (a typo). The node must fail to start with
+        `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    -->
+    <graphite_retention_bad_ordering>
+        <pattern>
+            <regexp>.*</regexp>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <retention>
+                <age>86400</age>
+                <precision>10</precision>
+            </retention>
+        </pattern>
+    </graphite_retention_bad_ordering>
+</clickhouse>

@@ -168,7 +168,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    info.task = context->getSchedulePool().createTask(StorageID::createEmpty(), "QueryMetricLog", [this, &process_list, query_id] {
+    info.task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "QueryMetricLog", [this, &process_list, query_id] {
         collectMetric(process_list, query_id);
     });
 

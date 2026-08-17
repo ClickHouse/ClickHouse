@@ -166,9 +166,12 @@ namespace Setting
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool enable_sharding_aggregator;
+    extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
@@ -678,7 +681,10 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge]);
+        settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_adaptive_aggregator],
+        settings[Setting::adaptive_aggregator_freeze_threshold]);
 
     return aggregator_params;
 }
@@ -799,7 +805,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         max_threads,
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_packed_string_keys_in_aggregation]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -898,6 +905,20 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     }
 }
 
+/// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
+/// input early. Shared by `addDistinctStep` and `addLimitStep` so the two cannot drift apart.
+bool limitAlwaysReadsTillEnd(
+    const QueryAnalysisResult & query_analysis_result, const Settings & settings, const QueryNode & query_node)
+{
+    if (settings[Setting::exact_rows_before_limit])
+        return true;
+
+    if (query_node.isGroupByWithTotals())
+        return !query_node.hasOrderBy();
+
+    return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
+}
+
 void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
@@ -923,12 +944,17 @@ void addDistinctStep(QueryPlan & query_plan,
       *    the number of distinct rows collected from the head).
       * 5. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
       *    all rows are read, so it cannot bound the number of distinct rows either).
+      * 6. LIMIT is not WITH TIES (the tie suffix of the last row is unbounded).
+      * 7. The LIMIT does not read till end: such a LIMIT needs the whole stream, either to count
+      *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
     if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
-        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0
+        && !query_node.isLimitWithTies()
+        && !limitAlwaysReadsTillEnd(query_analysis_result, settings, query_node))
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
@@ -1462,10 +1488,7 @@ void addLimitStep(
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-    bool limit_with_ties = query_node.isLimitWithTies();
-
-    /** Special cases:
+    /** Special cases handled by the predicate:
       *
       * 1. If there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
       *  otherwise TOTALS is counted according to incomplete data.
@@ -1474,11 +1497,8 @@ void addLimitStep(
       *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
       *  because if you cancel the query, we will not get `totals` data from the remote server.
       */
-    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
-        always_read_till_end = true;
-
-    if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
-        always_read_till_end = true;
+    bool always_read_till_end = limitAlwaysReadsTillEnd(query_analysis_result, settings, query_node);
+    bool limit_with_ties = query_node.isLimitWithTies();
 
     SortDescription limit_with_ties_sort_description;
 
@@ -2214,7 +2234,6 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
-    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
 
     if (!select_query_info.has_window && query_node.hasQualify())
     {
@@ -2301,12 +2320,16 @@ void Planner::buildPlanForQueryNode()
                 continue;
 
             const auto & modifiers = table_node->getTableExpressionModifiers();
-            if (modifiers.has_value() && modifiers->hasFinal())
+            /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
+            if (modifiers.has_value()
+                && (modifiers->hasFinal()
+                    || (modifiers->hasStream() && query_context->canUseParallelReplicasOnInitiator())))
             {
+                const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier);
 
-                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                LOG_DEBUG(log, "{} modifier is not supported with parallel replicas. Query will be executed without using them.", modifier);
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 break;
@@ -2713,6 +2736,9 @@ void Planner::buildPlanForQueryNode()
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
         && !client_info.is_replicated_database_internal
+        // A local shard/replica plan is united into the parent pipeline in this process, where
+        // nothing unmarshalls the blocks.
+        && !select_query_options.is_local_plan_for_distributed_query
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 

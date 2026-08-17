@@ -12,7 +12,6 @@ from ci.defs.defs import (
     JobNames,
     RunnerLabels,
 )
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
 # Using nearly all host RAM for the outer container can starve the host runner
@@ -118,7 +117,7 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -202,7 +201,7 @@ class JobConfigs:
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.ARM_SMALL,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
@@ -280,14 +279,13 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
+            provides=[ArtifactNames.CH_AMD_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
             provides=[
                 ArtifactNames.CH_AMD_ASAN_UBSAN,
-                ArtifactNames.DEB_AMD_ASAN_UBSAN,
                 ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -296,7 +294,6 @@ class JobConfigs:
             parameter=BuildTypes.AMD_TSAN,
             provides=[
                 ArtifactNames.CH_AMD_TSAN,
-                ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -305,7 +302,6 @@ class JobConfigs:
             parameter=BuildTypes.AMD_MSAN,
             provides=[
                 ArtifactNames.CH_AMD_MSAN,
-                ArtifactNames.DEB_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -317,28 +313,22 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
-            provides=[ArtifactNames.CH_ARM_DEBUG, ArtifactNames.DEB_ARM_DEBUG],
+            provides=[ArtifactNames.CH_ARM_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_ARM_ASAN_UBSAN,
-                ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ],
+            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[
-                ArtifactNames.CH_ARM_TSAN,
-                ArtifactNames.DEB_ARM_TSAN,
-            ],
+            provides=[ArtifactNames.CH_ARM_TSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
+            provides=[ArtifactNames.CH_ARM_MSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -402,7 +392,7 @@ class JobConfigs:
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
-            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            provides=[ArtifactNames.CH_AMD_CFI],
             runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
@@ -422,7 +412,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_cfi",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_CFI],
+            requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
@@ -526,33 +516,16 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
+            parameter=BuildTypes.WASM64,
+            provides=[ArtifactNames.CH_WASM64],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
-    # stages the .options files, a source-derived fallback all.dict, and seed
-    # corpora repacked from tests/queries/0_stateless/*.sql into the build
-    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
-    # depends on the inputs under tests/fuzz and on the stateless test queries,
-    # which the shared build digest does not cover. Extend the digest of the
-    # fuzzers build only, so that a dictionary generation or corpus change
-    # cannot cache-hit a stale artifact while the other builds are unaffected.
-    special_build_jobs = [
-        (
-            job.set_digest_config(
-                Job.CacheDigestConfig(
-                    include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
-                    with_git_submodules=True,
-                )
-            )
-            if job.parameter == BuildTypes.ARM_FUZZERS
-            else job
-        )
-        for job in special_build_jobs
-    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -561,9 +534,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
+        # images before installing, not just afterwards. Best-effort: praktika does
+        # not propagate a hook's exit code to the job status.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -595,9 +573,12 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # See install_check_jobs above.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -651,6 +632,18 @@ class JobConfigs:
     # merge queue produces anyway; merge-queue runs use a reduced iteration
     # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
     # latency bounded.
+    #
+    # The same job config also runs in PR CI (see `ci/workflows/pull_request.py`),
+    # so the configuration that can bounce a PR from the merge queue is seen in
+    # the PR first, with the full iteration count and time budget. One config
+    # for both workflows keeps the two lanes from drifting apart, and it does
+    # not merge their praktika cache records: `calc_job_digest` hashes the
+    # mangled job config, and the PR workflow mangles it differently - the
+    # `pr-` runner-label prefix from `runs_on_label_prefix` and its own
+    # `run_after` list - so each workflow keeps its own cache key. That is what
+    # preserves the drift guard: a green PR-side run cannot mark the
+    # merge-queue run as cached, so the merge group state is still rechecked.
+    # `ci/tests/test_flaky_check_pr_parity.py` pins both halves of this.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
@@ -837,7 +830,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1031,52 +1024,52 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_DEBUG],
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
+            requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="arm_release",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_RELEASE],
+            requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_debug",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_DEBUG],
+            requires=[ArtifactNames.CH_ARM_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan, s3",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_TSAN],
+            requires=[ArtifactNames.CH_ARM_TSAN],
         ),
         Job.ParamSet(
             parameter="arm_msan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_MSAN],
+            requires=[ArtifactNames.CH_ARM_MSAN],
         ),
     )
     # might be heavy on azure - run only on master
@@ -1084,12 +1077,12 @@ class JobConfigs:
         Job.ParamSet(
             parameter="azure, amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
+            requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="azure, amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     upgrade_test_jobs = Job.Config(
@@ -1291,6 +1284,9 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
+        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
+        # residue per run, which is what the next job on that runner inherits.
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1314,6 +1310,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1352,6 +1349,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1380,6 +1378,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1500,26 +1499,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
-    docs_job = Job.Config(
-        name=JobNames.DOCS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/docs_job.py",
-        digest_config=Job.CacheDigestConfig(
-            # Restrict to the legacy Docusaurus content tree so that PRs which
-            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
-            # etc.) do not trigger this job.
-            include_paths=[
-                "./docs/en/",
-                "./docs/changelogs/",
-                "./ci/jobs/docs_job.py",
-                "CHANGELOG.md",
-                "./src/Functions",
-            ],
-        ),
-        run_in_docker="clickhouse/docs-builder",
-        requires=[ArtifactNames.CH_ARM_BINARY],
-        run_after=[JobNames.STYLE_CHECK],
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1529,22 +1508,20 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
+                "./utils/generate-async-metrics-docs",
+                "./utils/generate-system-tables-docs",
             ],
-            # Exclude everything currently in ./docs so that this job runs only
-            # on files that are NOT part of the legacy docs tree (i.e. the new
-            # Mintlify site files such as ./docs/docs.json and any new Mintlify
-            # content). Add new excludes here if more non-Mintlify content is
-            # introduced under ./docs.
+            # These files are internal inputs or contributor documentation, not
+            # pages published by Mintlify.
             exclude_paths=[
                 "./docs/README.md",
                 "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
-                "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        run_in_docker="clickhouse/docs-builder",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
@@ -1674,19 +1651,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        # The release binary is used to generate the fuzzer dictionary (all.dict)
-        # from the actual set of functions, data types and keywords.
-        requires=[
-            ArtifactNames.ARM_FUZZERS,
-            ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_ARM_RELEASE,
-        ],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/update_dict.sh",
-                "./tests/fuzz/dictionaries/old.dict",
-            ],
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
