@@ -399,7 +399,7 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
     if (ownership_lost)
     {
         created_processing_node = false;
-        file_status->reset();
+        (*file_status).reset();
         /// Not a logical error: a claim of a process which was unregistered and did not
         /// refresh for longer than the abandoned-reclaim TTL (e.g. it was paused with
         /// SYSTEM STOP, or lost its Keeper session for that long) is legitimately
