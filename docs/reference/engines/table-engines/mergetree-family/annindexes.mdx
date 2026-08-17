@@ -7,7 +7,7 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
@@ -411,7 +411,7 @@ A query run without rescoring (`vector_search_with_rescoring = 0`) and with para
 **Tuning compression**
 
 In virtually all use cases, the vectors in the underlying column are dense and do not compress well.
-As a result, [compression](/reference/statements/create/table#column_compression_codec) slows down inserts and reads into/from the vector column.
+As a result, [compression](/reference/statements/create/table/codec) slows down inserts and reads into/from the vector column.
 We therefore recommend to disable compression.
 To do that, specify `CODEC(NONE)` for the vector column like this:
 

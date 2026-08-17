@@ -7,7 +7,7 @@ title: 'Full-text Search with Text Indexes'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Text indexes (also known as [inverted indexes](https://en.wikipedia.org/wiki/Inverted_index)) enable fast full-text search on text data.
 A text index stores a mapping from tokens to the row numbers which contain each token.
@@ -82,6 +82,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -119,6 +120,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -157,6 +159,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `chinese[(granularity)]` segments Chinese text into words using a dictionary and a hidden Markov model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)). Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens). This yields more meaningful tokens for Chinese text and higher search quality. For general/mixed text, please use `asciiCJK`, for Chinese-only text, please use `chinese`. The optional `granularity` argument is either `'coarse_grained'` (the default if not specified) or `'fine_grained'`. The latter additionally enumerates overlapping sub-words for example `北京邮电大学` also yields `北京`, `邮电`, `大学`. Fine-grained tokenization improves recall at the cost of a larger index.
+  Search a `chinese` text index with [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens) (which tokenize the needle with the `chinese` tokenizer), not `hasToken` (which splits on ASCII separators only).
 - `icu(locale)` splits strings into word tokens using the [ICU](https://icu.unicode.org/) library's Unicode word segmentation (UAX #29). For scripts that do not put whitespace between words (e.g., Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so — unlike `asciiCJK` — such text is split into meaningful multi-character words instead of single characters. Here, "dictionary" means ICU's bundled word lists for those scripts (see [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU chooses the most likely split over those words.
   `locale` is the ICU locale passed to the segmenter; segmentation is mainly script- and dictionary-driven, and the locale selects ICU's locale-specific tailoring. It is a mandatory parameter, for example `tokenizer = icu('ja')` or `tokenizer = icu('zh')`.
   The available locales can be listed with `SELECT * FROM system.collations`.
@@ -261,6 +265,7 @@ Text indexes can be built on top of text data in any language and character set.
 For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
 For languages that do not separate words by whitespace (for example Chinese, Japanese, or Thai), the `icu(locale)` tokenizer produces meaningful multi-character word tokens via ICU's dictionary-based word segmentation.
 For Japanese specifically, the `japanese` tokenizer (MeCab) segments text into words rather than single characters and generally gives better search results.
+For Chinese specifically, the `chinese` tokenizer (jieba) segments text into words rather than single characters and generally gives better search results.
 
 <a id="preprocessor-argument-optional"></a>**Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
 
