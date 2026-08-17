@@ -52,7 +52,7 @@ GROUP BY k1 WITH ROLLUP
 HAVING sum(v * mult) > 0
 ORDER BY g, r, k1 LIMIT 20;
 
-SELECT '-- grouping over a wide cube: bit arithmetic, no per-set lookup table';
+SELECT '-- grouping over a wide cube';
 SELECT count(), sum(g), min(g), max(g) FROM
 (
     SELECT grouping(v % 2) AS g, count()

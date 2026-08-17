@@ -34,10 +34,17 @@ public:
             return;
 
 
+        auto & arguments = function->getArguments().getNodes();
+
+        /// The analyzer appends constant arguments carrying the specialization parameters (two for
+        /// `groupingOrdinary`, three for the rest); they must not reach the query text either.
+        const size_t num_state_arguments = ordinary_grouping ? 2 : 3;
+        if (arguments.size() < num_state_arguments)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping function specialization must have arguments");
+        arguments.resize(arguments.size() - num_state_arguments);
+
         if (!ordinary_grouping)
         {
-            auto & arguments = function->getArguments().getNodes();
-
             if (arguments.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping function specialization must have arguments");
             auto * grouping_set_arg = arguments[0]->as<ColumnNode>();

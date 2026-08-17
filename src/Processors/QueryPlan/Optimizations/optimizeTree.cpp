@@ -188,7 +188,6 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void despecializeGroupingFunctions(QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -364,11 +363,6 @@ void optimizeTreeSecondPass(
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
     if (make_distributed_plan)
         validateDistributedPlanBucketCounts(optimization_settings);
-    /// The `grouping` function specializations hold state a serialized plan cannot carry; replace
-    /// them with a precomputed lookup over `__grouping_set` so any stage can execute the expression.
-    if (make_distributed_plan)
-        despecializeGroupingFunctions(root);
-
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node)

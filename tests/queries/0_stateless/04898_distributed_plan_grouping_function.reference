@@ -50,20 +50,19 @@ b	1	1	0	83333
 0	2	499500	0
 1	0	250000	0
 1	0	250000	0
--- distributed plan shows the rewritten expression
+-- distributed plan shows the specialization with its constant arguments
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
 Actions: INPUT : 0 -> sum(__table1.v) UInt64 : 0
          INPUT : 1 -> __table1.k1 String : 1
          INPUT : 2 -> __grouping_set UInt64 : 2
-         COLUMN Const(Array(UInt64)) -> __grouping_masks_of_groupingForRollup(__grouping_set, __table1.k1) Array(UInt64) : 3
-         COLUMN Const(UInt8) -> __grouping_one_of_groupingForRollup(__grouping_set, __table1.k1) UInt8 : 4
-         ALIAS sum(__table1.v) :: 0 -> sum(v) UInt64 : 5
-         ALIAS __table1.k1 :: 1 -> k1 String : 0
-         FUNCTION plus(__grouping_set :: 2, __grouping_one_of_groupingForRollup(__grouping_set, __table1.k1) :: 4) -> plus(__grouping_set, __grouping_one_of_groupingForRollup(__grouping_set, __table1.k1)) UInt64 : 1
-         FUNCTION arrayElement(__grouping_masks_of_groupingForRollup(__grouping_set, __table1.k1) :: 3, plus(__grouping_set, __grouping_one_of_groupingForRollup(__grouping_set, __table1.k1)) :: 1) -> arrayElement(__grouping_masks_of_groupingForRollup(__grouping_set, __table1.k1), plus(__grouping_set... UInt64 : 4
-         ALIAS arrayElement(__grouping_masks_of_groupingForRollup(__grouping_set, __table1.k1), plus(__grouping_set, __grouping_one_of_groupingForRollup(__grouping_set, __table1.k1))) :: 4 -> groupingForRollup(__grouping_set, __table1.k1) UInt64 : 1
-         ALIAS groupingForRollup(__grouping_set, __table1.k1) :: 1 -> g UInt64 : 4
-Positions: 0 4 5
+         COLUMN Const(Array(UInt64)) -> _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String) Array(UInt64) : 3
+         COLUMN Const(UInt64) -> _CAST(1_UInt64, \'UInt64\'_String) UInt64 : 4
+         COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 5
+         ALIAS sum(__table1.v) :: 0 -> sum(v) UInt64 : 6
+         ALIAS __table1.k1 : 1 -> k1 String : 0
+         FUNCTION groupingForRollup(__grouping_set :: 2, __table1.k1 :: 1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String) :: 3, _CAST(1_UInt64, \'UInt64\'_String) :: 4, 1_UInt8 :: 5) -> groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _CA... UInt64 : 7
+         ALIAS groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _CAST(1_UInt64, \'UInt64\'_String), 1_UInt8) :: 7 -> g UInt64 : 5
+Positions: 0 5 6
   GatherExchange (sorted by (__table1.k1 ASC))
     Sorting (Sorting for ORDER BY)
     Sort description: __table1.k1 ASC

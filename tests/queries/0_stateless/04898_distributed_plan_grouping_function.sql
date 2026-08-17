@@ -1,10 +1,10 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- `grouping` under `make_distributed_plan`. Its specializations (`groupingForRollup` etc.) hold
--- their parameters inside the function object, which a serialized plan cannot carry, so the plan
--- optimizer replaces them with a lookup `arrayElement([...], __grouping_set + 1)` over
--- precomputed per-set values. The values bake in `force_grouping_standard_compatibility`.
+-- `grouping` under `make_distributed_plan`. The analyzer resolves it into a specialization
+-- (`groupingForRollup` etc.) whose parameters travel as trailing constant arguments, so a
+-- serialized plan can rebuild the function from its name and arguments alone. One of the
+-- constants bakes in `force_grouping_standard_compatibility`.
 
 DROP TABLE IF EXISTS t_grouping_dist;
 -- Pin the granularity: the EXPLAIN below prints the granule count of the read.
@@ -65,7 +65,7 @@ FROM (
 GROUP BY k2, g_inner WITH ROLLUP
 ORDER BY ALL;
 
-SELECT '-- distributed plan shows the rewritten expression';
+SELECT '-- distributed plan shows the specialization with its constant arguments';
 EXPLAIN actions = 1 SELECT k1, grouping(k1) AS g, sum(v) FROM t_grouping_dist GROUP BY k1 WITH ROLLUP ORDER BY k1;
 
 DROP TABLE t_grouping_dist;
