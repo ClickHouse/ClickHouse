@@ -439,19 +439,26 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
-/// Recover the subcolumn split for a flattened dotted name like `data.keys`, which is not a Delta Lake field path.
 static NameAndTypePair resolveFlattenedSubcolumn(
     const NameAndTypePair & column,
     const StorageSnapshotPtr & storage_snapshot)
 {
-    if (column.isSubcolumn())
+    const GetColumnsOptions options(GetColumnsOptions::All);
+    const auto & columns = storage_snapshot->metadata->getColumns();
+
+    if (columns.tryGetColumn(options, column.getNameInStorage()))
         return column;
 
-    auto resolved = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(
-        GetColumnsOptions::All, column.name);
-
-    if (resolved && resolved->isSubcolumn())
-        return *resolved;
+    /// Longest prefix first, so that a column whose own name contains a dot wins.
+    for (size_t pos = column.name.rfind('.'); pos != String::npos && pos > 0; pos = column.name.rfind('.', pos - 1))
+    {
+        if (auto column_in_storage = columns.tryGetColumn(options, column.name.substr(0, pos)))
+        {
+            auto result = column;
+            result.setDelimiterAndTypeInStorage(column_in_storage->name, column_in_storage->type);
+            return result;
+        }
+    }
 
     return column;
 }
