@@ -180,8 +180,7 @@ void IStorage::read(
     const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
-    /// Output ports are bounded by the threads consuming them, not by the
-    /// `max_streams_to_max_threads_ratio` over-request carried in `num_streams`.
+    /// `num_streams` is a read-parallelism request, not a thread budget.
     const auto & settings = context->getSettingsRef();
     const size_t resize_to = std::min(
         num_streams,

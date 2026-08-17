@@ -156,8 +156,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
-    /// Output ports are bounded by the threads consuming them, not by the
-    /// `max_streams_to_max_threads_ratio` over-request carried in `max_num_streams`.
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     if (parallelize_output
         && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
