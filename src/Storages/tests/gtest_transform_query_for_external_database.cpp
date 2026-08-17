@@ -444,6 +444,14 @@ TEST(TransformQueryForExternalDatabase, Strict)
           "SELECT field FROM table WHERE field LIKE '%test%'",
           R"(SELECT "field" FROM "test"."table" WHERE "field" LIKE '%test%')");
 
+    /// A filter on a joined source is evaluated by the outer query and does not make the
+    /// predicate on this external source non-pushdownable.
+    check(state, 2, {"column", "apply_id"},
+          "SELECT column FROM test.table "
+          "JOIN test.table2 AS table2 ON test.table.apply_id = table2.num "
+          "WHERE column > 2 AND apply_id = 1 AND table2.num = 1",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+
     /// removeUnknownSubexpressionsFromWhere() takes place
     EXPECT_THROW(check(state, 1, {"field"}, "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)", ""), Exception);
     /// !isCompatible() takes place
@@ -469,6 +477,32 @@ TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyz
     query_info.query = ast;
 
     /// An outer filter that belongs only to a joined source is not a filter on the query-backed external source.
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+
+    ast = parseQuery(
+        parser,
+        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num WHERE 1 AND table2.num = 1",
+        1000,
+        1000,
+        1000000);
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
+    query_info.query = ast;
+
+    /// Pruning a foreign predicate may leave a true literal, which is not a filter on the source.
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+
+    ast = parseQuery(
+        parser,
+        "SELECT column FROM test.table JOIN test.table2 AS table2 ON test.table.apply_id = table2.num PREWHERE table2.num = 1",
+        1000,
+        1000,
+        1000000);
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(2));
+    query_info.query = ast;
+
+    /// A foreign-table `PREWHERE` must likewise not be treated as a filter on the query-backed source.
     EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
 
     state.context->setSetting("external_table_strict_query", false);

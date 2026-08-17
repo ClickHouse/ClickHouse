@@ -649,6 +649,28 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & 
     return removeUnknownSubexpressions(node, known_names);
 }
 
+bool containsSourceColumn(const ASTPtr & node, const NameSet & source_columns)
+{
+    if (!node)
+        return false;
+
+    if (const auto * ident = node->as<ASTIdentifier>(); ident && source_columns.contains(ident->name()))
+        return true;
+
+    for (const auto & child : node->children)
+        if (containsSourceColumn(child, source_columns))
+            return true;
+
+    return false;
+}
+
+bool isTruePredicate(const ASTPtr & node)
+{
+    const auto * literal = node ? node->as<ASTLiteral>() : nullptr;
+    UInt64 value = 0;
+    return literal && literal->value.tryGet<UInt64>(value) && value == 1;
+}
+
 String transformQueryForExternalDatabaseImpl(
     ASTPtr clone_query,
     Names used_columns,
@@ -681,6 +703,21 @@ String transformQueryForExternalDatabaseImpl(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
+    NameSet source_columns;
+    for (const auto & column : available_columns)
+        source_columns.insert(column.name);
+    const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
+
+    /// First remove predicates belonging to other sources. Such predicates are evaluated by the
+    /// outer query and must not make strict mode reject a valid remote filter.
+    auto foreign_where_result = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    if (!foreign_where_result.keep)
+    {
+        if (strict && where_contains_source_column)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
+        original_where.reset();
+    }
+
     NamesAndTypesList pushdown_columns;
     for (const auto & column : available_columns)
         if (!local_only_columns.contains(column.name))
@@ -861,16 +898,28 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         /// joined sources exactly as `transformQueryForExternalDatabase` does before checking whether a filter
         /// remains for this source. A filter on a different table is evaluated outside this source and must not
         /// make a query-backed external table fail under `external_table_strict_query`.
-        auto & where = clone_query->as<ASTSelectQuery &>().refWhere();
-        removeUnknownSubexpressionsFromWhere(where, available_columns);
-        auto & prewhere = clone_query->as<ASTSelectQuery &>().refPrewhere();
-        removeUnknownSubexpressionsFromWhere(prewhere, available_columns);
+        auto & select = clone_query->as<ASTSelectQuery &>();
+        if (select.where())
+        {
+            auto & where = select.refWhere();
+            auto where_result = removeUnknownSubexpressionsFromWhere(where, available_columns);
+            if (!where_result.keep)
+                where.reset();
+        }
+
+        if (select.prewhere())
+        {
+            auto & prewhere = select.refPrewhere();
+            auto prewhere_result = removeUnknownSubexpressionsFromWhere(prewhere, available_columns);
+            if (!prewhere_result.keep)
+                prewhere.reset();
+        }
     }
     else
         return;
 
     const auto * select = clone_query->as<ASTSelectQuery>();
-    if (select && (select->where() || select->prewhere()))
+    if (select && ((select->where() && !isTruePredicate(select->where())) || (select->prewhere() && !isTruePredicate(select->prewhere()))))
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
             "The query contains a filter that cannot be pushed down to the external database, because the data "
