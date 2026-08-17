@@ -1,0 +1,173 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'hashed 字典布局类型'
+sidebarTitle: 'hashed'
+description: '使用哈希表在内存中存储字典：hashed、sparse_hashed、complex_key_hashed、complex_key_sparse_hashed'
+doc_type: 'reference'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+该字典以哈希表形式完整存储在内存中。字典可包含任意数量、使用任意标识符的元素。实际使用中，键的数量可达到数千万级别。
+
+字典键的类型为 [UInt64](/zh/reference/data-types/int-uint)。
+
+支持所有类型的数据源。更新时，会完整读取全部数据 (来自文件或表) 。
+
+配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+带设置项的配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- 如果分片数大于 1（默认值为 `1`），字典将并行加载
+             数据；当单个字典中包含大量元素时，这会很有帮助。 -->
+        <shards>10</shards>
+
+        <!-- 并行队列中块的积压大小。
+
+             由于并行加载中的瓶颈在于重新哈希，因此为了避免
+             线程在执行重新哈希时造成停顿，需要保留一定的
+             积压。
+
+             10000 在内存和速度之间提供了较好的平衡。
+             即使对于 10e10 个元素，也能处理全部负载而不会发生饥饿。 -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- 哈希表的最大负载因子。该值越大，内存
+             利用率越高（浪费的内存更少），但读取性能
+             可能会下降。
+
+             有效值：[0.5, 0.99]
+             默认值：0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+与 `hashed` 类似，但会以增加 CPU 使用为代价来降低内存占用。
+
+字典键的类型为 [UInt64](/zh/reference/data-types/int-uint)。
+
+配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+这种类型的字典也可以使用 `shards`；而且由于 `sparse_hashed` 速度更慢，这一点相比 `hashed` 更为重要。
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+这种存储类型适用于复合[键](/zh/reference/statements/create/dictionary/attributes#composite-key)。与 `hashed` 类似。
+
+配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+这种存储类型用于复合[键](/zh/reference/statements/create/dictionary/attributes#composite-key)，与 [sparse&#95;hashed](#sparse_hashed) 类似。
+
+配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

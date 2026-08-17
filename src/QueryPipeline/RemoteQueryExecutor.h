@@ -10,6 +10,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
+#include <atomic>
 
 
 namespace DB
@@ -127,7 +128,7 @@ public:
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
 
     int sendQueryAsync();
 
@@ -237,6 +238,8 @@ public:
 
     bool isFinished() const { return finished; }
 
+    bool isCancelled() const { LockAndBlocker lock(was_cancelled_mutex); return was_cancelled; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,
@@ -293,13 +296,19 @@ private:
       */
     bool finished = false;
 
+    /** Test-only. True only while this executor's reading thread is parked at the
+      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
+      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
+      */
+    std::atomic_bool in_receive_packet_window = false;
+
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    bool was_cancelled = false;
-    std::mutex was_cancelled_mutex;
+    mutable std::mutex was_cancelled_mutex;
+    bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
@@ -357,8 +366,8 @@ private:
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void cancelUnlocked();
-    void tryCancel(const char * reason);
+    void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
@@ -370,4 +379,5 @@ private:
     ReadResult processPacket(Packet packet);
 };
 
+ThrottlerPtr getThrottler(const ContextPtr & context);
 }

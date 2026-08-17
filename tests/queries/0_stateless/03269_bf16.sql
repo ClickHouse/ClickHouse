@@ -82,7 +82,7 @@ SELECT a32, a16, a32_1, a16_1,
     L2Distance(a32, a32_1), L2Distance(a16, a16_1),
     L1Distance(a32, a32_1), L1Distance(a16, a16_1),
     LinfDistance(a32, a32_1), LinfDistance(a16, a16_1),
-    LpDistance(a32, a32_1, 5), LpDistance(a16, a16_1, 5)
+    round(LpDistance(a32, a32_1, 5), 6) AS `LpDistance(a32, a32_1, 5)`, round(LpDistance(a16, a16_1, 5), 6) AS `LpDistance(a16, a16_1, 5)`
 FORMAT Vertical;
 
 -- Introspection

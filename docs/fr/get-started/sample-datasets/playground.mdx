@@ -1,0 +1,62 @@
+---
+description: 'Le ClickHouse Playground permet d’expérimenter ClickHouse en exécutant
+  instantanément des requêtes, sans avoir à configurer son serveur ou son cluster.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebarTitle: 'ClickHouse playground'
+slug: /getting-started/playground
+title: 'ClickHouse playground'
+doc_type: 'guide'
+---
+
+[ClickHouse Playground](https://sql.clickhouse.com) permet d’expérimenter ClickHouse en exécutant instantanément des requêtes, sans avoir à configurer son serveur ou son cluster.
+Plusieurs jeux de données d’exemple sont disponibles dans Playground.
+
+Vous pouvez envoyer des requêtes à Playground à l’aide de n’importe quel client HTTP, par exemple [curl](https://curl.haxx.se) ou [wget](https://www.gnu.org/software/wget/), ou établir une connexion à l’aide des pilotes [JDBC](/fr/concepts/features/interfaces/jdbc) ou [ODBC](/fr/concepts/features/interfaces/odbc). Vous trouverez [ici](/fr/integrations/home) plus d’informations sur les logiciels compatibles avec ClickHouse.
+
+<div id="credentials">
+  ## Identifiants
+</div>
+
+| Paramètre          | Valeur                             |
+| :----------------- | :--------------------------------- |
+| Endpoint HTTPS     | `https://play.clickhouse.com:443/` |
+| Endpoint TCP natif | `play.clickhouse.com:9440`         |
+| Utilisateur        | `explorer` ou `play`               |
+| Mot de passe       | (vide)                             |
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+Les requêtes sont exécutées par un utilisateur en lecture seule. Cela implique certaines limitations :
+
+* Les requêtes DDL ne sont pas autorisées
+* Les requêtes INSERT ne sont pas autorisées
+
+Le service dispose également de quotas d&#39;utilisation.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Exemple d’endpoint HTTPS avec `curl`:
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+Exemple d’endpoint TCP avec la [CLI](/fr/concepts/features/interfaces/cli) :
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## Spécifications du Playground
+</div>
+
+notre ClickHouse Playground utilise la configuration suivante :
+
+* Hébergé sur Google Cloud (GCE) dans la région US Central (US-Central-1)
+* Configuration avec 3 réplicas
+* 256 GiB de stockage et 59 CPU virtuels chacun.

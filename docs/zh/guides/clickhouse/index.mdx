@@ -1,0 +1,41 @@
+---
+slug: /guides/developer/overview
+sidebarTitle: '概览'
+description: 'ClickHouse 指南概览'
+title: 'ClickHouse 指南'
+keywords: ['ClickHouse 指南', '数据格式', '数据建模', '聚合函数组合器', '升级', '最佳实践', '部署', '扩缩容']
+doc_type: 'landing-page'
+mode: wide
+---
+
+本节包含以下指南：
+
+<CardGroup cols={2}>
+  <Card title="数据格式" icon="file-lines" href="/zh/guides/clickhouse/data-formats/intro">
+    提供针对各种数据格式的导入与导出示例，包括 CSV、TSV、Parquet、JSON、二进制格式、SQL dumps，以及带正则表达式的模板。
+  </Card>
+
+  <Card title="数据建模" icon="diagram-project" href="/zh/guides/clickhouse/data-modelling/index">
+    介绍 ClickHouse 数据建模的指南，包括 schema 设计、稀疏主索引、反规范化、历史数据回填和数据压缩。
+  </Card>
+
+  <Card title="性能与监控" icon="gauge-high" href="/zh/guides/clickhouse/performance-and-monitoring/query-optimization">
+    关于优化查询性能、理解 analyzer 以及 Dynamic 列选择的指南。
+  </Card>
+
+  <Card title="聚合组合器示例" icon="calculator" href="/zh/guides/clickhouse/examples/aggregate-function-combinators/anyIf">
+    展示如何使用聚合函数组合器的示例，例如 `-If`、`-Map`、`-SimpleState`、`-State`、`-Merge`、`-Resample`、`-Array` 和 `-ForEach`。
+  </Card>
+
+  <Card title="自管理升级" icon="circle-arrow-up" href="/zh/guides/oss/update">
+    关于升级自管理 ClickHouse 安装的指南，包括升级路径和版本兼容性注意事项。
+  </Card>
+
+  <Card title="OSS 最佳实践" icon="list-check" href="/zh/guides/oss/best-practices/sizing-and-hardware-recommendations">
+    面向开源 ClickHouse 的容量规划、硬件建议和使用建议。
+  </Card>
+
+  <Card title="部署与扩缩容" icon="server" href="/zh/guides/oss/deployment-and-scaling/terminology">
+    部署指南，包含为实现扩缩容和/或容错而部署 ClickHouse 的示例，以及 ClickHouse Keeper 的配置与监控。
+  </Card>
+</CardGroup>

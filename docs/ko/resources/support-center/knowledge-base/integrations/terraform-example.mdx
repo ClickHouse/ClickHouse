@@ -1,0 +1,263 @@
+---
+title: Cloud API를 사용하는 Terraform 예시
+description: "API를 사용해 Terraform으로 클러스터를 생성/삭제하는 예시를 다룹니다"
+Date: 2023-09-02
+tags: ['네이티브 클라이언트 및 인터페이스']
+keywords: ['Terraform']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+API로 ClickHouse Cloud의 클러스터를 어떻게 관리할 수 있습니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+Terraform과 [ClickHouse Provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)를 사용해 인프라를 구성합니다.
+
+단계:
+
+1). Cloud에서 API Key를 생성하세요.
+다음 문서를 참고하세요 - [https://clickhouse.com/docs/cloud/manage/openapi](https://clickhouse.com/docs/cloud/manage/openapi)
+
+자격 증명을 로컬에 저장하세요.
+
+2). 다음 링크를 참고해 Terraform을 설치하세요 - [https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+
+Mac을 사용 중인 경우 Homebrew 패키지 관리자를 사용할 수 있습니다.
+
+3). 원하는 위치에 디렉터리를 생성하세요:
+
+```
+mkdir test
+➜  test pwd
+/Users/jaijhala/Desktop/terraform/test
+```
+
+4). `main.tf`와 `secret.tfvars` 파일 2개를 생성하세요
+
+다음을 복사하십시오:
+
+`main.tf` 파일 내용은 다음과 같습니다:
+
+```
+terraform {
+ required_providers {
+   clickhouse = {
+     source = "ClickHouse/clickhouse"
+     version = "0.0.2"
+   }
+ }
+}
+
+variable "organization_id" {
+  type = string
+}
+
+variable "token_key" {
+  type = string
+}
+
+variable "token_secret" {
+  type = string
+}
+
+provider clickhouse {
+  environment 	= "production"
+  organization_id = var.organization_id
+  token_key   	= var.token_key
+  token_secret	= var.token_secret
+}
+
+variable "service_password" {
+  type = string
+  sensitive   = true
+}
+
+resource "clickhouse_service" "service123" {
+  name       	= "jai-terraform"
+  cloud_provider = "aws"
+  region     	= "us-east-2"
+  tier       	= "development"
+  idle_scaling   = true
+  password  = var.service_password
+  ip_access = [
+	{
+    	source  	= "0.0.0.0/0"
+    	description = "Anywhere"
+	}
+  ]
+}
+
+output "CLICKHOUSE_HOST" {
+  value = clickhouse_service.service123.endpoints.0.host
+}
+```
+
+위 리소스 섹션에서 service name, region 등의 매개변수를 환경에 맞게 바꿀 수 있습니다.
+
+`secret.tfvars`에는 앞서 다운로드한 API Key 관련 정보를 모두 넣습니다. 이 파일은 모든 비밀 자격 증명을 메인 구성 파일에서 분리해 숨기기 위한 것입니다.
+
+예를 들면 다음과 같습니다(이 매개변수들은 바꿔 넣으십시오):
+
+```
+organization_id = "e957a5f7-4qe3-4b05-ad5a-d02b2dcd0593"
+token_key = "QWhhkMeytqQruTeKg"
+token_secret = "4b1dNmjWdLUno9lXxmKvSUcPP62jvn7irkuZPbY"
+service_password = "password123!"
+```
+
+5).  이 디렉터리에서 `terraform init` 명령을 실행하세요
+
+예상 출력:
+
+```
+백엔드를 초기화하는 중...
+
+프로바이더 플러그인을 초기화하는 중...
+- "0.0.2"와 일치하는 clickhouse/clickhouse 버전을 찾는 중...
+- clickhouse/clickhouse v0.0.2를 설치하는 중...
+- clickhouse/clickhouse v0.0.2 설치 완료 (자체 서명됨, 키 ID D7089EE5C6A92ED1)
+
+파트너 및 커뮤니티 프로바이더는 개발자가 서명합니다.
+프로바이더 서명에 대해 자세히 알고 싶으시면 다음 링크를 참조하십시오:
+https://www.terraform.io/docs/cli/plugins/signing.html
+
+Terraform이 위에서 선택한 프로바이더 항목을 기록하기 위해 잠금 파일 .terraform.lock.hcl을 생성했습니다.
+향후 "terraform init"을 실행할 때 Terraform이 동일한 항목을 기본으로 선택할 수 있도록
+이 파일을 버전 관리 리포지토리에 포함하십시오.
+
+Terraform이 성공적으로 초기화되었습니다!
+
+이제 Terraform을 사용하여 작업을 시작할 수 있습니다. "terraform plan"을 실행하여
+인프라에 필요한 변경 사항을 확인해 보십시오. 모든 Terraform 명령이 정상적으로 작동합니다.
+
+Terraform의 모듈 또는 백엔드 구성을 설정하거나 변경한 경우,
+이 명령을 다시 실행하여 작업 디렉터리를 재초기화하십시오. 잊어버리더라도
+다른 명령이 이를 감지하여 필요 시 재초기화를 안내합니다.
+```
+
+6). `terraform apply -var-file=secret.tfvars` 명령을 실행하세요.
+
+예시는 다음과 같습니다: 
+
+```
+➜  test terraform apply -var-file=secret.tfvars
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be created
+  + resource "clickhouse_service" "service123" {
+      + cloud_provider = "aws"
+      + endpoints      = (known after apply)
+      + id             = (known after apply)
+      + idle_scaling   = true
+      + ip_access      = [
+          + {
+              + description = "Anywhere"
+              + source      = "0.0.0.0/0"
+            },
+        ]
+      + last_updated   = (known after apply)
+      + name           = "jai-terraform"
+      + password       = (sensitive value)
+      + region         = "us-east-2"
+      + tier           = "development"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + CLICKHOUSE_HOST = (known after apply)
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+```
+
+`yes`를 입력하고 Enter를 누르세요
+
+참고: 위에 `password       = (sensitive value)`라고 표시되는 것을 확인하세요.
+이는 main.tf 파일에서 비밀번호에 `sensitive   = true`를 설정했기 때문입니다.
+
+7). 서비스를 생성하는 데 몇 분 정도 걸리며, 완료되면 다음과 같이 표시됩니다:
+
+```
+  Enter a value: yes
+
+clickhouse_service.service123: Creating...
+clickhouse_service.service123: Still creating... [10s elapsed]
+clickhouse_service.service123: Still creating... [20s elapsed]
+clickhouse_service.service123: Still creating... [30s elapsed]
+clickhouse_service.service123: Still creating... [40s elapsed]
+clickhouse_service.service123: Still creating... [50s elapsed]
+clickhouse_service.service123: Still creating... [1m0s elapsed]
+clickhouse_service.service123: Still creating... [1m10s elapsed]
+clickhouse_service.service123: Still creating... [1m20s elapsed]
+clickhouse_service.service123: Still creating... [1m30s elapsed]
+clickhouse_service.service123: Still creating... [1m40s elapsed]
+clickhouse_service.service123: Creation complete after 1m41s [id=aa8d8d63-1878-4600-8470-630715af38ed]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud"
+➜  test
+```
+
+8). Cloud Console에서 생성된 서비스를 확인할 수 있습니다.
+
+9). 서비스를 정리하거나 삭제하려면 `terraform destroy -var-file=secret.tfvars`를 실행하십시오
+
+예시는 다음과 같습니다:
+
+```
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be destroyed
+  - resource "clickhouse_service" "service123" {
+      - cloud_provider = "aws" -> null
+      - ............
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud" -> null
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value:
+```
+
+yes를 입력한 다음 Enter를 누르세요
+
+10).
+
+```
+clickhouse_service.service123: Destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 10s elapsed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 20s elapsed]
+clickhouse_service.service123: Destruction complete after 27s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+이제 Cloud Console에서 사라져야 합니다.
+
+Cloud API에 대한 자세한 내용은 다음 링크에서 확인할 수 있습니다 - [https://clickhouse.com/docs/cloud/manage/api/api-overview](https://clickhouse.com/docs/cloud/manage/api/api-overview)

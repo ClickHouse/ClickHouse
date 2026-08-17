@@ -1,0 +1,147 @@
+---
+description: 'توثيق Attach'
+sidebarTitle: 'ATTACH'
+slug: /sql-reference/statements/attach
+title: 'تعليمة ATTACH'
+doc_type: 'reference'
+---
+
+يُرفِق جدولًا أو قاموسًا، على سبيل المثال عند نقل قاعدة بيانات إلى خادم آخر.
+
+**الصيغة**
+
+```sql
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+```
+
+لا ينشئ هذا الاستعلام بيانات على القرص، بل يفترض أن البيانات موجودة بالفعل في المواقع المناسبة، ويضيف فقط معلومات عن الجدول أو القاموس أو قاعدة البيانات المحددة إلى الخادم. بعد تنفيذ استعلام `ATTACH`، سيصبح الخادم على علم بوجود الجدول أو القاموس أو قاعدة البيانات.
+
+إذا كان قد سبق فصل جدول (استعلام [DETACH](/ar/reference/statements/detach))، أي إن بنيته معروفة، فيمكنك استخدام الصيغة المختصرة من دون تعريف البنية.
+
+<div id="attach-existing-table">
+  ## إرفاق جدول موجود
+</div>
+
+**الصياغة**
+
+```sql
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+يُستخدم هذا الاستعلام عند تشغيل الخادم. يخزّن الخادم البيانات الوصفية للجداول في هيئة ملفات تحتوي على استعلامات `ATTACH`، ويشغّلها ببساطة عند بدء التشغيل (باستثناء بعض جداول النظام التي تُنشأ صراحةً على الخادم).
+
+إذا كان الجدول قد فُصل بشكل دائم، فلن يُعاد إرفاقه عند بدء تشغيل الخادم، لذا عليك استخدام استعلام `ATTACH` صراحةً.
+
+<div id="create-new-table-and-attach-data">
+  ## إنشاء جدول جديد وإرفاق البيانات به
+</div>
+
+<div id="with-specified-path-to-table-data">
+  ### مع تحديد مسار بيانات الجدول
+</div>
+
+ينشئ هذا الاستعلام جدولًا جديدًا بالبنية المحددة، ويُرفق بيانات الجدول من الدليل المحدد داخل `user_files`.
+
+**البنية**
+
+```sql
+ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
+```
+
+**مثال**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test;
+INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
+ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
+SELECT * FROM test;
+```
+
+```sql title="Response"
+┌─s────┬──n─┐
+│ test │ 42 │
+└──────┴────┘
+```
+
+<div id="with-specified-table-uuid">
+  ### مع UUID جدول محدد
+</div>
+
+ينشئ هذا الاستعلام جدولًا جديدًا بالبنية المحددة ويُرفق البيانات من الجدول ذي الـ UUID المحدد.
+وهو مدعوم من محرك قاعدة البيانات [Atomic](/ar/reference/engines/database-engines/atomic).
+
+**بنية الجملة**
+
+```sql
+ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
+```
+
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## إرفاق جدول MergeTree كـ ReplicatedMergeTree
+</div>
+
+يتيح ذلك إرفاق جدول MergeTree غير مكرّر كـ ReplicatedMergeTree. سيُنشأ جدول ReplicatedMergeTree باستخدام قيم إعدادَي `default_replica_path` و`default_replica_name`. ومن الممكن أيضًا إرفاق جدول مكرّر كجدول MergeTree عادي.
+
+لاحظ أن بيانات الجدول في ZooKeeper لا تتأثر بهذا الاستعلام. وهذا يعني أنه يجب عليك إضافة البيانات الوصفية في ZooKeeper باستخدام `SYSTEM RESTORE REPLICA` أو مسحها باستخدام `SYSTEM DROP REPLICA ... FROM ZKPATH ...` بعد الإرفاق.
+
+إذا كنت تحاول إضافة نسخة متماثلة إلى جدول ReplicatedMergeTree موجود، فضع في اعتبارك أن جميع البيانات المحلية في جدول MergeTree المحوَّل ستصبح `detached`.
+
+**البنية**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**تحويل الجدول إلى جدول Replicated**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**تحويل الجدول إلى جدول غير مكرّر**
+
+احصل على مسار ZooKeeper واسم النسخة المتماثلة للجدول:
+
+```sql title="Query"
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+
+```sql title="Response"
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+ألحِق الجدول كجدول غير مُكرَّر، واحذف بيانات النسخة المتماثلة من ZooKeeper:
+
+```sql title="Query"
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
+<div id="attach-existing-dictionary">
+  ## إرفاق قاموس موجود
+</div>
+
+يُرفق قاموسًا فُصل سابقًا.
+
+**الصيغة**
+
+```sql
+ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+<div id="attach-existing-database">
+  ## إرفاق قاعدة بيانات موجودة
+</div>
+
+يُرفِق قاعدة بيانات سبق فصلها.
+
+**الصيغة**
+
+```sql
+ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
+```

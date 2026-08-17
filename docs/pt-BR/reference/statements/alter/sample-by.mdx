@@ -1,0 +1,35 @@
+---
+description: 'Documentação sobre como manipular a expressão SAMPLE BY'
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: 'Manipulação de expressões de chave de amostragem'
+doc_type: 'reference'
+---
+
+As seguintes operações estão disponíveis:
+
+<div id="modify">
+  ## ALTERAR
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+O comando altera a [chave de amostragem](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) da tabela para `new_expression` (uma expressão ou uma tupla de expressões). A chave primária deve incluir a nova chave de amostragem.
+
+<div id="remove">
+  ## REMOVER
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+O comando remove a [chave de amostragem](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) da tabela.
+
+Os comandos `MODIFY` e `REMOVE` são operações leves, no sentido de que apenas alteram metadados ou removem arquivos.
+
+<Note>
+  Isso só funciona para tabelas da família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

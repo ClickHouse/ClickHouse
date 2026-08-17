@@ -1,0 +1,33 @@
+---
+description: 'ClickHouse 中域类型的概述：它在基本类型之上扩展了额外功能'
+sidebarTitle: '域'
+slug: /sql-reference/data-types/domains/
+title: '域'
+doc_type: 'reference'
+---
+
+域是具有特定用途的类型，它在现有基本类型的基础上增加了额外功能，同时保持底层数据类型在线传输格式和磁盘存储格式不变。目前，ClickHouse 不支持用户定义域。
+
+你可以在任何可使用相应基本类型的地方使用域，例如：
+
+* 创建域类型的列
+* 从域列读取值或向域列写入值
+* 如果基本类型可用作索引，则域类型也可用作索引
+* 使用域列中的值调用函数
+
+<div id="extra-features-of-domains">
+  ### 域的额外特性
+</div>
+
+* 在 `SHOW CREATE TABLE` 或 `DESCRIBE TABLE` 中显式显示列类型名称
+* 可通过 `INSERT INTO domain_table(domain_column) VALUES(...)` 以便于人类阅读的格式输入
+* 对于 `SELECT domain_column FROM domain_table`，可按便于人类阅读的格式输出
+* 可按便于人类阅读的格式从外部源加载数据：`INSERT INTO domain_table FORMAT CSV ...`
+
+<div id="limitations">
+  ### 限制
+</div>
+
+* 无法通过 `ALTER TABLE` 将基本类型的索引列转换为域类型。
+* 从另一列或表插入数据时，无法将字符串值隐式转换为域值。
+* 域不会对存储的值施加任何约束。

@@ -1,0 +1,176 @@
+---
+description: 'Руководство по настройке квот на использование ресурсов в ClickHouse и управлению ими'
+sidebarTitle: 'Квоты'
+slug: /operations/quotas
+title: 'Квоты'
+doc_type: 'guide'
+---
+
+<Info>
+  **Квоты в ClickHouse Cloud**
+
+  Квоты поддерживаются в ClickHouse Cloud, но их нужно создавать с помощью [синтаксиса DDL](/ru/reference/statements/create/quota). Описанный ниже подход с XML-конфигурацией **не поддерживается**.
+</Info>
+
+Квоты позволяют ограничивать использование ресурсов за определённый период времени или отслеживать их использование.
+Квоты задаются в пользовательской конфигурации, обычно в файле &#39;users.xml&#39;.
+
+В системе также есть возможность ограничивать сложность отдельного запроса. См. раздел [Ограничения на сложность запросов](/ru/concepts/features/configuration/settings/query-complexity).
+
+В отличие от ограничений на сложность запроса, квоты:
+
+* Ограничивают набор запросов, которые можно выполнять в течение заданного периода времени, вместо того чтобы ограничивать отдельный запрос.
+* Учитывают ресурсы, затраченные на всех удалённых серверах при распределённой обработке запросов.
+
+Рассмотрим раздел файла &#39;users.xml&#39;, в котором задаются квоты.
+
+```xml
+<!-- Квоты -->
+<quotas>
+    <!-- Имя квоты. -->
+    <default>
+        <!-- Ограничения для временного периода. Можно задать несколько интервалов с разными ограничениями. -->
+        <interval>
+            <!-- Длина интервала. -->
+            <duration>3600</duration>
+
+            <!-- Без ограничений. Только сбор данных за указанный временной интервал. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+По умолчанию квота отслеживает потребление ресурсов за каждый час, не ограничивая их использование.
+Потребление ресурсов, рассчитанное для каждого периода, выводится в журнал сервера после каждого запроса.
+
+```xml
+<statbox>
+    <!-- Ограничения для временного периода. Можно задать несколько интервалов с разными ограничениями. -->
+    <interval>
+        <!-- Длина интервала. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+Для квоты &#39;statbox&#39; ограничения задаются на каждый час и на каждые 24 часа (86 400 секунд). Временной интервал отсчитывается от фиксированного момента времени, определяемого реализацией. Иными словами, 24-часовой интервал не обязательно начинается в полночь.
+
+Когда интервал заканчивается, все накопленные значения сбрасываются. Для следующего часа расчёт квоты начинается заново.
+
+Вот какие величины можно ограничивать:
+
+`queries` – Общее количество запросов.
+
+`query_selects` – Общее количество запросов SELECT.
+
+`query_inserts` – Общее количество запросов на вставку.
+
+`errors` – Количество запросов, вызвавших исключение.
+
+`result_rows` – Общее количество строк, возвращённых в результате.
+
+`result_bytes` - Общий размер строк, возвращённых в результате.
+
+`read_rows` – Общее количество исходных строк, прочитанных из таблиц для выполнения запроса на всех удалённых серверах.
+
+`read_bytes` - Общий объём данных, прочитанных из таблиц для выполнения запроса на всех удалённых серверах.
+
+`written_bytes` - Общий объём записанных данных.
+
+`execution_time` – Общее время выполнения запроса в секундах (реальное время).
+
+`failed_sequential_authentications` - Общее количество последовательных ошибок аутентификации.
+
+`queries_per_normalized_hash` – Максимальное число выполнений любого нормализованного запроса. Нормализованные запросы — это запросы, в которых литералы заменены плейсхолдерами, поэтому `SELECT 1` и `SELECT 2` считаются одним и тем же нормализованным запросом. Этот лимит отслеживается независимо для каждого отдельного нормализованного шаблона запроса.
+
+Если лимит превышен хотя бы в одном временном интервале, генерируется исключение с сообщением о том, какое ограничение было превышено, для какого интервала и когда начинается новый интервал (то есть когда запросы снова можно будет отправлять).
+
+Квоты могут использовать возможность &quot;quota key&quot;, чтобы независимо учитывать ресурсы для нескольких ключей. Вот пример:
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+Вы также можете задавать квоты по нормализованному хешу запроса, чтобы для каждого отдельного шаблона запроса создавался собственный независимый бакет квоты. В XML-конфигурации это записывается как `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+То же самое можно записать в синтаксисе DDL:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+В этом примере пользователь может выполнять до 100 запросов каждого уникального нормализованного вида в час. `SELECT number FROM numbers(1)` и `SELECT number FROM numbers(2)` используют один и тот же бакет (поскольку у них одинаковая нормализованная форма), а `SELECT number, number FROM numbers(1)` использует отдельный бакет.
+
+Квота назначается пользователям в разделе &#39;users&#39; конфигурации. См. раздел &quot;Права доступа&quot;.
+
+При распределённой обработке запросов накопленные значения хранятся на сервере, отправившем запрос. Поэтому, если пользователь переключится на другой сервер, квота там &quot;начнёт отсчёт заново&quot;.
+
+При перезапуске сервера квоты сбрасываются.
+
+<div id="related-content">
+  ## Дополнительные материалы
+</div>
+
+* Блог: [Как создавать одностраничные приложения с ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

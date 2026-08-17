@@ -1,0 +1,13 @@
+---
+description: 'توثيق لتعليمة EXISTS'
+sidebarTitle: 'EXISTS'
+slug: /sql-reference/statements/exists
+title: 'تعليمة EXISTS'
+doc_type: 'reference'
+---
+
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+تُرجِع عمودًا واحدًا من النوع `UInt8` يحتوي على قيمة واحدة هي `0` إذا لم يكن الجدول أو قاعدة البيانات موجودَين، أو `1` إذا كان الجدول موجودًا في قاعدة البيانات المحددة.

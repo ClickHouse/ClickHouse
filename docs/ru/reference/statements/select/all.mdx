@@ -1,0 +1,23 @@
+---
+description: 'Документация по оператору ALL'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'Оператор ALL'
+doc_type: 'reference'
+---
+
+Если в таблице есть несколько совпадающих строк, `ALL` возвращает их все. `SELECT ALL` идентичен `SELECT` без `DISTINCT`. Если указаны и `ALL`, и `DISTINCT`, будет сгенерировано исключение.
+
+`ALL` можно указывать внутри агрегатных функций, хотя на результат запроса это практически не влияет.
+
+Например:
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+Эквивалентно:
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

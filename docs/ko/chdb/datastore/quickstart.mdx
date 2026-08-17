@@ -1,0 +1,460 @@
+---
+title: 'DataStore 빠른 시작'
+sidebarTitle: '빠른 시작'
+slug: /chdb/datastore/quickstart
+description: 'DataStore 시작하기 - 설치, pandas에서 한 줄로 마이그레이션, 기본 사용법'
+keywords: ['chdb', 'DataStore', '빠른 시작', '설치', 'pandas', '마이그레이션']
+doc_type: 'guide'
+---
+
+몇 분이면 DataStore를 시작할 수 있습니다. 이 가이드에서는 설치, pandas에서의 마이그레이션, 그리고 기본 사용법을 다룹니다.
+
+<div id="installation">
+  ## 설치
+</div>
+
+pip을 사용해 chDB를 설치합니다:
+
+```bash
+pip install "chdb>=4.0"
+```
+
+선택적 의존성:
+
+```bash
+# For pandas DataFrame support
+pip install "chdb[pandas]>=4.0"
+
+# For PyArrow support
+pip install "chdb[arrow]>=4.0"
+
+# All optional dependencies
+pip install "chdb[all]>=4.0"
+```
+
+<div id="verify">
+  ### 설치 확인
+</div>
+
+```python
+import chdb
+print(chdb.__version__)  # Should print 4.x.x or higher
+
+from chdb import datastore as pd
+print("DataStore ready!")
+```
+
+<div id="migration">
+  ## Pandas에서 한 줄로 마이그레이션
+</div>
+
+DataStore를 가장 간단하게 사용하기 시작하는 방법은 import 구문을 변경하는 것입니다:
+
+```python
+# Before (pandas)
+import pandas as pd
+
+# After (DataStore)
+from chdb import datastore as pd
+```
+
+이것으로 끝입니다! 이제 기존 pandas 코드에서 DataStore를 사용하며 SQL 최적화의 이점도 누릴 수 있습니다.
+
+<div id="migration-example">
+  ### 마이그레이션 예시
+</div>
+
+```python
+from pathlib import Path
+Path("employees.csv").write_text("""\
+name,age,city,salary,department,dept_id,status,email
+Alice,28,NYC,75000,Engineering,1,active,alice@company.com
+Bob,35,LA,85000,Engineering,1,active,bob@company.com
+Charlie,52,NYC,95000,Product,2,active,charlie@company.com
+Diana,32,SF,70000,Design,3,active,diana@company.com
+Eve,23,LA,48000,Product,2,inactive,eve@company.com
+""")
+
+# Original pandas code
+import pandas as pd
+
+df = pd.read_csv("employees.csv")
+result = (df[df['salary'] > 50000]
+          .groupby('department')['salary']
+          .agg(['mean', 'count'])
+          .sort_values('mean', ascending=False))
+print(result)
+
+# DataStore version - just change the import!
+from chdb import datastore as pd
+
+df = pd.read_csv("employees.csv")
+result = (df[df['salary'] > 50000]
+          .groupby('department')['salary']
+          .agg(['mean', 'count'])
+          .sort_values('mean', ascending=False))
+print(result)  # Same result, faster execution!
+```
+
+<div id="basic-usage">
+  ## 기본 사용법
+</div>
+
+<div id="creating">
+  ### DataStore 생성하기
+</div>
+
+```python
+from chdb import datastore as pd
+
+# From a dictionary
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [25, 30, 35],
+    'city': ['NYC', 'LA', 'NYC']
+})
+
+# From a pandas DataFrame
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+ds = pd.DataFrame(pdf)
+
+# From a CSV file
+ds = pd.read_csv("data.csv")
+
+# From a Parquet file (recommended for large datasets)
+ds = pd.read_parquet("data.parquet")
+```
+
+<div id="filtering">
+  ### 데이터 필터링
+</div>
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("employees.csv")
+
+# Single condition
+senior = ds[ds['age'] > 30]
+
+# Multiple conditions (AND)
+senior_nyc = ds[(ds['age'] > 30) & (ds['city'] == 'NYC')]
+
+# Multiple conditions (OR)
+young_or_senior = ds[(ds['age'] < 25) | (ds['age'] > 50)]
+
+# Using filter method (SQL-style)
+result = ds.filter(ds['salary'] > 50000)
+```
+
+<div id="selecting">
+  ### 컬럼 선택하기
+</div>
+
+```python
+# Pandas style
+subset = ds[['name', 'age']]
+
+# SQL style
+subset = ds.select('name', 'age')
+```
+
+<div id="sorting">
+  ### 정렬
+</div>
+
+```python
+# Pandas style
+sorted_ds = ds.sort_values('salary', ascending=False)
+
+# SQL style
+sorted_ds = ds.sort('salary', ascending=False)
+```
+
+<div id="groupby">
+  ### 그룹화와 집계
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# Group by single column
+by_region = ds.groupby('region')['amount'].sum()
+
+# Group by multiple columns
+by_region_product = ds.groupby(['region', 'product']).agg({
+    'amount': ['sum', 'mean'],
+    'quantity': 'sum'
+})
+
+# Multiple aggregations
+summary = ds.groupby('category').agg({
+    'price': ['min', 'max', 'mean'],
+    'quantity': 'sum'
+})
+```
+
+<div id="joining">
+  ### DataStore 조인하기
+</div>
+
+```python
+from pathlib import Path
+Path("departments.csv").write_text("""\
+dept_id,department_name
+1,Engineering
+2,Product
+3,Design
+""")
+
+from chdb import datastore as pd
+
+employees = pd.read_csv("employees.csv")
+departments = pd.read_csv("departments.csv")
+
+# Inner join
+result = employees.join(departments, on='dept_id', how='inner')
+
+# Left join
+result = employees.join(departments, on='dept_id', how='left')
+
+# Using merge (pandas style)
+result = pd.merge(employees, departments, on='dept_id')
+```
+
+<div id="results">
+  ## 결과 가져오기
+</div>
+
+DataStore는 지연 평가를 사용하므로 결과가 필요할 때까지 연산을 실행하지 않습니다.
+
+<div id="execution-triggers">
+  ### 실행 시작하기
+</div>
+
+```python
+# Automatic triggers
+print(ds)           # Displaying results
+len(ds)             # Getting row count
+ds.columns          # Accessing properties
+list(ds)            # Converting to list
+
+# Explicit conversion
+df = ds.to_df()     # Convert to pandas DataFrame
+df = ds.to_pandas() # Same as to_df()
+```
+
+<div id="view-sql">
+  ### 생성된 SQL 보기
+</div>
+
+```python title="Query"
+# See what SQL DataStore will execute
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+print(query.to_sql())
+```
+
+```sql title="Response"
+SELECT city, AVG(salary) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE age > 25
+GROUP BY city
+```
+
+<div id="data-sources">
+  ## 다양한 데이터 소스 활용하기
+</div>
+
+<div id="local-files">
+  ### 로컬 파일
+</div>
+
+```python
+from chdb import datastore as pd
+
+# CSV
+ds = pd.read_csv("data.csv")
+
+# Parquet (best performance)
+ds = pd.read_parquet("data.parquet")
+
+# JSON
+ds = pd.read_json("data.json")
+```
+
+<div id="cloud-storage">
+  ### 클라우드 스토리지
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# S3 (anonymous)
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+
+# S3 (with credentials)
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="KEY",
+    secret_access_key="SECRET"
+)
+
+# HTTP/HTTPS
+ds = DataStore.uri("https://example.com/data.csv")
+```
+
+<div id="databases">
+  ### 데이터베이스
+</div>
+
+```python
+from chdb.datastore import DataStore
+
+# MySQL
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="pass"
+)
+
+# PostgreSQL
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="pass"
+)
+
+# Using URI
+ds = DataStore.uri("mysql://user:pass@localhost:3306/mydb/users")
+```
+
+<div id="accessors">
+  ## String 및 DateTime 연산
+</div>
+
+<div id="string-ops">
+  ### String 연산
+</div>
+
+```python
+# All pandas .str methods work
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_len'] = ds['name'].str.len()
+ds['has_a'] = ds['name'].str.contains('a')
+```
+
+<div id="datetime-ops">
+  ### DateTime 연산
+</div>
+
+```python
+# All pandas .dt methods work
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="extensions">
+  ### ClickHouse 확장 기능
+</div>
+
+```python
+# URL parsing (not available in pandas!)
+ds['domain'] = ds['url'].url.domain()
+
+# JSON extraction
+ds['user_name'] = ds['json_data'].json.get_string('name')
+
+# IP address operations
+ds['is_ipv4'] = ds['ip_addr'].ip.is_ipv4_string()
+```
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="use-parquet-for-large-files">
+  ### 1. 대용량 파일에는 Parquet를 사용하십시오
+</div>
+
+```python
+# CSV - slower, reads entire file
+ds = pd.read_csv("large_data.csv")
+
+# Parquet - faster, columnar format, reads only needed columns
+ds = pd.read_parquet("large_data.parquet")
+```
+
+<div id="filter-early">
+  ### 2. 가능한 한 빨리 필터링하기
+</div>
+
+```python
+# Good - filter first, then aggregate
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .groupby('category')['amount'].sum()
+)
+
+# Less optimal - aggregate first
+result = ds.groupby('category')['amount'].sum()
+```
+
+<div id="select-only-needed-columns">
+  ### 3. 필요한 컬럼만 선택하기
+</div>
+
+```python
+# Good - select specific columns
+result = ds.select('name', 'age', 'city').filter(ds['age'] > 25)
+
+# Less optimal - work with all columns
+result = ds.filter(ds['age'] > 25)
+```
+
+<div id="use-sql-for-complex-operations">
+  ### 4. 복잡한 작업에는 SQL을 사용합니다
+</div>
+
+```python
+# For complex queries, use SQL directly
+ds = DataStore()
+result = ds.sql("""
+    SELECT category, 
+           SUM(amount) as total,
+           COUNT(*) as count,
+           AVG(amount) as avg
+    FROM file('sales.csv', 'CSVWithNames')
+    WHERE date >= '2024-01-01'
+    GROUP BY category
+    HAVING total > 10000
+    ORDER BY total DESC
+    LIMIT 10
+""")
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* DataStore를 생성하는 모든 [팩터리 메서드](/ko/chdb/datastore/factory-methods)를 알아보십시오
+* SQL 스타일 작업을 위한 [쿼리 작성](/ko/chdb/datastore/query-building)을 살펴보십시오
+* 문자열, datetime 등과 관련된 [Accessor](/ko/chdb/datastore/accessors)를 확인하십시오
+* 최적화 팁은 [성능 가이드](/ko/chdb/guides/pandas-performance)에서 확인하십시오

@@ -1,0 +1,13 @@
+<svg width="36" height="36" viewBox="0 0 20.2504 20.2493" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+  rect { fill: #151515; }
+  @media (prefers-color-scheme: dark) {
+    rect { fill: #ffffff; }
+  }
+</style>
+<rect x="0" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="4.5" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="9.0002" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="13.4993" y="0" width="2.24992" height="20.2493" rx="0.547286"/>
+<rect x="18.0005" y="7.8752" width="2.24992" height="4.49985" rx="0.547286"/>
+</svg>

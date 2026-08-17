@@ -1,0 +1,202 @@
+---
+title: 'Использование JOIN в ClickHouse'
+description: 'Как использовать JOIN для объединения таблиц в ClickHouse'
+keywords: ['JOIN', 'объединение таблиц']
+slug: /guides/joining-tables
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В ClickHouse есть [полная поддержка `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1) и широкий выбор алгоритмов JOIN. Чтобы добиться максимальной производительности, рекомендуем следовать советам по оптимизации JOIN из этого руководства.
+
+* Для оптимальной производительности следует стремиться уменьшить количество `JOIN` в запросах, особенно для аналитических рабочих нагрузок в реальном времени, где важна задержка на уровне миллисекунд. Старайтесь, чтобы в одном запросе было не более 3–4 JOIN. В [разделе о моделировании данных](/ru/guides/clickhouse/data-modelling/schema-design) мы подробно рассматриваем несколько способов минимизировать количество JOIN, включая денормализацию, словари и материализованные представления.
+* Начиная с ClickHouse 24.12, планировщик запросов автоматически переставляет JOIN двух таблиц так, чтобы меньшая таблица находилась справа для оптимальной производительности. В версии 25.9 эта возможность была расширена и теперь оптимизирует порядок JOIN в запросах с тремя и более таблицами.
+* Если вашему запросу нужен direct JOIN, то есть `LEFT ANY JOIN`, как показано ниже, мы рекомендуем по возможности использовать [Dictionaries](/ru/concepts/features/dictionaries/index).
+
+<Image img="/images/guides/joins-1.webp" size="sm" alt="LEFT ANY JOIN" />
+
+* При выполнении inner JOIN часто эффективнее записывать их как подзапросы с использованием предложения `IN`. Рассмотрим следующие запросы, которые функционально эквивалентны. Оба находят количество `posts`, где ClickHouse не упоминается в вопросе, но упоминается в `comments`.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts AS p
+ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
+WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
+Peak memory usage: 1.23 GiB.
+```
+
+Обратите внимание, что мы используем `ANY INNER JOIN`, а не просто `INNER JOIN`, поскольку нам не нужно декартово произведение, то есть для каждого поста нам нужно только одно совпадение.
+
+Этот JOIN можно переписать с помощью подзапроса, что значительно улучшит производительность:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
+        SELECT PostId
+        FROM stackoverflow.comments
+        WHERE Text ILIKE '%clickhouse%'
+))
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
+Peak memory usage: 323.52 MiB.
+```
+
+Хотя ClickHouse пытается проталкивать условия во все секции JOIN и подзапросы, мы рекомендуем пользователям по возможности вручную применять условия ко всем вложенным секциям — так можно минимизировать объём данных для `JOIN`. Рассмотрим пример, где нужно вычислить количество положительных голосов за посты, связанные с Java, начиная с 2020 года.
+
+Наивный запрос, в котором более крупная таблица находится слева, выполняется за 56 с:
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
+```
+
+Изменение порядка в этом JOIN резко повышает производительность: до 1,5 с:
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
+```
+
+Добавление фильтра к левой таблице ещё больше повышает производительность — время выполнения снижается до 0,5 с.
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
+Peak memory usage: 249.42 MiB.
+```
+
+Этот запрос можно ещё больше улучшить, вынеся `INNER JOIN` в подзапрос, как отмечалось ранее, и сохранив фильтр и во внешнем, и во внутреннем запросе.
+
+```sql
+SELECT count() AS upvotes
+FROM stackoverflow.votes
+WHERE (VoteTypeId = 2) AND (PostId IN (
+        SELECT Id
+        FROM stackoverflow.posts
+        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
+))
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
+Peak memory usage: 250.66 MiB.
+```
+
+<div id="choosing-a-join-algorithm">
+  ## Выбор алгоритма JOIN
+</div>
+
+ClickHouse поддерживает ряд [алгоритмов JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1). Обычно эти алгоритмы обменивают использование памяти на производительность. Ниже приведен обзор алгоритмов JOIN в ClickHouse с точки зрения относительного потребления памяти и времени выполнения:
+
+<br />
+
+<Image img="/images/guides/joins-2.png" size="lg" alt="зависимость скорости JOIN от использования памяти" />
+
+<br />
+
+Эти алгоритмы определяют, как запрос с JOIN планируется и выполняется. По умолчанию ClickHouse использует алгоритм direct или hash join в зависимости от типа JOIN, strictness и движка соединяемых таблиц. Кроме того, ClickHouse можно настроить на адаптивный выбор и динамическую смену алгоритма JOIN во время выполнения в зависимости от доступности и использования ресурсов: когда `join_algorithm=auto`, ClickHouse сначала пробует алгоритм hash join, а если превышается лимит памяти для этого алгоритма, на лету переключается на частичное соединение слиянием. Определить, какой алгоритм был выбран, можно с помощью trace logging. ClickHouse также позволяет явно указать нужный алгоритм JOIN через настройку `join_algorithm`.
+
+Поддерживаемые типы `JOIN` для каждого алгоритма JOIN показаны ниже; их следует учитывать перед оптимизацией:
+
+<br />
+
+<Image img="/images/guides/joins-3.webp" size="lg" alt="возможности JOIN" />
+
+<br />
+
+Полное подробное описание каждого алгоритма `JOIN`, включая их преимущества, недостатки и свойства масштабирования, можно найти [здесь](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2).
+
+Выбор подходящего алгоритма JOIN зависит от того, что вы хотите оптимизировать: использование памяти или производительность.
+
+<div id="optimizing-join-performance">
+  ## Оптимизация производительности JOIN
+</div>
+
+Если для вас главным критерием оптимизации является производительность и вы хотите выполнять JOIN как можно быстрее, используйте следующее дерево решений, чтобы выбрать подходящий алгоритм JOIN:
+
+<br />
+
+<Image img="/images/guides/joins-4.webp" size="lg" alt="блок-схема JOIN" />
+
+<br />
+
+* **(1)** Если данные из правой таблицы можно заранее загрузить в размещённую в памяти низколатентную структуру данных ключ-значение, например в словарь, если ключ JOIN совпадает с ключевым атрибутом базового хранилища ключ-значение и если семантики `LEFT ANY JOIN` достаточно, то можно использовать **direct JOIN** — это самый быстрый вариант.
+
+* **(2)** Если [физический порядок строк](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) в таблице совпадает с порядком сортировки ключа JOIN, то всё зависит от ситуации. В этом случае **полное сортирующее соединение слиянием** [пропускает](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) фазу сортировки, что значительно снижает использование памяти и, в зависимости от объёма данных и распределения значений в столбцах ключа JOIN, может выполняться быстрее, чем некоторые алгоритмы hash JOIN.
+
+* **(3)** Если правая таблица помещается в память даже с учётом [дополнительных накладных расходов на использование памяти](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) у **параллельного hash JOIN**, то этот алгоритм или hash JOIN может оказаться быстрее. Это зависит от объёма данных, типов данных и распределения значений в столбцах ключа JOIN.
+
+* **(4)** Если правая таблица не помещается в память, то здесь снова всё зависит от ситуации. ClickHouse предлагает три алгоритма JOIN, не ограниченных объёмом памяти. Все три временно выполняют сброс данных на диск. **Полное сортирующее соединение слиянием** и **частичное соединение слиянием** требуют предварительной сортировки данных. **Grace hash JOIN** вместо этого строит hash-таблицы из данных. В зависимости от объёма данных, типов данных и распределения значений в столбцах ключа JOIN в некоторых сценариях построение hash-таблиц может быть быстрее сортировки данных. И наоборот.
+
+Частичное соединение слиянием оптимизировано для минимизации использования памяти при JOIN больших таблиц, но за это приходится платить довольно низкой скоростью JOIN. Особенно это заметно, когда физический порядок строк левой таблицы не совпадает с порядком сортировки ключа JOIN.
+
+Grace hash JOIN — самый гибкий из трёх алгоритмов JOIN, не ограниченных объёмом памяти, и с помощью настройки [grace&#95;hash&#95;join&#95;initial&#95;buckets](https://github.com/ClickHouse/ClickHouse/blob/23.5/src/Core/Settings.h#L759) позволяет хорошо контролировать баланс между использованием памяти и скоростью JOIN. В зависимости от объёма данных grace hash может быть быстрее или медленнее, чем алгоритм частичного слияния, если число [бакетов](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#description-2) выбрано так, чтобы использование памяти у обоих алгоритмов было примерно одинаковым. Когда использование памяти grace hash JOIN настраивалось так, чтобы оно примерно соответствовало использованию памяти полного сортирующего соединения слиянием, в наших тестах полное сортирующее соединение слиянием всегда было быстрее.
+
+То, какой из трёх алгоритмов, не ограниченных объёмом памяти, окажется самым быстрым, зависит от объёма данных, типов данных и распределения значений в столбцах ключа JOIN. Чтобы определить, какой алгоритм быстрее, всегда лучше провести несколько бенчмарков на реалистичных объёмах данных.
+
+<div id="optimizing-for-memory">
+  ## Оптимизация использования памяти
+</div>
+
+Если вы хотите оптимизировать JOIN для минимального использования памяти, а не для максимальной скорости выполнения, воспользуйтесь следующим деревом решений:
+
+<br />
+
+<Image img="/images/guides/joins-5.webp" size="lg" alt="Дерево решений для оптимизации использования памяти JOIN" />
+
+<br />
+
+* **(1)** Если физический порядок строк в таблице соответствует порядку сортировки ключа JOIN, то **полное сортирующее соединение слиянием** обеспечивает минимально возможное использование памяти. Дополнительное преимущество — высокая скорость JOIN, поскольку этап сортировки [отключён](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
+* **(2)** **grace hash join** можно настроить на очень низкое использование памяти, [задав](https://github.com/ClickHouse/ClickHouse/blob/23.5/src/Core/Settings.h#L759) большое количество [бакетов](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#description-2) ценой скорости JOIN. **частичное соединение слиянием** намеренно использует небольшой объём оперативной памяти. **полное сортирующее соединение слиянием** с включённой внешней сортировкой обычно использует больше памяти, чем **частичное соединение слиянием** (если порядок строк не соответствует порядку сортировки ключа), но обеспечивает значительно меньшее время выполнения JOIN.
+
+Пользователям, которым нужны более подробные сведения по этой теме, мы рекомендуем следующую [серию статей в блоге](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1).

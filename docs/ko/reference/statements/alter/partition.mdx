@@ -1,0 +1,433 @@
+---
+description: '파티션에 대한 문서'
+sidebarTitle: 'PARTITION'
+slug: /sql-reference/statements/alter/partition
+title: '파티션 및 파트 작업'
+doc_type: 'reference'
+---
+
+[파티션](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)에서 사용할 수 있는 작업은 다음과 같습니다:
+
+* [DETACH PARTITION|PART](#detach-partitionpart) — 파티션 또는 파트를 `detached` 디렉터리로 이동하고 메타데이터에서 분리합니다.
+* [DROP PARTITION|PART](#drop-partitionpart) — 파티션 또는 파트를 삭제합니다.
+* [DROP DETACHED PARTITION|PART](#drop-detached-partitionpart) - `detached`에서 파트 또는 파티션에 속한 모든 파트를 삭제합니다.
+* [FORGET PARTITION](#forget-partition) — 비어 있는 경우 ZooKeeper에서 파티션 메타데이터를 삭제합니다.
+* [ATTACH PARTITION|PART](#attach-partitionpart) — `detached` 디렉터리에 있는 파티션 또는 파트를 테이블에 추가합니다.
+* [ATTACH PARTITION FROM](#attach-partition-from) — 한 테이블의 데이터 파티션을 다른 테이블로 복사해 추가합니다.
+* [REPLACE PARTITION](#replace-partition) — 한 테이블의 데이터 파티션을 다른 테이블로 복사해 교체합니다.
+* [MOVE PARTITION TO TABLE](#move-partition-to-table) — 데이터 파티션을 한 테이블에서 다른 테이블로 이동합니다.
+* [CLEAR COLUMN IN PARTITION](#clear-column-in-partition) — 파티션에서 지정한 컬럼의 값을 재설정합니다.
+* [CLEAR INDEX IN PARTITION](#clear-index-in-partition) — 파티션에서 지정한 보조 인덱스를 재설정합니다.
+* [FREEZE PARTITION](#freeze-partition) — 파티션의 백업을 생성합니다.
+* [UNFREEZE PARTITION](#unfreeze-partition) — 파티션의 백업을 제거합니다.
+* [FETCH PARTITION|PART](#fetch-partitionpart) — 다른 서버에서 파트 또는 파티션을 다운로드합니다.
+* [MOVE PARTITION|PART](#move-partitionpart) — 파티션/데이터 파트를 다른 디스크 또는 볼륨으로 이동합니다.
+* [UPDATE IN PARTITION](#update-in-partition) — 조건에 따라 파티션 내부 데이터를 업데이트합니다.
+* [DELETE IN PARTITION](#delete-in-partition) — 조건에 따라 파티션 내부 데이터를 삭제합니다.
+* [REWRITE PARTS](#rewrite-parts) — 테이블의 파트(또는 특정 파티션)를 완전히 재작성합니다.
+
+{/* */}
+
+<div id="detach-partitionpart">
+  ## DETACH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+```
+
+지정된 파티션의 모든 데이터를 `detached` 디렉터리로 이동합니다. 서버는 분리된 데이터 파티션이 없는 것처럼 해당 파티션을 더 이상 인식하지 않습니다. [ATTACH](#attach-partitionpart) 쿼리를 실행하기 전까지는 서버가 이 데이터를 알지 못합니다.
+
+예시:
+
+```sql
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
+```
+
+파티션 표현식을 설정하는 방법은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+쿼리가 실행된 후에는 `detached` 디렉터리에 있는 데이터를 원하는 대로 처리할 수 있습니다. 파일 시스템에서 삭제하거나 그대로 둘 수 있습니다.
+
+이 쿼리는 복제되며, 모든 레플리카의 `detached` 디렉터리로 데이터를 이동합니다. 이 쿼리는 리더 레플리카에서만 실행할 수 있습니다. 레플리카가 리더인지 확인하려면 [system.replicas](/ko/reference/system-tables/replicas) 테이블에 `SELECT` 쿼리를 수행하십시오. 또는 모든 레플리카에서 `DETACH` 쿼리를 실행하는 편이 더 쉽습니다. 그러면 리더 레플리카를 제외한 모든 레플리카에서 예외가 발생합니다(여러 리더가 허용됨).
+
+<div id="drop-partitionpart">
+  ## DROP PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+테이블에서 지정된 파티션을 삭제합니다. 이 쿼리는 해당 파티션을 비활성으로 표시한 뒤, 약 10분 내에 데이터를 완전히 삭제합니다.
+
+파티션 표현식을 설정하는 방법은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+이 쿼리는 복제되므로 모든 레플리카에서 데이터가 삭제됩니다.
+
+예시:
+
+```sql
+ALTER TABLE mt DROP PARTITION '2020-11-21';
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
+
+<div id="drop-detached-partitionpart">
+  ## 분리된 PARTITION|PART 삭제
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
+```
+
+지정된 파트 또는 지정된 파티션의 모든 파트를 `detached`에서 제거합니다.
+파티션 표현식을 설정하는 방법에 대한 자세한 내용은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+<div id="forget-partition">
+  ## FORGET PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name FORGET PARTITION partition_expr
+```
+
+비어 있는 파티션에 대한 모든 메타데이터를 ZooKeeper에서 제거합니다. 파티션이 비어 있지 않거나 존재하지 않으면 쿼리가 실패합니다. 앞으로 다시 사용되지 않을 파티션에 대해서만 실행하십시오.
+
+파티션 표현식을 설정하는 방법은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+예시:
+
+```sql
+ALTER TABLE mt FORGET PARTITION '20201121';
+```
+
+<div id="attach-partitionpart">
+  ## ATTACH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
+```
+
+`detached` 디렉터리에서 테이블에 데이터를 추가합니다. 전체 파티션이나 개별 파트의 데이터를 추가할 수 있습니다. 예시:
+
+```sql
+ALTER TABLE visits ATTACH PARTITION 201901;
+ALTER TABLE visits ATTACH PART 201901_2_2_0;
+```
+
+파티션 표현식을 설정하는 방법에 대한 자세한 내용은 [파티션 표현식을 설정하는 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+이 쿼리는 복제됩니다. 이니시에이터 레플리카는 `detached` 디렉터리에 데이터가 있는지 확인합니다.
+데이터가 있으면 해당 데이터의 무결성을 검사합니다. 모두 정상이면 데이터를 테이블에 추가합니다.
+
+ATTACH 명령을 받은 비이니시에이터 레플리카가 자체 `detached` 폴더에서 올바른 체크섬을 가진 파트를 찾으면, 다른 레플리카에서 가져오지 않고 데이터를 ATTACH합니다.
+올바른 체크섬을 가진 파트가 없으면, 해당 파트를 보유한 임의의 레플리카에서 데이터를 다운로드합니다.
+
+한 레플리카의 `detached` 디렉터리에 데이터를 넣고 `ALTER ... ATTACH` 쿼리를 사용하여 모든 레플리카의 테이블에 추가할 수 있습니다.
+
+<div id="attach-partition-from">
+  ## ATTACH PARTITION FROM
+</div>
+
+```sql
+ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
+```
+
+이 쿼리는 `table1`의 데이터 파티션을 `table2`로 복사합니다.
+
+다음 사항에 유의하십시오:
+
+* `table1`과 `table2` 어느 쪽에서도 데이터는 삭제되지 않습니다.
+* `table1`은 임시 테이블일 수 있습니다.
+
+쿼리가 성공적으로 실행되려면 다음 조건을 충족해야 합니다:
+
+* 두 테이블의 구조가 동일해야 합니다.
+* 두 테이블은 동일한 파티션 키, 동일한 ORDER BY 키, 동일한 프라이머리 키를 가져야 합니다.
+* 두 테이블은 동일한 스토리지 정책을 가져야 합니다.
+* 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 활성화되어 있으면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합일 수 있습니다.
+
+<div id="replace-partition">
+  ## REPLACE PARTITION
+</div>
+
+```sql
+ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
+```
+
+이 쿼리는 데이터 파티션을 `table1`에서 `table2`로 복사하고, `table2`의 기존 파티션을 대체합니다. 이 작업은 원자적으로 수행됩니다.
+
+다음 사항에 유의하십시오.
+
+* `table1`의 데이터는 삭제되지 않습니다.
+* `table1`은 임시 테이블일 수 있습니다.
+
+쿼리가 성공적으로 실행되려면 다음 조건을 충족해야 합니다.
+
+* 두 테이블의 구조가 동일해야 합니다.
+* 두 테이블의 파티션 키, ORDER BY 키, 프라이머리 키가 모두 동일해야 합니다.
+* 두 테이블의 스토리지 정책이 동일해야 합니다.
+* 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 enabled 상태이면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합일 수 있습니다.
+
+<div id="move-partition-to-table">
+  ## MOVE PARTITION TO TABLE
+</div>
+
+```sql
+ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+이 쿼리는 `table_source`의 데이터를 삭제하면서 데이터 파티션을 `table_source`에서 `table_dest`로 이동합니다.
+
+쿼리가 성공적으로 실행되려면 다음 조건을 충족해야 합니다.
+
+* 두 테이블의 구조가 동일해야 합니다.
+* 두 테이블의 파티션 키, ORDER BY 키, 프라이머리 키가 동일해야 합니다.
+* 두 테이블의 스토리지 정책이 동일해야 합니다.
+* 두 테이블은 동일한 엔진 계열(복제된 또는 비복제된)이어야 합니다.
+* 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다. 대상 테이블에서 `enforce_index_structure_match_on_partition_manipulation` 설정이 활성화되어 있으면 인덱스와 프로젝션이 완전히 동일해야 합니다. 그렇지 않으면 대상 테이블은 원본 테이블의 인덱스와 프로젝션을 모두 포함하는 상위 집합이어도 됩니다.
+
+<div id="clear-column-in-partition">
+  ## PARTITION에서 COLUMN 비우기
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
+```
+
+지정된 파티션에서 지정된 컬럼의 모든 값을 재설정합니다. 테이블 생성 시 `DEFAULT` 절이 정의되어 있으면, 이 쿼리는 컬럼 값을 지정된 기본값으로 설정합니다.
+
+예시:
+
+```sql
+ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
+```
+
+<div id="freeze-partition">
+  ## FREEZE PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+```
+
+이 쿼리는 지정된 파티션의 로컬 백업을 생성합니다. `PARTITION` 절을 생략하면 모든 파티션의 백업을 한 번에 생성합니다.
+
+<Note>
+  전체 백업 과정은 서버를 중지하지 않고 수행됩니다.
+</Note>
+
+이전 형식의 테이블에서는 파티션 이름의 접두사(예: `2019`)를 지정할 수 있습니다. 그러면 해당하는 모든 파티션의 백업이 생성됩니다. 파티션 표현식 설정 방법은 [파티션 표현식 설정 방법](#how-to-set-partition-expression) 섹션을 참조하십시오.
+
+실행 시점에 데이터 스냅샷을 만들기 위해, 이 쿼리는 테이블 데이터의 하드링크를 생성합니다. 하드링크는 `/var/lib/clickhouse/shadow/N/...` 디렉터리에 배치되며, 각 항목의 의미는 다음과 같습니다.
+
+* `/var/lib/clickhouse/`는 구성에 지정된 ClickHouse 작업 디렉터리입니다.
+* `N`은 백업의 순차 번호입니다.
+* `WITH NAME` 매개변수가 지정된 경우, 순차 번호 대신 `'backup_name'` 매개변수의 값이 사용됩니다.
+
+<Note>
+  [테이블의 데이터 저장에 여러 디스크를 사용하는 경우](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes), `shadow/N` 디렉터리가 모든 디스크에 생성되며 `PARTITION` 표현식에 해당하는 데이터 파트가 저장됩니다.
+</Note>
+
+백업 내부에도 `/var/lib/clickhouse/` 내부와 동일한 디렉터리 구조가 생성됩니다. 이 쿼리는 모든 파일에 대해 `chmod`를 실행하여 쓰기를 금지합니다.
+
+백업을 만든 후 `/var/lib/clickhouse/shadow/`의 데이터를 원격 서버로 복사한 다음 로컬 서버에서 삭제할 수 있습니다. `ALTER t FREEZE PARTITION` 쿼리는 복제되지 않습니다. 이 쿼리는 로컬 서버에만 로컬 백업을 생성합니다.
+
+이 쿼리는 백업을 거의 즉시 생성합니다(단, 먼저 해당 테이블에 대해 현재 실행 중인 쿼리가 끝날 때까지 기다립니다).
+
+`ALTER TABLE t FREEZE PARTITION`는 데이터만 복사하며, 테이블 메타데이터는 복사하지 않습니다. 테이블 메타데이터도 백업하려면 `/var/lib/clickhouse/metadata/database/table.sql` 파일을 복사하십시오.
+
+백업에서 데이터를 복원하려면 다음 단계를 수행하십시오.
+
+1. 테이블이 없으면 생성합니다. 생성 쿼리를 확인하려면 .sql 파일을 사용하십시오(파일 안의 `ATTACH`를 `CREATE`로 바꾸십시오).
+2. 백업 내부의 `data/database/table/` 디렉터리에서 `/var/lib/clickhouse/data/database/table/detached/` 디렉터리로 데이터를 복사합니다.
+3. `ALTER TABLE t ATTACH PARTITION` 쿼리를 실행하여 데이터를 테이블에 추가합니다.
+
+백업에서 복원할 때는 서버를 중지할 필요가 없습니다.
+
+이 쿼리는 파트를 병렬로 처리하며, 스레드 수는 `max_threads` 설정으로 조정됩니다.
+
+백업 및 데이터 복원에 대한 자세한 내용은 [&quot;ClickHouse의 백업 및 복원&quot;](/ko/concepts/features/backup-restore/overview) 섹션을 참조하십시오.
+
+<div id="unfreeze-partition">
+  ## UNFREEZE PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+지정된 이름의 `frozen` 파티션을 디스크에서 제거합니다. `PARTITION` 절을 생략하면 모든 파티션의 백업이 한 번에 제거됩니다.
+
+<div id="clear-index-in-partition">
+  ## CLEAR INDEX IN PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+이 쿼리는 `CLEAR COLUMN`과 유사하게 동작하지만, 컬럼 데이터 대신 인덱스를 재설정합니다.
+
+<div id="fetch-partitionpart">
+  ## FETCH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+```
+
+다른 서버에서 파티션을 다운로드합니다. 이 쿼리는 복제된 테이블에서만 사용할 수 있습니다.
+
+이 쿼리는 다음 작업을 수행합니다.
+
+1. 지정된 세그먼트에서 파티션|파트를 다운로드합니다. &#39;path-in-zookeeper&#39;에는 ZooKeeper에서 해당 세그먼트의 경로를 지정해야 합니다.
+2. 그런 다음 다운로드한 데이터를 `table_name` 테이블의 `detached` 디렉터리에 저장합니다. [ATTACH PARTITION|PART](#attach-partitionpart) 쿼리를 사용해 데이터를 테이블에 추가하십시오.
+
+예시:
+
+1. FETCH PARTITION
+
+```sql
+ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PARTITION 201902;
+```
+
+2. FETCH PART
+
+```sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
+
+다음에 유의하십시오:
+
+* `ALTER ... FETCH PARTITION|PART` 쿼리는 복제되지 않습니다. 파트 또는 파티션은 로컬 server의 `detached` 디렉터리에만 배치됩니다.
+* `ALTER TABLE ... ATTACH` 쿼리는 복제됩니다. 모든 레플리카에 데이터가 추가됩니다. 데이터는 `detached` 디렉터리에서 레플리카 중 하나에 추가되고, 나머지 레플리카에는 인접한 레플리카로부터 추가됩니다.
+
+다운로드하기 전에 시스템은 파티션이 존재하는지, 그리고 테이블 구조가 일치하는지 확인합니다. 가장 적합한 레플리카가 정상 상태인 레플리카 중에서 자동으로 선택됩니다.
+
+쿼리 이름은 `ALTER TABLE`이지만, 실제로는 테이블 구조를 변경하지 않으며 테이블에서 사용할 수 있는 데이터도 즉시 바꾸지 않습니다.
+
+<div id="move-partitionpart">
+  ## MOVE PARTITION|PART
+</div>
+
+`MergeTree` 엔진 테이블의 파티션 또는 데이터 파트를 다른 볼륨이나 디스크로 이동합니다. 자세한 내용은 [데이터 저장을 위해 여러 블록 디바이스 사용하기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)를 참조하십시오.
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+`ALTER TABLE t MOVE` 쿼리:
+
+* 레플리카마다 서로 다른 스토리지 정책을 사용할 수 있으므로 복제되지 않습니다.
+* 지정된 디스크 또는 볼륨이 구성되어 있지 않으면 오류를 반환합니다. 또한 스토리지 정책에 지정된 데이터 이동 조건을 적용할 수 없는 경우에도 오류를 반환합니다.
+* 이동할 데이터가 백그라운드 프로세스, 동시에 실행되는 `ALTER TABLE t MOVE` 쿼리 또는 백그라운드 데이터 병합에 의해 이미 이동된 경우에도 오류를 반환할 수 있습니다. 이 경우 사용자는 추가 작업을 수행할 필요가 없습니다.
+
+예시:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
+
+<div id="update-in-partition">
+  ## UPDATE IN PARTITION
+</div>
+
+지정한 필터링 표현식과 일치하는 지정된 파티션의 데이터를 수정합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+구문:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
+```
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+-- 파티션 이름 사용
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+
+-- 파티션 ID 사용
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
+```
+
+<div id="see-also">
+  ### 관련 항목
+</div>
+
+* [UPDATE](/ko/reference/statements/alter/partition#update-in-partition)
+
+<div id="delete-in-partition">
+  ## DELETE IN PARTITION
+</div>
+
+지정한 필터링 표현식과 일치하는 데이터를 지정한 파티션에서 삭제합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+구문:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
+```
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+-- 파티션 이름 사용
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+
+-- 파티션 ID 사용
+ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
+```
+
+<div id="rewrite-parts">
+  ## 파트 재작성
+</div>
+
+이 작업은 모든 새로운 설정을 적용해 파트를 처음부터 다시 작성합니다. 이는 `use_const_adaptive_granularity`와 같은 테이블 수준 설정이 기본적으로 새로 작성되는 파트에만 적용되기 때문입니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+ALTER TABLE mt REWRITE PARTS;
+ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
+```
+
+<div id="see-also">
+  ### 관련 항목
+</div>
+
+* [DELETE](/ko/reference/statements/alter/delete)
+
+<div id="how-to-set-partition-expression">
+  ## 파티션 표현식을 지정하는 방법
+</div>
+
+`ALTER ... PARTITION` 쿼리에서는 파티션 표현식을 여러 방식으로 지정할 수 있습니다.
+
+* `system.parts` 테이블의 `partition` 컬럼 값으로 지정합니다. 예를 들어 `ALTER TABLE visits DETACH PARTITION 201901`입니다.
+* `ALL` 키워드를 사용합니다. 이 방법은 DROP/DETACH/ATTACH/ATTACH FROM에서만 사용할 수 있습니다. 예를 들어 `ALTER TABLE visits ATTACH PARTITION ALL`입니다.
+* 테이블의 파티셔닝 키 튜플과 타입이 일치하는 표현식 또는 상수의 튜플로 지정합니다. 파티셔닝 키가 단일 요소인 경우에는 표현식을 `tuple (...)` 함수로 감싸야 합니다. 예를 들어 `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`입니다.
+* 파티션 ID를 사용합니다. 파티션 ID는 파티션의 문자열 식별자이며, 가능하면 사람이 읽기 쉬운 형식으로 파일 시스템과 ZooKeeper에서 파티션 이름으로 사용됩니다. 파티션 ID는 `PARTITION ID` 절에서 작은따옴표로 지정해야 합니다. 예를 들어 `ALTER TABLE visits DETACH PARTITION ID '201901'`입니다.
+* [ALTER ATTACH PART](#attach-partitionpart) 및 [DROP DETACHED PART](#drop-detached-partitionpart) 쿼리에서 파트 이름을 지정하려면 [system.detached&#95;parts](/ko/reference/system-tables/detached_parts) 테이블의 `name` 컬럼 값을 문자열 리터럴로 사용합니다. 예를 들어 `ALTER TABLE visits ATTACH PART '201901_1_1_0'`입니다.
+
+파티션을 지정할 때 따옴표 사용 여부는 파티션 표현식의 타입에 따라 달라집니다. 예를 들어 `String` 타입은 이름을 따옴표(`'`)로 감싸서 지정해야 합니다. `Date` 및 `Int*` 타입은 따옴표가 필요하지 않습니다.
+
+위의 모든 규칙은 [OPTIMIZE](/ko/reference/statements/optimize) 쿼리에도 동일하게 적용됩니다. 파티셔닝되지 않은 테이블을 최적화할 때 유일한 파티션만 지정해야 한다면 `PARTITION tuple()` 표현식을 사용하십시오. 예를 들어:
+
+```sql
+OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
+```
+
+`IN PARTITION`은 `ALTER TABLE` 쿼리에서 [UPDATE](/ko/reference/statements/alter/update) 또는 [DELETE](/ko/reference/statements/alter/delete) 표현식이 적용될 파티션을 지정합니다. 새 파트는 지정된 파티션에서만 생성됩니다. 따라서 테이블이 많은 파티션으로 나뉘어 있고 데이터의 일부만 업데이트하면 되는 경우 `IN PARTITION`을 사용하면 부하를 줄일 수 있습니다.
+
+`ALTER ... PARTITION` 쿼리 예시는 테스트 [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) 및 [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql)에서 확인할 수 있습니다.
