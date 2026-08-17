@@ -294,8 +294,8 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
     }
     try:
         for name, methods in users.items():
-            node.query(f"CREATE USER {name} IDENTIFIED WITH {methods}")
-            node.query(f"GRANT SELECT ON system.one TO {name}")
+            node.query(f"CREATE USER {name} IDENTIFIED WITH {methods}", password="123")
+            node.query(f"GRANT SELECT ON system.one TO {name}", password="123")
 
             if name == "user_two_scram":
                 with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
@@ -330,7 +330,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
                 )
     finally:
         for name in users:
-            node.query(f"DROP USER IF EXISTS {name}")
+            node.query(f"DROP USER IF EXISTS {name}", password="123")
 
 
 def test_python_client(started_cluster):
