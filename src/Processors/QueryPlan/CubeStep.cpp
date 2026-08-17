@@ -4,12 +4,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/AggregatorParamsSerialization.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -24,6 +25,13 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+}
+
+namespace Setting
+{
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -120,10 +128,11 @@ void CubeStep::updateOutputHeader()
 
 void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
+    /// Only the parameters the transform's block merge reads; the reader rebuilds merge-only
+    /// `Aggregator::Params` from them, like `MergingAggregatedStep` does.
     settings[QueryPlanSerializationSetting::max_block_size] = params.max_block_size;
-
-    serializeAggregatorParamsToSettings(params, settings);
-
+    settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization] = params.min_hit_rate_to_use_consecutive_keys_optimization;
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
     /// Every version that can read a `Cube` step also knows this setting name (see the gate in
     /// `serialize`), so unlike `AggregatingStep` no old-peer narrowing applies.
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
@@ -186,9 +195,23 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
 
-    /// Rebuild the same full (not merge-only) `Aggregator::Params` shape the planner gives the writer's
-    /// `CubeStep`: the transform constructs its own `Aggregator` instances from them.
-    auto params = deserializeAggregatorParams(std::move(keys), std::move(aggregates), overflow_row, StatsCollectingParams{}, ctx);
+    const auto & query_settings = ctx.context->getSettingsRef();
+
+    Aggregator::Params params(
+        keys,
+        aggregates,
+        overflow_row,
+        query_settings[Setting::max_threads],
+        ctx.settings[QueryPlanSerializationSetting::max_block_size],
+        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
+
+    /// The transform's `group_by_use_nulls` path builds an `Aggregator` over a finalized header;
+    /// with `only_merge` set, the aggregate state types would be read from that header's finalized
+    /// columns and the non-final output would be built over the wrong column type. The writer's
+    /// planner-built params carry `only_merge = false` as well.
+    params.only_merge = false;
 
     return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
 }
