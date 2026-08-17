@@ -95,7 +95,7 @@ An incremental materialized view runs its query as data is inserted into a sourc
 
 ## `JSON` {#json}
 
-The `JSON` type stores semi-structured documents whose paths and types may vary between rows. ClickHouse stores discovered paths as subcolumns so queries can read individual fields efficiently. Use typed columns or structural types such as `Tuple` when the schema is stable; ClickHouse `Variant` is a separate type for one of a declared set of alternatives.
+The `JSON` type stores semi-structured documents whose paths and types may vary between rows. ClickHouse stores discovered paths as subcolumns so queries can read individual fields efficiently. Use typed columns or structural types such as `Tuple` when the schema is stable.
 
 ## Lightweight update {#lightweight-update}
 
