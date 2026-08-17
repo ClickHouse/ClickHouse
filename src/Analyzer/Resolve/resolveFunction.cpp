@@ -206,21 +206,10 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     return false;
 }
 
-bool containsEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
+bool isEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
 {
-    if (const auto * column = node->as<ColumnNode>();
-        column && column->getColumnName().starts_with("_subquery_"))
-        return true;
-
-    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
-        if (containsEarlyShortCircuitScalarPlaceholder(constant->getSourceExpression()))
-            return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && containsEarlyShortCircuitScalarPlaceholder(child))
-            return true;
-
-    return false;
+    const auto * column = node->as<ColumnNode>();
+    return column && column->getColumnName().starts_with("_subquery_");
 }
 
 bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
@@ -236,8 +225,8 @@ bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
     if (arguments.size() != 2)
         return false;
 
-    const bool first_is_scalar = containsEarlyShortCircuitScalarPlaceholder(arguments[0]);
-    const bool second_is_scalar = containsEarlyShortCircuitScalarPlaceholder(arguments[1]);
+    const bool first_is_scalar = isEarlyShortCircuitScalarPlaceholder(arguments[0]);
+    const bool second_is_scalar = isEarlyShortCircuitScalarPlaceholder(arguments[1]);
     if (first_is_scalar == second_is_scalar)
         return false;
 
