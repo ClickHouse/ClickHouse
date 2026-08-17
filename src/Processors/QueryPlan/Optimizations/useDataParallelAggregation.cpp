@@ -88,14 +88,6 @@ bool isPartitionKeyFunctionOfKeys(
     auto key_nodes = key_actions.findInOutputs(key_names);
     auto key_dag = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/true);
 
-    /// A key tracing to an `ARRAY_JOIN` node (see `buildArrayJoinDAG`) is an exploded array element, and
-    /// for such a key the guarantee this function establishes cannot hold: equal key values may come from
-    /// unrelated source rows lying in different partitions. E.g. with `PARTITION BY length(arr)` and the
-    /// key being the element of `ARRAY JOIN arr`, the arrays `[1]` and `[1, 2]` lie in different
-    /// partitions but both produce the key value `1`.
-    if (key_dag.hasArrayJoin())
-        return false;
-
     const auto & key_required_columns = key_dag.getRequiredColumnsNames();
 
     /// Check that PK columns is a subset of key columns.
@@ -103,7 +95,15 @@ bool isPartitionKeyFunctionOfKeys(
         if (std::ranges::find(key_required_columns, col) == key_required_columns.end())
             return false;
 
-    const auto irreducible_nodes = removeInjectiveFunctionsFromResultsRecursively(key_dag);
+    auto irreducible_nodes = removeInjectiveFunctionsFromResultsRecursively(key_dag);
+
+    /// An `ARRAY_JOIN` node (see `buildArrayJoinDAG`) is an exploded array element, and the partition
+    /// key must not be matched through it: equal exploded values may come from unrelated source rows
+    /// lying in different partitions. E.g. with `PARTITION BY length(arr)` and the key being the element
+    /// of `ARRAY JOIN arr`, the arrays `[1]` and `[1, 2]` lie in different partitions but both produce
+    /// the value `1`. The other key columns remain usable: with `PARTITION BY k % 8` and keys `(k, x)`
+    /// where `x` is exploded, equal key tuples still imply equal `k` and hence one partition.
+    std::erase_if(irreducible_nodes, [](const ActionsDAG::Node * node) { return node->type == ActionsDAG::ActionType::ARRAY_JOIN; });
 
     const auto matches = matchTrees(key_dag.getOutputs(), partition_actions);
 
