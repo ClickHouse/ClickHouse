@@ -364,7 +364,8 @@ private:
     bool parameterized_view_arguments_in_resolve_process = false;
 
     /// True while an expression that must resolve to a plain `ConstantNode` is resolved:
-    /// LIMIT/OFFSET and LIMIT BY LIMIT/OFFSET, window frame offsets, and WITH FILL expressions.
+    /// LIMIT/OFFSET and LIMIT BY LIMIT/OFFSET, window frame offsets, WITH FILL expressions,
+    /// and parametric function parameters.
     /// In only-analyze mode the `UNIQUE` predicate placeholder must stay a plain constant in
     /// these contexts instead of being wrapped in `materialize`. See `resolveUniquePredicate`.
     bool constant_expression_in_resolve_process = false;

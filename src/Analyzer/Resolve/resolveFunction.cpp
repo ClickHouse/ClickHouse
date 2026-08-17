@@ -765,6 +765,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function parameters
 
+    /// Function parameters must remain plain constants because they configure the function
+    /// implementation. In only-analyze mode, `UNIQUE` normally uses a `materialize` wrapper
+    /// around its type-only placeholder to prevent outer expressions from observing the
+    /// fabricated value. That wrapper is not a `ConstantNode`, so mark parameter resolution as
+    /// a constant-only context and let `UNIQUE` keep its plain placeholder constant instead.
+    bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+    constant_expression_in_resolve_process = true;
+    SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
+
     auto parameters_projection_names = resolveExpressionNodeList(
         function_node_ptr->getParametersNode(),
         scope,
