@@ -583,7 +583,7 @@ The following query-level settings control WebAssembly UDF execution:
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 
-- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 (the default) for no fixed row cap: the input block is then split dynamically, only when its estimated serialized size would exceed half of the guest's current linear memory. A block that fits in that budget is passed to the guest in a single call.
 
 - `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
 
