@@ -35,6 +35,8 @@ exec 4<>"$FIFO"
 
 run_unused_stdin_test()
 {
+    local expected_output="$1"
+    shift
     local output_file="${CLICKHOUSE_TMP}/04064_empty_stdin_$$.out"
 
     if ! timeout 30 "$@" <&4 > "$output_file" 2>&1
@@ -44,7 +46,7 @@ run_unused_stdin_test()
         exit 1
     fi
 
-    grep -qx '6' "$output_file" ||
+    grep -qx "$expected_output" "$output_file" ||
     {
         cat "$output_file" >&2
         exit 1
@@ -53,7 +55,7 @@ run_unused_stdin_test()
     rm -f "$output_file"
 }
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
+run_unused_stdin_test 6 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
 
 # Also test with async_insert enabled — the async insert path has its own
 # stdin check that must ignore an unused inherited pipe without hanging.
@@ -67,7 +69,7 @@ SELECT sum(x) FROM test_04064_async;
 DROP TABLE test_04064_async;
 EOF
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
+run_unused_stdin_test 60 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC"
 
 # Also test with --inline-insert-data — this path has its own stdin check
 # (in `is_inline_insert_data` branch) that must ignore an unused pipe without hanging.
@@ -79,22 +81,22 @@ SELECT sum(x) FROM test_04064_inline;
 DROP TABLE test_04064_inline;
 EOF
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
+run_unused_stdin_test 600 $CLICKHOUSE_CLIENT --inline-insert-data --queries-file="$QUERIES_FILE_INLINE"
 
 # Also test the `-q` / `--query` entrypoint with the same open-empty-pipe stdin.
 # The parser/entrypoint differs from `--queries-file`, so cover it explicitly to
 # guard against regressions in either CLI mode.
 QUERY_Q="CREATE TABLE IF NOT EXISTS test_04064_q (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q VALUES (1000), (2000), (3000); SELECT sum(x) FROM test_04064_q; DROP TABLE test_04064_q;"
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q"
+run_unused_stdin_test 6000 $CLICKHOUSE_CLIENT -q "$QUERY_Q"
 
 QUERY_Q_ASYNC="CREATE TABLE IF NOT EXISTS test_04064_q_async (x UInt32) ENGINE = MergeTree ORDER BY x; SET async_insert = 1; SET wait_for_async_insert = 1; INSERT INTO test_04064_q_async VALUES (10000), (20000), (30000); SELECT sum(x) FROM test_04064_q_async; DROP TABLE test_04064_q_async;"
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
+run_unused_stdin_test 60000 $CLICKHOUSE_CLIENT -q "$QUERY_Q_ASYNC"
 
 QUERY_Q_INLINE="CREATE TABLE IF NOT EXISTS test_04064_q_inline (x UInt32) ENGINE = MergeTree ORDER BY x; INSERT INTO test_04064_q_inline VALUES (100000), (200000), (300000); SELECT sum(x) FROM test_04064_q_inline; DROP TABLE test_04064_q_inline;"
 
-run_unused_stdin_test $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
+run_unused_stdin_test 600000 $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
 
 exec 4>&-
 rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE"
