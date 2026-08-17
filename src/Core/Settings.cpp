@@ -5509,7 +5509,26 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
-Allow to execute alters which affects not only tables metadata, but also data on disk
+Allow to execute alters which affects not only tables metadata, but also data on disk.
+
+When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
+`ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
+scheduling a mutation (see `system.mutations`). This covers:
+
+- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` and
+  `RENAME COLUMN` of a physical column, `CLEAR COLUMN`, `DROP INDEX`, `DROP PROJECTION`,
+  `DROP STATISTICS`, and `MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `UPDATE`, `DELETE WHERE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`,
+  `MATERIALIZE STATISTICS`, `MATERIALIZE COLUMN`, `MATERIALIZE TTL`, `APPLY DELETED MASK`,
+  `APPLY PATCHES` and `REWRITE PARTS`.
+
+Statements that only change metadata are always allowed, including `ADD COLUMN`,
+`COMMENT COLUMN`, `MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS`
+column. Lightweight `DELETE FROM` and `UPDATE` are also allowed: they write patch parts
+instead of rewriting existing ones.
+
+The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
+`Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries

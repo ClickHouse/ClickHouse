@@ -213,6 +213,11 @@ BlockIO InterpreterDeleteQuery::execute()
 
             auto context = Context::createCopy(getContext());
             context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
+            /// This ALTER is a lightweight delete, not a user-issued one, so the storage-side
+            /// `allow_non_metadata_alters` check must not see it. The relaxation lives on this
+            /// private copy because the storage cannot tell the two apart: a user-written
+            /// `ALTER TABLE ... UPDATE _row_exists = 0` produces an identical command.
+            context->setSetting("allow_non_metadata_alters", true);
             InterpreterAlterQuery alter_interpreter(alter_ast, context);
             return alter_interpreter.execute();
         }
