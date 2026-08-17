@@ -68,6 +68,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     , deserialization_prefixes_cache(deserialization_prefixes_cache_)
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
+    , columns_cache_metadata_version(static_cast<UInt64>(reinterpret_cast<uintptr_t>(storage_snapshot_->metadata.get())))
     , read_without_marks(
         settings.can_read_part_without_marks
         && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
@@ -254,7 +255,8 @@ size_t MergeTreeReaderWide::readRows(
                     data_part_info_for_read->getPartName(),
                     column_name,
                     row_begin,
-                    row_end_query);
+                    row_end_query,
+                    columns_cache_metadata_version);
 
                 /// We can serve from cache if we find exactly one block that fully contains
                 /// the requested range [row_begin, row_end_query).
@@ -601,10 +603,11 @@ size_t MergeTreeReaderWide::readRows(
                                 data_part_info_for_read->getPartName(),
                                 columns_to_read[pos].name,
                                 cache_row_begin,
-                                column_row_end};
+                                column_row_end,
+                                columns_cache_metadata_version};
 
                             auto entry = std::make_shared<ColumnsCacheEntry>(
-                                ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
+                                ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache, getStorageSnapshot()->metadata});
 
                             const size_t entry_weight = ColumnsCacheWeightFunction{}(*entry);
                             /// Charge the budget only for entries that were actually inserted.

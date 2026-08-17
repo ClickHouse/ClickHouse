@@ -101,7 +101,8 @@ ColumnsCache::getIntersecting(
     const String & part_name,
     const String & column_name,
     size_t row_begin,
-    size_t row_end)
+    size_t row_end,
+    UInt64 metadata_version)
 {
     std::vector<std::pair<Key, MappedPtr>> result;
 
@@ -132,7 +133,7 @@ ColumnsCache::getIntersecting(
         if (it != intervals.begin())
         {
             auto prev_it = std::prev(it);
-            if (prev_it->second.row_end > row_begin)
+            if (prev_it->second.row_end > row_begin && prev_it->second.metadata_version == metadata_version)
                 intersecting_keys.push_back(prev_it->second);
         }
 
@@ -146,7 +147,7 @@ ColumnsCache::getIntersecting(
                 break;
 
             /// Check if this interval actually intersects
-            if (key.row_end > row_begin)
+            if (key.row_end > row_begin && key.metadata_version == metadata_version)
             {
                 intersecting_keys.push_back(key);
             }

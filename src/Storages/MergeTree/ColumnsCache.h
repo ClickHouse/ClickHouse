@@ -20,6 +20,8 @@ namespace ProfileEvents
 namespace DB
 {
 
+class StorageInMemoryMetadata;
+
 /// Key for looking up cached deserialized columns.
 /// Identifies a specific column in a specific row range of a specific data part.
 /// Uses Table UUID so that RENAME TABLE properly invalidates the cache.
@@ -31,6 +33,10 @@ struct ColumnsCacheKey
     String column_name;
     size_t row_begin = 0;
     size_t row_end = 0;
+    /// Identity of the `StorageInMemoryMetadata` snapshot used to deserialize
+    /// this column. Cache data from an earlier schema must not be used after an
+    /// `ALTER` makes the same column name refer to a different column.
+    UInt64 metadata_version = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
 
@@ -54,6 +60,7 @@ struct ColumnsCacheKeyHash
         hash.update(key.column_name);
         hash.update(key.row_begin);
         hash.update(key.row_end);
+        hash.update(key.metadata_version);
         return hash.get64();
     }
 };
@@ -63,6 +70,10 @@ struct ColumnsCacheEntry
 {
     ColumnPtr column;
     size_t rows;
+    /// Keeps the metadata snapshot alive while its address is used in a cache
+    /// key, preventing allocator reuse from making two different schemas share
+    /// a metadata_version.
+    std::shared_ptr<const StorageInMemoryMetadata> metadata;
 };
 
 struct ColumnsCacheWeightFunction
@@ -192,7 +203,8 @@ public:
         const String & part_name,
         const String & column_name,
         size_t row_begin,
-        size_t row_end);
+        size_t row_end,
+        UInt64 metadata_version = 0);
 
     /// Insert a column into the cache.
     /// Maintains a non-overlapping invariant on the per-column interval map so

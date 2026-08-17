@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
@@ -116,6 +118,7 @@ private:
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
+    UInt64 columns_cache_metadata_version = 0;
     bool read_without_marks = false;
     LoggerPtr log;
 
