@@ -26,6 +26,7 @@ public:
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
         ReservationSharedPtr space_reservation_,
+        bool parent_is_explicit_recompression_,
         MergeListElement * parent_merge_list_element_ = nullptr)
         : name(std::move(name_))
         , projection(projection_)
@@ -37,6 +38,7 @@ public:
         , time_of_merge(time_of_merge_)
         , new_data_part(new_data_part_)
         , space_reservation(space_reservation_)
+        , parent_is_explicit_recompression(parent_is_explicit_recompression_)
         , parent_merge_list_element(parent_merge_list_element_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
@@ -70,6 +72,7 @@ private:
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     ReservationSharedPtr space_reservation;
+    bool parent_is_explicit_recompression;
     MergeListElement * parent_merge_list_element;
 
     LoggerPtr log;

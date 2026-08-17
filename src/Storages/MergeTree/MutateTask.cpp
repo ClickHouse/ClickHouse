@@ -2259,6 +2259,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->time_of_mutation,
             ctx->new_data_part,
             ctx->space_reservation,
+            ctx->is_explicit_recompression,
             (*ctx->mutate_entry)->ptr()
         );
 

@@ -447,6 +447,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     MergeTreeTransactionPtr txn,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
+    bool parent_is_explicit_recompression,
     const String & suffix)
 {
     if (future_part->isResultPatch())
@@ -470,7 +471,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         std::move(merging_params),
         projection,
         parent_part,
-        /*parent_is_explicit_recompression=*/ false,
+        parent_is_explicit_recompression,
         nullptr,
         suffix,
         std::move(txn),

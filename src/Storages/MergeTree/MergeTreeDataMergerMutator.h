@@ -93,6 +93,7 @@ public:
         MergeTreeTransactionPtr txn,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
+        bool parent_is_explicit_recompression = false,
         const String & suffix = "");
 
     /** Mutate a single data part with the specified commands. Will create and return a temporary part.

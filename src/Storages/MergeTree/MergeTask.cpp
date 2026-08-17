@@ -1648,6 +1648,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
+        global_ctx->is_explicit_recompression,
         !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
     );
 }
