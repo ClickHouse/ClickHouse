@@ -6483,7 +6483,7 @@ Optimize GROUP BY when all keys in block are constant
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \
-    DECLARE(Bool, enable_named_columns_in_function_tuple, true, R"(
+    DECLARE(Bool, enable_named_columns_in_function_tuple, false, R"(
 Generate named tuples in function `tuple()` when all names are unique and can be treated as unquoted identifiers.
 
 Two ways of naming tuple elements are affected differently by the analyzer:
