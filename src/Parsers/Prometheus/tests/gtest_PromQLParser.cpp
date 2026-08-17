@@ -131,6 +131,39 @@ TEST(PromQLParser, DuplicateMetricName)
 }
 
 
+TEST(PromQLParser, CaseInsensitiveAggregationOperators)
+{
+    EXPECT_EQ(parse("SuM(up)"), R"(
+sum(up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(sum)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("ToPk BY(job) (1, up)"), R"(
+topk by (job) (1, up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(topk)
+        by job
+        Scalar(1)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    /// Aggregation operator keywords can also be metric names and must keep their original case.
+    EXPECT_EQ(parse("SUM"), R"(
+SUM
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'SUM'
+)");
+}
+
+
 /// Parse queries from https://github.com/prometheus/compliance/blob/main/promql/promql-test-queries.yml
 TEST(PromQLParser, ComplianceQueries)
 {
@@ -287,6 +320,33 @@ PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
         type EQ 'free'
         instance NE 'demo.promlabs.com:10000'
+)");
+
+    /// `start` and `end` are also valid metric and label names, even though they are used by the @ modifier.
+    EXPECT_EQ(parse("start"), R"(
+start
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'start'
+)");
+
+    EXPECT_EQ(parse("end"), R"(
+end
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'end'
+)");
+
+    EXPECT_EQ(parse(R"(http_requests_total{start="x", end="y"})"), R"(
+http_requests_total{start="x",end="y"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'http_requests_total'
+        start EQ 'x'
+        end EQ 'y'
 )");
 
     EXPECT_EQ(parse(R"(
@@ -1252,6 +1312,65 @@ PrometheusQueryTree(INSTANT_VECTOR):
         offset: 300
         InstantSelector:
             __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total @ start()"), R"(
+http_requests_total @ start()
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: start()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total @ end() offset 5m"), R"(
+http_requests_total @ end() offset 300
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: end()
+        offset: 300
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total offset 5m @ start()"), R"(
+http_requests_total @ start() offset 300
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: start()
+        offset: 300
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse(R"PROMQL(
+        http_requests_total{job="@ start()", instance=~"@ end\\(\\)"} @ end()
+        )PROMQL"), R"PROMQL(
+http_requests_total{job="@ start()",instance=~"@ end\\(\\)"} @ end()
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: end()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+            job EQ '@ start()'
+            instance RE '@ end\\(\\)'
+)PROMQL");
+
+    EXPECT_EQ(parse("http_requests_total[5m:1m] @ start()"), R"(
+http_requests_total[300:60] @ start()
+
+PrometheusQueryTree(RANGE_VECTOR):
+    Offset:
+        at: start()
+        Subquery:
+            range: 300
+            step: 60
+            InstantSelector:
+                __name__ EQ 'http_requests_total'
 )");
 
     EXPECT_EQ(parse("http_requests_total[5m:1m] offset -10s"), R"(
