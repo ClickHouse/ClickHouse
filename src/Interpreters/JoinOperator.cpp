@@ -129,7 +129,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
+    : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
