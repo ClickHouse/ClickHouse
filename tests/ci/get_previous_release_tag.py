@@ -13,6 +13,8 @@ from version_helper import (
 )
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/releases"
+PACKAGE_REGEXP = r"\Aclickhouse-common-static_.+[.]deb"
+RELEASES_PER_PAGE = 100
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +41,24 @@ def find_previous_release(
 ) -> Tuple[bool, Optional[ReleaseInfo]]:
     releases.sort(key=lambda x: x.version, reverse=True)
 
+    if not releases:
+        return False, None
+
     if server_version is None:
         return True, releases[0]
 
     for release in releases:
         if release.version < server_version:
-            return True, release
+            # A tag exists for a short period before its packages are uploaded.
+            if any(re.match(PACKAGE_REGEXP, name) for name in release.assets.keys()):
+                return True, release
+
+            logger.warning(
+                "Skipping v%s-%s: no uploaded package matching %s",
+                release.version,
+                release.type,
+                PACKAGE_REGEXP,
+            )
 
     return False, None
 
@@ -52,17 +66,22 @@ def find_previous_release(
 def get_previous_release(
     server_version: Optional[ClickHouseVersion],
 ) -> Optional[ReleaseInfo]:
-    # The endpoint orders releases by `created_at`, not by version, so later
-    # pages hold only older releases: the newest release below `server_version`
-    # is on the first page, and a first page that cannot answer is degraded.
     response = get_gh_api(
-        CLICKHOUSE_TAGS_URL, params={"page": 1, "per_page": 100}, timeout=10
+        CLICKHOUSE_TAGS_URL,
+        params={"page": 1, "per_page": RELEASES_PER_PAGE},
+        timeout=10,
     )
     if not response.ok:
         logger.error("Cannot load the list of tags from github: %s", response.reason)
         response.raise_for_status()
 
     releases = response.json()
+    # Only page 1 is read, which is sound only while it is a complete page.
+    if len(releases) < RELEASES_PER_PAGE:
+        raise ReleaseNotFoundException(
+            f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
+            f"releases, expected {RELEASES_PER_PAGE}"
+        )
 
     release_infos = []  # type: List[ReleaseInfo]
     for r in releases:
