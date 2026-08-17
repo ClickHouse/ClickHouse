@@ -467,12 +467,18 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
-            provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_AMD_DARWIN_BIN,
+                ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
-            provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_ARM_DARWIN_BIN,
+                ArtifactNames.CH_ARM_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -1789,4 +1795,30 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+
+    sign_macos_binary_jobs = Job.Config(
+        name=JobNames.SIGN_MACOS,
+        runs_on=RunnerLabels.RELEASE_MAKER_AMD,
+        command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/utils+--network=host+root",
+        timeout=3600,
+        allow_failure=True,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sign_macos_binary.py",
+                "./ci/signing",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            requires=[ArtifactNames.CH_AMD_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_AMD_DARWIN_SIGNED],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_DARWIN,
+            requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
+        ),
     )
