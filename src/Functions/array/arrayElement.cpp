@@ -70,6 +70,9 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
+    /// which cannot be represented by the default nullable wrapper around the result.
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -2442,7 +2445,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
-    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
 
     switch (qbit_type.getElementType()->getTypeId())
     {
@@ -2469,15 +2472,18 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
         uint8_t,
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
 
-    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
     const size_t dimension = qbit_type.getDimension();
     const size_t stride = qbit_type.getStride();
     const size_t element_size = qbit_type.getElementSize();
     const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
 
-    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(arguments[0].column.get());
+    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const IColumn & qbit_column = nullable_qbit ? nullable_qbit->getNestedColumn() : *arguments[0].column;
+    const bool qbit_is_const = isColumnConst(qbit_column);
     const auto & qbit_col = assert_cast<const ColumnQBit &>(
-        qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column);
+        qbit_is_const ? assert_cast<const ColumnConst &>(qbit_column).getDataColumn() : qbit_column);
     const auto & tuple = qbit_col.getNestedData();
 
     const ColumnArray * index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
@@ -2501,7 +2507,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
     auto & result_data = result->getData();
     memset(result_data.data(), 0, total_indices * sizeof(T));
 
-    const bool result_is_nullable = is_null_mode || nullable_index;
+    const bool result_is_nullable = is_null_mode || nullable_index || source_null_map;
     ColumnUInt8::MutablePtr null_map;
     if (result_is_nullable)
         null_map = ColumnUInt8::create(total_indices, UInt8(0));
@@ -2536,6 +2542,12 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
             const size_t begin = row ? offsets[row - 1] : 0;
             for (size_t pos = begin; pos < offsets[row]; ++pos, ++output_row)
             {
+                if (source_null_map && (*source_null_map)[row])
+                {
+                    null_map->getData()[output_row] = 1;
+                    continue;
+                }
+
                 if (index_null_map && (*index_null_map)[pos])
                 {
                     if (null_map)
@@ -2617,7 +2629,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
     if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
         return executeQBitWithArrayIndex<T>(arguments, input_rows_count);
 
-    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*removeNullable(arguments[0].type));
     const size_t dimension = qbit_type.getDimension();
     const size_t stride = qbit_type.getStride();
     const size_t element_size = qbit_type.getElementSize();
@@ -2625,9 +2637,12 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
 
     /// The QBit column stays constant when only the index is a full column (useDefaultImplementationForConstants
     /// unwraps constants only when every argument is constant).
-    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(arguments[0].column.get());
+    const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
+    const IColumn & qbit_column = nullable_qbit ? nullable_qbit->getNestedColumn() : *arguments[0].column;
+    const bool qbit_is_const = isColumnConst(qbit_column);
     const auto & qbit_col = assert_cast<const ColumnQBit &>(
-        qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column);
+        qbit_is_const ? assert_cast<const ColumnConst &>(qbit_column).getDataColumn() : qbit_column);
     const auto & tuple = qbit_col.getNestedData();
 
     auto res = ColumnVector<T>::create(input_rows_count);
@@ -2637,6 +2652,8 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
 
     ColumnUInt8::MutablePtr null_map;
     if constexpr (is_null_mode)
+        null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+    else if (source_null_map)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
 
     auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
@@ -2714,7 +2731,12 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
         if (!element)
         {
             for (size_t row = 0; row < input_rows_count; ++row)
-                set_out_of_range(row);
+            {
+                if (source_null_map && (*source_null_map)[row])
+                    null_map->getData()[row] = 1;
+                else
+                    set_out_of_range(row);
+            }
         }
         else
         {
@@ -2731,6 +2753,11 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
                 const size_t shift = element_size - 1 - bit;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
+                    if (source_null_map && (*source_null_map)[row])
+                    {
+                        null_map->getData()[row] = 1;
+                        continue;
+                    }
                     const size_t qbit_row = qbit_is_const ? 0 : row;
                     words[row] |= static_cast<Word>(static_cast<Word>((src[qbit_row * bytes_per_group] >> bit_in_byte) & 1) << shift);
                 }
@@ -2748,6 +2775,11 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
             const auto & indices = col_index->getData();
             for (size_t row = 0; row < input_rows_count; ++row)
             {
+                if (source_null_map && (*source_null_map)[row])
+                {
+                    null_map->getData()[row] = 1;
+                    continue;
+                }
                 std::optional<size_t> element;
                 if constexpr (std::is_signed_v<IndexType>)
                     element = resolve_signed(indices[row]);
@@ -2769,7 +2801,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
     }
 
-    if constexpr (is_null_mode)
+    if (null_map)
         return ColumnNullable::create(std::move(res), std::move(null_map));
 
     return res;
@@ -2790,7 +2822,8 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
-    if (const auto * qbit_type = checkAndGetDataType<DataTypeQBit>(arguments[0].get()))
+    const bool qbit_is_nullable = arguments[0]->isNullable();
+    if (const auto * qbit_type = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0]).get()))
     {
         if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
         {
@@ -2806,7 +2839,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             }
 
             auto element_type = qbit_type->getElementType();
-            if ((is_null_mode || index_element_is_nullable) && element_type->canBeInsideNullable())
+            if ((is_null_mode || index_element_is_nullable || qbit_is_nullable) && element_type->canBeInsideNullable())
                 element_type = makeNullable(element_type);
             return std::make_shared<DataTypeArray>(element_type);
         }
@@ -2822,7 +2855,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
         /// The n-th element of a QBit vector is reconstructed at the full precision of the element type.
         const auto & element_type = qbit_type->getElementType();
-        return is_null_mode ? makeNullable(element_type) : element_type;
+        return (is_null_mode || qbit_is_nullable) ? makeNullable(element_type) : element_type;
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -2939,7 +2972,7 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    if (checkAndGetDataType<DataTypeQBit>(arguments[0].type.get()))
+    if (checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get()))
         return executeQBit(arguments, input_rows_count);
 
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());

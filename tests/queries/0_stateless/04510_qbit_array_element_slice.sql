@@ -77,6 +77,7 @@ CREATE TABLE qbit_null (id UInt32, vec Nullable(QBit(Float32, 8))) ENGINE = Memo
 INSERT INTO qbit_null VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]::QBit(Float32, 8)), (2, NULL);
 SELECT id, vec[2], arraySlice(vec, 3, 2) FROM qbit_null ORDER BY id;
 SELECT DISTINCT toTypeName(vec[2]), toTypeName(arraySlice(vec, 3, 2)) FROM qbit_null;
+SELECT id, arrayElement(vec, [2, 4]), arrayElementOrNull(vec, [2, 9]), toTypeName(arrayElement(vec, [2, 4])) FROM qbit_null ORDER BY id;
 DROP TABLE qbit_null;
 
 SELECT 'MergeTree round trip';

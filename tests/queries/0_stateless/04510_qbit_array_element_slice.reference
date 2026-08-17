@@ -54,6 +54,8 @@ Nullable(QBit)
 1	2	[3,4]
 2	\N	\N
 Nullable(Float32)	Nullable(QBit(Float32, 2))
+1	[2,4]	[2,NULL]	Array(Nullable(Float32))
+2	[NULL,NULL]	[NULL,NULL]	Array(Nullable(Float32))
 MergeTree round trip
 1	9	[9,10,11,12,13,14,15,16]
 2	25	[25,26,27,28,29,30,31,32]
