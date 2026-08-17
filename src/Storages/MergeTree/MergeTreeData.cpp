@@ -1018,6 +1018,47 @@ void MergeTreeData::checkProperties(
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
 
+    /// Rows are stored inside a part in sorting key order, so a value that changes on read leaves the part
+    /// mis-sorted. Not on attach: a table stored by an earlier version stays loadable.
+    if (!attach)
+    {
+        /// Keyed by codec text as well as name, so replacing one lossy codec by another is still a new
+        /// pair rather than a restatement of the grandfathered one.
+        const auto lossy_sorting_key_columns = [](const StorageInMemoryMetadata & metadata)
+        {
+            std::set<std::pair<String, String>> result;
+            for (const auto & name : metadata.getColumnsRequiredForSortingKey())
+            {
+                const auto column = metadata.columns.tryGetColumnDescription(
+                    GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
+                if (column && column->codec
+                    && CompressionCodecFactory::instance().get(column->codec, column->type)->isLossyCompression())
+                    result.emplace(name, column->codec->formatWithSecretsOneLine());
+            }
+            return result;
+        };
+
+        /// Only what this operation introduces, so an unrelated ALTER of a table stored by an earlier
+        /// version is not refused. On CREATE both arguments are the same object and nothing is excused.
+        const auto already_present = &old_metadata == &new_metadata
+            ? std::set<std::pair<String, String>>{}
+            : lossy_sorting_key_columns(old_metadata);
+
+        for (const auto & pair : lossy_sorting_key_columns(new_metadata))
+        {
+            if (already_present.contains(pair))
+                continue;
+
+            const auto & name = pair.first;
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} is compressed with a lossy codec and is used in the sorting key. A lossy codec does "
+                "not return the value that was written, so parts would be stored out of order. Use a lossless "
+                "codec for this column, or remove it from the sorting key.",
+                backQuoteIfNeed(name));
+        }
+    }
+
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         const String & sorting_key_column = new_sorting_key.column_names[i];
