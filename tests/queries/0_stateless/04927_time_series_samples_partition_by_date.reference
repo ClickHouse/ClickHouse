@@ -1,0 +1,8 @@
+-- default: the samples inner table is partitioned by day
+toDate(timestamp)
+3
+[('__name__','foo'),('env','prod')]	2026-01-03 00:00:30.000	3
+-- samples_partition_by_date = 0: no partitioning
+1
+-- an explicitly declared samples engine is kept as is
+1

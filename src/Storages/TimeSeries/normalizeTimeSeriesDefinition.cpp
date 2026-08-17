@@ -45,6 +45,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
+    extern const TimeSeriesSettingsBool samples_partition_by_date;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
@@ -705,6 +706,17 @@ namespace
                 makeASTOperator("tuple",
                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
+
+            /// PARTITION BY toDate(timestamp)
+            ///
+            /// A time-range read then loads the primary index and marks of the touched days only:
+            /// on a big unpartitioned table the first query after server start spends most of its
+            /// time loading the marks of the whole table. Day partitions also let the primary-key
+            /// analysis select near-exact granule ranges for day-scale windows, and outdated data
+            /// can be dropped by partition.
+            if (settings[TimeSeriesSetting::samples_partition_by_date])
+                storage->set(storage->partition_by,
+                    makeASTFunction("toDate", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
         }
         else if (target_kind == ViewTarget::Tags)
         {

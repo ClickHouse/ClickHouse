@@ -29,6 +29,7 @@ namespace ErrorCodes
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
+    DECLARE(Bool, samples_partition_by_date, true, "When creating an inner target 'samples' table with the default engine, adds 'PARTITION BY toDate(timestamp)'. Reading a time range then loads the primary index and marks of the touched days only (instead of the whole table's), and outdated data can be dropped by partition. Has no effect on an explicitly declared samples engine or an external samples table", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
