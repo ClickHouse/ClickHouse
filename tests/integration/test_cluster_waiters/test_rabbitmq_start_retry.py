@@ -128,12 +128,15 @@ def _run(
     pid=PID,
     cluster=None,
     cwd=None,
+    failing_command=None,
 ):
     """Execute the shipped waiter against stubs and record what it did.
 
     ready_from_attempt: 0-based attempt index from which the broker probe starts
     succeeding; None means it never succeeds.
     cwd: process working directory to run under; the waiter must not depend on it.
+    failing_command: `run_and_check` argv token whose call raises, as a nonzero docker
+    command does.
     """
     counts = {"logs": 0, "debuginfo": 0, "recreations": 0}
     run_and_check_calls = []
@@ -164,6 +167,10 @@ def _run(
     def run_and_check(args, **kwargs):
         run_and_check_calls.append(list(args))
         events.append(("run", list(args)))
+        if failing_command is not None and failing_command in args:
+            # `run_and_check` raises on a nonzero exit unless the caller passes nothrow.
+            if not kwargs.get("nothrow"):
+                raise Exception(f"stub: {failing_command} exited nonzero")
         return ""
 
     def check_rabbitmq_is_available(docker_id, cookie):
@@ -243,7 +250,9 @@ def _run(
         os.chdir(cwd)
     try:
         returned = namespace[FUNC_NAME](cluster, **kwargs)
-    except RuntimeError as ex:
+    except Exception as ex:  # pylint:disable=broad-except
+        # Broad: a failing docker command raises a bare `Exception`, and an arm below
+        # asserts what the waiter had already recorded when it propagated.
         raised = str(ex)
     finally:
         os.chdir(previous_cwd)
@@ -323,6 +332,46 @@ def test_token_is_the_same_literal_in_both_files():
     values = dict(_module_constant("RABBITMQ_RECREATE_TOKEN"))
     assert len(values) == 2
     assert len(set(values.values())) == 1, values
+
+
+def test_token_is_emitted_before_the_container_is_recreated():
+    """`docker compose up` can exit nonzero, and `run_and_check` raises when it does, so
+    the token has to be on record before the recreation is attempted. Emitting it
+    afterwards would lose exactly the events worth reporting: the ones where recovery
+    itself broke."""
+    raised, returned, counts, _, _ = _run(ready_from_attempt=1, failing_command="up")
+    assert raised is not None and "up" in raised
+    assert returned is None
+
+    # The recreation was attempted and it failed, yet the record survives the failure.
+    lines = [line for line in counts["warnings"] if TOKEN in line]
+    assert len(lines) == 1, counts["warnings"]
+    assert "attempt=1" in lines[0]
+    # And so does the preserved broker log the token names.
+    assert len(counts["copied"]) == 1
+    assert os.path.basename(counts["copied"][0][1]) in lines[0]
+
+
+def test_both_files_agree_on_the_directory_holding_the_snapshots():
+    """The waiter writes the preserved log and the job script scans for it, and only a
+    bare name travels between them, so the directory is an unstated agreement. It is
+    derived twice from unrelated anchors - the helper's own location and the repository
+    root the job script computes from its cwd - because deriving it from the shipped
+    expression alone would compare that expression with itself: pointing the waiter at
+    some other directory would then agree, while every attachment was silently lost."""
+    # helpers -> tests/integration -> tests -> the checkout.
+    repo_root = os.path.normpath(os.path.join(HELPERS_DIR, "..", "..", ".."))
+    # `integration_test_job.py` builds `temp_path` as f"{Utils.cwd()}/ci/tmp", and CI
+    # runs it from the repository root.
+    consumer_dir = os.path.normpath(os.path.join(repo_root, "ci", "tmp"))
+    assert os.path.normpath(TEMP_ABS_DIR) == consumer_dir, (TEMP_ABS_DIR, consumer_dir)
+
+    # And the job script really does build it that way, rather than from something the
+    # waiter cannot reach.
+    with open(JOB_PY, encoding="utf-8") as f:
+        job_source = f.read()
+    assert 'temp_path = f"{repo_dir}/ci/tmp"' in job_source
+    assert "repo_dir = Utils.cwd()" in job_source
 
 
 def test_recreation_emits_the_token_and_preserves_the_log():
