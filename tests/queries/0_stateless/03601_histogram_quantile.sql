@@ -59,6 +59,19 @@ FROM
     )) AS args
 );
 
+SELECT quantilePrometheusHistogramArray(1)(args.1, [args.2, args.2 + 1])
+FROM
+(
+    SELECT arrayJoin(arrayZip(
+        [0.0, 0.5, 1.0, +Inf],
+        [0.0, 10.0, 11.0, 12.0]
+    )) AS args
+);
+
+SELECT quantilePrometheusHistogramArray(1.1)(toFloat64(0), CAST([0., 1.], 'Array(Float64)')); -- { serverError PARAMETER_OUT_OF_BOUND }
+
+SELECT quantilePrometheusHistogramArray(0.5, 0.9)(toFloat64(0), CAST([0., 1.], 'Array(Float64)')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 SELECT quantilePrometheusHistogramArray(0.5)(le, values)
 FROM
 (

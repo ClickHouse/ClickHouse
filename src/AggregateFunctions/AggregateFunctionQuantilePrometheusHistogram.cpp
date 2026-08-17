@@ -484,14 +484,17 @@ class AggregateFunctionQuantilePrometheusHistogramArray final
     using Data = QuantilePrometheusHistogramArrayData<CumulativeHistogramValue, is_float>;
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue, is_float>>;
 
+    QuantileLevels<Float64> levels;
     Float64 level = 0.5;
 
 public:
     AggregateFunctionQuantilePrometheusHistogramArray(const DataTypes & argument_types_, const Array & params)
         : Base(argument_types_, params, std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())))
+        , levels(params, false)
+        , level(levels.levels[0])
     {
-        if (!params.empty())
-            level = params[0].safeGet<Float64>();
+        if (levels.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
     }
 
     String getName() const override { return NameQuantilePrometheusHistogramArray::name; }
