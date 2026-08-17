@@ -66,8 +66,10 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
 
 bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings)
 {
-    return settings[Setting::enable_automatic_use_uncompressed_cache]
-        && settings[Setting::use_uncompressed_cache].changed
+    /// The leaf can enable automatic mode through its own profile even if the initiator keeps it disabled.
+    /// Forward an explicit opt-out in that case as well, because the default-valued setting does not survive
+    /// the secondary-query settings round-trip.
+    return settings[Setting::use_uncompressed_cache].changed
         && !settings[Setting::use_uncompressed_cache];
 }
 

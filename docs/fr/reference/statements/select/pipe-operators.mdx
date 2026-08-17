@@ -1,0 +1,210 @@
+---
+description: 'Documentation sur les opérateurs pipe'
+sidebarTitle: 'Opérateurs pipe'
+slug: /sql-reference/statements/select/pipe-operators
+title: 'Opérateurs pipe'
+doc_type: 'reference'
+---
+
+Les opérateurs pipe permettent d’écrire des requêtes sous forme d’une chaîne linéaire de transformations, lisible de haut en bas, à l’image de la [syntaxe pipe de GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/) :
+
+```sql
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+
+Toute requête `SELECT` peut être suivie d’une chaîne d’opérateurs pipe. Chaque opérateur commence par le jeton `|>`, prend en entrée le résultat de la requête précédente et lui applique une transformation supplémentaire. La syntaxe ClickHouse standard est utilisée dans chaque opérateur.
+
+Les opérateurs pipe constituent une extension de syntaxe : chaque opérateur encapsule la requête précédente dans une sous-requête. L’AST obtenu est donc identique à celui de la requête équivalente écrite avec des sous-requêtes imbriquées, et la requête ci-dessus est équivalente à :
+
+```sql
+SELECT * FROM
+(
+    SELECT customer, sum(amount) AS total FROM
+    (
+        SELECT * FROM
+        (
+            SELECT * FROM orders
+        )
+        WHERE cancelled = 0
+    )
+    GROUP BY customer
+)
+ORDER BY total DESC
+LIMIT 3
+```
+
+<div id="from-queries">
+  ## Requêtes avec FROM
+</div>
+
+Une requête peut commencer par la clause `FROM`, la clause `SELECT` étant facultative dans ce cas : si elle est omise, la requête fonctionne comme si `SELECT *` avait été écrit :
+
+```sql
+FROM orders;
+FROM orders WHERE amount > 100;
+FROM orders |> WHERE amount > 100;
+```
+
+Les alias de table peuvent être écrits avec ou sans le mot-clé `AS`, comme dans la clause `FROM` d&#39;une requête `SELECT` ordinaire : `FROM orders o WHERE o.amount > 100`. La seule exception concerne un alias écrit sous la forme du mot seul `select` : placé après les tables, il introduit la clause `SELECT` explicite au lieu d&#39;être traité comme un alias. Une table nommée `select` n&#39;est pas concernée et conserve son propre alias : `FROM select s WHERE s.id = 1`.
+
+La clause `SELECT` ne peut pas être omise lorsque l&#39;offset d&#39;échantillonnage de la dernière table peut également être interprété comme un `OFFSET` au niveau de la requête. En effet, dans `FROM t SAMPLE 1/10 OFFSET 5`, l&#39;`OFFSET` appartient à `SAMPLE`, tandis que dans `FROM t SAMPLE 1/10 SELECT * OFFSET 5`, il s&#39;agit d&#39;un `OFFSET` au niveau de la requête : le `SELECT` explicite est nécessaire pour lever cette ambiguïté. Lorsque la requête se poursuit par une clause qu&#39;un `OFFSET` au niveau de la requête ne peut pas précéder, il n&#39;y a aucune ambiguïté et la clause `SELECT` reste facultative, comme d&#39;habitude : `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
+
+<div id="operators">
+  ## Operators
+</div>
+
+<div id="where">
+  ### WHERE
+</div>
+
+`|> WHERE condition` filtre les lignes en entrée. Lorsqu’il est appliqué après une agrégation, il fonctionne comme `HAVING` :
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> WHERE total > 100
+```
+
+<div id="select">
+  ### SELECT
+</div>
+
+`|> SELECT [DISTINCT] expr1 [AS alias1], ...` ne conserve que les expressions listées en tant que colonnes de sortie :
+
+```sql
+FROM orders |> SELECT customer, amount * 2 AS doubled
+```
+
+Une virgule finale est autorisée à la fin de la liste d’expressions, aux mêmes emplacements que dans la clause `SELECT` d’une requête ordinaire : elle peut être suivie de la fin de la requête ou de l’opérateur `|>` suivant : `FROM orders |> SELECT customer, amount, |> LIMIT 1`. Il en va de même pour les opérateurs `EXTEND` et `AGGREGATE`.
+
+<div id="extend">
+  ### EXTEND
+</div>
+
+`|> EXTEND expr1 [AS alias1], ...` ajoute les expressions indiquées aux colonnes d’entrée ; cela équivaut à `SELECT *, expr1 AS alias1, ...` :
+
+```sql
+FROM orders |> EXTEND amount * 10 AS big
+```
+
+<div id="set">
+  ### SET
+</div>
+
+`|> SET column1 = expr1, ...` remplace les valeurs des colonnes spécifiées ; il équivaut à `SELECT * REPLACE (expr1 AS column1, ...)` :
+
+```sql
+FROM orders |> SET amount = amount + 1000
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+`|> DROP column1, ...` supprime les colonnes indiquées ; cette opération équivaut à `SELECT * EXCEPT (column1, ...)` :
+
+```sql
+FROM orders |> DROP cancelled
+```
+
+<div id="as">
+  ### AS
+</div>
+
+`|> AS alias` attribue un alias à l’entrée de l’opérateur suivant afin qu’elle puisse y être référencée, ce qui est particulièrement utile pour les jointures :
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> AS agg
+|> JOIN orders AS o ON agg.customer = o.customer
+```
+
+<div id="aggregate">
+  ### AGGREGATE
+</div>
+
+`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` agrège les lignes en entrée. Les colonnes de sortie sont d’abord les colonnes de regroupement, puis les colonnes agrégées. Sans `GROUP BY`, l’ensemble des données en entrée est agrégé en une seule ligne :
+
+```sql
+FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
+FROM orders |> AGGREGATE count() AS c;
+```
+
+<div id="distinct">
+  ### DISTINCT
+</div>
+
+`|> DISTINCT` supprime les lignes dupliquées ; il équivaut à `SELECT DISTINCT *`.
+
+<div id="order-by">
+  ### ORDER BY
+</div>
+
+`|> ORDER BY expr1 [ASC/DESC], ...` trie les lignes en entrée. La syntaxe complète de la clause `ORDER BY` est prise en charge, notamment `ORDER BY ALL`, `WITH FILL` et `INTERPOLATE` :
+
+```sql
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
+```
+
+<div id="limit-and-offset">
+  ### LIMIT et OFFSET
+</div>
+
+`|> LIMIT length [OFFSET offset]` et `|> OFFSET offset` limitent le nombre de lignes :
+
+```sql
+FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
+```
+
+<div id="join-and-array-join">
+  ### JOIN et ARRAY JOIN
+</div>
+
+`|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` joint l’entrée à une autre table, sous-requête ou fonction de table. Tous les types de [JOIN](/fr/reference/statements/select/join) et d’[ARRAY JOIN](/fr/reference/statements/select/array-join) sont pris en charge, et un même opérateur peut contenir plusieurs jointures, comme dans une clause `FROM` :
+
+```sql
+FROM customers
+|> AS c
+|> LEFT JOIN orders AS o ON c.name = o.customer
+|> ARRAY JOIN tags
+```
+
+Comme chaque opérateur crée une nouvelle portée de sous-requête, les alias de table ne sont visibles qu’au sein de ce même opérateur (dans la condition `ON`). Les opérateurs suivants voient les colonnes combinées du résultat de la jointure, comme après un `SELECT *`.
+
+La syntaxe d’une jointure croisée avec une virgule est également prise en charge, l’entrée de l’opérateur constituant le côté gauche : `FROM customers |> AS c |> , orders`. Comme pour les autres jointures, l’entrée doit avoir un alias lorsque le paramètre `joined_subquery_requires_alias` est activé (ce qui est le cas par défaut).
+
+Comme dans la clause `FROM` d’une requête ordinaire, une jointure croisée avec une virgule n’est pas prise en charge juste après un `ARRAY JOIN` : une virgule après `ARRAY JOIN` appartient toujours à sa liste d’expressions.
+
+<div id="union-intersect-and-except">
+  ### UNION, INTERSECT et EXCEPT
+</div>
+
+`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...` et `|> EXCEPT [ALL/DISTINCT] ...` combinent l’entrée aux résultats d’autres requêtes :
+
+```sql
+FROM orders
+|> SELECT customer
+|> UNION ALL (FROM customers |> SELECT name)
+|> DISTINCT
+```
+
+Les parenthèses autour d’un opérande sont facultatives pour une requête unique, mais elles sont obligatoires lorsque la chaîne se poursuit avec un autre opérateur pipe après l’opération sur les ensembles ; sinon, on ne saurait pas clairement si l’opérateur suivant s’applique au dernier opérande ou à l’ensemble du résultat.
+
+<div id="notes">
+  ## Remarques
+</div>
+
+* La clause `WITH` de la requête reste visible dans tous les opérateurs pipe qui suivent, tant pour les alias scalaires que pour les CTE : `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
+* Dans `INSERT ... SELECT`, une clause `WITH` écrite avant `INSERT` est rattachée au `SELECT` généré le plus externe et est visible dans les étapes internes du pipeline lors de l&#39;interprétation via le paramètre `enable_global_with_statement` (activé par défaut), de la même manière que dans une sous-requête imbriquée écrite manuellement. Si ce paramètre est désactivé, les alias et les CTE d&#39;un `WITH` associé à `INSERT` ne sont pas visibles dans les étapes du pipeline, tout comme ils ne le sont pas dans une sous-requête écrite manuellement.
+* Comme toute requête `SELECT`, la requête générée par un opérateur pipe peut se terminer par une clause `SETTINGS`, rattachée à cette requête générée : `FROM t |> LIMIT 1 SETTINGS max_threads = 1` équivaut à `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`. Cela fonctionne également lorsqu&#39;il n&#39;existe pas de traitement distinct des paramètres de requête, comme dans une sous-requête, dans `CREATE VIEW` ou dans la fonction de table `view`. Une clause `SETTINGS` au milieu d&#39;une chaîne reste associée à son étape, qui devient une sous-requête de l&#39;opérateur suivant. Après une opération ensembliste avec un opérande entre parenthèses, une clause `SETTINGS` finale n&#39;est pas acceptée : la requête équivalente avec des sous-requêtes ne peut pas non plus comporter de clause `SETTINGS` à cet emplacement.
+* Une clause `SETTINGS` de la requête précédant le premier opérateur pipe reste associée à cette requête, qui devient une sous-requête de l&#39;encapsuleur généré. Les paramètres ordinaires continuent de fonctionner, car les paramètres d&#39;une sous-requête sont appliqués lors de l&#39;interprétation de celle-ci. La seule exception est la paire de paramètres qui sélectionne l&#39;analyseur de requêtes, `enable_analyzer` et son alias `allow_experimental_analyzer` : il n&#39;est pas permis de les modifier dans une sous-requête. Ainsi, `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` lève `INCORRECT_QUERY`, tout comme l&#39;équivalent écrit manuellement `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1`. Placez ces deux paramètres après le dernier opérateur pipe ou transmettez-les en dehors de la requête.
+* Les opérateurs pipe s&#39;appliquent à l&#39;intégralité de la requête qui les précède, y compris aux opérations ensemblistes : dans `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`, l&#39;agrégation est appliquée au résultat de `UNION ALL`. Pour poursuivre une requête avec `UNION` après un opérateur pipe, utilisez l&#39;opérateur `|> UNION` ou des parenthèses.
+* Les opérateurs pipe peuvent être utilisés partout où une requête `SELECT` est attendue : dans les sous-requêtes, dans `INSERT ... SELECT` (y compris sous la forme `INSERT INTO t FROM src |> ...`), dans `CREATE VIEW`, dans la fonction de table `view`, etc.
+* Le renommage de colonnes sur place n&#39;est pas disponible sous la forme d&#39;un opérateur distinct ; utilisez `|> SELECT * EXCEPT (old_name), old_name AS new_name` ou les opérateurs `SET` et `DROP`.

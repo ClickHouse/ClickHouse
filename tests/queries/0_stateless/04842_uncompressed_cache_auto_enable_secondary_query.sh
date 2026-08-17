@@ -5,8 +5,8 @@
 # Tag no-object-storage: automatic mode never applies to parts on object storage.
 # Tag no-parallel-replicas: the test inspects the profile events of the secondary queries it issues itself.
 #
-# An explicit `use_uncompressed_cache = 0` must win over `enable_automatic_use_uncompressed_cache = 1`
-# on the shards as well, not only on the initiator. The opt-out is carried solely by the `changed` flag
+# An explicit `use_uncompressed_cache = 0` must win when automatic mode is enabled on the shards,
+# even if it is disabled on the initiator. The opt-out is carried solely by the `changed` flag
 # of a setting whose value equals the default, and the leaf server drops such a change while clamping the
 # forwarded settings to its own constraints - so the initiator has to switch the automatic mode off in
 # the settings it sends out.

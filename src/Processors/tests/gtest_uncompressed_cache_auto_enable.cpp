@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 #include <Processors/QueryPlan/UncompressedCacheUtils.h>
 
+#include <Core/Settings.h>
+
 #include <gtest/gtest.h>
 
 
@@ -101,6 +103,16 @@ TEST(UncompressedCacheAutoEnable, DisablesLargeReadsEvenWhenEnabled)
         /*setting_value=*/true,
         /*query_fits_cache_thresholds=*/false,
         /*auto_enable_supported=*/true));
+}
+
+TEST(UncompressedCacheAutoEnable, ForwardsExplicitOptOutWhenAutomaticModeIsDisabledOnInitiator)
+{
+    Settings settings;
+    settings[Setting::use_uncompressed_cache] = false;
+    settings[Setting::use_uncompressed_cache].changed = true;
+
+    EXPECT_FALSE(settings[Setting::enable_automatic_use_uncompressed_cache]);
+    EXPECT_TRUE(automaticUncompressedCacheIsOverriddenByOptOut(settings));
 }
 
 }
