@@ -36,7 +36,7 @@ void BufferingToFileSink::consume(Chunk chunk)
 void BufferingToFileSink::onFinish()
 {
     auto stat = tmp_stream.finishWriting();
-    LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+    LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {}",
         tmp_stream.getHolder()->describeFilePath(),
         ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
 }
@@ -54,7 +54,7 @@ IProcessor::Status BufferingFromFileSource::prepare()
     if (!inputs.front().isFinished())
     {
         if (inputs.front().hasData())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read the data from BufferingToFileSource input");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The dummy input of BufferingFromFileSource must not carry data");
 
         inputs.front().setNeeded();
         return Status::NeedData;
