@@ -619,6 +619,13 @@ class Result(MetaClasses.Serializable):
         result.results = failed_results
         return result
 
+    # ext keys kept on a job's result when it is embedded as a sub-result of the
+    # workflow result. The workflow report renders only these per row (labels as
+    # badges, storage_usage for artifact link sizes); the rest - notably the
+    # decimated host `metrics` timeline - is heavy and only needed on the job's
+    # own report, which is uploaded separately with the full ext.
+    _WORKFLOW_SUB_RESULT_EXT_KEYS = ("labels", "hlabels", "storage_usage")
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -631,6 +638,11 @@ class Result(MetaClasses.Serializable):
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
+                    self.results[i].ext = {
+                        k: v
+                        for k, v in (self.results[i].ext or {}).items()
+                        if k in self._WORKFLOW_SUB_RESULT_EXT_KEYS
+                    }
                 else:
                     self.results[i] = result
         self._update_status()

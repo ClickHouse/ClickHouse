@@ -221,3 +221,35 @@ def test_create_from_omits_child_info_by_default():
     subs = [Result("hook_bad", Result.Status.FAIL, info="ERROR: something is wrong")]
     r = Result.create_from(name="Pre Hooks", results=subs)
     assert r.info == ""
+
+
+def test_update_sub_result_keeps_only_required_ext_keys():
+    """Embedding a job as a workflow sub-result drops heavy ext (e.g. metrics),
+    keeping only what the workflow report renders per row."""
+    workflow = Result("wf", Result.Status.PENDING, results=[Result("job", Result.Status.PENDING)])
+    job = Result("job", Result.Status.OK)
+    job.ext = {
+        "labels": ["release"],
+        "hlabels": [["flaky", "seen before"]],
+        "storage_usage": {"uploaded": 42, "uploaded_details": {"a.deb": 42}},
+        "metrics": {"heavy": list(range(1000))},
+        "pipeline_utilization": {"cpu_core_s": 1.0},
+        "run_url": "https://example/run",
+    }
+
+    workflow.update_sub_result(job, drop_nested_results=True)
+
+    assert set(workflow.results[0].ext) == {"labels", "hlabels", "storage_usage"}
+    # The job's own result is untouched - its full report is uploaded separately.
+    assert "metrics" in job.ext
+
+
+def test_update_sub_result_preserves_full_ext_without_dropping():
+    """The default path (drop_nested_results=False) keeps the ext as is."""
+    workflow = Result("wf", Result.Status.PENDING, results=[Result("job", Result.Status.PENDING)])
+    job = Result("job", Result.Status.OK)
+    job.ext = {"metrics": {"heavy": 1}, "labels": ["release"]}
+
+    workflow.update_sub_result(job)
+
+    assert workflow.results[0].ext == {"metrics": {"heavy": 1}, "labels": ["release"]}
