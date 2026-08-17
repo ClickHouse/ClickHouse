@@ -145,6 +145,8 @@ common_stress_job_config = Job.Config(
         include_paths=[
             "./tests/queries/0_stateless/",
             "./ci/jobs/stress_job.py",
+            "./ci/jobs/scripts/ai_fuzz_triage.py",
+            "./ci/jobs/scripts/agent_cli.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
@@ -1102,6 +1104,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/upgrade_job.py",
                 "./ci/jobs/stress_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent_cli.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
@@ -1316,6 +1320,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent_cli.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
@@ -1353,6 +1359,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent_cli.py",
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
@@ -1384,6 +1392,8 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/ai_fuzz_triage.py",
+                "./ci/jobs/scripts/agent_cli.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",

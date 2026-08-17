@@ -2,7 +2,7 @@ import json
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -111,6 +111,8 @@ class Issue:
     ci_action: str = ""
     test_pattern: str = ""
     job_pattern: str = ""
+    # Dedup key written by ai_fuzz_triage.py; empty for issues from other sources.
+    fuzz_fingerprint: str = ""
 
     def is_infrastructure(self):
         return "infrastructure" in self.labels
@@ -136,6 +138,7 @@ class Issue:
             "ci_action": "",
             "test_pattern": "",
             "job_pattern": "",
+            "fuzz_fingerprint": "",
         }
 
         if not body:
@@ -147,6 +150,7 @@ class Issue:
             "ci_action": r"CI action:\s*([^\n]*)",
             "test_pattern": r"Test pattern:\s*([^\n]*)",
             "job_pattern": r"Job pattern:\s*([^\n]*)",
+            "fuzz_fingerprint": r"Fuzz fingerprint:\s*([^\n]*)",
         }
 
         for field_name, pattern in patterns.items():
@@ -347,6 +351,7 @@ class Issue:
             ci_action=body_fields["ci_action"],
             test_pattern=body_fields["test_pattern"],
             job_pattern=body_fields["job_pattern"],
+            fuzz_fingerprint=body_fields["fuzz_fingerprint"],
         )
 
     def create_on_gh(self, repo_name):
@@ -396,8 +401,13 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
     @classmethod
     def from_dict(cls, obj: dict):
         """Custom deserialization to handle nested TestCaseIssue objects"""
+        # The catalog is shared through S3, so a job may read one written by a
+        # newer commit: drop fields this version of `Issue` does not know.
+        known = {f.name for f in dataclass_fields(Issue)}
         active_issues = [
-            Issue(**issue) if isinstance(issue, dict) else issue
+            Issue(**{k: v for k, v in issue.items() if k in known})
+            if isinstance(issue, dict)
+            else issue
             for issue in obj.get("active_test_issues", [])
         ]
         return cls(

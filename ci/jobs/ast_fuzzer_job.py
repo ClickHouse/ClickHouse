@@ -561,6 +561,45 @@ def run_fuzz_job(check_name: str):
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
 
+    if result.is_failure():
+        from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
+
+        binary_hint = (
+            "The tested ClickHouse binary is at `./ci/tmp/clickhouse` "
+            "(already executable). Prefer `./ci/tmp/clickhouse local` for "
+            "repro attempts; start `./ci/tmp/clickhouse server` in a scratch "
+            "directory only when the failure needs a real server. "
+        )
+        if buzzhouse:
+            job_kind = "BuzzHouse"
+            repro_hint = binary_hint + (
+                "`fuzzerout.sql` is the full log of executed statements; the "
+                "last ones before the failure are the suspects. BuzzHouse "
+                "failures often depend on tables, settings, or dictionaries "
+                "created by earlier statements, so replay the tail first and "
+                "grow the replayed prefix until the failure reproduces. "
+                "`fuzz.json` holds the run configuration."
+            )
+        else:
+            job_kind = "AST Fuzzer"
+            repro_hint = binary_hint + (
+                "The failing query is in the terminal block of `fuzzer.log`: "
+                "the text after the last `Fuzzing step <n> out of <m>` marker, "
+                "with the fuzzed AST dump and the exception. Earlier steps ran "
+                "against the same server, so a repro may also need tables from "
+                "`fuzzer.log` context above the failing query."
+            )
+        failures = [(r.name, r.info) for r in results] or [
+            (f"{job_kind} failure", "\n".join(info))
+        ]
+        triage_and_apply(
+            result,
+            job_kind=job_kind,
+            failures=failures,
+            evidence_paths=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+            repro_hint=repro_hint,
+        )
+
     result.complete_job()
 
 

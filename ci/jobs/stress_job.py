@@ -443,6 +443,66 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
+    if r.is_failure():
+        from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
+
+        evidence = [
+            str(p)
+            for p in (fatal_log, result_path, server_log_path)
+            if p.exists()
+        ]
+        binary_hint = (
+            "The tested build is the set of `.deb` packages in `./ci/tmp`. "
+            "Extract the binary with "
+            "`dpkg-deb -x ./ci/tmp/clickhouse-common-static_*.deb <scratch dir>` "
+            "and use `<scratch dir>/usr/bin/clickhouse local` (or `server` in a "
+            "scratch directory) for repro attempts. Server logs are under "
+            "`./ci/tmp/server_log`, test outputs under `./ci/tmp/result_path`. "
+        )
+        if upgrade_check:
+            job_kind = "Upgrade check"
+            repro_hint = binary_hint + (
+                "This run installed the previous ClickHouse release, ran tests "
+                "on it, then upgraded to the tested build and restarted on the "
+                "old data - failures are usually old->new incompatibilities "
+                "(on-disk formats, settings, log errors after the upgrade), "
+                "not single-query bugs. Find which phase failed in the runner "
+                "output under `./ci/tmp/result_path`. A repro needs the same "
+                "sequence: create the state on the old version, then read it "
+                "with the tested binary. Settings randomization is disabled "
+                "in this mode."
+            )
+        else:
+            job_kind = "Stress test"
+            repro_hint = binary_hint + (
+                "The run executes the stateless suite "
+                "(`tests/queries/0_stateless/`) via `clickhouse-test "
+                "--stress-tests` in several parallel streams; stream `i` logs "
+                "to `./ci/tmp/result_path/stress_test_run_<i>.txt` and streams "
+                "differ in options (random order, shared or Replicated "
+                "databases, `join_use_nulls`, `join_algorithm`), with "
+                "per-test randomized settings including stress-only ones. The "
+                "server profile also sets `ast_fuzzer_runs=5`, so every test "
+                "query is additionally mutated by the AST fuzzer: a crashing "
+                "query may be a fuzzed variant that exists only in the server "
+                "log, not in any test file. For a crash, start from the query "
+                "in the server log next to the fatal entry, not from the test "
+                "file. Random query/client/mutation killers and server "
+                "restarts run in the background, so some failures need "
+                "concurrency and will not replay standalone - saying so with "
+                "`not_reproduced` is a valid outcome."
+            )
+        triage_and_apply(
+            r,
+            job_kind=job_kind,
+            failures=[(fr.name, fr.info or "") for fr in failed_results],
+            evidence_paths=evidence,
+            repro_hint=repro_hint,
+            # The Upgrade check job has a 2h timeout and its run phases are
+            # long; keep triage small enough to never push it over.
+            agent_timeout_sec=1200 if upgrade_check else 2400,
+        )
+
     r.set_files(additional_logs).set_files(core_files).complete_job()
 
 
