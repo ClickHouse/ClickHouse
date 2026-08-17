@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/zeroGroup.h>
 #include <algorithm>
 
 
@@ -60,11 +61,13 @@ namespace
         String sides[2];
 
         left_argument = toVectorGrid(std::move(left_argument), context);
+        bool left_zero_group = producesConstantZeroGroup(left_argument.select_query);
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
         sides[0] = context.subqueries.back().name;
         String & left = sides[0];
 
         right_argument = toVectorGrid(std::move(right_argument), context);
+        bool right_zero_group = producesConstantZeroGroup(right_argument.select_query);
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
         sides[1] = context.subqueries.back().name;
         String & right = sides[1];
@@ -72,6 +75,46 @@ namespace
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
+
+        /// Fast path: if both sides provably contain at most one row whose `group` is the constant
+        /// zero group, i.e. a group with no tags (e.g. both sides of `sum(a) / sum(b)`), then vector
+        /// matching degenerates to combining two resultsets of at most one row each: the only possible
+        /// match is the empty label set against the empty label set, and the result is empty iff either
+        /// side is empty. That is exactly a CROSS JOIN of the two sides. A CROSS JOIN is used instead
+        /// of an equality join on `group` because it never takes the parallel-join path which would fan
+        /// both sides out to max_threads streams - pointless for two resultsets of at most one row.
+        if (!group_left && !group_right && !operator_node->on && !operator_node->ignoring && left_zero_group && right_zero_group)
+        {
+            /// SELECT CAST(0, 'UInt64') AS group,
+            ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
+            /// FROM left CROSS JOIN right
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64")));
+            builder.select_list.back()->setAlias(ColumnNames::Group);
+
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                    apply_function_to_ast(make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
+                make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values})));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            builder.from_table = left;
+            builder.join_table = right;
+            builder.join_kind = JoinKind::Cross;
+
+            SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
+            res.select_query = builder.getSelectQuery();
+            res.start_time = left_argument.start_time;
+            res.end_time = left_argument.end_time;
+            res.step = left_argument.step;
+            res.metric_name_dropped = true;
+            return res;
+        }
 
         /// Step 1:
         /// new_left:

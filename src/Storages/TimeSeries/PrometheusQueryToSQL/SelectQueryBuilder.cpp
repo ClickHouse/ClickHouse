@@ -48,8 +48,11 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
             auto table_join = make_intrusive<ASTTableJoin>();
             table_join->kind = join_kind;
             table_join->strictness = join_strictness;
-            table_join->on_expression = std::move(join_on);
-            table_join->children.emplace_back(table_join->on_expression);
+            if (join_on)
+            {
+                table_join->on_expression = std::move(join_on);
+                table_join->children.emplace_back(table_join->on_expression);
+            }
 
             table_exp = make_intrusive<ASTTableExpression>();
             table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(std::move(join_table));
