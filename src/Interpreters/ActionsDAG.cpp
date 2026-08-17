@@ -10,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -783,27 +784,13 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
-void ActionsDAG::substitutePlannerOnlyFilters()
+bool ActionsDAG::hasPlannerOnlyFilters() const
 {
-    bool substituted = false;
-    for (auto & node : nodes)
-    {
-        if (node.type != ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "__plannerOnlyFilter")
-            continue;
+    for (const auto & node : nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && node.function_base->getName() == PLANNER_ONLY_FILTER_NAME)
+            return true;
 
-        auto column = node.result_type->createColumn();
-        column->insert(Field(1u));
-        node.column = ColumnConst::create(std::move(column), 0);
-        node.type = ActionType::COLUMN;
-        node.children.clear();
-        node.function_base = nullptr;
-        node.function = nullptr;
-        node.is_function_compiled = false;
-        substituted = true;
-    }
-
-    if (substituted)
-        removeUnusedActions();
+    return false;
 }
 
 bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)

@@ -42,14 +42,14 @@ SELECT trim(explain) FROM (
     SELECT count() FROM mid_hi AS m INNER JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) LIKE 'Prewhere filter column:%' OR trim(explain) LIKE 'Filter column:%';
 
-SELECT '-- Promotion is disabled, the filter stays planner-only even with a high fraction of NULLs.';
+SELECT '-- Promotion is disabled, no filter is applied even with a high fraction of NULLs.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM mid_hi AS m INNER JOIN small AS s ON m.val = s.val
     SETTINGS query_plan_promote_planner_only_not_null_filters = 0
 ) WHERE trim(explain) LIKE 'Prewhere filter column:%' OR trim(explain) LIKE 'Filter column:%';
 
-SELECT '-- A user predicate on the same column already rejects NULLs: the derived filter is subsumed and stays planner-only.';
+SELECT '-- A user predicate on the same column already rejects NULLs: the derived filter is subsumed and dropped.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM mid_hi AS m INNER JOIN small AS s ON m.val = s.val WHERE m.val >= 6
@@ -66,7 +66,7 @@ SELECT trim(explain) FROM (
     SELECT count() FROM mid_hi AS m INNER JOIN small AS s ON m.val = s.val WHERE m.id < 90
 ) WHERE trim(explain) LIKE 'Prewhere filter column:%' OR trim(explain) LIKE 'Filter column:%';
 
-SELECT '-- A low fraction of NULLs does not clear the selectivity gate, the filter stays planner-only.';
+SELECT '-- A low fraction of NULLs does not clear the selectivity gate, no filter is applied.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM mid_lo AS m INNER JOIN small AS s ON m.val = s.val
@@ -118,7 +118,7 @@ SELECT trim(explain) FROM (
     SELECT count() FROM fact AS f LEFT JOIN mid_hi AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) LIKE 'Prewhere filter column:%' OR trim(explain) LIKE 'Filter column:%';
 
-SELECT '-- The filter derived over a non-Nullable column when join_use_nulls is true does not have a filtering effect and stays planner-only.';
+SELECT '-- The filter derived over a non-Nullable column when join_use_nulls is true does not have a filtering effect, no filter is applied.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM fact AS f LEFT JOIN mid_nn AS m ON f.id = m.id INNER JOIN small AS s ON m.val = s.val

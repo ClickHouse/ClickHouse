@@ -1,11 +1,14 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB::QueryPlanOptimizations
@@ -16,9 +19,17 @@ namespace
 
 struct FilterConjuncts
 {
+    /// All conjuncts in the order they appear in the filter, so that the filter can be rebuilt without reordering it.
+    ActionsDAG::NodeRawConstPtrs all_conjuncts;
     ActionsDAG::NodeRawConstPtrs planner_only_conjuncts;
     ActionsDAG::NodeRawConstPtrs other_conjuncts;
 };
+
+bool isPlannerOnlyFilter(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+        && node.function_base->getName() == PLANNER_ONLY_FILTER_NAME;
+}
 
 void collectFilterConjuncts(const ActionsDAG::Node * node, FilterConjuncts & conjuncts)
 {
@@ -33,7 +44,8 @@ void collectFilterConjuncts(const ActionsDAG::Node * node, FilterConjuncts & con
         return;
     }
 
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__plannerOnlyFilter")
+    conjuncts.all_conjuncts.push_back(node);
+    if (isPlannerOnlyFilter(*node))
         conjuncts.planner_only_conjuncts.push_back(node);
     else
         conjuncts.other_conjuncts.push_back(node);
@@ -155,9 +167,26 @@ std::unordered_set<const ActionsDAG::Node *> collectPromotableNotNullFilters(con
     return to_promote;
 }
 
+bool onlyPassesInputThrough(const ActionsDAG & actions_dag)
+{
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            return false;
+
+    return true;
 }
 
-void promotePlannerOnlyFilter(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
+/// Replace the node by its child.
+void dropStep(QueryPlan::Node & node)
+{
+    auto * child = node.children.front();
+    node.step = std::move(child->step);
+    node.children = std::move(child->children);
+}
+
+}
+
+void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
 {
     auto * filter = typeid_cast<FilterStep *>(node.step.get());
     if (!filter || node.children.size() != 1)
@@ -178,22 +207,41 @@ void promotePlannerOnlyFilter(QueryPlan::Node & node, const QueryPlanOptimizatio
         return;
 
     auto to_promote = collectPromotableNotNullFilters(node, conjuncts, settings);
-    if (to_promote.empty())
-        return;
 
     const auto input_header = node.children.front()->step->getOutputHeader();
 
-    /// Promoted markers are replaced by their underlying filters, everything else is kept as-is.
-    /// Non-promoted markers will later be replaced by constant-true filters when compiling the expression for execution.
+    /// Promoted markers are replaced by the filter they wrap, the remaining ones are dropped.
     ActionsDAG::NodeMapping node_map;
     ActionsDAG new_actions_dag = actions_dag.clone(node_map);
 
     ActionsDAG::NodeRawConstPtrs new_conjuncts;
-    new_conjuncts.reserve(conjuncts.other_conjuncts.size() + conjuncts.planner_only_conjuncts.size());
-    for (const auto * other_conjunct : conjuncts.other_conjuncts)
-        new_conjuncts.push_back(node_map.at(other_conjunct));
-    for (const auto * planner_only_conjunct : conjuncts.planner_only_conjuncts)
-        new_conjuncts.push_back(to_promote.contains(planner_only_conjunct) ? node_map.at(planner_only_conjunct)->children.front() : node_map.at(planner_only_conjunct));
+    new_conjuncts.reserve(conjuncts.all_conjuncts.size());
+    for (const auto * conjunct : conjuncts.all_conjuncts)
+    {
+        const auto * new_conjunct = node_map.at(conjunct);
+        if (!isPlannerOnlyFilter(*conjunct))
+            new_conjuncts.push_back(new_conjunct);
+        else if (to_promote.contains(conjunct))
+            new_conjuncts.push_back(new_conjunct->children.front());
+    }
+
+    auto & outputs = new_actions_dag.getOutputs();
+    std::erase(outputs, node_map.at(filter_output));
+
+    /// Nothing is left to filter by. Drop the step, unless it also computes columns its parent needs.
+    if (new_conjuncts.empty())
+    {
+        new_actions_dag.removeUnusedActions();
+        if (onlyPassesInputThrough(new_actions_dag) && blocksHaveEqualStructure(*node.step->getOutputHeader(), *input_header))
+        {
+            dropStep(node);
+            return;
+        }
+
+        chassert(!new_actions_dag.hasPlannerOnlyFilters());
+        node.step = std::make_unique<ExpressionStep>(input_header, std::move(new_actions_dag));
+        return;
+    }
 
     const ActionsDAG::Node * new_filter = new_conjuncts.front();
     if (new_conjuncts.size() > 1)
@@ -202,10 +250,11 @@ void promotePlannerOnlyFilter(QueryPlan::Node & node, const QueryPlanOptimizatio
         new_filter = &new_actions_dag.addFunction(func_and, std::move(new_conjuncts), {});
     }
 
-    auto & outputs = new_actions_dag.getOutputs();
-    std::erase(outputs, node_map.at(filter_output));
     new_actions_dag.addOrReplaceInOutputs(*new_filter);
     new_actions_dag.removeUnusedActions();
+
+    /// Unsure no planner-only filters remain in the whole action dag at the end of the pass. 
+    chassert(!new_actions_dag.hasPlannerOnlyFilters());
 
     node.step = std::make_unique<FilterStep>(input_header, std::move(new_actions_dag), new_filter->result_name, /*remove_filter=*/true);
 }

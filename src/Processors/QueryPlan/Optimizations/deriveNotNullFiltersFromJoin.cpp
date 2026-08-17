@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB::QueryPlanOptimizations
@@ -68,7 +69,7 @@ bool tryAddDerivedNotNullFilter(QueryPlan::Node & node, const SharedHeader & hea
     ActionsDAG dag(header->getColumnsWithTypeAndName());
 
     auto is_not_null = FunctionFactory::instance().get("isNotNull", Context::getGlobalContextInstance());
-    auto derived_filter_marker = FunctionFactory::instance().get("__plannerOnlyFilter", Context::getGlobalContextInstance());
+    auto derived_filter_marker = createInternalFunctionPlannerOnlyFilterResolver();
 
     ActionsDAG::NodeRawConstPtrs conjuncts;
     for (const auto * input : dag.getInputs())

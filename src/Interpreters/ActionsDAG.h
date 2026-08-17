@@ -239,9 +239,8 @@ public:
     /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
     void removeFromOutputs(const NameSet & node_names);
 
-    /// Replace planner-only filter wrappers `__plannerOnlyFilter` with constant-true columns.
-    /// Called when the DAG is compiled for execution in `ExpressionActions`.
-    void substitutePlannerOnlyFilters();
+    /// Whether the DAG contains `__plannerOnlyFilter` wrappers.
+    bool hasPlannerOnlyFilters() const;
 
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
