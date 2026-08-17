@@ -1407,13 +1407,10 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
     if (groups_.empty())
         return {};
 
-    auto tags_vector = getTagsByGroup(groups_);
-    chassert(tags_vector.size() == groups_.size());
-
     VectorWithMemoryTracking<Group> res;
     res.resize(groups_.size());
 
-    size_t num_new_tags = 0;
+    VectorWithMemoryTracking<Group> unique_groups;
 
     auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
     Group min_group = *min_group_it;
@@ -1435,8 +1432,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
             size_t & index = indices_by_group[groups_[i] - min_group];
             if (index == not_found)
             {
-                index = num_new_tags;
-                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+                index = unique_groups.size();
+                unique_groups.push_back(groups_[i]);
             }
             res[i] = index;
         }
@@ -1448,14 +1445,18 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
         for (size_t i = 0; i != groups_.size(); ++i)
         {
             Group group = groups_[i];
-            auto [it, inserted] = indices_by_group.try_emplace(group, num_new_tags);
+            auto [it, inserted] = indices_by_group.try_emplace(group, unique_groups.size());
             if (inserted)
-                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+                unique_groups.push_back(group);
             res[i] = it->second;
         }
     }
 
-    tags_vector.resize(num_new_tags);
+    auto tags_vector = getTagsByGroup(unique_groups);
+    chassert(tags_vector.size() == unique_groups.size());
+
+    for (auto & tags : tags_vector)
+        tags = transform_func(tags);
 
     auto new_groups = getGroupForTags(tags_vector);
 

@@ -381,3 +381,41 @@ FROM
     SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_group
     FROM numbers(5)
 );
+
+SELECT '';
+SELECT 'timeSeriesRemoveTag vectorized repeated groups with row order:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('instance', toString(number)), ('remove', 'value')]) AS group
+            FROM numbers(3)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT number,
+       timeSeriesGroupToTags(timeSeriesRemoveTag(groups[[1, 2, 1, 3, 2, 1][number + 1]], 'remove'))
+FROM numbers(6)
+ORDER BY number;
+
+SELECT '';
+SELECT 'timeSeriesRemoveTag vectorized repeated sparse groups with row order:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('instance', toString(number)), ('remove', 'value')]) AS group
+            FROM numbers(32)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT number,
+       timeSeriesGroupToTags(timeSeriesRemoveTag(groups[[1, 25, 1, 25, 1][number + 1]], 'remove'))
+FROM numbers(5)
+ORDER BY number;

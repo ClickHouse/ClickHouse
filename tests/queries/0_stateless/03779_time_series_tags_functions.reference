@@ -65,3 +65,18 @@ timeSeriesRemoveAllTagsExcept vectorized repeated dense groups:
 
 timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:
 5	1	[[('shared','value')]]
+
+timeSeriesRemoveTag vectorized repeated groups with row order:
+0	[('instance','0')]
+1	[('instance','1')]
+2	[('instance','0')]
+3	[('instance','2')]
+4	[('instance','1')]
+5	[('instance','0')]
+
+timeSeriesRemoveTag vectorized repeated sparse groups with row order:
+0	[('instance','0')]
+1	[('instance','24')]
+2	[('instance','0')]
+3	[('instance','24')]
+4	[('instance','0')]
