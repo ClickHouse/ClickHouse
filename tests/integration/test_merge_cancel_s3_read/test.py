@@ -243,6 +243,12 @@ def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
             int(node.query(optimize_running_query)) >= 1
         ), "SYSTEM STOP TTL MERGES aborted a regular merge"
 
+    # `get_query_request` only spawns a client and returns, so until the query reaches the server
+    # "not running" does not distinguish an abort from a connection still being made.
+    assert wait_for(
+        node, optimize_running_query, lambda v: int(v) >= 1
+    ), "the OPTIMIZE never reached the server, so the assertions below would be vacuous"
+
     # Vacuity guard: the merge reaches the retry loop, so it does poll the predicate and the
     # window below is an observation rather than an idle wait.
     accrued = False
