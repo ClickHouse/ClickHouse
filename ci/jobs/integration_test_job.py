@@ -147,9 +147,15 @@ def report_rabbitmq_recreations(result: Result) -> int:
                     if RABBITMQ_RECREATE_TOKEN not in line:
                         continue
                     file_count += 1
+                    # The field is a bare file name in `temp_path`: the whitespace-
+                    # delimited parse below cannot carry a directory, which may contain
+                    # spaces.
                     match = re.search(r"snapshot=(\S+)", line)
-                    if match and os.path.exists(match.group(1)):
-                        file_snapshots.append(match.group(1))
+                    if not match or os.path.basename(match.group(1)) != match.group(1):
+                        continue
+                    snapshot = os.path.join(temp_path, match.group(1))
+                    if os.path.isfile(snapshot):
+                        file_snapshots.append(snapshot)
         except OSError as ex:
             print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
             continue

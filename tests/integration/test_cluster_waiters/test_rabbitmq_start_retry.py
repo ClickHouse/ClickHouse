@@ -23,12 +23,10 @@ JOB_PY = os.path.normpath(
 FUNC_NAME = "wait_rabbitmq_to_start"
 
 # Stand-ins for the values the real cluster supplies, so the snapshot path the arms
-# assert on is the one the waiter builds. TEMP_DIR is cluster.py's own value, which is
-# relative to the test directory - the arms below pin that the waiter resolves it, since
-# the CI job script that reads the path back runs from the repo root.
+# assert on is the one the waiter builds. TEMP_DIR is cluster.py's own value, relative to
+# the test directory; TEMP_ABS_DIR is the anchored form the waiter writes through, and is
+# evaluated out of the shipped source below rather than retyped here.
 TEMP_DIR = "../../ci/tmp"
-TEST_CWD = "/repo/tests/integration"
-EXPECTED_SNAPSHOT_DIR = "/repo/ci/tmp"
 PROJECT_NAME = "stubproject-gw3"
 PID = 4242
 TOKEN = "RABBITMQ_RECREATE"
@@ -76,6 +74,34 @@ def _waiter_ast():
     raise AssertionError(f"{FUNC_NAME} not found in {CLUSTER_PY}")
 
 
+def _cluster_temp_abs_dir():
+    """Evaluate cluster.py's own `TEMP_ABS_DIR` expression, from a foreign cwd.
+
+    Evaluated rather than retyped so the arms track the shipped anchor, and evaluated
+    from `/` so an expression that silently depends on the cwd cannot agree with it.
+    """
+    with open(CLUSTER_PY, encoding="utf-8") as f:
+        module = ast.parse(f.read())
+    for node in module.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "TEMP_ABS_DIR" for t in node.targets
+        ):
+            namespace = {"p": os.path, "HELPERS_DIR": HELPERS_DIR, "temp_dir": TEMP_DIR}
+            cwd = os.getcwd()
+            os.chdir("/")
+            try:
+                return eval(  # pylint:disable=eval-used
+                    compile(ast.Expression(body=node.value), CLUSTER_PY, "eval"),
+                    namespace,
+                )
+            finally:
+                os.chdir(cwd)
+    raise AssertionError(f"TEMP_ABS_DIR not found in {CLUSTER_PY}")
+
+
+TEMP_ABS_DIR = _cluster_temp_abs_dir()
+
+
 def _module_constant(name):
     """Read a module-level string constant out of a shipped source file by AST, so the
     assertions track what is shipped rather than a copy of it."""
@@ -101,16 +127,19 @@ def _run(
     project_name=PROJECT_NAME,
     pid=PID,
     cluster=None,
+    cwd=None,
 ):
     """Execute the shipped waiter against stubs and record what it did.
 
     ready_from_attempt: 0-based attempt index from which the broker probe starts
     succeeding; None means it never succeeds.
+    cwd: process working directory to run under; the waiter must not depend on it.
     """
     counts = {"logs": 0, "debuginfo": 0, "recreations": 0}
     run_and_check_calls = []
     warnings = []
     copied = []
+    made_dirs = []
     # One ordered list of both kinds of side effect, so their relative order is
     # observable: recording them in two lists made it unassertable.
     events = []
@@ -163,21 +192,17 @@ def _run(
         "check_rabbitmq_is_available": check_rabbitmq_is_available,
         "run_and_check": run_and_check,
         "time": _FakeClock(),
-        # Real path joining, but no directory is created: these arms touch no filesystem.
-        # `abspath` is resolved against the test directory, matching how the real waiter
-        # runs (pytest's rootdir is tests/integration), so the arms below see the same
-        # absolute path a CI consumer would read.
+        # The real `os.path`, so a path expression that depends on the process cwd is
+        # visible to the arms below; only `makedirs` is stubbed, since these arms touch
+        # no filesystem. The cwd itself is varied by `_run(cwd=...)`.
         "os": types.SimpleNamespace(
-            path=types.SimpleNamespace(
-                join=os.path.join,
-                abspath=lambda p: os.path.normpath(os.path.join(TEST_CWD, p)),
-                dirname=os.path.dirname,
-            ),
-            makedirs=lambda *a, **k: None,
+            path=os.path,
+            makedirs=lambda *a, **k: made_dirs.append(a[0]),
             getpid=lambda: pid,
         ),
         "shutil": types.SimpleNamespace(copyfile=copyfile),
         "temp_dir": TEMP_DIR,
+        "TEMP_ABS_DIR": TEMP_ABS_DIR,
         "RABBITMQ_RECREATE_TOKEN": TOKEN,
         "open": lambda *a, **k: _NullFile(),
     }
@@ -213,13 +238,19 @@ def _run(
     kwargs = {"timeout": TIMEOUT}
     if retries is not None:
         kwargs["retries"] = retries
+    previous_cwd = os.getcwd()
+    if cwd is not None:
+        os.chdir(cwd)
     try:
         returned = namespace[FUNC_NAME](cluster, **kwargs)
     except RuntimeError as ex:
         raised = str(ex)
+    finally:
+        os.chdir(previous_cwd)
     counts["warnings"] = warnings
     counts["copied"] = copied
     counts["events"] = events
+    counts["made_dirs"] = made_dirs
     return raised, returned, counts, run_and_check_calls, cluster
 
 
@@ -307,15 +338,15 @@ def test_recreation_emits_the_token_and_preserves_the_log():
     assert len(counts["copied"]) == 1
     src, dst = counts["copied"][0]
     assert src == "/tmp/logs/rabbit.log"
-    assert f"snapshot={dst}" in lines[0]
-    # Absolute, so the CI job script - which runs from the repo root, not from the test
-    # directory - can still find the file it is told about.
-    assert os.path.isabs(dst), dst
-    assert os.path.dirname(dst) == EXPECTED_SNAPSHOT_DIR, dst
     # First waiter call in this process on this cluster, second attempt.
-    assert (
-        os.path.basename(dst) == f"rabbit-{PROJECT_NAME}-pid{PID}-call1-attempt1.log"
-    ), dst
+    name = f"rabbit-{PROJECT_NAME}-pid{PID}-call1-attempt1.log"
+    assert os.path.basename(dst) == name, dst
+    # Written into the anchored scan directory the CI job script reads back, and named
+    # in the log by that bare name: the directory can contain whitespace, the name
+    # cannot, and the job script's field is whitespace-delimited.
+    assert dst == os.path.join(TEMP_ABS_DIR, name), dst
+    assert f"snapshot={name} " in lines[0], lines[0]
+    assert os.path.isabs(dst), dst
 
     # The copy happens while the failed container - and the directory holding the log
     # it reads - still exist. Copying afterwards would preserve the next attempt's log
@@ -330,6 +361,49 @@ def test_recreation_emits_the_token_and_preserves_the_log():
     )
     assert copy_at < removed_at, counts["events"]
     assert copy_at < recreated_at, counts["events"]
+
+
+def test_snapshot_location_does_not_depend_on_the_working_directory():
+    """The waiter runs under whatever cwd the caller has: a CI job runs it from the repo
+    root, and `pytest tests/integration/...` from the root is the documented native
+    workflow, while `temp_dir` is written relative to tests/integration. Resolving it
+    against the ambient cwd sends the copy outside the repo, where the directory cannot
+    be created, so the broker log this preserves is lost on exactly the runs a developer
+    makes by hand."""
+    destinations = set()
+    created = set()
+    for cwd in ("/", os.sep.join([HELPERS_DIR, ".."]), os.path.dirname(HELPERS_DIR)):
+        _, _, counts, _, _ = _run(ready_from_attempt=1, cwd=cwd)
+        assert len(counts["copied"]) == 1, cwd
+        destinations.add(counts["copied"][0][1])
+        created.update(counts["made_dirs"])
+
+    assert len(destinations) == 1, destinations
+    assert destinations == {
+        os.path.join(TEMP_ABS_DIR, f"rabbit-{PROJECT_NAME}-pid{PID}-call1-attempt1.log")
+    }, destinations
+    # The directory it creates is the one it writes into, and it is inside the checkout.
+    assert created == {TEMP_ABS_DIR}, created
+    assert os.path.isdir(os.path.dirname(TEMP_ABS_DIR)), TEMP_ABS_DIR
+
+
+def test_logged_snapshot_field_survives_a_checkout_path_with_spaces():
+    """The job script parses `snapshot=` on whitespace, so the field must carry a bare
+    file name. A checkout under `/home/alice/ClickHouse Work` would otherwise truncate
+    the value at the space, and the preserved log would never be attached."""
+    _, _, counts, _, _ = _run(ready_from_attempt=1)
+    lines = [line for line in counts["warnings"] if TOKEN in line]
+    field = [token for token in lines[0].split() if token.startswith("snapshot=")][0][
+        len("snapshot=") :
+    ]
+
+    _, dst = counts["copied"][0]
+    assert field == os.path.basename(dst), (field, dst)
+    # No separator and no whitespace, whatever the directory above it looks like.
+    assert os.sep not in field, field
+    assert field.split() == [field], field
+    # And the field alone is enough to find the file, given the scan directory.
+    assert os.path.join(TEMP_ABS_DIR, field) == dst, (field, dst)
 
 
 def test_snapshot_names_are_unique_per_process_worker_call_and_attempt():

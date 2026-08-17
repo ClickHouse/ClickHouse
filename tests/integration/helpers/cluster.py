@@ -91,6 +91,9 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+# `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
+# the cwd, which differs between a CI job and a native pytest run.
+TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
 
 
 def find_default_config_path():
@@ -3161,19 +3164,21 @@ class ClickHouseCluster:
                 # which is removed on teardown and on a second `start()`. S3 upload keys
                 # are built from the basename alone, so it must be unique along every
                 # axis that can produce two copies in one job: the pytest process, the
-                # cluster, the waiter call and the attempt. The path is absolute because
-                # the CI job script resolves it from the repo root, not from here.
-                snapshot = os.path.abspath(
-                    os.path.join(
-                        temp_dir,
-                        f"rabbit-{self.project_name}-pid{os.getpid()}"
-                        f"-call{call}-attempt{attempt}.log",
-                    )
+                # cluster, the waiter call and the attempt.
+                #
+                # Only that name is logged, never the directory: `project_name` is
+                # stripped of everything non-alphanumeric so the name holds no
+                # whitespace, while the directory above it may.
+                name = (
+                    f"rabbit-{self.project_name}-pid{os.getpid()}"
+                    f"-call{call}-attempt{attempt}.log"
                 )
+                snapshot = name
                 try:
-                    os.makedirs(temp_dir, exist_ok=True)
+                    os.makedirs(TEMP_ABS_DIR, exist_ok=True)
                     shutil.copyfile(
-                        os.path.join(self.rabbitmq_logs_dir, "rabbit.log"), snapshot
+                        os.path.join(self.rabbitmq_logs_dir, "rabbit.log"),
+                        os.path.join(TEMP_ABS_DIR, name),
                     )
                 except Exception as ex:
                     logging.debug("Unable to preserve the RabbitMQ log: %s", ex)

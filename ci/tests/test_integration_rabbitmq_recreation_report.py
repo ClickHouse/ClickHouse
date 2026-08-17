@@ -68,11 +68,19 @@ def _write_log(temp_path, name, lines):
 
 
 def _snapshot(temp_path, name):
-    """Create a preserved broker log and return the absolute path the waiter would log."""
-    path = temp_path / "snaps" / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("fake rabbit.log body\n")
-    return str(path)
+    """Create a preserved broker log where the waiter writes it, and return the field
+    value the waiter logs for it.
+
+    That value is the bare name, not a path: the directory holding it may contain
+    whitespace, which the whitespace-delimited field below could not carry.
+    """
+    (temp_path / name).write_text("fake rabbit.log body\n")
+    return name
+
+
+def _attached(temp_path, name):
+    """The absolute path the reporter must attach for a snapshot named `name`."""
+    return os.path.join(str(temp_path), name)
 
 
 def _result(status=Result.Status.OK, children=()):
@@ -188,7 +196,7 @@ def test_scan_peak_memory_does_not_grow_with_log_size(temp_path):
     finally:
         tracemalloc.stop()
 
-    assert result.files == [first, last]
+    assert result.files == [_attached(temp_path, first), _attached(temp_path, last)]
     assert peak < size // 8, f"peak {peak} against a {size}-byte log"
 
 
@@ -201,7 +209,7 @@ def test_missing_snapshot_is_counted_but_not_attached(temp_path):
     _write_log(
         temp_path,
         "pytest_parallel-gw0.log",
-        [_token_line(snapshot=str(temp_path / "snaps" / "gone.log"))],
+        [_token_line(snapshot="rabbit-proj-gw0-pid1-call1-attempt9.log")],
     )
     result = _result(children=[Result.Status.OK])
 
@@ -212,6 +220,41 @@ def test_missing_snapshot_is_counted_but_not_attached(temp_path):
 def test_empty_snapshot_is_counted_but_not_attached(temp_path):
     """The waiter logs an empty `snapshot=` when it could not copy the broker log."""
     _write_log(temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot="")])
+    result = _result(children=[Result.Status.OK])
+
+    assert job.report_rabbitmq_recreations(result) == 1
+    assert result.files == []
+
+
+def test_snapshot_is_attached_when_the_scan_directory_contains_spaces(
+    tmp_path, monkeypatch
+):
+    """A checkout can sit under a path with a space (`/Users/alice/ClickHouse Work`).
+    The field is whitespace-delimited, so it carries a bare name and the directory is
+    supplied here; a path in the field would be cut at the space and the log lost."""
+    spacey = tmp_path / "ClickHouse Work" / "ci" / "tmp"
+    spacey.mkdir(parents=True)
+    monkeypatch.setattr(job, "temp_path", str(spacey))
+    name = _snapshot(spacey, "rabbit-proj-gw0-pid1-call1-attempt1.log")
+    _write_log(spacey, "pytest_parallel-gw0.log", [_token_line(snapshot=name)])
+    result = _result(children=[Result.Status.OK])
+
+    assert job.report_rabbitmq_recreations(result) == 1
+    assert result.files == [str(spacey / name)]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["../outside.log", "sub/inside.log", "/etc/passwd", ".", "a b.log"],
+    ids=["parent", "subdir", "absolute", "dot", "space"],
+)
+def test_only_a_bare_name_in_the_scan_directory_is_attached(temp_path, field):
+    """The waiter logs a name, so anything else in the field is a truncated or forged
+    value rather than a preserved log. It is still counted - the recreation happened -
+    but attaching it would upload a file the waiter never wrote, and `.` names a
+    directory, which praktika reports as a missing file."""
+    (temp_path / "outside.log").write_text("not ours\n")
+    _write_log(temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=field)])
     result = _result(children=[Result.Status.OK])
 
     assert job.report_rabbitmq_recreations(result) == 1
@@ -230,7 +273,7 @@ def test_duplicate_snapshot_path_is_attached_once(temp_path):
     result = _result(children=[Result.Status.OK])
 
     assert job.report_rabbitmq_recreations(result) == 2
-    assert result.files == [path]
+    assert result.files == [_attached(temp_path, path)]
 
 
 def test_preexisting_attachments_are_kept(temp_path):
@@ -241,7 +284,10 @@ def test_preexisting_attachments_are_kept(temp_path):
     result.files.append("/some/earlier/artifact.tar.gz")
 
     job.report_rabbitmq_recreations(result)
-    assert result.files == ["/some/earlier/artifact.tar.gz", path]
+    assert result.files == [
+        "/some/earlier/artifact.tar.gz",
+        _attached(temp_path, path),
+    ]
 
 
 def test_unreadable_log_is_skipped_and_others_still_counted(temp_path):
@@ -300,7 +346,9 @@ def test_log_that_fails_mid_read_contributes_nothing(temp_path, monkeypatch):
 
     # Only the intact log counts, and the doomed log's snapshot is not attached.
     assert job.report_rabbitmq_recreations(result) == 1
-    assert result.files == [_snapshot(temp_path, "gw0-attempt1.log")]
+    assert result.files == [
+        _attached(temp_path, _snapshot(temp_path, "gw0-attempt1.log"))
+    ]
 
 
 # --- the report must not displace the job summary, or claim recovery ------------------
@@ -319,7 +367,7 @@ def test_red_job_keeps_its_failure_count(temp_path):
     assert job.report_rabbitmq_recreations(result) == 1
     assert "Failures: 1/3" in result.info
     assert "recreation was attempted 1 time(s)" in result.info
-    assert result.files == [snapshot]
+    assert result.files == [_attached(temp_path, snapshot)]
 
 
 def test_green_job_keeps_its_failure_count(temp_path):
@@ -391,7 +439,7 @@ def test_existing_info_is_preserved_and_not_double_summarized(temp_path):
     assert "Session-level error from another writer" in result.info
     assert "recreation was attempted 1 time(s)" in result.info
     assert "Failures:" not in result.info
-    assert result.files == [snapshot]
+    assert result.files == [_attached(temp_path, snapshot)]
 
 
 # --- the report is not a verdict ------------------------------------------------------
@@ -412,7 +460,7 @@ def test_status_and_labels_are_untouched(temp_path):
             assert result.status == status
             assert list(result.get_labels()) == labels_before
             assert not result.has_label(Result.Label.INFRA)
-            assert result.files == [snapshot], (status, children)
+            assert result.files == [_attached(temp_path, snapshot)], (status, children)
 
 
 def test_report_survives_serialization(temp_path):
@@ -426,7 +474,7 @@ def test_report_survives_serialization(temp_path):
     restored = Result.from_dict(json.loads(result.to_json()))
     assert "recreation was attempted 1 time(s)" in restored.info
     assert "Failures: 0/1" in restored.info
-    assert path in [str(f) for f in restored.files]
+    assert _attached(temp_path, path) in [str(f) for f in restored.files]
     assert restored.status == Result.Status.OK
 
 
@@ -462,7 +510,7 @@ def test_clear_removes_the_preserved_snapshots_too(temp_path):
     snapshot = temp_path / "rabbit-proj-pid1-call1-attempt1.log"
     snapshot.write_text("stale broker log\n")
     _write_log(
-        temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=str(snapshot))]
+        temp_path, "pytest_parallel-gw0.log", [_token_line(snapshot=snapshot.name)]
     )
 
     job.clear_rabbitmq_recreation_scan_inputs()
