@@ -52,6 +52,8 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -479,7 +481,16 @@ void TCPHandler::runImpl()
 
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the connect-time
+                /// database too: a profile that makes `database` `const` or restricts its values
+                /// must reject a database chosen in the connection handshake consistently with
+                /// `USE`, `SET database = ...` and the HTTP `?database=...` parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", default_database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(default_database);
+            }
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
@@ -495,6 +506,13 @@ void TCPHandler::runImpl()
             LOG_INFO(log, "Client has gone away.");
             return;
         }
+
+        /// An interserver peer that failed authentication has not proven knowledge of the
+        /// cluster secret, so nothing is serialized back to it (an exception would disclose
+        /// error details, including whether the named cluster exists); the connection is just
+        /// closed. The failure is recorded in `system.session_log`.
+        if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+            throw;
 
         try
         {
@@ -2082,6 +2100,39 @@ void TCPHandler::receiveHello()
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
+
+        /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
+        /// could enter interserver mode and exercise pre-auth protocol packets. An unknown
+        /// cluster (`getCluster` throws) is rejected the same way, so an unauthenticated peer
+        /// cannot distinguish the two cases. The failure is recorded in `system.session_log`
+        /// via `onAuthenticationFailure`, and the connection is closed without serializing
+        /// the exception back to the unauthenticated peer (see the handshake catch block).
+        try
+        {
+            String cluster_secret;
+            try
+            {
+                cluster_secret = server.context()->getCluster(cluster)->getSecret();
+            }
+            catch (const Exception & e)
+            {
+                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            }
+
+            if (cluster_secret.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed: cluster '{}' is not configured with a secret", cluster);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::AUTHENTICATION_FAILED)
+                throw;
+
+            session = makeSession();
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), e);
+            throw;
+        }
+
         return;
     }
 
@@ -2442,6 +2493,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
+
+        /// An older peer can forward a server-initiated query whose context was never filled with
+        /// a version, so `client_info.read` above overwrote the session seed with 0.0.0. Take the
+        /// peer's version from the connection hello instead: otherwise the version-gated
+        /// compatibility decisions below would wrongly downgrade, and a second distributed hop
+        /// would trip the zero-version check in `RemoteQueryExecutor` during a rolling upgrade.
+        client_info.setClientVersionFromConnectionIfUnknown();
     }
 
     /// Per query settings are also passed via TCP.
@@ -2603,10 +2661,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     state->query_context = session->makeQueryContext(client_info);
 
-    /// Sets the default database if it wasn't set earlier for the session context.
-    if (is_interserver_mode && !default_database.empty())
-        state->query_context->setCurrentDatabase(default_database);
-
     std::weak_ptr<QueryState> state_wptr = state;
 
     state->query_context->setProgressCallback(
@@ -2675,6 +2729,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+
+    /// Sets the default database if it wasn't set earlier for the session context. This runs after
+    /// the passed settings are applied, so the database explicitly carried by the query packet wins
+    /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
+    /// mirrors it back into the setting, keeping the two in sync for `executeQuery`.
+    if (is_interserver_mode && !default_database.empty())
+        state->query_context->setCurrentDatabase(default_database);
 
     /// Use the received query id, or generate a random default. It is convenient
     /// to also generate the default OpenTelemetry trace id at the same time, and
@@ -3358,12 +3419,21 @@ bool TCPHandler::connectionLimitReached()
 
 Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
 {
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
+    const bool use_forwarded_address = server.config().getBool("auth_use_forwarded_address", false);
+    if (!use_forwarded_address || client_info.forwarded_for.empty())
+        return socket().peerAddress();
+
+    /// Extract the last entry from the comma-separated list. Only the last proxy can be trusted (if any).
     auto forwarded_address = client_info.getLastForwardedFor();
-    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
-        return *forwarded_address;
-    return socket().peerAddress();
+
+    /// With `auth_use_forwarded_address` enabled, consider an invalid address an error
+    /// instead of silently authenticating with the proxy's address.
+    if (!forwarded_address)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid forwarded client address: expected an IP literal with an optional numeric port");
+
+    return *forwarded_address;
 }
 
 }

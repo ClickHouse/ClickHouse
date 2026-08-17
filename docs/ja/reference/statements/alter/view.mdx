@@ -204,20 +204,24 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 スケジュール (`EVERY` または `AFTER`) の指定は必須です。このステートメントでは、*すべて*のリフレッシュパラメータが一度に置き換えられます。`RANDOMIZE FOR`、`DEPENDS ON`、`SETTINGS` のいずれであっても、指定されなかった句は削除されるか、既定値にリセットされます。リフレッシュ設定のみを変更する場合は、現在のスケジュールも再度指定してください。
 
+このコマンドは、materialized view やそのターゲットテーブルを再作成したり、既存のターゲットデータを消去したり、すでに実行中のリフレッシュをキャンセルしたりすることなく、既存のビューのリフレッシュ構成をその場で更新します。構成の変更中も、既存のターゲットテーブルに対する読み取りは継続します。
+
+同じ完全な `REFRESH` 指定でコマンドを繰り返し実行しても安全です。上記のとおり、実行するたびにすべてのリフレッシュパラメータが置き換えられるため、構成を維持する必要があるすべての句を必ず繰り返し指定してください。
+
 ```sql
--- スケジュールを変更する。
+-- Change the schedule.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- 再試行設定を変更する（スケジュールの指定は必須）。
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+-- Change retry settings (schedule must be repeated).
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- 依存関係を追加または維持する。
+-- Add or keep a dependency.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- `DEPENDS ON` を省略して依存関係を削除する。
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

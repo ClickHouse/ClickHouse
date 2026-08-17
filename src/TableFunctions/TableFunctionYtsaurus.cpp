@@ -132,7 +132,7 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge/>
 
@@ -147,7 +147,7 @@ ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
 <Info>
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the YTsaurus table function
-with [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine) setting.
+with [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) setting.
 Input the command `set allow_experimental_ytsaurus_table_function = 1`.
 </Info>
 

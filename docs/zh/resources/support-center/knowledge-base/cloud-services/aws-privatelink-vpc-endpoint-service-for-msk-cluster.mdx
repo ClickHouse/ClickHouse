@@ -6,17 +6,13 @@ tags: ['安全与身份验证', 'Cloud 管理']
 keywords: ['AWS PrivateLink', 'VPC endpoint service', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="overview">
   ## 概述
 </div>
 
 本指南介绍如何通过 [AWS PrivateLink VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) 将亚马逊 MSK 集群开放给 ClickPipes 使用。
 
-当 [MSK multi-VPC connectivity](/zh/integrations/clickpipes/aws-privatelink#msk-multi-vpc) 不可用或无法满足需求时，可采用此方法，例如：
+当 [MSK multi-VPC connectivity](/zh/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc) 不可用或无法满足需求时，可采用此方法，例如：
 
 * ClickPipes 到 MSK 的跨区域连接。
 * MSK Express 集群。
@@ -142,7 +138,7 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 2. 开始创建一个 ClickPipe。
 3. 选择 `Reverse private endpoint`。
 4. 选择 `VPC endpoint service` 作为 VPC 端点类型。
-5. 输入该 broker 对应的 VPC endpoint service 名称。
+5. 输入该 broker 专用的 VPC endpoint service 名称。
 6. 在 `Custom private DNS name` 中，输入该 broker 原始的 MSK broker 主机名。
 7. 创建端点。
 8. 如果端点处于待接受状态，请在 AWS VPC endpoint service 控制台中接受该端点连接请求。
@@ -150,11 +146,11 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 重复此过程，直到每个 broker 主机名都有对应的 RPE。
 
 有关自定义私有 DNS 的行为、命名规则以及 API/Terraform 选项，请参见
-[自定义私有 DNS](/zh/integrations/clickpipes/aws-privatelink#custom-private-dns)。
+[自定义私有 DNS](/zh/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)。
 
 你也可以使用 [OpenAPI](/zh/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) 或 Terraform 创建这些反向专用终结点。
 
-对于 OpenAPI，请为每个 broker 创建一个反向专用终结点，将 `type` 设置为 `VPC_ENDPOINT_SERVICE`，填写该 broker 对应的 VPC endpoint service 名称，并为该 broker 主机名配置一条自定义私有 DNS 映射：
+对于 OpenAPI，请为每个 broker 创建一个反向专用终结点，将 `type` 设置为 `VPC_ENDPOINT_SERVICE`，填写该 broker 专用的 VPC endpoint service 名称，并为该 broker 主机名配置一条自定义私有 DNS 映射：
 
 ```json
 {
@@ -175,13 +171,13 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
   ## 创建 Kafka ClickPipe
 </div>
 
-按照 [ClickPipes AWS PrivateLink 指南](/zh/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+按照 [ClickPipes AWS PrivateLink 指南](/zh/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 使用反向专用终结点创建 ClickPipe。
 
 创建 Kafka ClickPipe 时：
 
 * 使用原始 MSK broker 主机名作为 broker 列表，并包含你的 MSK listener 及其身份验证方法所使用的端口。
-* 不要使用 MSK 引导 broker 字符串。
+* 不要使用 MSK bootstrap broker 字符串。
 * 选择或关联所有 broker 专用的反向专用终结点。
 * 配置 MSK 集群所需的身份验证方法，例如 IAM role 身份验证。
 

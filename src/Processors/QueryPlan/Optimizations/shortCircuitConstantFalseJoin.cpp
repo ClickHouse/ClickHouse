@@ -30,7 +30,9 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
 /// Must run before `splitFilter`/`pushDownFilter`, which lower the constant off the join step.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
-    /// `ReadNothingStep` is not serializable to remote workers, so skip distributed plans.
+    /// Not enabled for distributed plans yet: a `ReadNothing` leaf changes what the distributed
+    /// planner sees on that side (shard list, read-rows estimate, join strategy), which needs its
+    /// own work. The step itself is serializable.
     if (settings.make_distributed_plan)
         return 0;
 
