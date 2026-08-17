@@ -222,10 +222,35 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     const auto all_columns_list_arguments = [&arguments](size_t begin)
     {
         std::vector<ASTPtr *> result;
+        if (arguments.size() <= begin)
+            return result;
         result.reserve(arguments.size() - begin);
         for (size_t index = begin; index < arguments.size(); ++index)
             result.push_back(&arguments[index]);
         return result;
+    };
+
+    /// `azureBlobStorage` has several positional overloads. The structure, when present, is always
+    /// the final argument of the corresponding overload; other trailing strings can be credentials,
+    /// a format, or a compression method and must stay unchanged.
+    const auto azure_structure_argument = [&arguments, &argument_at](size_t first_argument) -> std::vector<ASTPtr *>
+    {
+        if (arguments.size() < first_argument)
+            return {};
+
+        const size_t argument_count = arguments.size() - first_argument;
+        switch (argument_count)
+        {
+            case 4:
+            case 6:
+            case 7:
+            case 8:
+            case 9:
+            case 10:
+                return {argument_at(arguments.size() - 1)};
+            default:
+                return {};
+        }
     };
 
     if (equalsCaseInsensitiveString(table_function.name, "format"))
@@ -236,7 +261,7 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     if (equalsCaseInsensitiveString(table_function.name, "file") || equalsCaseInsensitiveString(table_function.name, "url")
         || equalsCaseInsensitiveString(table_function.name, "s3") || equalsCaseInsensitiveString(table_function.name, "gcs")
         || equalsCaseInsensitiveString(table_function.name, "oss") || equalsCaseInsensitiveString(table_function.name, "cosn")
-        || equalsCaseInsensitiveString(table_function.name, "hdfs") || equalsCaseInsensitiveString(table_function.name, "azureBlobStorage")
+        || equalsCaseInsensitiveString(table_function.name, "hdfs")
         || equalsCaseInsensitiveString(table_function.name, "executable") || equalsCaseInsensitiveString(table_function.name, "paimon")
         || equalsCaseInsensitiveString(table_function.name, "paimonS3") || equalsCaseInsensitiveString(table_function.name, "deltaLake")
         || equalsCaseInsensitiveString(table_function.name, "deltaLakeS3") || equalsCaseInsensitiveString(table_function.name, "hudi")
@@ -249,6 +274,8 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
         || equalsCaseInsensitiveString(table_function.name, "deltaLakeLocal")
         || equalsCaseInsensitiveString(table_function.name, "paimonLocal"))
         return all_columns_list_arguments(2);
+    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorage"))
+        return azure_structure_argument(0);
     if (equalsCaseInsensitiveString(table_function.name, "fileCluster") || equalsCaseInsensitiveString(table_function.name, "urlCluster")
         || equalsCaseInsensitiveString(table_function.name, "hdfsCluster") || equalsCaseInsensitiveString(table_function.name, "s3Cluster")
         || equalsCaseInsensitiveString(table_function.name, "paimonCluster")
@@ -266,9 +293,11 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
         || equalsCaseInsensitiveString(table_function.name, "icebergLocalCluster"))
         return all_columns_list_arguments(3);
     if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorageCluster"))
-        return all_columns_list_arguments(4);
+        return azure_structure_argument(1);
     if (equalsCaseInsensitiveString(table_function.name, "mongodb"))
-        return arguments.size() >= 3 ? all_columns_list_arguments(2) : std::vector<ASTPtr *>{};
+        return arguments.size() == 3 || arguments.size() == 4 ? std::vector{argument_at(2)}
+            : arguments.size() >= 6 && arguments.size() <= 8  ? std::vector{argument_at(5)}
+                                                               : std::vector<ASTPtr *>{};
     if (equalsCaseInsensitiveString(table_function.name, "redis"))
         return {argument_at(2)};
     if (equalsCaseInsensitiveString(table_function.name, "ytsaurus"))
