@@ -1487,53 +1487,17 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
-            /// When clearing a column, any MATERIALIZED column whose expression
-            /// depends on the cleared column must be recalculated so its stored
-            /// data stays consistent with the new (default) value.
-            /// We must check every CLEAR COLUMN command (not short-circuit after the
-            /// first match) so that all cleared columns used by materialized
-            /// expressions are registered in `cleared_columns_with_dependencies`.
-            bool has_dependent_materialized = false;
-            for (const auto & column : columns_desc)
-            {
-                if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name)
-                    || !column.default_desc.expression)
-                    continue;
-
-                auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
-                const auto & required_columns = syntax_result->requiredSourceColumns();
-                if (std::ranges::find(required_columns, command.column_name) == required_columns.end())
-                    continue;
-
-                /// The recalculation reads the MATERIALIZED expression's inputs from the
-                /// existing part, but EPHEMERAL values exist only during INSERT and are
-                /// not stored. Reject the mutation up front instead of queueing one that
-                /// can never succeed.
-                for (const auto & dep : required_columns)
-                {
-                    if (ephemeral_columns.contains(dep))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot clear column {}: the MATERIALIZED column {} depends on it and on the "
-                            "EPHEMERAL column {}, whose values cannot be read from existing parts to "
-                            "recalculate the MATERIALIZED column",
-                            backQuote(command.column_name), backQuote(column.name), backQuote(dep));
-                }
-
-                has_dependent_materialized = true;
-            }
-
-            if (has_dependent_materialized)
-            {
-                need_recalculate_materialized_for_clear = true;
-                /// Ensure the cleared column enters the readonly stage
-                /// with its default value so the materialized expression
-                /// evaluates correctly.
-                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
-                cleared_columns_with_dependencies.insert(command.column_name);
-            }
+            /// Compute the actual stale MATERIALIZED closure below with
+            /// `collectMaterializedColumnInputsAfterExpansion`. It deliberately skips
+            /// pre-existing alias-lambda-capture violations, which metadata loading
+            /// tolerates for backward compatibility. Do not eagerly validate every
+            /// MATERIALIZED expression here: an unrelated legacy expression must not
+            /// make this queued mutation fail during preparation.
+            need_recalculate_materialized_for_clear = true;
+            /// Ensure the cleared column enters the readonly stage with its default
+            /// value if the closure contains a MATERIALIZED column that reads it.
+            dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
+            cleared_columns_with_dependencies.insert(command.column_name);
         }
         /// The following mutations handled separately:
         else if (command.type == MutationCommand::APPLY_DELETED_MASK

@@ -30,7 +30,7 @@ sed -i "s/\`y\` UInt8/\`y\` UInt8 ALIAS \`x\` + 1/" "${WORK_DIR}/metadata/db/leg
 # The table still loads, and unrelated ALTERs keep working. In particular, `CLEAR COLUMN` must
 # not revalidate the unrelated legacy MATERIALIZED expression while determining which columns to
 # recompute for its mutation.
-local_query "ALTER TABLE db.legacy RENAME COLUMN m TO m2; ALTER TABLE db.legacy RENAME COLUMN y TO y2; ALTER TABLE db.legacy ADD COLUMN z UInt8; ALTER TABLE db.legacy CLEAR COLUMN z; ALTER TABLE db.legacy DROP COLUMN z; ALTER TABLE db.legacy RENAME COLUMN arr TO arr2; SELECT 'unrelated ALTERs succeeded'"
+local_query "ALTER TABLE db.legacy RENAME COLUMN m TO m2; ALTER TABLE db.legacy RENAME COLUMN y TO y2; ALTER TABLE db.legacy ADD COLUMN z UInt8; ALTER TABLE db.legacy CLEAR COLUMN z SETTINGS mutations_sync = 2; ALTER TABLE db.legacy DROP COLUMN z; ALTER TABLE db.legacy RENAME COLUMN arr TO arr2; SELECT 'unrelated ALTERs succeeded'"
 
 # An ALTER that introduces a new violation is still rejected.
 local_query "ALTER TABLE db.legacy ADD COLUMN m3 Array(UInt8) MATERIALIZED arrayMap(x -> y2, arr2)" 2>&1 \

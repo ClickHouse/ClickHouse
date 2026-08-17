@@ -11,6 +11,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
@@ -328,6 +329,8 @@ String makeStepDescription(const ResolvedQuery & resolved)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeTrivialCountFromTextIndex");
+
     /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
     /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
     /// replace, so bail and let the reader be distributed across replicas as before.
@@ -364,7 +367,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         return false;
     }
 
-    /// Split the parts by index materialization (checksum lookups, no I/O).
+    /// Split the parts by index materialization (checksum lookups if materialized)
     const auto & text_index = *search_query->index.index;
     auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
     {
