@@ -415,6 +415,28 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     return matcher && matcher->isUnqualified();
 }
 
+bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
+{
+    const auto & name = function.getFunctionName();
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const bool first_is_scalar = arguments[0]->getNodeType() == QueryTreeNodeType::QUERY;
+    const bool second_is_scalar = arguments[1]->getNodeType() == QueryTreeNodeType::QUERY;
+    if (first_is_scalar == second_is_scalar)
+        return false;
+
+    const auto * other_constant = arguments[first_is_scalar ? 1 : 0]->as<ConstantNode>();
+    return !other_constant || !other_constant->isDeterministic() || other_constant->hasSourceExpression();
+}
+
 bool hasScopeDependentNodesForEarlyShortCircuit(
     const QueryTreeNodePtr & node,
     const IdentifierResolveScope & scope)
@@ -428,6 +450,10 @@ bool hasScopeDependentNodesForEarlyShortCircuit(
     if (node_type != QueryTreeNodeType::FUNCTION
         && node_type != QueryTreeNodeType::CONSTANT
         && node_type != QueryTreeNodeType::LIST)
+        return true;
+
+    if (const auto * function = node->as<FunctionNode>();
+        function && comparisonWithScalarHasNonLiteralOtherSide(*function))
         return true;
 
     for (const auto & child : node->getChildren())
