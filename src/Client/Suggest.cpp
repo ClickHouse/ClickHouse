@@ -208,7 +208,8 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
                    Int32 suggestion_limit,
-                   const ClientInfo & client_info)
+                   const ClientInfo & client_info,
+                   std::ostream & error_stream)
 {
     try
     {
@@ -217,7 +218,7 @@ void Suggest::load(IServerConnection & connection,
     }
     catch (...)
     {
-        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        error_stream << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
         last_error = getCurrentExceptionCode();
     }
 }

@@ -4111,9 +4111,19 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+        if (isEmbeeddedClient())
+        {
+            /// The embedded client runs inside the server process, and its session was authenticated
+            /// externally, e.g. by an SSH key, so a separate connection for loading suggestions cannot
+            /// be created: there are no credentials to authenticate it with. (A `LocalConnection`
+            /// created from a bare context would try the `default` user with an empty password.)
+            /// Load suggestions synchronously through the main connection: it is idle at this point,
+            /// and the embedded client always waits for suggestions to load anyway.
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo(), error_stream);
+        }
+        else if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
-        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
@@ -4305,7 +4315,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo(), error_stream);
         }
 
         try
