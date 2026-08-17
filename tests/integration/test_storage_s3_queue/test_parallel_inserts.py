@@ -445,4 +445,3 @@ def test_parallel_inserts_setting_persisted(started_cluster, parallel_inserts):
     DROP TABLE {table_name};
     """
     )
-        
