@@ -1,5 +1,7 @@
 #include <atomic>
 #include <limits>
+#include <utility>
+#include <vector>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -1296,7 +1298,7 @@ public:
                 IColumn::Filter not_used = bitmaps.getNotUsed(block_number);
 
                 size_t unmatched_rows = 0;
-                size_t unmatched_ranges = 0;
+                unmatched_ranges.clear();
                 for (size_t range_start = 0; range_start < not_used.size();)
                 {
                     while (range_start < not_used.size() && !not_used[range_start])
@@ -1310,7 +1312,7 @@ public:
                         ++range_end;
 
                     unmatched_rows += range_end - range_start;
-                    ++unmatched_ranges;
+                    unmatched_ranges.emplace_back(range_start, range_end - range_start);
                     range_start = range_end;
                 }
 
@@ -1318,7 +1320,7 @@ public:
 
                 /// Avoid repeated per-range work, for example LowCardinality dictionary remapping,
                 /// when the unmatched rows are too fragmented.
-                if (unmatched_ranges && unmatched_rows / unmatched_ranges < min_unmatched_rows_per_range)
+                if (!unmatched_ranges.empty() && unmatched_rows / unmatched_ranges.size() < min_unmatched_rows_per_range)
                 {
                     for (size_t col = 0; col < columns_right.size(); ++col)
                     {
@@ -1329,25 +1331,13 @@ public:
                 }
                 else
                 {
-                    for (size_t range_start = 0; range_start < not_used.size();)
+                    for (size_t col = 0; col < columns_right.size(); ++col)
                     {
-                        while (range_start < not_used.size() && !not_used[range_start])
-                            ++range_start;
-
-                        if (range_start == not_used.size())
-                            break;
-
-                        size_t range_end = range_start;
-                        while (range_end < not_used.size() && not_used[range_end])
-                            ++range_end;
-
-                        for (size_t col = 0; col < columns_right.size(); ++col)
+                        const IColumn & column = *right_block->getByPosition(col).column;
+                        for (const auto & [range_start, range_length] : unmatched_ranges)
                         {
-                            const IColumn & column = *right_block->getByPosition(col).column;
-                            columns_right[col]->insertRangeFrom(column, range_start, range_end - range_start);
+                            columns_right[col]->insertRangeFrom(column, range_start, range_length);
                         }
-
-                        range_start = range_end;
                     }
                 }
             }
@@ -1375,6 +1365,7 @@ private:
     const MergeJoin & parent;
     size_t max_block_size;
     size_t block_number = 0;
+    std::vector<std::pair<size_t, size_t>> unmatched_ranges;
 };
 
 
