@@ -50,7 +50,10 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "responsible for rewriting, including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
             "A part is in that scope once its `min_block_number` precedes the mutation's block number, so a part inserted afterwards does not count towards it — unless a merge folded "
             "that part into one that does, which the mutation then has to rewrite whole, and whose bytes therefore do reach `progress`. "
-            "The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward. "
+            "Both sides are measured against the table as it stands, not against a snapshot taken when the mutation was submitted, so the value is an estimate: a regular merge can "
+            "retire pending parts at any moment, which makes `progress` jump forward. An already-rewritten part also weighs its new size while the parts still to be rewritten weigh "
+            "their old one, so `progress` is understated for a mutation that shrinks parts and overstated for one that grows them. `DELETE WHERE 1` is the worst case: each finished "
+            "part becomes an empty part, so `progress` stays near 0 until the last part is rewritten and should be read as a lower bound. "
             "`NULL` when the remaining work is not known yet. On a replicated table that happens while a mutation that is not done waits for an in-flight INSERT whose part is not "
             "committed (`parts_to_do` = 0), and while any part it still has to rewrite has not been fetched or merged on this replica: neither has a size on disk to weigh."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},

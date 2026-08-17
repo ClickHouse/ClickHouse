@@ -8669,6 +8669,8 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         if (!remaining_size_known)
             continue;
 
+        /// Rewritten parts weigh their new size while pending ones weigh their old size, so this
+        /// understates a mutation that shrinks parts. `DELETE WHERE 1` is the worst case, see the docs.
         UInt64 scope_bytes = 0;
         for (const auto & [partition_id, block_number] : status.block_numbers)
         {

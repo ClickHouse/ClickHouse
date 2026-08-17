@@ -1412,6 +1412,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
+        /// Rewritten parts weigh their new size while pending ones weigh their old size, so this
+        /// understates a mutation that shrinks parts. `DELETE WHERE 1` is the worst case, see the docs.
         UInt64 scope_bytes = getBytesBeforeBlock(part_block_bytes, static_cast<Int64>(entry.block_number));
         Float64 progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
