@@ -80,8 +80,16 @@ namespace ProfileEvents
         /// with the flip.
         std::atomic<uint32_t> cpus = 0;
         AlignedCounters counters_holder;
-        /// Used to propagate increments
+
+        /// Used to propagate increments.
+        /// Requires acquire-release:
+        /// 1. Thread A constructs Counters object and attaches Counters pointer
+        ///    (e.g. ProcessList::insert where the user's Counters is constructed right before calling setUserCounters).
+        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
+        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
+        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
         std::atomic<Counters *> parent = {};
+
         std::atomic<Count> prev_cpu_wait_microseconds = 0;
         std::atomic<Count> prev_cpu_virtual_time_microseconds = 0;
 

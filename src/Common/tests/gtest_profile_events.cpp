@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 
+#include <atomic>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -131,4 +132,25 @@ TEST(ProfileEvents, SnapshotSetOverwritesSingleEvent)
     snapshot.set(ProfileEvents::Query, 99);
     EXPECT_EQ(snapshot[ProfileEvents::Query], 99u);
     EXPECT_EQ(counters[ProfileEvents::Query], 5u);
+}
+
+TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
+{
+    ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
+    std::atomic<bool> attached = false;
+
+    std::thread incrementer([&]
+    {
+        while (!attached.load(std::memory_order_relaxed))
+            ;
+        counters.increment(ProfileEvents::Query);
+    });
+
+    auto parent = std::make_unique<ProfileEvents::Counters>(VariableContext::User, nullptr);
+    counters.setParent(parent.get());
+    attached.store(true, std::memory_order_release);
+
+    incrementer.join();
+
+    EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }

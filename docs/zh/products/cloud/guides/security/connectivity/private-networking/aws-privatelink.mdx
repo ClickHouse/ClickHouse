@@ -51,14 +51,17 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   * us-west-1
   * us-east-2
   * us-east-1
-    价格注意事项：AWS 将对跨区域数据传输收费，定价请参见[此处](https://aws.amazon.com/privatelink/pricing/)。
+</Note>
+
+<Note>
+  AWS 将对跨区域数据传输收费。有关详细信息，请参阅 [AWS PrivateLink 定价](https://aws.amazon.com/privatelink/pricing/)。
 </Note>
 
 **请完成以下步骤以启用 AWS PrivateLink**：
 
 1. 获取端点 &quot;Service name&quot;。
-2. 创建 AWS 端点。
-3. 将 &quot;Endpoint ID&quot; 添加到 ClickHouse Cloud organization。
+2. 创建 AWS endpoint。
+3. 将 &quot;Endpoint ID&quot; 添加到 ClickHouse Cloud 组织。
 4. 将 &quot;Endpoint ID&quot; 添加到 ClickHouse 服务允许列表。
 
 可在[此处](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/)找到 Terraform 示例。
@@ -163,7 +166,9 @@ jq .result
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 端点设置" border />
 
-如果您想通过 PrivateLink 建立跨区域连接，请勾选 “Cross region endpoint” 复选框，并指定服务所在区域。服务所在区域即 ClickHouse 实例运行的区域。
+<Note>
+  对于跨区域连接，请启用 **Cross region endpoint** 复选框，并指定 ClickHouse 服务所在的区域。
+</Note>
 
 如果出现 “Service name couldn&#39;t be verified.” 错误，请联系 Customer Support，申请将新区域添加到 supported regions 列表中。
 

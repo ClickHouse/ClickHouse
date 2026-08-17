@@ -933,6 +933,47 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
+int ColumnDynamic::compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint)
+{
+    /// Both values are serialized as [binary encoded type][value], with NULL encoded as the
+    /// Nothing type and no value (see SerializationDynamic::serializeBinary). Compare them
+    /// directly without materializing any wrapper column.
+
+    /// First check if both type and value are equal.
+    if (lhs == rhs)
+        return 0;
+
+    ReadBufferFromMemory buf_left(lhs);
+    auto left_data_type = decodeDataType(buf_left);
+    ReadBufferFromMemory buf_right(rhs);
+    auto right_data_type = decodeDataType(buf_right);
+
+    /// A Nothing type means the value is NULL (no value bytes follow). Order NULLs using
+    /// nan_direction_hint, exactly like the NULL_DISCRIMINATOR handling in doCompareAt.
+    bool left_is_null = isNothing(left_data_type);
+    bool right_is_null = isNothing(right_data_type);
+    if (left_is_null && right_is_null)
+        return 0;
+    if (left_is_null)
+        return nan_direction_hint;
+    if (right_is_null)
+        return -nan_direction_hint;
+
+    /// If rows have different types, we compare type names.
+    auto left_data_type_name = left_data_type->getName();
+    auto right_data_type_name = right_data_type->getName();
+    if (left_data_type_name != right_data_type_name)
+        return left_data_type_name < right_data_type_name ? -1 : 1;
+
+    /// If rows have the same type, we compare actual values by deserializing both into a single
+    /// temporary column of the concrete type.
+    auto tmp_column = left_data_type->createColumn();
+    const auto & serialization = left_data_type->getDefaultSerialization();
+    serialization->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
+    serialization->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
+    return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
@@ -959,33 +1000,10 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if both values are in shared variant.
     if (left_discr == left_shared_variant_discr && right_discr == right_shared_variant_discr)
     {
-        /// First check if both type and value are equal.
+        /// Both values are serialized in shared-variant binary form; compare them directly.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
-        if (left_value == right_value)
-            return 0;
-
-        /// Extract type names from both values.
-        ReadBufferFromMemory buf_left(left_value);
-        auto left_data_type = decodeDataType(buf_left);
-        auto left_data_type_name = left_data_type->getName();
-
-        ReadBufferFromMemory buf_right(right_value);
-        auto right_data_type = decodeDataType(buf_right);
-        auto right_data_type_name = right_data_type->getName();
-
-        /// If rows have different types, we compare type names.
-        if (left_data_type_name != right_data_type_name)
-            return left_data_type_name < right_data_type_name ? -1 : 1;
-
-        /// If rows have the same type, we compare actual values.
-        /// We have both values serialized in binary format, so we need to
-        /// create temporary column, insert both values into it and compare.
-        auto tmp_column = left_data_type->createColumn();
-        const auto & serialization = left_data_type->getDefaultSerialization();
-        serialization->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
-        serialization->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
-        return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
+        return compareSerializedValues(left_value, right_value, nan_direction_hint);
     }
     /// Check if only left value is in shared data.
     if (left_discr == left_shared_variant_discr)
