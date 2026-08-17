@@ -43,7 +43,6 @@ def add_nodes_to_cluster(
     num_nodes: int,
     main_configs: List[str],
     user_configs: List[str],
-    **kwargs
 ) -> List[ClickHouseInstance]:
     nodes = [
         cluster.add_instance(
@@ -53,7 +52,6 @@ def add_nodes_to_cluster(
             external_dirs=["/backups/"],
             macros={"replica": f"node{i}", "shard": "shard1"},
             with_zookeeper=True,
-            **kwargs
         )
         for i in range(num_nodes)
     ]

@@ -2,7 +2,6 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
-#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -22,11 +21,9 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -160,6 +157,23 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     pipeline_for_new_replicas.add(send_external_tables_data);
 }
 
+void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
+
+    auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
+
+    for (auto & offset_state : offset_states)
+        for (auto & replica : offset_state.replicas)
+            if (replica.connection)
+                send_ignored_part_uuids(replica);
+
+    pipeline_for_new_replicas.add(send_ignored_part_uuids);
+}
+
 void HedgedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -202,10 +216,6 @@ void HedgedConnections::sendQuery(
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
 
-        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
-            modified_settings[Setting::interactive_delay],
-            distributed_fanout * offset_states.size());
-
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
@@ -226,13 +236,6 @@ void HedgedConnections::sendQuery(
         /// In other words, the initiator always controls whether the analyzer enabled or not for
         /// all servers involved in the distributed query processing.
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
-
-        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-        /// servers of a distributed query must agree on it even when it comes only from server/profile
-        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-        modified_settings.set(
-            "enable_packed_string_keys_in_aggregation",
-            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
@@ -387,7 +390,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd = 0;
+    int event_fd;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -452,7 +455,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event{};
+    epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

@@ -6,7 +6,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/BlobStorageLogWriter.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <fcntl.h>
 #include <string>
@@ -29,8 +28,7 @@ public:
         int replication_,
         const WriteSettings & write_settings_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        int flags = O_WRONLY,
-        BlobStorageLogWriterPtr blob_log_ = {});
+        int flags = O_WRONLY);
 
     ~WriteBufferFromHDFS() override;
 
@@ -41,15 +39,9 @@ public:
     std::string getFileName() const override { return filename; }
 
 private:
-    void finalizeImpl() override;
-
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
-    const std::string hdfs_uri;
     const std::string filename;
-    BlobStorageLogWriterPtr blob_log;
-    size_t total_bytes_written = 0;
-    UInt64 total_time_microseconds = 0;
 };
 
 }

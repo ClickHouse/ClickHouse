@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class TemporaryDataBuffer;
-using TemporaryDataBufferPtr = std::unique_ptr<TemporaryDataBuffer>;
-
 /// Represents a file prepared to be included in a backup, assuming that until this backup entry is destroyed
 /// the file can be appended with new data, but the bytes which are already in the file won't be changed.
 class BackupEntryFromAppendOnlyFile : public BackupEntryWithChecksumCalculation
@@ -21,8 +18,6 @@ public:
         bool copy_encrypted_ = false,
         const std::optional<UInt64> & file_size_ = {},
         bool allow_checksum_from_remote_path_ = true);
-
-    explicit BackupEntryFromAppendOnlyFile(TemporaryDataBufferPtr tmp_file_);
 
     ~BackupEntryFromAppendOnlyFile() override;
 
@@ -41,14 +36,12 @@ protected:
     bool isChecksumFromRemotePathAllowed() const override { return allow_checksum_from_remote_path; }
 
 private:
-    TemporaryDataBufferPtr tmp_file;
-
-    DiskPtr disk;
-    String file_path;
-    DataSourceDescription data_source_description;
-    bool copy_encrypted = false;
-    UInt64 size = 0;
-    bool allow_checksum_from_remote_path = false;
+    const DiskPtr disk;
+    const String file_path;
+    const DataSourceDescription data_source_description;
+    const bool copy_encrypted;
+    const UInt64 size;
+    const bool allow_checksum_from_remote_path;
 };
 
 }

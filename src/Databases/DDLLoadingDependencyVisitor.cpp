@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
@@ -25,7 +24,7 @@ using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
 TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
-    chassert(global_context == global_context->getGlobalContext());
+    assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
@@ -223,7 +222,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     }
     else
     {
-        /// Just return if the argument has unexpected type.
+        assert(false);
         return;
     }
 

@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -10,6 +10,10 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -24,16 +28,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line final : public IFunction
+class FunctionH3Line : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
 
-    H3Validator validator;
-
-    explicit FunctionH3Line(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Line>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Line>(); }
 
     std::string getName() const override { return name; }
 
@@ -100,21 +100,13 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
-            const bool start_valid = validator.validateCell(start);
-            const bool end_valid = validator.validateCell(end);
-            if (!start_valid || !end_valid)
-            {
-                dst_offsets[row] = current_offset;
-                continue;
-            }
 
-            int64_t size = 0;
-            H3Error err = gridPathCellsSize(start, end, &size);
-            if (err)
+            auto size = gridPathCellsSize(start, end);
+            if (size < 0)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
-                    start, end, err);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}",
+                    start, end);
 
             current_offset += size;
             dst_offsets[row] = current_offset;
@@ -131,10 +123,6 @@ public:
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const auto size = dst_offsets[row] - current_offset;
-            if (size == 0)
-            {
-                continue;
-            }
             gridPathCells(start, end, ptr + current_offset);
             current_offset += size;
         }
@@ -147,33 +135,7 @@ public:
 
 REGISTER_FUNCTION(H3Line)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the line of [H3](#h3-index) indices between the two provided indices.
-    )";
-    FunctionDocumentation::Syntax syntax = "h3Line(start, end)";
-    FunctionDocumentation::Arguments arguments = {
-        {"start", "Hexagon index number that represents the starting point.", {"UInt64"}},
-        {"end", "Hexagon index number that represents the ending point.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of H3 indices representing the line between the start and end indices.",
-        {"Array(UInt64)"}
-    };
-    FunctionDocumentation::Examples examples = {
-        {
-            "Get line of H3 indices between two points",
-            "SELECT h3Line(590080540275638271, 590103561300344831) AS indexes",
-            R"(
-┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3Line>(documentation);
+    factory.registerFunction<FunctionH3Line>();
 }
 
 }

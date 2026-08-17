@@ -1,4 +1,3 @@
-#include <Processors/QueryPlan/resolveStorages.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -22,7 +21,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -94,13 +92,13 @@ static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, cons
 
 static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_expression)
 {
-    auto select = make_intrusive<ASTSelectQuery>();
-    auto columns = make_intrusive<ASTExpressionList>();
+    auto select = std::make_shared<ASTSelectQuery>();
+    auto columns = std::make_shared<ASTExpressionList>();
     for (const auto & name : names)
-        columns->children.push_back(make_intrusive<ASTIdentifier>(name));
+        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
 
-    auto tables = make_intrusive<ASTTablesInSelectQuery>();
-    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto tables = std::make_shared<ASTTablesInSelectQuery>();
+    auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
     table_element->children.push_back(table_expression);
     table_element->table_expression = std::move(table_expression);
     tables->children.push_back(std::move(table_element));
@@ -113,8 +111,8 @@ static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_express
 
 static ASTPtr wrapWithUnion(ASTPtr select)
 {
-    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
-    auto selects = make_intrusive<ASTExpressionList>();
+    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
+    auto selects = std::make_shared<ASTExpressionList>();
     selects->children.push_back(select);
     select_with_union->list_of_selects = selects;
     select_with_union->children.push_back(select_with_union->list_of_selects);
@@ -174,19 +172,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         {
             storage = table_function_node->getStorage();
             snapshot = table_function_node->getStorageSnapshot();
-            /// Carry the resolved table-function subtree so that the aggregation hash-table-stats
-            /// cache key (see calculateHashTableCacheKeys) can tell different arguments apart. A
-            /// table-function storage has no UUID and its StorageID does not depend on the arguments
-            /// (any numbers(N) reads from `_table_function.numbers`), so without this the key would
-            /// hash only the storage name and e.g. numbers(1) and numbers(1e6) would collide after a
-            /// serialized-plan round-trip (distributed / serialize_query_plan). This mirrors the
-            /// analyzer read path, which sets table_expression in PlannerJoinTree.
-            /// FINAL / SAMPLE are serialized out-of-band from the AST (see ReadFromTableFunctionStep::serialize),
-            /// so the node parsed back from serialized_ast does not carry them; copy them onto the node so the
-            /// key also tells modifier-bearing reads apart.
-            if (auto modifiers = reading_from_table_function->getTableExpressionModifiers(); modifiers != TableExpressionModifiers{})
-                table_function_node->setTableExpressionModifiers(std::move(modifiers));
-            select_query_info.table_expression = static_pointer_cast<ITableExpressionNode>(query_tree_node);
         }
         else if (auto * table_node = query_tree_node->as<TableNode>())
         {
@@ -202,16 +187,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
-    if (select_query_info.table_expression_modifiers)
-        snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
-
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     if (storage->isRemote() || is_storage_merge)
     {
-        auto table_expression = make_intrusive<ASTTableExpression>();
+        auto table_expression = std::make_shared<ASTTableExpression>();
         if (table_function_ast)
         {
             table_expression->children.push_back(table_function_ast);
@@ -220,30 +202,10 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         else
         {
             const auto & table_id = storage->getStorageID();
-            auto table_identifier = make_intrusive<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
             table_expression->children.push_back(table_identifier);
             table_identifier->uuid = table_id.uuid;
             table_expression->database_and_table_name = std::move(table_identifier);
-        }
-
-        /// Restore FINAL / SAMPLE onto the reconstructed table expression: they are serialized separately
-        /// from the table name / table function AST (see ReadFromTableStep::serialize and
-        /// ReadFromTableFunctionStep::serialize), and this AST is all InterpreterSelectQueryAnalyzer sees,
-        /// so without this the modifiers would be silently dropped from the read.
-        if (select_query_info.table_expression_modifiers)
-        {
-            const auto & modifiers = *select_query_info.table_expression_modifiers;
-            table_expression->final = modifiers.hasFinal();
-            if (modifiers.hasSampleSizeRatio())
-            {
-                table_expression->sample_size = make_intrusive<ASTSampleRatio>(*modifiers.getSampleSizeRatio());
-                table_expression->children.push_back(table_expression->sample_size);
-            }
-            if (modifiers.hasSampleOffsetRatio())
-            {
-                table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*modifiers.getSampleOffsetRatio());
-                table_expression->children.push_back(table_expression->sample_offset);
-            }
         }
 
         query = makeASTForReadingColumns(column_names, std::move(table_expression));
@@ -257,7 +219,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         options.ignore_rename_columns = true;
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
     }
     else
     {
@@ -267,27 +228,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
 
-        bool use_parallel_replicas = false;
-        if (reading_from_table)
-            use_parallel_replicas = reading_from_table->useParallelReplicas();
-
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
-
         storage->read(
             reading_plan,
             column_names,
             snapshot,
             select_query_info,
-            mutable_context,
+            context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
             context->getSettingsRef()[Setting::max_threads]
         );
-
-        /// Preserve the mutable_context for the lifetime of query execution
-        /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
-        reading_plan.addInterpreterContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
@@ -303,12 +253,12 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     auto converting_actions = ActionsDAG::makeConvertingActions(
         reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
         header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
 
+    reading_plan.addInterpreterContext(context);
     reading_plan.addStorageHolder(std::move(storage));
     reading_plan.addTableLock(std::move(table_lock));
 

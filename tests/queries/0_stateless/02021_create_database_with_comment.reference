@@ -10,3 +10,7 @@ engine : Ordinary
 CREATE DATABASE default\nENGINE = Ordinary\nCOMMENT \'Test DB with comment\'
 comment=	Test DB with comment
 
+engine : Lazy(1)
+CREATE DATABASE default\nENGINE = Lazy(1)\nCOMMENT \'Test DB with comment\'
+comment=	Test DB with comment
+

@@ -6,12 +6,14 @@
 #include <variant>
 #include <vector>
 
-#include <Interpreters/HashTablesStatistics.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -37,14 +39,16 @@ class JoinUsedFlags;
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
 
-/** Data structure for implementation of hash JOIN.
-  * It is a hash table: keys -> rows of joined ("right") table.
+/** Data structure for implementation of JOIN.
+  * It is just a hash table: keys -> rows of joined ("right") table.
+  * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
   *
   * JOIN-s could be of these types:
   * - ALL × LEFT/INNER/RIGHT/FULL
   * - ANY × LEFT/INNER/RIGHT
   * - SEMI/ANTI x LEFT/RIGHT
   * - ASOF x LEFT/INNER
+  * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
   * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
@@ -66,7 +70,7 @@ class HashJoinMethods;
   *
   * Thus, LEFT and RIGHT JOINs are not symmetric in terms of implementation.
   *
-  * All JOINs are done by equality condition on keys (equijoin).
+  * All JOINs (except CROSS) are done by equality condition on keys (equijoin).
   * Non-equality and other conditions are not supported.
   *
   * Implementation:
@@ -112,8 +116,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        bool use_two_level_maps_ = false);
 
     ~HashJoin() override;
 
@@ -137,8 +140,6 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-
-    using IJoin::addBlockToJoin;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
@@ -181,14 +182,7 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    IBlocksStreamPtr getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
-        size_t bucket_idx, size_t num_buckets) const override;
-
     void onBuildPhaseFinish() override;
-
-    bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -201,7 +195,7 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
-    bool anyTakeLastRow() const override { return any_take_last_row; }
+    bool anyTakeLastRow() const { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
@@ -213,43 +207,25 @@ public:
         M(key64)                       \
         M(key_string)                  \
         M(key_fixed_string)            \
-        M(keys32)                      \
-        M(keys64)                      \
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
-        M(low_cardinality_key_string)       \
-        M(low_cardinality_key_fixed_string) \
         M(two_level_key32)             \
         M(two_level_key64)             \
         M(two_level_key_string)        \
         M(two_level_key_fixed_string)  \
-        M(two_level_keys32)            \
-        M(two_level_keys64)            \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
-        M(two_level_hashed)            \
-        M(range8_key32)                \
-        M(range16_key32)               \
-        M(range17_key32)               \
-        M(range18_key32)               \
-        M(range8_key64)                \
-        M(range16_key64)               \
-        M(range17_key64)               \
-        M(range18_key64)
+        M(two_level_hashed)
 
-    /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
-    /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
-    /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
         M(key32)                               \
         M(key64)                               \
         M(key_string)                          \
-        M(key_fixed_string)                    \
-        M(low_cardinality_key_string)          \
-        M(low_cardinality_key_fixed_string)
+        M(key_fixed_string)
 
     /// Used in ConcurrentHashJoin
     #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
@@ -257,14 +233,14 @@ public:
         M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
         M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
         M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
-        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
-        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
 
     enum class Type : uint8_t
     {
+        EMPTY,
+        CROSS,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -286,20 +262,6 @@ public:
         }
     }
 
-    /// True for the single-LowCardinality-column maps, whose key getter consumes the live
-    /// ColumnLowCardinality (so the key column must not be materialized for them).
-    static bool isLowCardinalityType(Type type)
-    {
-        switch (type)
-        {
-            case Type::low_cardinality_key_string:
-            case Type::low_cardinality_key_fixed_string:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     /** Different data structures, that are used to perform JOIN.
       */
     template <typename Mapped>
@@ -311,32 +273,18 @@ public:
         std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
+        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 18>>         range18_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 8>>          range8_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
 
         void create(Type which, size_t reserve)
         {
@@ -353,6 +301,9 @@ public:
 
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
+
+                default:
+                    break;
             }
         }
 
@@ -360,6 +311,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -371,6 +325,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -382,6 +339,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -397,30 +357,29 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
+    struct ScatteredColumns
+    {
+        Columns columns;
+        ScatteredBlock::Selector selector;
+
+        size_t allocatedBytes() const;
+    };
+
     struct NullMapHolder
     {
-        const StoredBlock * columns{};
+        const ScatteredColumns * columns;
         ColumnPtr column;
-        size_t selector_rows = 0;
-
-        NullMapHolder() = default;
-        explicit NullMapHolder(const StoredBlock * columns_, ColumnPtr column_)
-            : columns(columns_), column(column_)
-        {
-            // we can cache the selector size at construction to make the holder robust
-            // even if columns are moved/cleared later
-            selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
-        }
 
         size_t allocatedBytes() const;
     };
 
     using NullmapList = std::deque<NullMapHolder>;
-    using StoredBlocksList = std::list<StoredBlock>;
+    using ScatteredColumnsList = std::list<ScatteredColumns>;
 
     struct RightTableData
     {
-        Type type = Type::hashed;
+        Type type = Type::EMPTY;
+        bool empty = true;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
@@ -428,13 +387,8 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        StoredBlocksList columns; /// Columns of "right" table.
+        ScatteredColumnsList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
-
-        /// Resolves RowRef::block_no to the stored block.
-        /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
-        /// globally unique: cells built by any slot end up in the shared two-level map.
-        StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -447,15 +401,6 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
-
-        /// For range types: the minimum key value and the range size from min_key to max_key.
-        struct KeyRange
-        {
-            UInt64 min_key = 0;
-            UInt64 size = 0;
-        };
-
-        KeyRange key_range;
 
         size_t avgPerKeyRows() const
         {
@@ -491,7 +436,7 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(UInt32 block_no, size_t row_idx) const;
+    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -503,20 +448,13 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
-
-    bool hasNonJoinedRows();
-    void updateNonJoinedRowsStatus();
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
-    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
-
-    bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
-    bool enableSoftwarePrefetch() const { return enable_prefetch; }
-
-    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
@@ -524,6 +462,7 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
+    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -531,9 +470,6 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    bool has_non_joined_rows_checked = false;
-    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -552,8 +488,14 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
+    bool have_compressed = false;
 
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskScopePtr tmp_data;
+    std::optional<TemporaryBlockStreamHolder> tmp_stream;
+    mutable std::once_flag finish_writing;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -571,23 +513,10 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
-    bool joined_block_split_single_row = false;
-    bool enable_lazy_columns_replication = false;
-    bool enable_lazy_columns_indexing = false;
-    bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
-
-    /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
-    bool conversion_to_fixed_hash_map_attempted = false;
-
-    /// Track if shared runtime filters were already published to keep publication one-shot.
-    bool shared_runtime_filters_publish_attempted = false;
-
-    const StatsCollectingParams stats_collecting_params;
-    bool build_phase_finished = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -603,7 +532,11 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
+    JoinResultPtr joinBlockImplCross(Block block) const;
+
     bool preferUseMapsAll() const;
+
+    bool empty() const;
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;
@@ -611,24 +544,8 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
-    bool rightTableCanBeReranged() const;
-    void tryRerangeRightTableData();
-
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
-
-    bool canConvertToFixedHashMap() const;
-
-    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
-    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
-    void publishSharedRuntimeFilters();
-    void tryConvertToFixedHashMap();
-
-    template <bool is_signed, typename Key, typename MapsTemplate>
-    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
-
-    void reinitUsedFlags();
-
     void doDebugAsserts() const;
 };
 }

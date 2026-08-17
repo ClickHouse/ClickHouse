@@ -37,16 +37,6 @@ bool hasJoin(const ASTSelectQuery & select)
     return joined_table.table_join != nullptr;
 }
 
-bool hasArrayJoin(const ASTSelectQuery & select)
-{
-    const auto & tables = select.tables();
-    if (!tables || tables->children.size() < 2)
-        return false;
-
-    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
-    return joined_table.array_join != nullptr;
-}
-
 /// Rewrite original query removing joined tables from it
 bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, ContextPtr context)
 {
@@ -60,9 +50,9 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
-    auto select_list = make_intrusive<ASTExpressionList>();
+    auto select_list = std::make_shared<ASTExpressionList>();
     for (const auto & column : rewriter_result.required_source_columns)
-        select_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+        select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
     select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
@@ -77,7 +67,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
-        boost::intrusive_ptr<ASTFunction> new_conj = makeASTOperator("and");
+        std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
         for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)
@@ -114,7 +104,7 @@ SharedHeader getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
-            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.row_level_filter, query_info.prewhere_info);
+            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
             return std::make_shared<const Block>(std::move(header));
         }
         case QueryProcessingStage::WithMergeableState:
@@ -124,17 +114,15 @@ SharedHeader getHeaderForProcessingStage(
         case QueryProcessingStage::MAX:
         {
             ASTPtr query = query_info.query;
-            bool query_rewritten_for_join = false;
             if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
             {
-                query_rewritten_for_join = true;
                 if (!query_info.syntax_analyzer_result)
                 {
                     if (!query_info.planner_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
                     const auto & query_node = query_info.query_tree->as<QueryNode &>();
-                    auto join_tree = query_node.getJoinTreeNodeTyped();
+                    const auto & join_tree = query_node.getJoinTree();
                     auto left_table_expression = extractLeftTableExpression(join_tree);
 
                     auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
@@ -163,23 +151,8 @@ SharedHeader getHeaderForProcessingStage(
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),
                                                                                         storage_snapshot);
-                /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
-                /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
-                /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
-                /// initiator computed from the same tree.
-                if (query_info.query_tree && !query_rewritten_for_join)
-                {
-                    /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
-                    QueryTreeNodePtr query_tree = query_info.query_tree;
-                    replaceStorageInQueryTree(query_tree, context, storage);
-                    result = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                        query_tree, context, SelectQueryOptions(processed_stage).analyze());
-                }
-                else
-                {
-                    InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
-                    result = interpreter.getSampleBlock();
-                }
+                InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
+                result = interpreter.getSampleBlock();
             }
             else
             {

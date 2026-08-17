@@ -28,34 +28,9 @@ LEFT JOIN t3 USING (id)
 ORDER BY t1.val
 ;
 
-SELECT t2.id || '_1' AS id, t1.val
-FROM t1
-LEFT JOIN t2 ON t1.id = t2.id
-LEFT JOIN t3 USING (id)
-ORDER BY t1.val
-SETTINGS join_use_nulls = 1
-;
-
-SELECT t2.id || '_1' AS id, t1.val
-FROM t1
-RIGHT JOIN t2 ON t1.id = t2.id
-RIGHT JOIN t3 USING (id)
-ORDER BY t1.val
-SETTINGS join_use_nulls = 1
-;
-
-SELECT t2.id || '_1' AS id, t1.val
-FROM t1
-FULL JOIN t2 ON t1.id = t2.id
-FULL JOIN t3 USING (id)
-ORDER BY t1.val
-SETTINGS join_use_nulls = 1
-;
-
--- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
 SELECT t1.id || t2.id || '_1' AS id, t1.val
 FROM t1
 INNER JOIN t2 ON t1.id = t2.id
 LEFT JOIN t3 USING (id)
 ORDER BY t1.val
-;
+; -- { serverError AMBIGUOUS_IDENTIFIER }

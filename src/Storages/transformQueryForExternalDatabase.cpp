@@ -2,8 +2,6 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -63,11 +61,11 @@ public:
 
             if (result.column->isNullAt(0))
             {
-                node = make_intrusive<ASTLiteral>(Field());
+                node = std::make_shared<ASTLiteral>(Field());
             }
             else if (isNumber(result.type))
             {
-                node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
             }
             else
             {
@@ -77,7 +75,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = make_intrusive<ASTLiteral>(out.str());
+                node = std::make_shared<ASTLiteral>(out.str());
             }
         }
     }
@@ -94,14 +92,14 @@ struct ReplaceLiteralToExprVisitorData
             for (auto & argument : func.arguments->children)
             {
                 auto * literal_expr = typeid_cast<ASTLiteral *>(argument.get());
-                UInt64 value = 0;
+                UInt64 value;
                 if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
                     if (value)
-                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
                     else
-                        argument = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
+                        argument = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
                 }
             }
         }
@@ -145,30 +143,7 @@ void dropAliases(ASTPtr & node)
 }
 
 
-/// Returns true if `node` references a column of UUID type, including when that reference
-/// is nested inside a tuple or another expression (e.g. the row comparison
-/// `(uuid_col, x) < (...)`). ClickHouse and external databases (e.g. PostgreSQL) sort UUIDs
-/// differently, so range comparisons involving a UUID column cannot be pushed down without
-/// silently dropping rows.
-bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available_columns)
-{
-    if (const auto * identifier = node->as<ASTIdentifier>())
-    {
-        for (const auto & column : available_columns)
-            if (column.name == identifier->name())
-                /// Unwrap LowCardinality / Nullable so e.g. LowCardinality(UUID) is recognised too.
-                return WhichDataType(removeLowCardinalityAndNullable(column.type)).isUUID();
-        return false;
-    }
-
-    for (const auto & child : node->children)
-        if (containsUUIDColumn(child, available_columns))
-            return true;
-
-    return false;
-}
-
-bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
+bool isCompatible(ASTPtr & node)
 {
     if (auto * function = node->as<ASTFunction>())
     {
@@ -198,19 +173,6 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
             || name == "tuple"))
             return false;
 
-        /// Range comparisons involving UUID columns must not be pushed down. ClickHouse and
-        /// the external database sort UUIDs differently, so the pushed-down predicate compares
-        /// against a different ordering and silently drops rows. This also covers tuple/row
-        /// comparisons such as `(uuid_col, x) < (...)`, where the UUID column is nested inside
-        /// a tuple. Equality and IN are order independent and remain compatible. Such predicates
-        /// are applied locally instead. See https://github.com/ClickHouse/ClickHouse/issues/105558.
-        if (name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals")
-        {
-            for (const auto & argument : function->arguments->children)
-                if (containsUUIDColumn(argument, available_columns))
-                    return false;
-        }
-
         /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
         /// but a normal tuple with more than one element is represented as a parenthesized expression (x, y) and is perfectly compatible.
         /// So to support tuple with zero or one elements we can clear function name to get (x) instead of tuple(x)
@@ -228,52 +190,8 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
             return false;
 
         for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr, available_columns))
+            if (!isCompatible(expr))
                 return false;
-
-        /// When the parser's fast-path literal conversion produces
-        /// `ASTLiteral(Tuple)` as the IN set (e.g. `(id, name) IN ((1, 'a'))`
-        /// parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
-        /// we must wrap it in a function with empty name so that it
-        /// formats with an extra pair of parentheses: `((1, 'a'))`.
-        /// Without this, `ASTLiteral(Tuple)` formats as `(1, 'a')` and the
-        /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
-        /// as two separate scalar values instead of one tuple.
-        ///
-        /// We only do this when:
-        /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`).
-        ///    For scalar IN like `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})`
-        ///    is a flat list of values and must NOT be wrapped.
-        /// 2. The tuple literal represents a single row (its elements are
-        ///    plain values, not nested tuples). For multi-row sets like
-        ///    `(id, name) IN ((1, 'a'), (2, 'b'))` the literal is
-        ///    `Tuple{Tuple{1, 'a'}, Tuple{2, 'b'}}` which already formats
-        ///    with the correct nested parentheses.
-        if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
-        {
-            const auto & lhs = function->arguments->children[0];
-            const auto * lhs_func = lhs->as<ASTFunction>();
-            bool lhs_is_tuple = lhs_func && lhs_func->name == "tuple";
-
-            if (lhs_is_tuple)
-            {
-                auto & rhs = function->arguments->children[1];
-                if (const auto * rhs_literal = rhs->as<ASTLiteral>())
-                {
-                    if (rhs_literal->value.getType() == Field::Types::Tuple)
-                    {
-                        const auto & tup = rhs_literal->value.safeGet<Tuple>();
-                        bool is_single_row = !tup.empty()
-                            && tup[0].getType() != Field::Types::Tuple;
-                        if (is_single_row)
-                            rhs = makeASTFunction("", rhs);
-                    }
-                }
-            }
-        }
-
-        /// It should be formatted in the operator form.
-        function->setIsOperator(true);
 
         return true;
     }
@@ -286,7 +204,7 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
             auto tuple_value = literal->value.safeGet<Tuple>();
             if (tuple_value.size() == 1)
             {
-                node = makeASTFunction("", make_intrusive<ASTLiteral>(tuple_value[0]));
+                node = makeASTFunction("", std::make_shared<ASTLiteral>(tuple_value[0]));
                 return true;
             }
         }
@@ -381,13 +299,13 @@ String transformQueryForExternalDatabaseImpl(
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
 
-    auto select = make_intrusive<ASTSelectQuery>();
+    auto select = std::make_shared<ASTSelectQuery>();
 
     select->replaceDatabaseAndTable(database, table);
 
-    auto select_expr_list = make_intrusive<ASTExpressionList>();
+    auto select_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & name : used_columns)
-        select_expr_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
@@ -408,9 +326,9 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, available_columns))
+        if (isCompatible(original_where))
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
         else if (strict)
         {
@@ -420,7 +338,7 @@ String transformQueryForExternalDatabaseImpl(
         {
             if (function->name == "and" || function->name == "tuple")
             {
-                auto new_function_and = makeASTOperator("and");
+                auto new_function_and = makeASTFunction("and");
                 std::queue<const ASTFunction *> predicates;
                 predicates.push(function);
 
@@ -431,7 +349,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, available_columns))
+                        if (isCompatible(elem))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
@@ -452,19 +370,19 @@ String transformQueryForExternalDatabaseImpl(
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
-    UInt64 value = 0;
+    UInt64 value;
     if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
         if (value)
-            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(1));
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
         else
-            original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
+            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
     if (limit)
-        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::make_shared<ASTLiteral>(*limit));
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
@@ -533,39 +451,6 @@ String transformQueryForExternalDatabase(
         table,
         context,
         limit);
-}
-
-void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::external_table_strict_query])
-        return;
-
-    /// Reconstruct the outer query the same way `transformQueryForExternalDatabase` does, and check whether it
-    /// carries a filter on the source. For a query-backed source the user's query is passed to the external
-    /// database verbatim, so such a filter could only be applied locally - which `external_table_strict_query`
-    /// forbids.
-    ASTPtr clone_query;
-    if (!query_info.syntax_analyzer_result)
-    {
-        /// The analyzer has not produced an AST yet; nothing to inspect if the query tree is unavailable.
-        if (!query_info.query_tree || !query_info.table_expression)
-            return;
-        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
-    }
-    else if (query_info.query)
-    {
-        clone_query = query_info.query->clone();
-    }
-    else
-        return;
-
-    const auto * select = clone_query->as<ASTSelectQuery>();
-    if (select && (select->where() || select->prewhere()))
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "The query contains a filter that cannot be pushed down to the external database, because the data "
-            "source is a query passed to it as is (and external_table_strict_query=true). Move the filter inside "
-            "the passed query, or disable external_table_strict_query.");
 }
 
 }

@@ -1,28 +1,36 @@
 #include <Functions/replicate.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-DataTypePtr FunctionReplicate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    FunctionArgumentDescriptors mandatory_args{
-        {"value", nullptr, nullptr, "Any"},
-        {"array", &isArray, nullptr, "Array"}
-    };
-    FunctionArgumentDescriptor variadic_args{"arrays", &isArray, nullptr, "Array"};
+    if (arguments.size() < 2)
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                        "Function {} expect at least two arguments, got {}", getName(), arguments.size());
 
-    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
-
-    return std::make_shared<DataTypeArray>(arguments[0].type);
+    for (size_t i = 1; i < arguments.size(); ++i)
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} for function {} must be array.",
+                            i + 1, getName());
+    }
+    return std::make_shared<DataTypeArray>(arguments[0]);
 }
 
 ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
@@ -53,33 +61,7 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
 
 REGISTER_FUNCTION(Replicate)
 {
-    FunctionDocumentation::Description description = R"(
-Creates an array with a single value.
-)";
-    FunctionDocumentation::Syntax syntax = "replicate(x, arr)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "The value to fill the result array with.", {"Any"}},
-        {"arr", "An array.", {"Array(T)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same length as `arr` filled with value `x`.", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT replicate(1, ['a', 'b', 'c']);
-        )",
-        R"(
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionReplicate>(documentation);
+    factory.registerFunction<FunctionReplicate>();
 }
 
 }

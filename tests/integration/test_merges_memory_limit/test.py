@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node", mem_limit='20g')
+node = cluster.add_instance("node")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -21,11 +21,6 @@ def test_memory_limit_success():
         pytest.skip(
             "tsan build is skipped because it slowly merges the parts, "
             "rather than failing over the memory limit"
-        )
-
-    if node.is_built_with_memory_sanitizer():
-        pytest.skip(
-            "Memory Sanitizer uses more memory, making precise memory limit testing unreliable"
         )
 
     node.query(

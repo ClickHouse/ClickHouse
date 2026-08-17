@@ -12,14 +12,7 @@ public:
 
     String getName() const override { return "ReadNothing"; }
 
-    QueryPlanStepPtr clone() const override;
-
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
-
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 };
 
 }

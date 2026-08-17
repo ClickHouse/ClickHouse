@@ -1,3 +1,0 @@
-after compat 24.1	allow_experimental_analyzer	0
-after alias set	allow_experimental_analyzer	1
-after compat 24.2	allow_experimental_analyzer	1

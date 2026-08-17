@@ -38,7 +38,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations, const DataType
         else if (type_index == TypeIndex::DateTime64)
         {
             WriteBufferFromOwnString ostr;
-            ColumnPtr col = columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+            ColumnPtr col = columns[i]->convertToFullIfNeeded();
             if (col->isNullable())
                 col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
             auto components = MySQLUtils::getNormalizedDateTime64Components(data_type, col, row_num);
@@ -116,7 +116,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
 {
     String def;
     readLengthEncodedString(def, payload);
-    chassert(def == "def");
+    assert(def == "def");
     readLengthEncodedString(schema, payload);
     readLengthEncodedString(table, payload);
     readLengthEncodedString(org_table, payload);
@@ -157,7 +157,7 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
 
 ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
 {
-    ColumnType column_type = {};
+    ColumnType column_type;
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
@@ -230,9 +230,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             if (type.getPrecision() > 65 || type.getScale() > 30)
             {
                 column_type = ColumnType::MYSQL_TYPE_STRING;
-                /// Must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`),
-                /// otherwise drivers that validate `ColumnDefinition41.character_set` see contradictory session charsets.
-                charset = CharacterSet::utf8mb4_0900_ai_ci;
+                charset = CharacterSet::utf8_general_ci;
             }
             else
             {
@@ -243,11 +241,10 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
         }
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
-            /// Must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`).
-            charset = CharacterSet::utf8mb4_0900_ai_ci;
+            charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, static_cast<uint16_t>(flags), decimals);
+    return ColumnDefinition(column_name, charset, 0, column_type, flags, decimals);
 }
 
 }

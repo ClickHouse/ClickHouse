@@ -1,18 +1,11 @@
-#include <Processors/IProcessor.h>
-
 #include <iostream>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
-#if defined(OS_LINUX)
-#include <sys/epoll.h>
-#elif defined(OS_DARWIN)
-#include <Common/Epoll.h> /// EPOLLIN/EPOLLERR compatibility flags for the kqueue-backed Epoll
-#endif
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -38,7 +31,7 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
+void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
     query_plan_step_group = group;
@@ -48,15 +41,6 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
         plan_step_description = step->getStepDescription();
         step_uniq_id = step->getUniqID();
     }
-}
-
-void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
-{
-    query_plan_step = parent.query_plan_step;
-    query_plan_step_group = group;
-    plan_step_name = parent.plan_step_name;
-    plan_step_description = parent.plan_step_description;
-    step_uniq_id = parent.step_uniq_id;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -74,24 +58,13 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
+Processors IProcessor::expandPipeline()
 {
-    return {schedule(), EPOLLIN | EPOLLERR, -1};
-}
-#endif
-
-IProcessor::PipelineUpdate IProcessor::updatePipeline()
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
 }
 
-void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
+void IProcessor::cancel() noexcept
 {
-    /// PartialResult means the consumer has enough data and only wants external ingress to stop
-    /// while the rest of the pipeline drains. Only sources act on it;
-    if (reason == CancelReason::PartialResult)
-        return;
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
@@ -128,14 +101,6 @@ UInt64 IProcessor::getOutputPortNumber(const OutputPort * output_port) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
 }
 
-IProcessor::PortDataCounters IProcessor::getPortDataCounters(const Port & port) const
-{
-    if (&port.getProcessor() != this)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to {} processor", getName());
-
-    return {port.rows, port.bytes};
-}
-
 IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
 {
     ProcessorDataStats stats;
@@ -153,44 +118,6 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     }
 
     return stats;
-}
-
-IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
-{
-    ProcessorsProfileLogInfo info;
-
-    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
-
-    info.id = get_proc_id(*this);
-
-    for (const auto & port : outputs)
-    {
-        if (!port.isConnected())
-            continue;
-        const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(get_proc_id(next));
-    }
-
-    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
-    info.plan_step_name = plan_step_name;
-    info.plan_step_description = plan_step_description;
-    info.plan_group = query_plan_step_group;
-    info.processor_uniq_id = getUniqID();
-    info.step_uniq_id = step_uniq_id;
-
-    info.processor_name = getName();
-
-    info.elapsed_us = static_cast<UInt64>(elapsed_ns / 1000U);
-    info.input_wait_elapsed_us = static_cast<UInt64>(input_wait_elapsed_ns / 1000U);
-    info.output_wait_elapsed_us = static_cast<UInt64>(output_wait_elapsed_ns / 1000U);
-
-    auto stats = getProcessorDataStats();
-    info.input_rows = stats.input_rows;
-    info.input_bytes = stats.input_bytes;
-    info.output_rows = stats.output_rows;
-    info.output_bytes = stats.output_bytes;
-
-    return info;
 }
 
 String IProcessor::debug() const
@@ -246,8 +173,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::UpdatePipeline:
-            return "UpdatePipeline";
+        case Status::ExpandPipeline:
+            return "ExpandPipeline";
     }
 }
 

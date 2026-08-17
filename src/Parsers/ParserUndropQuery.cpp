@@ -3,7 +3,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Core/UUID.h>
 
 
 namespace DB
@@ -49,7 +48,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
-    auto query = make_intrusive<ASTUndropQuery>();
+    auto query = std::make_shared<ASTUndropQuery>();
     node = query;
 
     query->database = database;

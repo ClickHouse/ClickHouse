@@ -29,7 +29,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
@@ -113,10 +112,10 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
                 if (password.length() > Coordination::PASSWORD_LENGTH)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
 
-                data->setPassword(password, /* second_factor */ {}, /* validate */ true);
+                data->setPassword(password, true);
             }
             else
-                data->setPasswordHashHex(config.getString(config_password_name), /* second_factor */ {}, /* validate */ true);
+                data->setPasswordHashHex(config.getString(config_password_name), true);
         }
     }
 
@@ -125,7 +124,7 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
 
 }
 
-/// this function is quite long because it contains a lot of sanity checks in config:
+/// this function quite long because contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
 /// 3. Raft internal port is not equal to any other port for client
@@ -321,7 +320,6 @@ KeeperStateManager::KeeperStateManager(
           FlushSettings
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
-              .min_time_between_fsyncs_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::min_time_between_fsyncs_ms],
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
@@ -451,7 +449,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             uint64_t read_checksum{0};
             readIntBinary(read_checksum, *read_buf);
 
-            uint8_t version = 0;
+            uint8_t version;
             readIntBinary(version, *read_buf);
 
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;

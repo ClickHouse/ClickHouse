@@ -1,15 +1,11 @@
 #!/bin/bash -eu
 
-# copy fuzzer options
-cp $SRC/tests/fuzz/*.options $OUT/
+# rename clickhouse
+mv $OUT/clickhouse $OUT/clickhouse_fuzzer
 
-# Some .options files reference all.dict. The authoritative all.dict is
-# generated at test time from a release binary (see tests/fuzz/update_dict.sh
-# and ci/jobs/libfuzzer_test_check.py) and overrides this one; stage a
-# source-derived dictionary for consumers that run the fuzzers straight from
-# the build output (local runs, OSS-Fuzz), where no binary-derived dictionary
-# is available.
-"$SRC/tests/fuzz/generate_source_dict.sh" "$SRC" "$OUT/all.dict"
+# copy fuzzer options and dictionaries
+cp $SRC/tests/fuzz/*.dict $OUT/
+cp $SRC/tests/fuzz/*.options $OUT/
 
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/

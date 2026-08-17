@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <enable_shared_storage_snapshot_in_query>1</enable_shared_storage_snapshot_in_query>
-        </default>
-    </profiles>
-</clickhouse>
