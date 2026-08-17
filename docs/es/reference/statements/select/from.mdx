@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+En una consulta que comienza con `FROM`, la cláusula `SELECT` es opcional; cuando se omite, la consulta funciona como si se hubiera escrito `SELECT *`:
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+Esta forma se utiliza principalmente en consultas con [operadores de canalización](/es/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## Modificador FINAL
 </div>
@@ -47,7 +62,7 @@ Se aplica al seleccionar datos de tablas que usan los siguientes motores de tabl
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-Las consultas `SELECT` con `FINAL` se ejecutan en paralelo. La configuración [max&#95;final&#95;threads](/es/reference/settings/session-settings#max_final_threads) limita el número de hilos utilizados.
+Las consultas `SELECT` con `FINAL` se ejecutan en paralelo. La configuración [max&#95;final&#95;threads](/es/reference/settings/session-settings/max#max_final_threads) limita el número de hilos utilizados.
 
 <div id="drawbacks">
   ### Desventajas
@@ -62,7 +77,7 @@ Las consultas que usan `FINAL` se ejecutan ligeramente más lento que consultas 
 
 Como alternativa a usar `FINAL`, a veces es posible utilizar consultas distintas que asumen que los procesos en segundo plano del engine `MergeTree` aún no se han producido y manejarlo aplicando una agregación (por ejemplo, para descartar duplicados). Si necesitas usar `FINAL` en tus consultas para obtener los resultados requeridos, no hay problema en hacerlo, pero ten en cuenta el procesamiento adicional que requiere.
 
-`FINAL` puede aplicarse automáticamente mediante la configuración [FINAL](/es/reference/settings/session-settings#final) a todas las tablas de una consulta usando una sesión o un perfil de usuario.
+`FINAL` puede aplicarse automáticamente mediante la configuración [FINAL](/es/reference/settings/session-settings/other#final) a todas las tablas de una consulta usando una sesión o un perfil de usuario.
 
 <div id="example-usage">
   ### Ejemplo de uso
