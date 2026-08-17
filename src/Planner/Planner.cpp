@@ -111,7 +111,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
@@ -125,11 +124,9 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
@@ -920,11 +917,9 @@ void addDistinctStep(QueryPlan & query_plan,
             limit_hint_for_distinct = limit_length + limit_offset;
     }
 
-    SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
-        limits,
+        DistinctStep::Settings(settings),
         limit_hint_for_distinct,
         column_names,
         pre_distinct);
@@ -2037,11 +2032,9 @@ void Planner::buildPlanForUnionNode()
     if (is_distinct)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            DistinctStep::Settings(settings),
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
