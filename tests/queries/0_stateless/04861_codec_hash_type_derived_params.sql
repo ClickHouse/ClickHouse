@@ -1,7 +1,8 @@
--- The whole defect needs a Compact part, so the part type is pinned on every table below
--- instead of using a no-random-merge-tree-settings tag.
+-- A Compact part keys its shared CompressedStream on the codec hash, so a codec parameter derived
+-- from the column type has to be part of that hash. The defect needs a Compact part, so the part
+-- type is pinned on every table below instead of using a no-random-merge-tree-settings tag.
 
-SET allow_experimental_codecs = 1; -- required by ALP, harmless for FPC
+SET allow_experimental_codecs = 1; -- required by ALP, harmless for FPC and GCD
 
 -- 1. A Float64 and a Float32 column under the same codec name used to share one stream, so the
 -- second column was compressed with the first one's float width and a misaligned granule was
@@ -104,6 +105,45 @@ CREATE TABLE delta_tuple_mixed (t Tuple(UInt32, UInt64) CODEC(Delta, LZ4))
 SELECT name, extract(create_table_query, 'CODEC\\(.*?\\)\\)') FROM system.tables
     WHERE database = currentDatabase() AND name LIKE '%_tuple_%' ORDER BY name;
 
+-- 5. GCD reaches the same collision through `gcd_bytes_size`, which is also type-derived. Whichever
+-- column is declared first fixes the divisor width for the other one, so the result depends on the
+-- declaration order until the width is hashed.
+
+DROP TABLE IF EXISTS gcd_mix;
+DROP TABLE IF EXISTS gcd_rev;
+DROP TABLE IF EXISTS gcd_16;
+DROP TABLE IF EXISTS gcd_64;
+CREATE TABLE gcd_mix (u16 UInt16 CODEC(GCD, LZ4), u64 UInt64 CODEC(GCD, LZ4))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
+CREATE TABLE gcd_rev (u64 UInt64 CODEC(GCD, LZ4), u16 UInt16 CODEC(GCD, LZ4))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
+CREATE TABLE gcd_16 (u16 UInt16 CODEC(GCD, LZ4))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
+CREATE TABLE gcd_64 (u64 UInt64 CODEC(GCD, LZ4))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
+INSERT INTO gcd_mix SELECT (number % 100) * 11, number * 1099511627776 FROM numbers(20000);
+INSERT INTO gcd_rev SELECT number * 1099511627776, (number % 100) * 11 FROM numbers(20000);
+INSERT INTO gcd_16 SELECT (number % 100) * 11 FROM numbers(20000);
+INSERT INTO gcd_64 SELECT number * 1099511627776 FROM numbers(20000);
+SELECT (SELECT sum(data_compressed_bytes) FROM system.parts
+            WHERE database = currentDatabase() AND table = 'gcd_mix' AND active)
+     = (SELECT sum(data_compressed_bytes) FROM system.parts
+            WHERE database = currentDatabase() AND table IN ('gcd_16', 'gcd_64') AND active);
+SELECT (SELECT sum(data_compressed_bytes) FROM system.parts
+            WHERE database = currentDatabase() AND table = 'gcd_rev' AND active)
+     = (SELECT sum(data_compressed_bytes) FROM system.parts
+            WHERE database = currentDatabase() AND table = 'gcd_mix' AND active);
+SELECT count(), countIf(u16 = (rn % 100) * 11 AND u64 = rn * 1099511627776)
+    FROM (SELECT *, rowNumberInAllBlocks() AS rn FROM gcd_mix);
+
 DROP TABLE alp_reject;
 DROP TABLE alp_mix;
 DROP TABLE alp_32;
@@ -116,3 +156,7 @@ DROP TABLE alp_tuple;
 DROP TABLE fpc_tuple_mixed;
 DROP TABLE fpc_tuple_same;
 DROP TABLE delta_tuple_mixed;
+DROP TABLE gcd_mix;
+DROP TABLE gcd_rev;
+DROP TABLE gcd_16;
+DROP TABLE gcd_64;

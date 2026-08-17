@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <Common/SipHash.h>
 
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
@@ -72,6 +73,7 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    hash.update(gcd_bytes_size);
 }
 
 namespace
