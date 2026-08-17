@@ -41,7 +41,7 @@ TEST(MergeTreeIndexPotentialSubstreams, MinMaxCoversLegacyExtension)
     MergeTreeIndexMinMax index(nullptr, description);
 
     /// Writers emit `.idx2` (v2) only, but a part written by an older version holds `.idx` (v1)
-    /// and getDeserializedFormat() may return either, so both have to be evicted.
+    /// and getPhysicalFormat() may return either, so both have to be evicted.
     EXPECT_TRUE(hasSubstream(index.getSubstreams(), MergeTreeIndexSubstream::Type::Regular, "", ".idx2"));
     EXPECT_FALSE(hasSubstream(index.getSubstreams(), MergeTreeIndexSubstream::Type::Regular, "", ".idx"));
 
