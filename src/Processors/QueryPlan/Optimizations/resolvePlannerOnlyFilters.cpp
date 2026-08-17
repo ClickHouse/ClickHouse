@@ -253,7 +253,7 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
     new_actions_dag.addOrReplaceInOutputs(*new_filter);
     new_actions_dag.removeUnusedActions();
 
-    /// Unsure no planner-only filters remain in the whole action dag at the end of the pass. 
+    /// Ensure no planner-only filters remain in the whole action dag at the end of the pass.
     chassert(!new_actions_dag.hasPlannerOnlyFilters());
 
     node.step = std::make_unique<FilterStep>(input_header, std::move(new_actions_dag), new_filter->result_name, /*remove_filter=*/true);
