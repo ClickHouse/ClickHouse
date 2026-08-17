@@ -17,7 +17,7 @@ keywords: ['ClickHouse Cloud', 'التسعير', 'الفوترة', 'تكاليف
 
 <Note>
   * تعكس الأسعار أسعار AWS في `us-east-1`.
-  * اطّلع [هنا](/ar/products/cloud/reference/billing/network-data-transfer) على رسوم نقل البيانات ورسوم ClickPipes المطبّقة.
+  * اطّلع [هنا](/ar/products/cloud/reference/billing/network-data-transfer) على رسوم نقل البيانات المطبّقة.
 </Note>
 
 <div id="basic-from-6652-per-month">
@@ -276,7 +276,7 @@ WHERE name = <your table name>
 </div>
 
 يسجّل سجل استعلامات ClickHouse [المقاييس الأساسية](/ar/reference/system-tables/query_log) التي يمكن استخدامها لتقدير تكلفة تشغيل عبء عمل على ClickHouse Cloud.
-للاطلاع على تفاصيل الترحيل من نشر مُدار ذاتيًا إلى ClickHouse Cloud، يُرجى الرجوع إلى [وثائق الترحيل](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)، والتواصل مع [دعم ClickHouse Cloud](https://console.clickhouse.cloud/support) إذا كانت لديك أي أسئلة إضافية.
+للترحيل من ClickHouse المُدار ذاتيًا إلى ClickHouse Cloud، استخدم إما [`remoteSecure`](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) أو [`BACKUP` و`RESTORE`](/ar/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). تواصل مع [دعم ClickHouse Cloud](https://console.clickhouse.cloud/support) إذا كانت لديك أي أسئلة إضافية.
 
 <div id="what-billing-options-are-available-for-clickhouse-cloud">
   ### ما خيارات الفوترة المتاحة في ClickHouse Cloud؟
@@ -348,11 +348,10 @@ WHERE name = <your table name>
 تُصدَر فاتورة مجمّعة لجميع الخدمات ضمن مؤسسة معيّنة خلال فترة فوترة واحدة.
 
 <div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
-  ### إذا أضفت بطاقتي الائتمانية ورقّيت قبل انتهاء الفترة التجريبية ونفاد الاعتمادات، فهل ستُفرض عليّ رسوم؟
+  ### إذا أضفت بطاقتي الائتمانية ورقّيت قبل انتهاء الفترة التجريبية ونفاد الرصيد، فهل ستُفرض عليّ رسوم؟
 </div>
 
-عندما ينتقل المستخدم من الفترة التجريبية إلى الخطة المدفوعة قبل انتهاء الفترة التجريبية البالغة 30 يومًا، مع بقاء اعتمادات من الاعتمادات المخصصة للتجربة،
-فإننا نواصل الخصم من الاعتمادات التجريبية خلال أول 30 يومًا من الفترة التجريبية، ثم نحمّل الرسوم على البطاقة الائتمانية.
+عندما يضيف المستخدم بطاقة ائتمانية خلال الفترة التجريبية، نواصل الخصم من الرصيد التجريبي حتى ينفد أو تنتهي صلاحيته، أيهما يحدث أولًا. تنتهي صلاحية الرصيد التجريبي عند انتهاء الفترة التجريبية البالغة 30 يومًا، حتى بعد إضافة طريقة دفع. بمجرد نفاد الرصيد التجريبي أو انتهاء صلاحيته، تُحمَّل الرسوم على البطاقة الائتمانية المسجلة. يمكنك التحقق من تاريخ انتهاء صلاحية رصيدك التجريبي في صفحة الفوترة ضمن وحدة تحكم ClickHouse Cloud.
 
 <div id="how-can-i-keep-track-of-my-spending">
   ### كيف يمكنني تتبّع إنفاقي؟
@@ -492,4 +491,4 @@ WHERE name = <your table name>
   ## تسعير ClickPipes
 </div>
 
-لمزيد من المعلومات حول فوترة ClickPipes، يُرجى الرجوع إلى قسم [&quot;فوترة ClickPipes&quot;](/ar/products/cloud/reference/billing/clickpipes/index).
+لمزيد من المعلومات حول فوترة ClickPipes، يُرجى الرجوع إلى قسم [&quot;ClickPipes&quot;](/ar/products/cloud/reference/billing/clickpipes/index).
