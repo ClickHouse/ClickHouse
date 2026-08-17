@@ -277,7 +277,13 @@ StoragePtr TableFunctionURL::executeImpl(
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
 
-    return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    /// Stored columns only ever accompany a persisted definition, and `CREATE ... AS url(...)`
+    /// always reaches `getStorage` with this flag set, so replaying such a definition has to set it
+    /// too in order to resolve to the same storage.
+    const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
+
+    return ITableFunctionFileLike::executeImpl(
+        ast_function, context, table_name, std::move(cached_columns), keep_creation_storage_choice);
 }
 
 bool TableFunctionURL::needStructureHint() const
