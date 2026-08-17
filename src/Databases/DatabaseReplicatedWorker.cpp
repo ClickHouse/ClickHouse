@@ -127,25 +127,46 @@ std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
     return getTableName(tokens, pos);
 }
 
-std::optional<String> getCreateOrReplaceName(const Tokens & tokens)
+std::optional<String> getCreatedTableOrViewName(const Tokens & tokens)
 {
-    if (tokens.size() < 5
-        || !isKeyword(tokens[0], "CREATE")
-        || !isKeyword(tokens[1], "OR")
-        || !isKeyword(tokens[2], "REPLACE"))
+    if (tokens.size() < 3 || !isKeyword(tokens[0], "CREATE"))
         return {};
 
-    if (isKeyword(tokens[3], "MATERIALIZED"))
-    {
-        if (tokens.size() < 6 || !isKeyword(tokens[4], "VIEW"))
-            return {};
-        return getTableName(tokens, 5);
-    }
+    size_t pos = 1;
+    if (pos + 1 < tokens.size() && isKeyword(tokens[pos], "OR") && isKeyword(tokens[pos + 1], "REPLACE"))
+        pos += 2;
 
-    if (!isKeyword(tokens[3], "TABLE") && !isKeyword(tokens[3], "VIEW"))
+    if (pos < tokens.size() && isKeyword(tokens[pos], "MATERIALIZED"))
+        ++pos;
+
+    if (pos == tokens.size() || (!isKeyword(tokens[pos], "TABLE") && !isKeyword(tokens[pos], "VIEW")))
         return {};
 
-    return getTableName(tokens, 4);
+    return getTableName(tokens, pos + 1);
+}
+
+std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens)
+{
+    if (tokens.empty() || !isKeyword(tokens[0], "ATTACH"))
+        return {};
+
+    size_t pos = 1;
+    while (pos < tokens.size() && !isKeyword(tokens[pos], "TABLE") && !isKeyword(tokens[pos], "VIEW"))
+        ++pos;
+    if (pos == tokens.size())
+        return {};
+
+    ++pos;
+    while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
+        ++pos;
+
+    const auto name = getTableName(tokens, pos);
+    const auto name_end = getTableNameEnd(tokens, pos);
+    if (!name || name_end == tokens.size()
+        || (tokens[name_end].type != TokenType::OpeningRoundBracket && !isKeyword(tokens[name_end], "ENGINE") && !isKeyword(tokens[name_end], "AS")))
+        return {};
+
+    return name;
 }
 
 struct WindowViewFollowup
@@ -290,6 +311,30 @@ void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<
             removed_window_views.erase(followup.table_name);
         }
     }
+}
+
+bool retireReboundWindowViewNames(NameSet & removed_window_views, const Tokens & tokens, const std::vector<WindowViewFollowup> & followups)
+{
+    bool changed = false;
+
+    /// A non-window `CREATE` can reuse a name left by `DETACH ... PERMANENTLY`.
+    if (const auto name = getCreatedTableOrViewName(tokens))
+        changed |= removed_window_views.erase(*name);
+
+    /// A `RENAME` to the obsolete name creates an ordinary object with that name.
+    if (!tokens.empty() && isKeyword(tokens[0], "RENAME"))
+    {
+        for (const auto & followup : followups)
+            if (followup.rename_to && !removed_window_views.contains(followup.table_name))
+                changed |= removed_window_views.erase(*followup.rename_to);
+    }
+
+    /// `ATTACH` with a full definition likewise creates an ordinary object. A
+    /// bare attach of legacy metadata is still handled as a removed window view.
+    if (const auto name = getAttachedTableOrViewDefinitionName(tokens))
+        changed |= removed_window_views.erase(*name);
+
+    return changed;
 }
 
 String formatRenameOrExchangeWithoutRemovedWindowViews(const std::vector<WindowViewFollowup> & followups, const NameSet & removed_window_views, bool is_exchange)
@@ -1047,15 +1092,12 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    /// `CREATE OR REPLACE` is a committed replicated DDL entry even though it may
-    /// use an internal rename or exchange to publish the replacement. Retire the
-    /// obsolete-name marker before processing its later DDLs.
-    if (const auto create_or_replace_name = getCreateOrReplaceName(tokens); create_or_replace_name && removed_window_views.erase(*create_or_replace_name))
+    const auto followups = getWindowViewFollowups(tokens);
+    if (retireReboundWindowViewNames(removed_window_views, tokens, followups))
     {
         persistRemovedWindowViews(zookeeper);
     }
 
-    const auto followups = getWindowViewFollowups(tokens);
     const bool is_exchange = !tokens.empty() && isKeyword(tokens[0], "EXCHANGE");
     const bool has_removed_window_view = std::any_of(followups.begin(), followups.end(), [this, is_exchange](const auto & followup)
     {
@@ -1196,10 +1238,12 @@ void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr &
         const auto tokens = getSignificantTokens(entry.query);
         if (const auto window_view_name = getRemovedWindowViewName(tokens))
             removed_window_views.insert(*window_view_name);
-        else if (const auto create_or_replace_name = getCreateOrReplaceName(tokens))
-            removed_window_views.erase(*create_or_replace_name);
         else
-            updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens), !tokens.empty() && isKeyword(tokens[0], "EXCHANGE"));
+        {
+            const auto followups = getWindowViewFollowups(tokens);
+            retireReboundWindowViewNames(removed_window_views, tokens, followups);
+            updateRemovedWindowViews(removed_window_views, followups, !tokens.empty() && isKeyword(tokens[0], "EXCHANGE"));
+        }
     }
 
     persistRemovedWindowViews(zookeeper);
