@@ -95,10 +95,11 @@ public:
             column_ptrs[i] = columns_holder[i].get();
         }
 
-        /// Create and fill the result array.
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        /// Fill the nested column and the offsets, and only then create the result array.
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create();
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         /// Fill out_offsets
         out_offsets.resize_exact(input_rows_count);
@@ -115,7 +116,7 @@ public:
             out_data.insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
         else
             execute(column_ptrs, out_data, input_rows_count);
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 
 private:
