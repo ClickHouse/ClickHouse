@@ -18,6 +18,9 @@ projection
 1000501500
 skip index
 10000
+ttl
+100	2102-02-21
+0
 on the fly
 21
 22

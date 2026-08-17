@@ -148,6 +148,31 @@ ALTER TABLE t_index UPDATE x = x + 1000000 WHERE 1;
 
 SELECT count() FROM t_index WHERE m2 > 1000000 SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT 'ttl';
+
+-- A TTL expression over a recalculated MATERIALIZED column must be re-evaluated: `d` moves from
+-- 2102 to 2020-01-02 and every row becomes expired. Left stale, the rows are silently retained.
+
+DROP TABLE IF EXISTS t_ttl;
+
+CREATE TABLE t_ttl
+(
+    x Int32,
+    y Int32,
+    m1 Int32 MATERIALIZED x + 1,
+    d Date MATERIALIZED toDate('2020-01-01') + m1
+)
+ENGINE = MergeTree ORDER BY tuple() TTL d + INTERVAL 1 DAY
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_ttl (x, y) SELECT 30000, number FROM numbers(100);
+
+SELECT count(), max(d) FROM t_ttl;
+
+ALTER TABLE t_ttl UPDATE x = 0 WHERE 1;
+
+SELECT count() FROM t_ttl;
+
 SELECT 'on the fly';
 
 -- With the mutation still pending, reading only the deepest column of the chain must give the same
@@ -214,6 +239,7 @@ DROP TABLE t_ephemeral;
 DROP TABLE t_key;
 DROP TABLE t_projection;
 DROP TABLE t_index;
+DROP TABLE t_ttl;
 DROP TABLE t_ephemeral_converging;
 DROP TABLE t_on_fly;
 DROP TABLE t_on_fly_ephemeral;
