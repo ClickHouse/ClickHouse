@@ -28,6 +28,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/ScopeExit.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
@@ -140,6 +141,7 @@ private:
 
         // Claim as many consumers as available, but don't block
         for (size_t i = 0; i < live_consumers; ++i)
+        {
             pipes.emplace_back(std::make_shared<PulsarSource>(
                 pulsar_storage,
                 storage_snapshot,
@@ -152,6 +154,7 @@ private:
                 {},
                 true));
             ++sources_created;
+        }
 
         return Pipe::unitePipes(std::move(pipes));
     }
