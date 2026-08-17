@@ -43,6 +43,21 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
 grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
 
+# Shutdown must also remove the disposable triage `CODEX_HOME`, including when
+# the regular per-PR cleanup has not run yet.
+source <(sed -n '/^cleanup_worker_codex_auth()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+cleanup_wt="$scratch/cleanup-worktree"
+mkdir -p "$cleanup_wt/tmp/continue-all-prs/codex-home" \
+    "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home"
+: > "$cleanup_wt/tmp/continue-all-prs/codex-home/auth.json"
+: > "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json"
+AGENT=codex
+CUSTOM_KEY=1
+WT=("$cleanup_wt")
+cleanup_worker_codex_auth
+[[ ! -e "$cleanup_wt/tmp/continue-all-prs/codex-home/auth.json" ]]
+[[ ! -e "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json" ]]
+
 # Load and exercise the sandbox-config helper directly. The mounted config
 # must not retain credentials embedded in remotes or URL-rewrite rules.
 source <(sed -n '/^prepare_triage_sandbox_config()/,/^}/p' "$repo/utils/continue-all-prs.sh")

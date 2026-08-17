@@ -617,11 +617,15 @@ declare -a WORKER_PIDS=()
 
 cleanup_worker_codex_auth()
 {
-    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
+    [[ "$AGENT" == "codex" ]] || return 0
 
     local wt
     for wt in "${WT[@]-}"; do
-        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
+        # Triage receives a disposable `CODEX_HOME` inside its private clone.
+        # Remove it here too: `stop_workers` can run before `run_continue_pr`
+        # reaches its normal cleanup path.
+        rm -rf "$wt/tmp/continue-all-prs/triage-repository/.triage-codex-home" 2>/dev/null || true
+        [[ "$CUSTOM_KEY" != 1 ]] || rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
     done
 }
 
@@ -769,13 +773,13 @@ triage_state_is_safe()
 # reserving one shared local branch when multiple workers process the same PR.
 prepare_triage_worktree()
 {
-    local wt="$1" number="$2"
+    local wt="$1" number="$2" deadline="$3"
     local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
     local fetch_url push_url pushable=0
 
-    meta=$(gh pr view "$number" --repo "$REPO" \
+    meta=$(run_with_deadline "$deadline" gh pr view "$number" --repo "$REPO" \
         --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
-        --jq '[.baseRefName, .headRefName, (.headRepository.url // ""), (.headRepositoryOwner.login // ""), (.author.login // ""), (.isCrossRepository | tostring), (.maintainerCanModify | tostring)] | @tsv') || return 1
+        --jq '[.baseRefName, .headRefName, (.headRepository.url // ""), (.headRepositoryOwner.login // ""), (.author.login // ""), (.isCrossRepository | tostring), (.maintainerCanModify | tostring)] | @tsv') || return $?
     IFS=$'\t' read -r base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify <<< "$meta"
     [[ -n "$base_ref" && -n "$head_ref" && -n "$head_repo_url" ]] || return 1
 
@@ -789,9 +793,9 @@ prepare_triage_worktree()
     fi
 
     # Fetching by URL avoids adding a per-fork remote to the shared Git config.
-    git -C "$wt" fetch -q "$fetch_url" "$head_ref" || return 1
+    run_with_deadline "$deadline" git -C "$wt" fetch -q "$fetch_url" "$head_ref" || return $?
     git -C "$wt" checkout --detach -q FETCH_HEAD || return 1
-    git -C "$wt" fetch -q origin "$base_ref" || return 1
+    run_with_deadline "$deadline" git -C "$wt" fetch -q origin "$base_ref" || return $?
     push_url="$head_repo_url"
     printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable"
 }
@@ -801,12 +805,25 @@ prepare_triage_worktree()
 # merge commit, transferred by the orchestrator after it leaves the sandbox.
 create_triage_clone()
 {
-    local wt="$1" triage_wt="$2" origin_url
+    local wt="$1" triage_wt="$2" deadline="$3" origin_url
 
     rm -rf "$triage_wt"
-    git clone -q --shared --no-checkout "$wt" "$triage_wt" || return 1
+    run_with_deadline "$deadline" git clone -q --shared --no-checkout "$wt" "$triage_wt" || return $?
     origin_url=$(git -C "$wt" remote get-url origin) || return 1
     git -C "$triage_wt" remote set-url origin "$origin_url"
+}
+
+# Use the remaining per-PR budget for setup operations as well as agent turns.
+# `timeout` returns 124 when the budget expires, which `run_continue_pr`
+# reports as the ordinary per-PR timeout outcome.
+run_with_deadline()
+{
+    local deadline="$1" remaining
+    shift
+
+    remaining=$(( deadline - $(date +%s) ))
+    (( remaining > 0 )) || return 124
+    timeout "$remaining" "$@"
 }
 
 recreate_validated_triage_merge()
@@ -892,14 +909,16 @@ run_continue_pr()
     triage_head_ref=""
     triage_push_url=""
     triage_pushable=0
+    # The documented budget covers every triage operation, including clone,
+    # metadata retrieval, and fetches before the first agent turn.
+    deadline=$(( $(date +%s) + TIMEOUT ))
     if [[ "$phase" == "triage" ]]; then
         triage_wt="$wt/tmp/continue-all-prs/triage-repository"
-        create_triage_clone "$wt" "$triage_wt" || return 1
+        create_triage_clone "$wt" "$triage_wt" "$deadline" || return $?
         local triage_metadata
-        triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number") || return 1
+        triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number" "$deadline") || return $?
         IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
     fi
-    deadline=$(( $(date +%s) + TIMEOUT ))
     : > "$log"
     iter=0
     phase_iter=0
