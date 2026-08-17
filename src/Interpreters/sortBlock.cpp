@@ -395,15 +395,17 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
     bool is_collation_required = false;
+    bool all_const = true;
 
-    for (auto & column_with_sort_desc : columns_with_sort_desc)
+    for (const auto & column_with_sort_desc : columns_with_sort_desc)
     {
-        if (isCollationRequired(column_with_sort_desc.description))
-        {
+        all_const = all_const && column_with_sort_desc.column_const;
+        if (!is_collation_required && isCollationRequired(column_with_sort_desc.description))
             is_collation_required = true;
-            break;
-        }
     }
+
+    if (unlikely(all_const))
+        return true;
 
     size_t rows = block.rows();
 

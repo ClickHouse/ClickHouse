@@ -91,8 +91,6 @@ def setting_names(mod, content):
 def main():
     mod = load_module()
     migrate = load_migrate_module()
-    mod.SESSION_SETTINGS_MAX_PER_PAGE = 20
-    mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
     generator_order = [
@@ -121,6 +119,27 @@ def main():
             f"<{badge} />\n\n"
             "Content after the badge.\n"
         )
+
+        migrated_snippet, _ = migrate.transform_imports(
+            f'import {badge} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n",
+            migrate.Lookups(),
+            [],
+        )
+        assert migrated_snippet == (
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n"
+        )
+        remigrated_snippet, _ = migrate.transform_imports(
+            migrated_snippet,
+            migrate.Lookups(),
+            [],
+        )
+        assert remigrated_snippet == migrated_snippet
 
     migrated_namespace, _ = migrate.transform_imports(
         "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
@@ -198,7 +217,6 @@ def main():
     complex_pages = mod.group_session_settings(
         complex_sections,
         base_route=server_family["base_route"],
-        max_characters=server_family["max_characters"],
     )
     complex_anchor_routes = mod._settings_anchor_routes(
         complex_pages, source_sections=complex_sections
@@ -208,7 +226,7 @@ def main():
     )
     assert (
         '"name":"openSSL.client.caConfig",'
-        '"href":"/reference/settings/server-settings/settings/other'
+        '"path":"/other'
         '#openssl.client.caconfig","default":"0"'
     ) in complex_explorer
     assert complex_anchor_routes["openssl.client.caconfig"] == \
@@ -259,7 +277,6 @@ def main():
         manifest = docs / "reference/settings/session-settings/manifest.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({
-            "version": mod.SESSION_SETTINGS_GENERATOR_VERSION,
             "pages": [
                 "/reference/settings/session-settings/page",
                 "/reference/settings/session-settings/retired",
@@ -354,8 +371,12 @@ def main():
         assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
-        assert explorer.startswith("const SessionSettingsExplorer = () => {")
-        component_start = explorer.index("const SessionSettingsExplorer = () => {")
+        assert explorer.startswith(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
+        component_start = explorer.index(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
         assert component_start == 0
         assert explorer.index(
             "  const [entries] = useState(() => ("
@@ -371,7 +392,7 @@ def main():
             '"/reference/settings/session-settings/filesystem-cache"'
         ) in routes_script
         assert (
-            '"href":"/reference/settings/session-settings/filesystem-cache#filesystem_cache_alpha"'
+            '"path":"/filesystem-cache#filesystem_cache_alpha"'
             in explorer)
         assert '"default":"0"' in explorer
         assert 'title="Default value"' in explorer
@@ -379,6 +400,10 @@ def main():
         assert "text-gray-500 dark:text-gray-400" in explorer
         assert 'gridTemplateColumns: "44ch max-content"' in explorer
         assert 'style={{ overflowWrap: "anywhere" }}' in explorer
+        assert (
+            'href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`}'
+            in explorer
+        )
         assert 'item.value.name.split("_")' in explorer
         assert "<wbr />" in explorer
         assert "settingNameColumnWidth" not in explorer
@@ -415,32 +440,17 @@ def main():
         assert generated_manifest["anchorRoutes"]["page_cache_alpha"] == \
             "/reference/settings/session-settings/page-cache"
         assert "](/reference/settings/session-settings/filesystem-cache#openssl)" in cache_page
-        assert generated_manifest["limits"]["minimumPrefixGroup"] == 2
-        assert generated_manifest["limits"]["maximumPageDepth"] == 1
         assert "legacyPages" not in generated_manifest
-        assert all(
-            page["settings"] <= mod.SESSION_SETTINGS_MAX_PER_PAGE
-            for page in generated_manifest["pageStats"])
-        assert not [
-            page for page in generated_manifest["pageStats"]
-            if page["settings"] == 1
-        ]
-        assert all(
-            page["settings"] > 0
-            for page in generated_manifest["pageStats"])
+        assert "limits" not in generated_manifest
+        assert "pageStats" not in generated_manifest
         assert any(
             route["prefix"] == "filesystem_cache"
             and route["target"] == "/reference/settings/session-settings/filesystem-cache"
             for route in generated_manifest["routes"])
         assert generated_manifest["anchorRoutes"]["filesystem_unmatched"] == \
             "/reference/settings/session-settings/other"
-        assert all(
-            page["label"].endswith("_*")
-            for page in generated_manifest["pageStats"]
-            if page["label"] != "Other")
-        assert any(
-            page["label"] == "Other"
-            for page in generated_manifest["pageStats"])
+        assert "/reference/settings/session-settings/other" in \
+            generated_manifest["pages"]
         assert "sidebarTitle: 'filesystem_cache_*'" in cache_page
         assert "title: 'filesystem_cache_* session settings'" in cache_page
 
@@ -461,7 +471,7 @@ def main():
         )
         assert (
             '"name":"empty_default",'
-            '"href":"/reference/settings/session-settings/empty#empty_default",'
+            '"path":"/empty#empty_default",'
             '"default":"\\"\\""'
         ) in empty_default_explorer
         server_empty_default_explorer = mod._settings_explorer_component(
@@ -480,14 +490,13 @@ def main():
         server_pages = mod.group_session_settings(
             server_sections,
             base_route=server_family["base_route"],
-            max_characters=server_family["max_characters"],
         )
         server_explorer = mod._settings_explorer_component(
             server_pages, server_family
         )
         assert (
             '"name":"server_empty_default",'
-            '"href":"/reference/settings/server-settings/settings/other'
+            '"path":"/other'
             '#server_empty_default","default":"\\"\\""'
         ) in server_explorer
         server_sql = (
@@ -507,6 +516,18 @@ def main():
         manual_server_sections_by_name = {
             section.name: section for section in manual_server_sections
         }
+        table_engines_section = manual_server_sections_by_name[
+            "table_engines_require_grant"
+        ]
+        assert "<CloudNotSupportedBadge/>" in table_engines_section.markdown
+        assert mod._component_imports_for_page(
+            "",
+            table_engines_section.markdown,
+            server_family["detail_component_imports"],
+        ) == [
+            'import { CloudNotSupportedBadge } from '
+            '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";'
+        ]
         expected_manual_server_defaults = {
             "allow_implicit_no_password": "true",
             "allow_no_password": "true",
@@ -546,10 +567,7 @@ def main():
         for name, default_value in expected_manual_server_defaults.items():
             expected_setting = {
                 "name": name,
-                "href": (
-                    "/reference/settings/server-settings/settings/other"
-                    f"#{name}"
-                ),
+                "path": f"/other#{name}",
                 "default": default_value,
             }
             assert json.dumps(
@@ -615,9 +633,22 @@ def main():
         ]
         assert all(not page.children for page in representative_pages)
 
+        large_prefix_pages = mod.group_session_settings([
+            mod.SettingSection(
+                f"large_group_{index}",
+                f"large_group_{index}",
+                "x" * 1000,
+            )
+            for index in range(151)
+        ])
+        assert [
+            (page.label, len(page.sections))
+            for page in large_prefix_pages
+        ] == [("large_group_*", 151)]
+
         assert all(
-            len(page["path"].removeprefix(mod.SESSION_SETTINGS_BASE_ROUTE).strip("/").split("/")) == 1
-            for page in generated_manifest["pageStats"])
+            len(page.removeprefix(mod.SESSION_SETTINGS_BASE_ROUTE).strip("/").split("/")) == 1
+            for page in generated_manifest["pages"])
 
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
@@ -707,9 +738,13 @@ def main():
             by_path = {artifact.path: artifact.content for artifact in artifacts}
 
             root = by_path[dest]
-            assert f"<{family['component_name']} />" in root
+            explorer_tag = (
+                f'<{family["component_name"]} '
+                f'href="{family["base_route"]}" />'
+            )
+            assert explorer_tag in root
             assert f"## {family['browse_title']}" in root
-            assert root.count(f"<{family['component_name']} />") == 1
+            assert root.count(explorer_tag) == 1
             assert root.count(f"## {family['browse_title']}") == 1
             assert "## filesystem_cache_alpha" not in root
             routes_script_path = (
@@ -732,9 +767,13 @@ def main():
 
             component_path = docs / family["component_path"]
             explorer = by_path[component_path]
-            assert f'const {family["component_name"]} = () => {{' in explorer
+            component_declaration = (
+                f'const {family["component_name"]} = '
+                '({ href: baseRoute }) => {'
+            )
+            assert component_declaration in explorer
             component_start = explorer.index(
-                f'const {family["component_name"]} = () => {{')
+                component_declaration)
             assert component_start == 0
             assert explorer.index(
                 "  const [entries] = useState(() => ("
@@ -761,7 +800,7 @@ def main():
             assert "const isOpen = isSearching || expandedGroups.has(key)" in explorer
             assert "No matching settings" in explorer
             assert (
-                f'"href":"{family["base_route"]}/filesystem-cache'
+                '"path":"/filesystem-cache'
                 '#filesystem_cache_alpha"'
             ) in explorer
 

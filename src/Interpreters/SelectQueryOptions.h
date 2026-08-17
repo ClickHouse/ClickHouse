@@ -65,6 +65,11 @@ struct SelectQueryOptions
     bool is_local_shard_plan = false;
     bool ignore_rename_columns = false;
 
+    /// The plan is built for a local shard/replica of a distributed query, so its blocks are
+    /// consumed in this process and must not be marshalled: `UnmarshallBlocksTransform` exists
+    /// only on remote pipes, so a `ColumnBLOB` would reach the parent pipeline as is.
+    bool is_local_plan_for_distributed_query = false;
+
     size_t max_step_description_length = 0;
 
     bool force_materialize_cte = false;
@@ -88,6 +93,7 @@ struct SelectQueryOptions
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
         out.is_local_shard_plan = false;
+        out.is_local_plan_for_distributed_query = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
@@ -310,7 +311,7 @@ bool Field::operator<= (const Field & rhs) const
         {
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             Float64 f1 = get<Float64>();
-            Float64 f2 = get<Float64>();
+            Float64 f2 = rhs.get<Float64>();
             return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
                 || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
         }
@@ -1075,8 +1076,8 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// In Darwin unsigned long does not match any of the UInt* types
-#ifdef OS_DARWIN
+/// `unsigned long` is not covered by the list above where it is a type of its own.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }

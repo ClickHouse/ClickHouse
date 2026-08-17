@@ -44,7 +44,8 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    All = Reader | Plan,
+    Streaming = 4,
+    All = Reader | Plan | Streaming,
 };
 
 struct GetColumnsOptions
@@ -327,6 +328,9 @@ struct DefaultExpressionsInfo
     /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
     NameSet insert_time_default_columns;
 };
+
+/// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
