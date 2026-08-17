@@ -1059,11 +1059,12 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    if (!idle_ptr)
+    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
+    if (!idle_ptr || !io_wait_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
