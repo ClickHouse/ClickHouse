@@ -61,6 +61,7 @@ namespace ProfileEvents
     extern const Event AggregationBucketTopKConversions;
     extern const Event AdaptiveAggregationLocalFreezes;
     extern const Event AdaptiveAggregationGiveUps;
+    extern const Event AdaptiveAggregationPressureStandDowns;
 }
 
 namespace CurrentMetrics
@@ -1944,6 +1945,16 @@ bool Aggregator::executeOnBlock(Columns columns,
                 adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
                 LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
+            }
+
+            /// A learning table has no frozen twin to pair with and nothing staged, so unlike the
+            /// frozen one it can join the baseline path for good and spill through the branch below.
+            if (params.max_bytes_before_external_group_by
+                && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            {
+                if (adaptive->isLearning())
+                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
             }
 
             if (!adaptive->isBaseline())
@@ -4534,6 +4545,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         M(nullable_serialized)            \
         M(prealloc_serialized)            \
         M(nullable_prealloc_serialized)   \
+        M(nullable_key64)                 \
+        M(nullable_keys128)               \
+        M(nullable_keys256)               \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \
