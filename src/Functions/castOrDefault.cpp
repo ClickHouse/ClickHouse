@@ -209,24 +209,35 @@ public:
             default_value = return_type->getDefault();
         }
 
-        for (size_t i = 0; i < cast_result->size(); ++i)
+        /// For a Nullable cast result and a non-Nullable target the values live in the nested column.
+        const IColumn & cast_values = cast_result_nullable && !result->isNullable()
+            ? cast_result_nullable->getNestedColumn()
+            : *cast_result;
+
+        const bool return_type_can_contain_null = canContainNull(*return_type);
+        const size_t rows = cast_result->size();
+        size_t start_insert_index = 0;
+
+        for (size_t i = 0; i < rows; ++i)
         {
             const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
-            const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !canContainNull(*return_type));
+            const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !return_type_can_contain_null);
             if (!cast_failed)
-            {
-                if (cast_result_nullable && !result->isNullable())
-                    result->insertFrom(cast_result_nullable->getNestedColumn(), i);
-                else
-                    result->insertFrom(*cast_result, i);
                 continue;
-            }
+
+            if (i != start_insert_index)
+                result->insertRangeFrom(cast_values, start_insert_index, i - start_insert_index);
 
             if (default_column)
                 result->insertFrom(*default_column, i);
             else
                 result->insert(default_value);
+
+            start_insert_index = i + 1;
         }
+
+        if (rows != start_insert_index)
+            result->insertRangeFrom(cast_values, start_insert_index, rows - start_insert_index);
 
         return result;
     }
