@@ -14,3 +14,12 @@ Read each partition through separate port: 1
 1
 -- window partitioned by an ARRAY JOIN alias: not applicable, and the query works
 1
+-- mixed keys (k, x) with an exploded x: still engages
+Skip scatter by partition: 1
+Read each partition through separate port: 1
+1
+Read each partition through separate port: 1
+1
+-- mixed keys, old analyzer: results stay equal
+1
+1

@@ -53,5 +53,19 @@ SELECT '-- window partitioned by an ARRAY JOIN alias: not applicable, and the qu
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT x, sum(v) OVER (PARTITION BY x ORDER BY v) FROM t_prec ARRAY JOIN arr AS x SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter%' OR explain LIKE '%separate port%';
 SELECT sum(cityHash64(x, s)) > 0 FROM (SELECT x, sum(v) OVER (PARTITION BY x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x);
 
+-- An exploded column alongside a key column that determines the partition: equal key tuples imply an
+-- equal table partition through the non-exploded column, so the optimization still applies.
+SELECT '-- mixed keys (k, x) with an exploded x: still engages';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) FROM t_prec ARRAY JOIN arr AS x SETTINGS allow_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter%' OR explain LIKE '%separate port%';
+SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 1);
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%separate port%';
+SELECT (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 1);
+
+SET enable_analyzer = 0;
+
+SELECT '-- mixed keys, old analyzer: results stay equal';
+SELECT (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(k, x, s)) FROM (SELECT k, x, sum(v) OVER (PARTITION BY k, x ORDER BY v) AS s FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_window_partitions_independently = 1);
+SELECT (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT k, x FROM t_prec ARRAY JOIN arr AS x) SETTINGS allow_distinct_partitions_independently = 1);
+
 DROP TABLE t_shadow;
 DROP TABLE t_prec;
