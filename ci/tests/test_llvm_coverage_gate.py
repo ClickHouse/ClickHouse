@@ -245,6 +245,79 @@ def _diff_inputs_snippet() -> str:
     return textwrap.dedent("".join(lines[start : end + 1]))
 
 
+def _line_below(anchor: str) -> int:
+    """Index of the first non-blank line below the single line holding `anchor`.
+
+    The job has four textually identical `if _diff_ran:` lines and two
+    `if _diff_inputs_exist:` lines, so a guard cannot be located by its own text:
+    a search would land on whichever one comes first, and mutating the intended
+    guard makes such a search slide silently to the next copy. Position relative
+    to a unique neighbour is the only stable handle, and what it selects is
+    asserted separately.
+    """
+    lines = _job_source().splitlines(True)
+    matches = [i for i, l in enumerate(lines) if anchor in l]
+    assert len(matches) == 1, (anchor, len(matches))
+    return next(i for i in range(matches[0] + 1, len(lines)) if lines[i].strip())
+
+
+# Last line of the zeroed-counters block, so the guard is the next one.
+_REPORT_GUARD_ANCHOR = "b_branch_hit = b_branch_total = c_branch_hit"
+_ANALYSIS_GUARD_ANCHOR = "_print_log = f\"{TEMP_DIR}"
+
+
+def _report_guard_body() -> str:
+    """What the guarded coverage-report branch does, for identifying the site."""
+    lines = _job_source().splitlines(True)
+    start = _line_below(_REPORT_GUARD_ANCHOR)
+    return "".join(lines[start : start + 30])
+
+
+def _report_guard_snippet() -> str:
+    """The `if _diff_ran:` guard admitting the coverage-report branch.
+
+    It is the line below the zeroed coverage counters; the other three guard the
+    log tail, the S3 link list and the archive list.
+    """
+    lines = _job_source().splitlines(True)
+    idx = _line_below(_REPORT_GUARD_ANCHOR)
+    return textwrap.dedent(lines[idx]) + "    _took_report_branch = True\n"
+
+
+def _analysis_dispatch_snippet() -> str:
+    """The `if _diff_inputs_exist:` block that runs print_uncovered_code.py.
+
+    It is the first guard below the log path the analysis writes to; the later
+    one only attaches that log to an already-built result.
+    """
+    lines = _job_source().splitlines(True)
+    start = next(
+        i
+        for i in range(_line_below(_ANALYSIS_GUARD_ANCHOR), len(lines))
+        if lines[i].lstrip().startswith("if ")
+    )
+    end = next(
+        i for i in range(start + 1, len(lines)) if "print_res.set_comment(msg)" in lines[i]
+    )
+    return textwrap.dedent("".join(lines[start : end + 1]))
+
+
+def _comment_dispatch_snippet() -> str:
+    """The block deciding whether a coverage comment is written for this run."""
+    lines = _job_source().splitlines(True)
+    start = next(
+        i for i, l in enumerate(lines) if "_has_coverage_data = _diff_ran" in l
+    )
+    end = next(
+        i
+        for i in range(start + 1, len(lines))
+        if lines[i].rstrip() == "            else:"
+    )
+    # Dedent before appending the sentinel: a shallower line in the input would
+    # shrink dedent's common prefix and leave the block itself indented.
+    return textwrap.dedent("".join(lines[start : end + 1])) + "    _made_comment = True\n"
+
+
 class _DiffResultStub:
     """The two things the reporting block may do to a failed/ok diff result."""
 
@@ -480,6 +553,20 @@ def test_gh_api_calls_name_the_endpoint_they_request():
     assert "Fetching changed files: repos/ClickHouse/ClickHouse/compare/" in src
 
 
+def test_each_endpoint_echo_names_its_own_anchor():
+    # The two ranges are deliberately different (the script documents why), so a
+    # diagnostic that prints the other call's range misattributes the 404.
+    src = _script_source()
+    assert (
+        'echo "Fetching diff: repos/ClickHouse/ClickHouse/compare/'
+        '${FIRST_BASE_COMMIT}...${CURRENT_COMMIT}"' in src
+    )
+    assert (
+        'echo "Fetching changed files: repos/ClickHouse/ClickHouse/compare/'
+        '${BASE_COMMIT}...${CURRENT_COMMIT}"' in src
+    )
+
+
 def _named_outcomes() -> list:
     """Every outcome token DiffOutcome names, derived from the class itself."""
     job = sys.modules["ci.jobs.llvm_coverage_job"]
@@ -627,6 +714,13 @@ def test_a_missing_input_file_still_blocks_the_analysis(tmp_path):
 # stubbed gh/wget/lcov/genhtml and assert the token each outcome produces.
 # ---------------------------------------------------------------------------
 
+# The diff fetch is anchored at the baseline commit and the changed-file fetch at
+# the PR merge base. These three values must stay pairwise distinct, or an
+# assertion on one endpoint would also accept the other one's range.
+_FIRST_BASE = "fbc111"
+_BASE = "bc999"
+_CURRENT = "cur777"
+
 _STUBS = {
     # `wget --spider` is grepped for '200 OK'; the download must land a file.
     "wget": """#!/bin/bash
@@ -636,15 +730,24 @@ for a in "$@"; do [ "$prev" = "-O" ] && out="$a"; prev="$a"; done
 [ -n "$out" ] && echo "TN:" > "$out"
 exit 0
 """,
-    # STUB_GH_RC drives the 404 case; STUB_CHANGED_FILES the changed-file list.
+    # The two compare calls are told apart by --jq, so either can be failed on
+    # its own: STUB_GH_RC the diff fetch, STUB_GH_RC_JQ the changed-file fetch.
     "gh": """#!/bin/bash
-if [ "${STUB_GH_RC:-0}" != "0" ]; then
-  echo "gh: Not Found (HTTP 404)" >&2
-  exit "$STUB_GH_RC"
-fi
 case "$*" in
-  *--jq*) printf '%s\\n' ${STUB_CHANGED_FILES} ;;
-  *) echo "diff --git a/x b/x" ;;
+  *--jq*)
+    if [ "${STUB_GH_RC_JQ:-0}" != "0" ]; then
+      echo "gh: Not Found (HTTP 404)" >&2
+      exit "$STUB_GH_RC_JQ"
+    fi
+    printf '%s\\n' ${STUB_CHANGED_FILES}
+    ;;
+  *)
+    if [ "${STUB_GH_RC:-0}" != "0" ]; then
+      echo "gh: Not Found (HTTP 404)" >&2
+      exit "$STUB_GH_RC"
+    fi
+    echo "diff --git a/x b/x"
+    ;;
 esac
 exit 0
 """,
@@ -695,9 +798,9 @@ def _run_diff_script(tmp_path, changed_files: str, **stub_env):
     env.update(
         {
             "PATH": f"{bin_dir}:{env['PATH']}",
-            "PREV_30_COMMITS": "aaa,bbb",
-            "CURRENT_COMMIT": "bbb",
-            "BASE_COMMIT": "aaa",
+            "PREV_30_COMMITS": f"{_FIRST_BASE},{_FIRST_BASE}222",
+            "CURRENT_COMMIT": _CURRENT,
+            "BASE_COMMIT": _BASE,
             "BRANCH": "topic",
             "BASE_BRANCH": "master",
             "WORKSPACE_PATH": str(workspace),
@@ -746,6 +849,9 @@ def _script_runs(tmp_path_factory):
         "no_data": ("src/Foo.cpp", {"STUB_CURRENT_SF": 0, "STUB_BASELINE_SF": 0}),
         "empty": ("src/Foo.cpp", {"STUB_CURRENT_SF": 0, "STUB_BASELINE_SF": 1}),
         "gh_404": ("src/Foo.cpp", {"STUB_GH_RC": 1}),
+        # The second compare call fails on its own, so its endpoint line is the
+        # only one that can attribute the 404 to a range.
+        "gh_404_files": ("src/Foo.cpp", {"STUB_GH_RC_JQ": 1}),
         "report": ("src/Foo.cpp", {}),
     }
     return {
@@ -776,14 +882,50 @@ def test_the_script_generates_a_report_only_in_the_report_outcome(_script_runs):
         assert report is (case == "report"), (case, log)
 
 
+def test_the_fixture_anchors_are_pairwise_distinct():
+    # Every endpoint assertion below can only discriminate while these differ; if
+    # a future edit collapses them the arms would silently accept either range.
+    assert len({_FIRST_BASE, _BASE, _CURRENT}) == 3
+
+
 def test_a_failing_gh_api_leaves_no_marker_and_names_its_endpoint(_script_runs):
     rc, marker, _, log = _script_runs["gh_404"]
     assert rc != 0, log
     # The stale marker must not be readable as this run's outcome.
     assert marker == "", log
-    assert "Fetching diff: repos/ClickHouse/ClickHouse/compare/aaa...bbb" in log, log
+    assert (
+        f"Fetching diff: repos/ClickHouse/ClickHouse/compare/"
+        f"{_FIRST_BASE}...{_CURRENT}" in log
+    ), log
     # gh's own stderr has to survive to the log for Shell.run's classification.
     assert "gh: Not Found (HTTP 404)" in log, log
+
+
+def test_a_failing_changed_files_call_names_its_own_range(_script_runs):
+    # The second call is anchored at the PR merge base, not the baseline commit,
+    # so its endpoint line is the only one that attributes this 404 correctly.
+    rc, marker, _, log = _script_runs["gh_404_files"]
+    assert rc != 0, log
+    assert marker == "", log
+    assert (
+        f"Fetching changed files: repos/ClickHouse/ClickHouse/compare/"
+        f"{_BASE}...{_CURRENT}" in log
+    ), log
+    assert "gh: Not Found (HTTP 404)" in log, log
+
+
+def test_the_report_run_names_both_ranges_with_their_own_anchors(_script_runs):
+    # A successful run reaches both echoes, which is where the two ranges can be
+    # seen to differ; the 404 cases each reach only one.
+    _, _, _, log = _script_runs["report"]
+    assert (
+        f"Fetching diff: repos/ClickHouse/ClickHouse/compare/"
+        f"{_FIRST_BASE}...{_CURRENT}" in log
+    ), log
+    assert (
+        f"Fetching changed files: repos/ClickHouse/ClickHouse/compare/"
+        f"{_BASE}...{_CURRENT}" in log
+    ), log
 
 
 def test_the_job_classifies_every_real_script_run(_script_runs, tmp_path):
@@ -796,6 +938,7 @@ def test_the_job_classifies_every_real_script_run(_script_runs, tmp_path):
         "empty": _MARKER_EMPTY,
         "report": _MARKER_REPORT,
         "gh_404": job.DiffOutcome.FAILED,
+        "gh_404_files": job.DiffOutcome.FAILED,
     }
     for case, (rc, marker, report, log) in _script_runs.items():
         case_dir = tmp_path / case
@@ -818,6 +961,7 @@ def test_the_job_classifies_every_real_script_run(_script_runs, tmp_path):
         ("empty", _MARKER_EMPTY, False),
         ("report", _MARKER_REPORT, True),
         ("gh_404", "failed", False),
+        ("gh_404_files", "failed", False),
     ],
 )
 def test_the_job_reports_what_the_real_script_did(
@@ -830,3 +974,149 @@ def test_the_job_reports_what_the_real_script_did(
         tmp_path, marker, report_ready=report, script_ok=(rc == 0)
     )
     assert (outcome, diff_ran) == (want_outcome, want_diff_ran), (case, log)
+
+
+# ---------------------------------------------------------------------------
+# The three dispatches the outcome selects.
+#
+# Everything above proves what the job computes. These prove what it then DOES:
+# whether the coverage-report branch runs, whether print_uncovered_code.py is
+# executed, and whether a coverage comment is written. A correct outcome can sit
+# next to a guard that consumes it backwards, and only these can see that.
+# ---------------------------------------------------------------------------
+
+
+class _ResultFsStub(Result):
+    """A Result whose from_fs does not need print_uncovered_code.py's output file."""
+
+    @classmethod
+    def from_fs(cls, name):
+        return cls.create_from(name=name, status=cls.Status.OK, info="stub")
+
+
+class _ShellSpy:
+    """Records whether the job asked the shell to run the analysis."""
+
+    def __init__(self):
+        self.commands = []
+
+    def run(self, command, *a, **k):
+        self.commands.append(command)
+        return 0
+
+
+def _report_branch_taken(outcome: str) -> bool:
+    ns = {"_diff_ran": outcome == _MARKER_REPORT, "_took_report_branch": False}
+    exec(_report_guard_snippet(), ns)  # noqa: S102 - trusted first-party source
+    return ns["_took_report_branch"]
+
+
+def _analysis_dispatch(outcome: str, tmp_path, files: dict):
+    """Run the real analysis dispatch. Returns (analysis_ran, print_res_status)."""
+    for name, present in files.items():
+        if present:
+            (tmp_path / name).write_text("x", encoding="utf-8")
+    _, inputs_ns = _run_snippet(
+        _diff_inputs_snippet(),
+        TEMP_DIR=str(tmp_path) + os.sep,
+        _diff_outcome=outcome,
+        Path=Path,
+    )
+    spy = _ShellSpy()
+    _, ns = _run_snippet(
+        _analysis_dispatch_snippet(),
+        TEMP_DIR=str(tmp_path) + os.sep,
+        _diff_outcome=outcome,
+        _diff_inputs_exist=inputs_ns["_diff_inputs_exist"],
+        _print_log=str(tmp_path / "print.log"),
+        Result=_ResultFsStub,
+        Shell=spy,
+        Path=Path,
+    )
+    return bool(spy.commands), ns["print_res"].status
+
+
+def _comment_made(outcome: str) -> bool:
+    _, ns = _run_snippet(
+        _comment_dispatch_snippet(),
+        _diff_ran=outcome == _MARKER_REPORT,
+        _diff_outcome=outcome,
+        _made_comment=False,
+    )
+    return ns["_made_comment"]
+
+
+# What the real script leaves on disk per outcome, measured by running it: the
+# diff is fetched before every exit-0 path, and the coverage slice is written
+# before the no-data and empty exits but after the 404 dies.
+_FILES_PRESENT = {
+    _MARKER_NO_CPP: {"changes.diff": True, "current.changed.info": False},
+    _MARKER_NO_DATA: {"changes.diff": True, "current.changed.info": True},
+    _MARKER_EMPTY: {"changes.diff": True, "current.changed.info": True},
+    _MARKER_REPORT: {"changes.diff": True, "current.changed.info": True},
+    "failed": {"changes.diff": True, "current.changed.info": False},
+    "unknown": {"changes.diff": False, "current.changed.info": False},
+}
+
+
+def test_dispatch_snippets_are_the_real_production_blocks():
+    # Without these the dispatch assertions below could go vacuous through an
+    # extraction that slid onto one of the job's other identical guard lines.
+    report = _report_guard_snippet()
+    assert "_diff_ran" in report
+    assert "_took_report_branch" in report
+    # The four `if _diff_ran:` lines are textually identical, so the site is
+    # identified by what it guards: only this one reads the coverage summaries.
+    assert "get_lcov_summary(" in _report_guard_body()
+    assert "base_llvm_coverage.info" in _report_guard_body()
+    analysis = _analysis_dispatch_snippet()
+    assert "if _diff_inputs_exist:" in analysis
+    assert "print_uncovered_code.py" in analysis
+    assert "Result.create_from" in analysis
+    comment = _comment_dispatch_snippet()
+    assert "_has_coverage_data = _diff_ran" in comment
+    assert "coverage_comment_message" in comment
+    assert "_made_comment" in comment
+
+
+@pytest.mark.parametrize(
+    "outcome,want_report,want_analysis,want_comment",
+    [
+        # The only outcome with numbers: report, analysis and comment all happen.
+        (_MARKER_REPORT, True, True, True),
+        # Has this run's own slice, so the analysis runs, but nothing to report.
+        (_MARKER_EMPTY, False, True, False),
+        # No slice of this run's own, so the analysis must not read a stale one.
+        (_MARKER_NO_CPP, False, False, False),
+        (_MARKER_NO_DATA, False, False, False),
+        # Nothing is known about the changed files in either of these.
+        ("failed", False, False, False),
+        ("unknown", False, False, False),
+    ],
+)
+def test_each_outcome_selects_the_dispatches_it_should(
+    outcome, want_report, want_analysis, want_comment, tmp_path
+):
+    analysis_ran, _ = _analysis_dispatch(outcome, tmp_path, _FILES_PRESENT[outcome])
+    assert (
+        _report_branch_taken(outcome),
+        analysis_ran,
+        _comment_made(outcome),
+    ) == (want_report, want_analysis, want_comment)
+
+
+def test_a_reportless_outcome_never_enters_the_coverage_report_branch():
+    # That branch calls get_lcov_summary on absent files and compresses a
+    # directory that does not exist, so entering it is a crash, not a mislabel.
+    for outcome in (_MARKER_NO_CPP, _MARKER_NO_DATA, _MARKER_EMPTY, "failed", "unknown"):
+        assert _report_branch_taken(outcome) is False, outcome
+
+
+def test_a_failed_script_reports_the_analysis_as_not_ok(tmp_path):
+    # The dispatch must reach the branch that fails the sub-result, not merely
+    # compute an outcome that would.
+    analysis_ran, status = _analysis_dispatch(
+        "failed", tmp_path, _FILES_PRESENT["failed"]
+    )
+    assert analysis_ran is False
+    assert status != Result.Status.OK
