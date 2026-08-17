@@ -314,10 +314,10 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
-    /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's
-    /// `=~`) to find the statement end — except terminal `ErrorMaxQuerySizeExceeded`, still fatal.
+    /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's `=~`)
+    /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (parser.consumesRawText() || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
