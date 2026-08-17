@@ -37,7 +37,7 @@ namespace ErrorCodes
 static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
-    RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
+    RE2::FullMatch(pathToGenericString(file_path), EXTRACT_PATH_PATTERN, &remote_path);
     bool is_directory = fs::is_directory(file_path);
 
     writeText(file_path.filename().string(), metadata_buf);
@@ -89,7 +89,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
     String prefix;
-    RE2::FullMatch(data_path.string(), EXTRACT_PATH_PATTERN, &prefix);
+    RE2::FullMatch(pathToGenericString(data_path), EXTRACT_PATH_PATTERN, &prefix);
 
     std::shared_ptr<WriteBuffer> root_meta;
     if (test_mode)
@@ -117,7 +117,7 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             processFile(dir_it->path(), dst_path, test_mode, link, *root_meta);
 
             String directory_prefix;
-            RE2::FullMatch(dir_it->path().string(), EXTRACT_PATH_PATTERN, &directory_prefix);
+            RE2::FullMatch(pathToGenericString(dir_it->path()), EXTRACT_PATH_PATTERN, &directory_prefix);
 
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)

@@ -72,7 +72,7 @@ struct statvfs getStatVFS(String path)
         }
 
         /// Same as below: we sometimes ask about a directory that is yet to be created.
-        auto fs_path = std::filesystem::path(path);
+        auto fs_path = pathFromString(path);
         const auto error = GetLastError();
         if ((error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND) && fs_path.has_parent_path())
         {
