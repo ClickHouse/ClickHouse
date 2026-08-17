@@ -7312,7 +7312,14 @@ void MergeTreeData::throwIfTableSizeLimitsExceeded(const DataPartsAnyLock &) con
 
     if (const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows])
     {
-        const UInt64 total_rows = getTotalActiveSizeInRows();
+        UInt64 total_rows = 0;
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        {
+            /// Patch parts represent mutations of rows in regular parts, not additional table rows.
+            if (!part->info.isPatch())
+                total_rows += part->rows_count;
+        }
+
         if (total_rows > max_rows)
             throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
                 "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
