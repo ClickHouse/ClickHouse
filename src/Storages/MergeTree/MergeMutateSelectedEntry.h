@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MutationCommands.h>
 
 namespace DB
@@ -47,17 +46,15 @@ struct MergeMutateSelectedEntry
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
     Strings mutation_ids; /// List of mutation version strings being applied
-    std::optional<TTLMergeReservation> ttl_merge_reservation;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
-                             Strings mutation_ids_ = {}, std::optional<TTLMergeReservation> ttl_merge_reservation_ = std::nullopt)
+                             Strings mutation_ids_ = {})
         : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
         , txn(txn_)
         , mutation_ids(std::move(mutation_ids_))
-        , ttl_merge_reservation(std::move(ttl_merge_reservation_))
     {}
 
     void finalize();

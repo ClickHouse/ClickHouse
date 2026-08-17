@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -29,7 +31,7 @@ class MergeSelectorApplier
 public:
     const std::vector<MergeConstraint> merge_constraints;
     const bool merge_with_ttl_allowed = false;
-    const bool ttl_clear_index_merge_allowed = false;
+    const std::unordered_set<String> partitions_with_ttl_clear_index_merges;
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
@@ -37,7 +39,7 @@ public:
     MergeSelectorApplier(
         std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
-        bool ttl_clear_index_merge_allowed_,
+        std::unordered_set<String> partitions_with_ttl_clear_index_merges_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_,
         StorageID storage_id_);

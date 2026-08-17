@@ -60,6 +60,7 @@ struct ChooseContext
     const MergeTreeSettings & merge_tree_settings;
     const PartitionIdToTTLs & next_delete_times;
     const PartitionIdToTTLs & next_recompress_times;
+    const std::unordered_set<String> & partitions_with_ttl_clear_index_merges;
     const time_t current_time;
     const bool aggressive;
     const bool can_generate_ttl_clear_index_merges;
@@ -123,8 +124,15 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         && ctx.can_generate_ttl_clear_index_merges)
     {
         TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+        /// Slow clears cannot stack up within one partition, while fast clears can drain a backlog without a fixed delay.
+        const auto range_filter = [&](PartsRangeView range)
+        {
+            chassert(!range.empty());
+            return !ctx.partitions_with_ttl_clear_index_merges.contains(range.front().info.getPartitionId())
+                && (!ctx.range_filter || ctx.range_filter(range));
+        };
 
-        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, range_filter); !merge_ranges.empty())
         {
             MergeSelectorChoices choices;
             choices.reserve(merge_ranges.size());
@@ -210,13 +218,13 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 MergeSelectorApplier::MergeSelectorApplier(
     std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
-    bool ttl_clear_index_merge_allowed_,
+    std::unordered_set<String> partitions_with_ttl_clear_index_merges_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
     StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
-    , ttl_clear_index_merge_allowed(ttl_clear_index_merge_allowed_)
+    , partitions_with_ttl_clear_index_merges(std::move(partitions_with_ttl_clear_index_merges_))
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
@@ -252,9 +260,10 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .merge_tree_settings = *merge_tree_settings,
         .next_delete_times = next_delete_times,
         .next_recompress_times = next_recompress_times,
+        .partitions_with_ttl_clear_index_merges = partitions_with_ttl_clear_index_merges,
         .current_time = current_time,
         .aggressive = aggressive,
-        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges && ttl_clear_index_merge_allowed,
+        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

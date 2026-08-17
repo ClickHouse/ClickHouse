@@ -69,6 +69,7 @@ private:
         size_t merges = 0;
         size_t mutations = 0;
         size_t merges_with_ttl = 0;
+        std::unordered_set<String> partitions_with_ttl_clear_index_merges;
     };
 
     UInt64 getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
@@ -112,6 +113,9 @@ private:
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
     std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
+
+    /// Avoid parallel `TTLClearIndex` merges in one partition.
+    std::unordered_set<String> currently_executing_ttl_clear_index_partitions;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeZooKeeperMergePredicate)
@@ -420,9 +424,7 @@ public:
         ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
         CurrentlyExecutingPtr currently_executing_holder;
 
-        SelectedEntry(
-            const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_,
-            CurrentlyExecutingPtr && currently_executing_holder_)
+        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
             : log_entry(log_entry_)
             , currently_executing_holder(std::move(currently_executing_holder_))
         {}

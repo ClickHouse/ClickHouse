@@ -51,8 +51,6 @@ protected:
         bool prepared_successfully;
         bool need_to_check_missing_part_in_fetch;
         PartLogWriter part_log_writer;
-        /// A temporary admission failure should leave the log entry queued without attempting a fetch.
-        String postpone_reason;
     };
 
     virtual PrepareResult prepare() = 0;
@@ -102,7 +100,6 @@ private:
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
     bool print_exception = true;
-    bool postpone_on_completion = false;
     pcg64 rng;
 };
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
+
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -152,6 +154,10 @@ private:
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
+
+    /// Partitions with a selected `TTLClearIndex` merge.
+    /// This set has to be used with `currently_processing_in_background_mutex`.
+    std::unordered_set<String> partitions_with_ttl_clear_index_merges;
 
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;

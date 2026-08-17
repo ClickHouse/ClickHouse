@@ -1839,12 +1839,32 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
+            if (entry.merge_type == MergeType::TTLClearIndex)
+            {
+                const auto partition_id = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version).getPartitionId();
+                if (currently_executing_ttl_clear_index_partitions.contains(partition_id))
+                {
+                    constexpr auto fmt_string
+                        = "Not executing log entry {} for part {} because another TTLClearIndex merge is executing in partition {}.";
+                    LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, partition_id);
+                    return false;
+                }
+            }
+
             if (isTTLMergeType(entry.merge_type))
             {
                 if (merger_mutator.ttl_merges_blocker.isCancelled())
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because merges with TTL are cancelled now.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name);
+                    return false;
+                }
+                size_t total_merges_with_ttl = data.getTotalMergesWithTTLInMergeList();
+                if (total_merges_with_ttl >= (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool])
+                {
+                    constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
+                    LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
                 }
             }
@@ -2007,6 +2027,12 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
         [[maybe_unused]] bool inserted = queue.currently_executing_drop_replace_ranges.emplace(drop_range_info).second;
         chassert(inserted);
     }
+    if (entry->type == LogEntry::MERGE_PARTS && entry->merge_type == MergeType::TTLClearIndex)
+    {
+        const auto partition_id = MergeTreePartInfo::fromPartName(entry->new_part_name, queue.format_version).getPartitionId();
+        [[maybe_unused]] const bool inserted = queue.currently_executing_ttl_clear_index_partitions.emplace(partition_id).second;
+        chassert(inserted);
+    }
     entry->currently_executing = true;
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
@@ -2074,6 +2100,12 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     {
         auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, queue.format_version);
         [[maybe_unused]] bool removed = queue.currently_executing_drop_replace_ranges.erase(drop_range_info);
+        chassert(removed);
+    }
+    if (entry->type == LogEntry::MERGE_PARTS && entry->merge_type == MergeType::TTLClearIndex)
+    {
+        const auto partition_id = MergeTreePartInfo::fromPartName(entry->new_part_name, queue.format_version).getPartitionId();
+        [[maybe_unused]] const bool removed = queue.currently_executing_ttl_clear_index_partitions.erase(partition_id) == 1;
         chassert(removed);
     }
     entry->currently_executing = false;
@@ -2175,22 +2207,26 @@ ReplicatedMergeTreeQueue::OperationsInQueue ReplicatedMergeTreeQueue::countMerge
 {
     std::lock_guard lock(state_mutex);
 
-    size_t count_merges = 0;
-    size_t count_mutations = 0;
-    size_t count_merges_with_ttl = 0;
+    OperationsInQueue result;
+    result.partitions_with_ttl_clear_index_merges = currently_executing_ttl_clear_index_partitions;
     for (const auto & entry : queue)
     {
         if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
         {
-            ++count_merges;
+            ++result.merges;
             if (isTTLMergeType(entry->merge_type))
-                ++count_merges_with_ttl;
+                ++result.merges_with_ttl;
+            if (entry->merge_type == MergeType::TTLClearIndex)
+            {
+                result.partitions_with_ttl_clear_index_merges.emplace(
+                    MergeTreePartInfo::fromPartName(entry->new_part_name, format_version).getPartitionId());
+            }
         }
         else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count_mutations;
+            ++result.mutations;
     }
 
-    return OperationsInQueue{count_merges, count_mutations, count_merges_with_ttl};
+    return result;
 }
 
 

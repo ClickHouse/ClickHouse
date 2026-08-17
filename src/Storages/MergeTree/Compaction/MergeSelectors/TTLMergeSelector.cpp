@@ -279,8 +279,8 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
-/// No per-partition delay is needed because a successful merge removes the files that made the
-/// part selectable. Replicated failures use the merge queue retry delay.
+/// A successful merge removes the files that made the part selectable. The caller also excludes
+/// partitions with an outstanding clear-index merge.
 TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
     : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
 {

@@ -4412,14 +4412,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         UInt64 max_source_part_bytes_for_mutation = CompactionStatistics::getMaxSourcePartBytesForMutation(*this, &max_source_part_bytes_for_mutation_log_comment);
         UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
 
-        const size_t ttl_merge_count = getTotalMergesWithTTLInMergeList();
-        const size_t maximum_ttl_merge_count = (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
-        const bool ttl_queue_capacity_available
-            = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue];
-        const bool merge_with_ttl_allowed = ttl_queue_capacity_available
-            && canReserveMergeWithTTL(ttl_merge_count, maximum_ttl_merge_count, MergeType::TTLDelete);
-        const bool ttl_clear_index_merge_allowed = ttl_queue_capacity_available
-            && canReserveMergeWithTTL(ttl_merge_count, maximum_ttl_merge_count, MergeType::TTLClearIndex);
+        bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
+            getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
 
         auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
         if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
@@ -4436,16 +4430,21 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 MergeSelectorApplier(
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
-                    /*ttl_clear_index_merge_allowed=*/ttl_clear_index_merge_allowed,
+                    /*partitions_with_ttl_clear_index_merges_=*/merges_and_mutations_queued.partitions_with_ttl_clear_index_merges,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
-                ));
+                    /*storage_id_=*/getStorageID()));
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
             else
+            {
                 merge_predicate = queue.getMergePredicate(zookeeper, partitions_to_merge_in);
+                /// Constructing the ZooKeeper predicate pulls newly created log entries into the local queue.
+                /// Refresh the partition guard so an immediately rescheduled selector cannot assign a second clear.
+                merges_and_mutations_queued.partitions_with_ttl_clear_index_merges
+                    = queue.countMergesAndPartMutations().partitions_with_ttl_clear_index_merges;
+            }
         }
 
         PreformattedMessage out_reason;
@@ -4457,11 +4456,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 MergeSelectorApplier(
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
-                    /*ttl_clear_index_merge_allowed=*/ttl_clear_index_merge_allowed,
+                    /*partitions_with_ttl_clear_index_merges_=*/merges_and_mutations_queued.partitions_with_ttl_clear_index_merges,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
-                ),
+                    /*storage_id_=*/getStorageID()),
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
@@ -6525,11 +6523,10 @@ bool StorageReplicatedMergeTree::optimize(
                         MergeSelectorApplier(
                             /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
-                            /*ttl_clear_index_merge_allowed=*/false,
+                            /*partitions_with_ttl_clear_index_merges_=*/{},
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
-                        ),
+                            /*storage_id_=*/getStorageID()),
                         /*partitions_hint=*/std::nullopt);
                 }
                 else
