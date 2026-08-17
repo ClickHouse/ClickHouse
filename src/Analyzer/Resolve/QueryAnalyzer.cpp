@@ -1144,6 +1144,14 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         /// only when the alias value can actually resolve the nested path.
         if (dot_pos != String::npos)
         {
+            /// Join-tree validation runs before the projection and `WITH` expressions are resolved.
+            /// For an unresolved function expression its result type is not available yet, so probing
+            /// its nested path would throw `UNSUPPORTED_METHOD`. Keep the strict behavior in that
+            /// case: the absence of a shadowing collision cannot be proved until the expression is
+            /// resolved.
+            if (const auto * function_node = it->second->as<FunctionNode>(); function_node && !function_node->isResolved())
+                return true;
+
             Identifier identifier(column_name);
             return identifier_resolver.tryResolveIdentifierFromCompoundExpression(
                 identifier, 1 /*identifier_bind_size*/, it->second, {} /* compound_expression_source */,
