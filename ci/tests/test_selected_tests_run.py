@@ -165,9 +165,7 @@ def test_selected_tests_add_smoke_tests_for_store_data_hook_change():
     targeter.info = SimpleNamespace(
         is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
     )
-    targeter._diff_text = (
-        "+++ b/ci/jobs/scripts/workflow_hooks/store_data.py\n"
-    )
+    targeter._diff_text = "+++ b/ci/jobs/scripts/workflow_hooks/store_data.py\n"
 
     assert targeter.get_changed_tests(include_harness_smoke=True) == [
         "00001_select_1.",
