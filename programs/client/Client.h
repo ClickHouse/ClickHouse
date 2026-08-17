@@ -63,6 +63,11 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) override;
 
 private:
+    /// The endpoint that the last "Connecting to ..." message announced, if the connection it announced
+    /// has not been established yet. It keeps `connect` from announcing the same endpoint twice when the
+    /// first attempt only served to find out that the server requires a password.
+    String announced_endpoint;
+
     String getHelpHeader() const;
     String getHelpFooter() const;
     void printChangedSettings() const;

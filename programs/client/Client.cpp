@@ -747,13 +747,30 @@ void Client::connect()
                 const bool secure_auto_detected = secure_unspecified && candidate.security == Protocol::Secure::Enable;
 
                 if (is_interactive)
-                    output_stream << "Connecting to "
-                              << (!connection_parameters.default_database.empty()
-                                      ? "database " + connection_parameters.default_database + " at "
-                                      : "")
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << (secure_auto_detected ? " (secure)" : "")
-                              << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+                {
+                    const auto announcement = fmt::format(
+                        "Connecting to {}{}:{}{}{}.",
+                        connection_parameters.default_database.empty()
+                            ? ""
+                            : "database " + connection_parameters.default_database + " at ",
+                        connection_parameters.host,
+                        connection_parameters.port,
+                        secure_auto_detected ? " (secure)" : "",
+                        connection_parameters.user.empty() ? "" : " as user " + connection_parameters.user);
+
+                    /// The same endpoint can be attempted more than once before the connection is
+                    /// established: a server that requires a password rejects the first attempt, and the
+                    /// client prompts for the password and attempts the very same endpoint again. Repeating
+                    /// the announcement tells the user nothing and reads as if the client had connected
+                    /// twice, so announce an endpoint only when it differs from the one announced last.
+                    /// The announcement is forgotten after a successful connection (see below), so a
+                    /// reconnect later in the session is announced again.
+                    if (announcement != announced_endpoint)
+                    {
+                        announced_endpoint = announcement;
+                        output_stream << announcement << std::endl;
+                    }
+                }
 
                 try
                 {
@@ -853,6 +870,9 @@ void Client::connect()
             }
 
             config().setString("host", connection_parameters.host);
+
+            /// The endpoint is announced once per connection, and a reconnect is a new connection.
+            announced_endpoint.clear();
 
             /// Remember the endpoint that has worked, so that a reconnect to the same address does not
             /// probe the ports again. It is remembered for this address only, and not in the global
