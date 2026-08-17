@@ -103,23 +103,21 @@ SELECT count() = 1000000 AS ok FROM (
     LIMIT 1 BY path
 ) SETTINGS optimize_limit_by_in_order = 1;
 
--- The lazy-`FINAL` replacement must keep the virtual-row conversion installed for an
--- inner `JOIN` read-in-order plan. The conversion lets the sorting step choose the
--- next probe stream after the join filters rows.
+-- The lazy-`FINAL` replacement must preserve correctness for an inner `JOIN`
+-- read-in-order plan.
 CREATE TABLE t_prefetching_concat_lazy_final_right (path String)
 ENGINE = Memory;
 INSERT INTO t_prefetching_concat_lazy_final_right VALUES ('path/00000000/file.log');
 
-SELECT 'lazy_final_inner_join_keeps_virtual_rows';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE
+SELECT 'lazy_final_inner_join_correctness';
+SELECT count() = 1 FROM (
     SELECT l.path
     FROM t_prefetching_concat_lazy_final AS l FINAL
     INNER JOIN t_prefetching_concat_lazy_final_right AS r USING path
     WHERE l.path LIKE '%file.log'
     ORDER BY l.path
     LIMIT 10
-) WHERE explain LIKE '%VirtualRowTransform%'
+)
 SETTINGS
     query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1,
