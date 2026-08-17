@@ -44,13 +44,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString http_client;
-    extern const S3AuthSettingsString service_account;
-    extern const S3AuthSettingsString metadata_service;
-    extern const S3AuthSettingsString request_token_path;
-    extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -326,13 +319,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
             s3_settings->auth_settings[S3AuthSetting::external_id] = "";
-            s3_settings->auth_settings[S3AuthSetting::http_client] = "";
-            s3_settings->auth_settings[S3AuthSetting::service_account] = "";
-            s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
-            s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
-            s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            s3_settings->auth_settings.clearServerManagedGcpOAuth();
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
