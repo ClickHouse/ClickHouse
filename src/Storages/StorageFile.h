@@ -136,6 +136,7 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
+    size_t getMaxReadStreams(size_t num_streams) const override;
 
     bool supportsPartitionBy() const override { return true; }
 
