@@ -313,7 +313,7 @@ Float64 getMaxDecayDistance(const String & name, const Settings * settings, Floa
         return std::numeric_limits<Float64>::infinity();
 
     const Float64 calculation_budget
-        = (*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget];
+        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget]);
     if (!std::isfinite(calculation_budget) || calculation_budget < 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
