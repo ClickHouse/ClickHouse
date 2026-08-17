@@ -1489,17 +1489,17 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
         String explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        if (table_uuid.has_value())
-        {
-            if (normalizeUuid(explicit_table_uuid) != table_uuid.value())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Explicit table UUID '{}' doesn't match the one from table properties '{}'",
-                    normalizeUuid(explicit_table_uuid),
-                    table_uuid.value());
-            }
-        }
+        /// NOTE: `table_uuid` here is `PersistentTableComponents::table_uuid`, i.e. the UUID
+        ///       observed when this `IcebergMetadata` object was first opened. It is never
+        ///       refreshed on a reused object: `IcebergMetadata::supportsUpdate` returns true
+        ///       and Iceberg does not override `IDataLakeMetadata::update`, so
+        ///       `DataLakeConfiguration::update` returns early without rebuilding the
+        ///       persistent components. Rejecting the query by comparing against it would
+        ///       therefore reject a *correct* `iceberg_metadata_table_uuid` whenever an
+        ///       external writer replaced the table at this path with a new `table-uuid`.
+        ///       `getLatestMetadataFileAndVersion` below filters `metadata/` by `table-uuid`
+        ///       against the files actually on storage, which is authoritative and current,
+        ///       so the mismatch is diagnosed there instead of from stale open-time state.
         LOG_TEST(
             log,
             "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
