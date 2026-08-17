@@ -3,12 +3,6 @@
 # On x86-64, the build target is specified as a microarchitecture level (1, 2, 3, 4) via `X86_ARCH_LEVEL`.
 # All of this is unrelated to the instruction set of the host machine
 # (you can compile for a newer instruction set on old machines and vice versa).
-#
-# The one exception is the best-effort preflight check in the `ARCH_AMD64` branch below. It is not part of target selection: it fails
-# early on a *native* x86 build whose host cannot execute the build-time tools (`llvm-tablegen`, `protoc`, ...) that are themselves
-# compiled with the requested flags. Cross-compilation is never affected by it, so targeting a newer level from an older machine stays
-# possible that way. There is deliberately no such check on AArch64 - the target profile there is selected purely from
-# `NO_ARMV81_OR_HIGHER`.
 
 set(RUSTFLAGS_CPU)
 if (ARCH_AARCH64)
@@ -23,11 +17,6 @@ if (ARCH_AARCH64)
     if (NO_ARMV81_OR_HIGHER)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
-        #
-        # NEON (Advanced SIMD) is part of the AArch64 baseline and stays enabled (it is on by default in `-march=armv8-a` for both the C++
-        # compiler and the `aarch64-unknown-linux-gnu` Rust target). It must NOT be disabled: the `ring` crate (pulled in by `chdig` and
-        # `delta-kernel-rs`) statically asserts that NEON is available on little-endian aarch64 and fails to compile otherwise. Disabling it
-        # was the cause of https://github.com/ClickHouse/ClickHouse/issues/107399.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc")
     else ()
@@ -49,10 +38,6 @@ if (ARCH_AARCH64)
         # rcpc:    Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
         #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton >=2, Azure and GCP instances.
         # bf16:    Bfloat16, a half-precision floating point format developed by Google Brain. Optional in v8.2, mandatory in v8.6.
-        #
-        # Note: a CPU that is advertised as ARMv8.2-A but lacks one of these optional features (e.g. the HiSilicon Kunpeng 920, which has no
-        # rcpc and would dump SIGILL on the `ldapr` instruction) cannot run this profile and must be built with -DNO_ARMV81_OR_HIGHER=1.
-        #
         # [1]  https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2]  https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
         # [3]  https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
@@ -94,9 +79,7 @@ elseif (ARCH_AMD64)
     endif ()
 
     # Best-effort check: verify that the build host supports the requested microarchitecture level. Build-time tools
-    # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise. This does not
-    # influence the selected target - it only rejects a *native* build that could not complete anyway. The host-arch
-    # condition below excludes cross-compilation, which can target any level regardless of the host.
+    # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
         # Test for a representative flag at each level. We intentionally keep this simple - no real CPU has avx2 without
         # fma/bmi2, so checking the headline flag is enough while avoiding false positives from /proc/cpuinfo quirks
@@ -121,10 +104,8 @@ elseif (ARCH_AMD64)
         endif ()
     endif ()
 
-    # Target selection assumes nothing about the host: we only assume that the compiler can emit certain SIMD instructions, we don't care
-    # if the host system is able to run the resulting binary. ClickHouse can therefore be cross-compiled for any level (e.g. on an ARM host
-    # for x86-64-v4). Building for a higher level *natively* on an older x86 host is the single case the preflight check above rejects, and
-    # it does so because the build itself - not the resulting binary - would fail when it runs the tools it just compiled.
+    # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
+    # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
 
     if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=x86-64-v${X86_ARCH_LEVEL}")
