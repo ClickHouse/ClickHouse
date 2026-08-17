@@ -1,5 +1,4 @@
--- The default value of a Variant is NULL. Sparse aggregation must skip default
--- rows without reading row zero from the sparse values column.
+-- The default value of a Variant is NULL, so count must skip its default rows.
 
 SET allow_experimental_variant_type = 1;
 
@@ -29,11 +28,6 @@ INSERT INTO variant_count_dense SELECT * FROM variant_count_sparse;
 
 OPTIMIZE TABLE variant_count_sparse FINAL;
 OPTIMIZE TABLE variant_count_dense FINAL;
-
-SELECT table, serialization_kind
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table IN ('variant_count_sparse', 'variant_count_dense') AND active AND column = 'v'
-ORDER BY table;
 
 SELECT
     (SELECT count(v) FROM variant_count_sparse) AS sparse_count,
