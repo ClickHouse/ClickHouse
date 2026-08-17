@@ -33,6 +33,12 @@ bool isConstCountOnlyChunk(const Chunk & chunk, const ChunkInfoRowNumbers & chun
 
 void transformConstCountOnlyChunk(Chunk & chunk, ChunkInfoRowNumbers & chunk_info, const DataLakeObjectMetadata::ExcludedRows & excluded_rows)
 {
+    /// Const need_only_count chunks have no prior applied_filter (`isConstCountOnlyChunk`).
+    /// Iceberg does not attach parquet position deletes when a DV is present, and equality deletes
+    /// disable need_only_count — so no later row-number consumer follows this path today. Keep the
+    /// cheap cardinality + cloneResized path (no Filter / rb_range materialization).
+    chassert(!chunk_info.applied_filter.has_value());
+
     const size_t num_rows_before = chunk.getNumRows();
     size_t range_end = 0;
     if (common::addOverflow(chunk_info.row_num_offset, num_rows_before, range_end))
@@ -63,41 +69,6 @@ void transformConstCountOnlyChunk(Chunk & chunk, ChunkInfoRowNumbers & chunk_inf
     for (auto & column : columns)
         column = column->cloneResized(num_rows_after);
 
-    /// Same invariant as the dense path: after shrinking, `applied_filter` maps dense indices back
-    /// to file rows (`row_num_offset` + index of the i-th set bit). Without this, a later
-    /// row-number consumer (e.g. another `DeletionVectorTransform` from parquet position deletes)
-    /// would treat the shrunk const chunk as consecutive file rows `[offset, offset + num_rows)`.
-    IColumn::Filter filter(num_rows_before, 1);
-    DataLakeObjectMetadata::ExcludedRows deleted_in_range;
-    const UInt64 ranged = excluded_rows.rb_range(chunk_info.row_num_offset, range_end, deleted_in_range);
-    if (ranged != deleted)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Deletion vector range cardinality {} disagrees with rb_range size {} (offset {} num_rows {})",
-            deleted,
-            ranged,
-            chunk_info.row_num_offset,
-            num_rows_before);
-    }
-
-    PaddedPODArray<size_t> deleted_positions;
-    deleted_in_range.rb_to_array(deleted_positions);
-    for (size_t position : deleted_positions)
-    {
-        if (position < chunk_info.row_num_offset || position >= range_end)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Deletion vector position {} outside count range [{}, {})",
-                position,
-                chunk_info.row_num_offset,
-                range_end);
-        }
-        filter[position - chunk_info.row_num_offset] = 0;
-    }
-
-    chunk_info.applied_filter.emplace(std::move(filter));
     chunk.setColumns(std::move(columns), num_rows_after);
 }
 
