@@ -79,9 +79,9 @@ DIFF_OUTCOME_MARKER_FILE = "diff_outcome.txt"
 class DiffOutcome:
     """The mutually exclusive outcomes of generate_diff_coverage_report.sh.
 
-    REPORT_GENERATED..CURRENT_COVERAGE_EMPTY are the script's own exit-0 states,
-    reported by its marker file. FAILED and UNKNOWN are derived here: the script
-    dies under `set -euo pipefail` before naming an outcome.
+    SCRIPT_REPORTED holds the states the script names in its marker file. FAILED
+    and UNKNOWN carry no marker: the script exited non-zero, or exited 0 without
+    naming a state.
     """
 
     REPORT_GENERATED = "report_generated"
@@ -111,21 +111,28 @@ def read_diff_outcome_marker(temp_dir: str) -> str:
 def classify_diff_outcome(script_ok: bool, marker: str, report_ready: bool) -> str:
     """Which of the six outcomes the diff step had.
 
-    Exit status alone decides failure. A report is claimed only by a successful
-    run's marker, or by a complete report directory so that a script predating
-    the marker still reports one.
+    Exit status alone decides failure. This run's marker wins over `report_ready`,
+    which is consulted only when there is no marker at all, so that a script
+    predating the marker still reports a report it did generate.
     """
     if not script_ok:
         return DiffOutcome.FAILED
-    if marker == DiffOutcome.REPORT_GENERATED or report_ready:
-        return DiffOutcome.REPORT_GENERATED
     if marker in DiffOutcome.SCRIPT_REPORTED:
         return marker
+    if report_ready:
+        return DiffOutcome.REPORT_GENERATED
     return DiffOutcome.UNKNOWN
 
 
+# Total over DiffOutcome: each entry completes a "<what did not happen>:
+# <reason>." sentence. The helpers below index it directly, so an outcome missing
+# from here is a crash rather than a silently empty reason.
 _DIFF_OUTCOME_REASON = {
-    DiffOutcome.NO_CPP_CHANGES: "No C/C++ source files changed",
+    DiffOutcome.REPORT_GENERATED: "inconsistent state - the report was generated",
+    DiffOutcome.NO_CPP_CHANGES: (
+        "No coverable C/C++ source files changed"
+        " (contrib/ is excluded from coverage)"
+    ),
     DiffOutcome.NO_COVERAGE_DATA: (
         "No coverage data for the changed C/C++ source files"
         " (they may be new or not instrumented)"

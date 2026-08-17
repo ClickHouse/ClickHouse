@@ -7,6 +7,8 @@ representation of a decimal subtraction cannot push it over the threshold.
 """
 
 import os
+import shutil
+import subprocess
 import sys
 import textwrap
 
@@ -161,15 +163,15 @@ def test_gate_still_fails_the_large_drop():
 
 
 # ---------------------------------------------------------------------------
-# The diff step has four outcomes; the job must report the one that happened.
-#
-# generate_diff_coverage_report.sh exits 0 in three distinct states and dies
-# under `set -euo pipefail` in a fourth. All four leave no report directory, so
-# a job that infers the reason from that directory reports three of them as
-# "No C/C++ source files changed" - false on two states that are green today.
+# The diff step reaches four report-less states, and the job must report the one
+# that happened. generate_diff_coverage_report.sh exits 0 in three of them and
+# dies under `set -euo pipefail` in the fourth; none leaves a report directory,
+# so that directory alone cannot tell them apart.
 # ---------------------------------------------------------------------------
 
-_NO_CPP_CLAIM = "No C/C++ source files changed"
+# Specific to outcome 1. The other reasons also mention "C/C++ source files", so a
+# shorter pin would make every "the claim is absent" arm below vacuous.
+_NO_CPP_CLAIM = "No coverable C/C++ source files changed"
 
 # The marker tokens are the wire format between the script and the job, so they
 # are written literally here rather than imported: a rename must break a test.
@@ -246,12 +248,14 @@ class _DiffResultStub:
         self._ok = True
 
 
-def _outcome(script_ok: bool, marker: str, tmp_path) -> object:
+def _outcome(script_ok: bool, marker: str, tmp_path, report_ready=None) -> object:
     """The job's own verdict on a real-world diff-step state.
 
     Drives the production marker reader and classifier through a real marker
-    file, so the file protocol is under test too. Returns None on a job that has
-    no outcome model yet - its reporting block does not consult one.
+    file, so the file protocol is under test too. `report_ready` is an
+    independent input and must stay passable on its own: tying it to `marker`
+    makes the state where the two contradict unreachable. Returns None on a job
+    that has no outcome model yet - its reporting block does not consult one.
     """
     job = sys.modules["ci.jobs.llvm_coverage_job"]
     classify = getattr(job, "classify_diff_outcome", None)
@@ -259,10 +263,12 @@ def _outcome(script_ok: bool, marker: str, tmp_path) -> object:
         return None
     if marker:
         (tmp_path / "diff_outcome.txt").write_text(marker + "\n", encoding="utf-8")
+    if report_ready is None:
+        report_ready = marker == _MARKER_REPORT
     return classify(
         script_ok=script_ok,
         marker=job.read_diff_outcome_marker(str(tmp_path)),
-        report_ready=(marker == _MARKER_REPORT),
+        report_ready=report_ready,
     )
 
 
@@ -410,3 +416,244 @@ def test_gh_api_calls_name_the_endpoint_they_request():
     src = _script_source()
     assert "Fetching diff: repos/ClickHouse/ClickHouse/compare/" in src
     assert "Fetching changed files: repos/ClickHouse/ClickHouse/compare/" in src
+
+
+def _named_outcomes() -> list:
+    """Every outcome token DiffOutcome names, derived from the class itself."""
+    job = sys.modules["ci.jobs.llvm_coverage_job"]
+    cls = job.DiffOutcome
+    names = [
+        getattr(cls, a)
+        for a in vars(cls)
+        if a.isupper() and isinstance(getattr(cls, a), str)
+    ]
+    assert len(names) >= 6, names
+    return names
+
+
+def test_every_outcome_has_a_reason():
+    # The message helpers index the reason table directly, so an outcome missing
+    # from it kills the job with a KeyError instead of reporting anything.
+    job = sys.modules["ci.jobs.llvm_coverage_job"]
+    for outcome in _named_outcomes():
+        for helper in (
+            job.diff_report_message,
+            job.uncovered_code_message,
+            job.coverage_comment_message,
+        ):
+            assert helper(outcome).strip(), (outcome, helper.__name__)
+
+
+@pytest.mark.parametrize("marker", _EXIT_0_MARKERS)
+def test_this_runs_marker_outranks_a_leftover_report_directory(marker, tmp_path):
+    # A report directory is never removed by either side, so a previous run's can
+    # outlive it. The state this run declared is the one that must be reported.
+    assert _outcome(True, marker, tmp_path, report_ready=True) == marker
+
+
+def test_a_marker_less_script_that_generated_a_report_still_reports_one(tmp_path):
+    assert _outcome(True, "", tmp_path, report_ready=True) == _MARKER_REPORT
+
+
+def test_a_marker_less_script_with_no_report_reports_no_outcome(tmp_path):
+    job = sys.modules["ci.jobs.llvm_coverage_job"]
+    outcome = _outcome(True, "", tmp_path, report_ready=False)
+    assert outcome == job.DiffOutcome.UNKNOWN
+    text = _reported_reasons(script_ok=True, marker="", tmp_path=tmp_path)
+    assert _NO_CPP_CLAIM not in text, text
+    assert "reported no outcome" in text, text
+
+
+def test_a_reported_report_runs_the_diff_branch(tmp_path):
+    assert _outcome(True, _MARKER_REPORT, tmp_path, report_ready=False) == _MARKER_REPORT
+
+
+# ---------------------------------------------------------------------------
+# The marker protocol, driven through the real script.
+#
+# The assertions above read the script as text, which cannot tell whether a
+# branch writes the token belonging to a different branch. These run it with
+# stubbed gh/wget/lcov/genhtml and assert the token each outcome produces.
+# ---------------------------------------------------------------------------
+
+_STUBS = {
+    # `wget --spider` is grepped for '200 OK'; the download must land a file.
+    "wget": """#!/bin/bash
+for a in "$@"; do [ "$a" = "--spider" ] && echo "200 OK" && exit 0; done
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "-O" ] && out="$a"; prev="$a"; done
+[ -n "$out" ] && echo "TN:" > "$out"
+exit 0
+""",
+    # STUB_GH_RC drives the 404 case; STUB_CHANGED_FILES the changed-file list.
+    "gh": """#!/bin/bash
+if [ "${STUB_GH_RC:-0}" != "0" ]; then
+  echo "gh: Not Found (HTTP 404)" >&2
+  exit "$STUB_GH_RC"
+fi
+case "$*" in
+  *--jq*) printf '%s\\n' ${STUB_CHANGED_FILES} ;;
+  *) echo "diff --git a/x b/x" ;;
+esac
+exit 0
+""",
+    # Writes -o with or without an SF: record, per side.
+    "lcov": """#!/bin/bash
+src=""; out=""; prev=""
+for a in "$@"; do
+  [ "$prev" = "--extract" ] && src="$a"
+  [ "$prev" = "-o" ] && out="$a"
+  prev="$a"
+done
+want=SF
+case "$src" in
+  llvm_coverage.info) [ "${STUB_CURRENT_SF:-1}" = "1" ] || want="" ;;
+  *) [ "${STUB_BASELINE_SF:-1}" = "1" ] || want="" ;;
+esac
+: > "$out"
+[ -n "$want" ] && printf 'SF:/src/Foo.cpp\\nDA:1,1\\nend_of_record\\n' > "$out"
+exit 0
+""",
+    "genhtml": """#!/bin/bash
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "--output-directory" ] && out="$a"; prev="$a"; done
+mkdir -p "$out" && echo "<html></html>" > "$out/index.html"
+exit 0
+""",
+}
+
+
+def _run_diff_script(tmp_path, changed_files: str, **stub_env):
+    """Run the real diff script in a sandbox. Returns (rc, marker, report, log)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True)
+    for name, body in _STUBS.items():
+        stub = bin_dir / name
+        stub.write_text(body, encoding="utf-8")
+        stub.chmod(0o755)
+
+    workspace = tmp_path / "ws"
+    ci_tmp = workspace / "ci" / "tmp"
+    ci_tmp.mkdir(parents=True)
+    (ci_tmp / "llvm_coverage.info").write_text("TN:\n", encoding="utf-8")
+    # Every case starts from a stale marker, so a branch that writes none is
+    # distinguishable from one that leaves a previous run's token behind.
+    (ci_tmp / "diff_outcome.txt").write_text(_MARKER_REPORT + "\n", encoding="utf-8")
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "PREV_30_COMMITS": "aaa,bbb",
+            "CURRENT_COMMIT": "bbb",
+            "BASE_COMMIT": "aaa",
+            "BRANCH": "topic",
+            "BASE_BRANCH": "master",
+            "WORKSPACE_PATH": str(workspace),
+            "PR_NUMBER": "",
+            "REPO_NAME": "ClickHouse",
+            "STUB_CHANGED_FILES": changed_files,
+        }
+    )
+    env.update({k: str(v) for k, v in stub_env.items()})
+
+    proc = subprocess.run(
+        ["bash", os.path.abspath(_DIFF_SCRIPT)],
+        cwd=str(workspace),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    marker_file = ci_tmp / "diff_outcome.txt"
+    marker = (
+        marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
+    )
+    report = (ci_tmp / "llvm_coverage_diff_html_report" / "index.html").exists()
+    return proc.returncode, marker, report, proc.stdout + proc.stderr
+
+
+def _stubs_are_executable(tmp_path) -> bool:
+    """Whether a stub written here can be run, e.g. not a noexec mount."""
+    probe = tmp_path / "probe.sh"
+    probe.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+    probe.chmod(0o755)
+    try:
+        return subprocess.run([str(probe)], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+@pytest.fixture(scope="module")
+def _script_runs(tmp_path_factory):
+    if not shutil.which("bash"):
+        pytest.skip("bash is required to drive the diff script")
+    root = tmp_path_factory.mktemp("diffscript")
+    if not _stubs_are_executable(root):
+        pytest.skip("cannot execute a stub from the temporary directory")
+    cases = {
+        "no_cpp": ("docs/readme.md ci/foo.py", {}),
+        "no_data": ("src/Foo.cpp", {"STUB_CURRENT_SF": 0, "STUB_BASELINE_SF": 0}),
+        "empty": ("src/Foo.cpp", {"STUB_CURRENT_SF": 0, "STUB_BASELINE_SF": 1}),
+        "gh_404": ("src/Foo.cpp", {"STUB_GH_RC": 1}),
+        "report": ("src/Foo.cpp", {}),
+    }
+    return {
+        name: _run_diff_script(root / name, files, **env)
+        for name, (files, env) in cases.items()
+    }
+
+
+@pytest.mark.parametrize(
+    "case,marker",
+    [
+        ("no_cpp", _MARKER_NO_CPP),
+        ("no_data", _MARKER_NO_DATA),
+        ("empty", _MARKER_EMPTY),
+        ("report", _MARKER_REPORT),
+    ],
+)
+def test_the_script_writes_the_marker_belonging_to_its_outcome(
+    case, marker, _script_runs
+):
+    rc, written, _, log = _script_runs[case]
+    assert rc == 0, log
+    assert written == marker, log
+
+
+def test_the_script_generates_a_report_only_in_the_report_outcome(_script_runs):
+    for case, (_, _, report, log) in _script_runs.items():
+        assert report is (case == "report"), (case, log)
+
+
+def test_a_failing_gh_api_leaves_no_marker_and_names_its_endpoint(_script_runs):
+    rc, marker, _, log = _script_runs["gh_404"]
+    assert rc != 0, log
+    # The stale marker must not be readable as this run's outcome.
+    assert marker == "", log
+    assert "Fetching diff: repos/ClickHouse/ClickHouse/compare/aaa...bbb" in log, log
+    # gh's own stderr has to survive to the log for Shell.run's classification.
+    assert "gh: Not Found (HTTP 404)" in log, log
+
+
+def test_the_job_classifies_every_real_script_run(_script_runs, tmp_path):
+    # Closes the loop: the tokens the script actually writes are the ones the
+    # job's classifier accepts.
+    job = sys.modules["ci.jobs.llvm_coverage_job"]
+    expected = {
+        "no_cpp": _MARKER_NO_CPP,
+        "no_data": _MARKER_NO_DATA,
+        "empty": _MARKER_EMPTY,
+        "report": _MARKER_REPORT,
+        "gh_404": job.DiffOutcome.FAILED,
+    }
+    for case, (rc, marker, report, log) in _script_runs.items():
+        case_dir = tmp_path / case
+        case_dir.mkdir()
+        if marker:
+            (case_dir / "diff_outcome.txt").write_text(marker, encoding="utf-8")
+        outcome = job.classify_diff_outcome(
+            script_ok=(rc == 0),
+            marker=job.read_diff_outcome_marker(str(case_dir)),
+            report_ready=report,
+        )
+        assert outcome == expected[case], (case, log)
