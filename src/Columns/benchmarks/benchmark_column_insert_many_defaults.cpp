@@ -24,8 +24,12 @@ static void BM_insertManyDefaults(benchmark::State & state)
         state.ResumeTiming();
 
         column->insertManyDefaults(length);
+        benchmark::DoNotOptimize(column->size());
+
+        state.PauseTiming();
         allocated_bytes = column->allocatedBytes();
-        benchmark::DoNotOptimize(column);
+        column.reset();
+        state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
@@ -47,8 +51,12 @@ static void BM_insertManyDefaultsOneByOne(benchmark::State & state)
 
         for (size_t i = 0; i < length; ++i)
             column->insertManyDefaults(1);
+        benchmark::DoNotOptimize(column->size());
+
+        state.PauseTiming();
         allocated_bytes = column->allocatedBytes();
-        benchmark::DoNotOptimize(column);
+        column.reset();
+        state.ResumeTiming();
     }
 
     state.SetItemsProcessed(state.iterations() * length);
