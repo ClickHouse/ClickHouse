@@ -80,9 +80,7 @@ public:
         const std::filesystem::path & keeper_path_,
         const String & replica_name_,
         size_t idx_,
-        const LoggerPtr & log_,
-        UInt64 partition_shard_num_ = 0,
-        UInt64 shard_count_ = 0);
+        const LoggerPtr & log_);
 
     /// It is important that the consumer is using the same Keeper session as the storage to make sure all ephemeral
     /// nodes are handled at the same time, e.g.: if a replica is deactivated because of session loss, all of its
@@ -154,10 +152,6 @@ private:
     const String replica_name;
     size_t idx;
 
-    /// Partition affinity settings (enabled when shard_count > 0)
-    UInt64 partition_shard_num = 0;
-    UInt64 shard_count = 0;
-
     KafkaConsumer2Ptr kafka_consumer;
     zkutil::ZooKeeperPtr keeper;
     size_t topic_partition_index_to_consume_from{0};
@@ -183,7 +177,6 @@ private:
 
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
-    ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
     std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 

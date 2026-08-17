@@ -41,35 +41,32 @@ struct Test
             Store store;
 
             for (size_t i = 0; i < bucket_count; ++i)
-                store.set(i, Generator::execute(i, width));
-
-            for (size_t i = 0; i < bucket_count; ++i)
-            {
-                if (store.get(i) != Generator::execute(i, width))
-                    throw std::runtime_error("Stored value differs from the generated one");
-            }
+                store[i] = Generator::execute(i, width);
 
             filename = createTmpPath("compact_array.bin");
 
             {
                 DB::WriteBufferFromFile wb(filename);
-                auto state = store.getSerializableState();
-                wb.write(reinterpret_cast<const char *>(state.data()), state.size());
+                wb.write(reinterpret_cast<const char *>(&store), sizeof(store));
                 wb.close();
             }
 
             {
                 DB::ReadBufferFromFile rb(filename);
-                Store restored_store;
-                auto state = restored_store.getSerializableState();
-                rb.readStrict(reinterpret_cast<char *>(state.data()), state.size());
-
-                for (size_t i = 0; i < bucket_count; ++i)
+                typename Store::Reader reader(rb);
+                while (reader.next())
                 {
-                    if (restored_store[i] != store[i])
+                    const auto & data = reader.get();
+                    if (data.second != store[data.first])
                         throw std::runtime_error("Found discrepancy");
                 }
             }
+        }
+        catch (const Poco::Exception & ex)
+        {
+            std::cout << "Test width=" << width << " bucket_count=" << bucket_count << " failed "
+                << "(Error: " << ex.what() << ": " << ex.displayText() << ")\n";
+            ok = false;
         }
         catch (const std::runtime_error & ex)
         {

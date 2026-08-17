@@ -28,13 +28,8 @@ public:
 
     static constexpr EventId not_postponed = 0;
 
-    /// A monotonic clock is used to schedule and measure time intervals (postponed events, throttling).
-    /// std::chrono::system_clock (wall clock) must NOT be used here: it can jump backward or forward
-    /// (NTP adjustments, manual time changes), which would make postponed events fire too early or be
-    /// delayed arbitrarily. std::chrono::steady_clock is guaranteed to never go backward.
-    using Clock = std::chrono::steady_clock;
-    using TimePoint = Clock::time_point;
-    using Duration = Clock::duration;
+    using TimePoint = std::chrono::system_clock::time_point;
+    using Duration = std::chrono::system_clock::duration;
 
     struct Event
     {
@@ -130,8 +125,7 @@ private:
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 
     /// Thread-local pointer to the EventQueue attached to the current scheduler thread.
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static thread_local EventQueue * current_thread_queue;
+    static inline thread_local EventQueue * current_thread_queue = nullptr;
     std::atomic<bool> stopped{false};
 
 public:

@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/setThreadName.h>
-#include <Common/PerCPUMemory.h>
 
 #include <Poco/Logger.h>
 
@@ -28,7 +27,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if !defined(SANITIZER)
 namespace
 {
 
@@ -91,11 +90,6 @@ struct ThreadStack
     {
         auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
-        /// aligned_alloc() requires size to be a multiple of alignment, but MINSIGSTKSZ on
-        /// glibc >= 2.34 is a runtime sysconf(_SC_SIGSTKSZ) value that may not be page-aligned.
-        /// Not the case for official builds: they use the static MINSIGSTKSZ from the bundled sysroot.
-        size = ::Memory::alignUp(size, getPageSize());
-
         if constexpr (guardPagesEnabled())
             size += getPageSize();
 
@@ -122,9 +116,6 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
-    /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
-    /// to a group still honors total_memory_tracker_sample_probability.
-    resolveMemorySampleConfig();
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -135,8 +126,7 @@ ThreadStatus::ThreadStatus()
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-    /// A target without signal delivery (`OS_HAS_SIGNAL_HANDLERS` undefined) has nothing for the alternative stack to serve.
-#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
+#if !defined(SANITIZER)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
@@ -251,15 +241,12 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
-    per_cpu_memory.release(per_cpu_untracked_memory);
-
-    Int64 current_untracked_memory = untracked_memory.load();
-    if (current_untracked_memory == 0)
+    if (untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    untracked_memory.store(0);
+    Int64 current_untracked_memory = untracked_memory;
+    untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
@@ -271,15 +258,6 @@ bool ThreadStatus::isQueryCanceled() const
     if (local_data.query_is_canceled_predicate)
         return local_data.query_is_canceled_predicate();
     return false;
-}
-
-void ThreadStatus::throwIfQueryCanceled() const
-{
-    if (!thread_group)
-        return;
-
-    if (local_data.throw_if_query_canceled_predicate)
-        local_data.throw_if_query_canceled_predicate();
 }
 
 size_t ThreadStatus::getNextPlanStepIndex() const

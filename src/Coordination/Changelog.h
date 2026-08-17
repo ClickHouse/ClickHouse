@@ -144,7 +144,6 @@ struct LogFileSettings
 struct FlushSettings
 {
     uint64_t max_flush_batch_size = 1000;
-    uint64_t min_time_between_fsyncs_ms = 5;
 };
 
 struct LogLocation

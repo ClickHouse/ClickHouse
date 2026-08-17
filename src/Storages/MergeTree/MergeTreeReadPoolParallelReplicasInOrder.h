@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
@@ -34,16 +32,7 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
-    CoordinationMode getCoordinationMode() const { return mode; }
-    size_t getMinMarksPerRequest() const { return min_marks_per_request; }
-
 private:
-    /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
-    /// when the buffer has nothing for the part). Returns nullopt if there is no more work.
-    /// Outputs the warmup task size as it was before the cut, so that the caller can restore it
-    /// when the whole cut is dropped by the ranges refiner.
-    std::optional<MarkRanges> cutRangesToRead(size_t task_idx, MergeTreeReadTask * previous_task, size_t & marks_in_range_before_cut);
-
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
@@ -58,7 +47,6 @@ private:
     const bool has_soft_limit_below_one_block;
 
     size_t min_marks_per_task{0};
-    size_t min_marks_per_request{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;

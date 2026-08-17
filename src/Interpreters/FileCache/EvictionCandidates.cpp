@@ -92,16 +92,12 @@ void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
-    /// Take the pins before moving the entries: if `addImpl` throws mid-loop,
-    /// already-moved entries must not outlive the pins they rely on.
-    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
         addImpl(queue_id, std::move(info_), /* replace_if_exists */false);
 }
 
 void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
 {
-    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
         addImpl(queue_id, std::move(info_), /* replace_if_exists */true);
 }
@@ -301,18 +297,15 @@ void EvictionCandidates::evict()
                 const auto segment = candidate->file_segment;
 
                 IFileCachePriority::IteratorPtr iterator;
-                if (removed_queue_entries)
-                {
-                    /// Affects only dynamic cache resize.
-                    fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
-                        throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
-                    });
-                }
-                else
+                if (!removed_queue_entries)
                 {
                     iterator = segment->getQueueIterator();
                     chassert(iterator);
                 }
+
+                fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
+                });
 
                 locked_key->removeFileSegment(
                     segment->offset(), segment->lock(),
@@ -345,7 +338,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
+                        on_evict_callback(*segment);
                     }
                     catch (...)
                     {
@@ -379,9 +372,9 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    for (auto & func : after_evict_write_callbacks)
+    for (auto & func : after_evict_write_funcs)
         func(lock);
-    after_evict_write_callbacks.clear();
+    after_evict_write_funcs.clear();
 }
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
@@ -400,9 +393,9 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
         queue_entries_to_invalidate.pop_back();
     }
 
-    for (auto & func : after_evict_state_callbacks)
+    for (auto & func : after_evict_state_funcs)
         func(lock);
-    after_evict_state_callbacks.clear();
+    after_evict_state_funcs.clear();
 }
 
 }

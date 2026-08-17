@@ -30,8 +30,11 @@ NATSJetStreamConsumer::NATSJetStreamConsumer(
 {
 }
 
-void NATSJetStreamConsumer::subscribeImpl()
+void NATSJetStreamConsumer::subscribe()
 {
+    if (isSubscribed())
+        return;
+
     auto er = jsOptions_Init(&jet_stream_options);
     if (er != NATS_OK)
         throw Exception(
@@ -54,7 +57,6 @@ void NATSJetStreamConsumer::subscribeImpl()
 
     subscribe_options.Stream = stream_name.c_str();
     subscribe_options.Consumer = consumer_name.c_str();
-    subscribe_options.ManualAck = true;
 
     if (!getQueueName().empty())
         subscribe_options.Queue = getQueueName().c_str();

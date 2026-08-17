@@ -20,7 +20,7 @@ static int readAndPrint(DB::ReadBuffer & in)
         DB::readIntText(a, in);
         in.ignore();
 
-        DB::readFloatTextPrecise(b, in);
+        DB::readFloatText(b, in);
         in.ignore();
 
         DB::readEscapedString(c, in);

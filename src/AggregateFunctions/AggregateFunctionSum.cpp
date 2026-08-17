@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -64,8 +63,8 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
-                        argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        argument_types[0]->getName(), name);
     return res;
 }
 

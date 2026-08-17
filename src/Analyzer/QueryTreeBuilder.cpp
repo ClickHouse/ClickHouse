@@ -1,4 +1,3 @@
-#include <Interpreters/applyColumnsTransformer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
 #include <unordered_set>
@@ -293,12 +292,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
-        /// The parser accepts `SETTINGS name` without a value for any setting - it does not know the
-        /// settings schema - so the shorthand has to be rejected here, against the schema, before
-        /// `limit` and `offset` are peeled out and read as UInt64. For a nested subquery this is the
-        /// first place the inner `SETTINGS` clause is seen, so nothing has checked it yet.
-        updated_context->getSettingsRef().checkShorthandChanges(set_query.changes);
-
         /// Remove expression settings limit and offset
         if (auto * limit_field = set_query.changes.tryGet("limit"))
         {
@@ -344,7 +337,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto current_context = current_query_tree->getContext();
 
-    current_query_tree->getJoinTreeNode() = buildJoinTree(is_subquery, select_query_typed, current_context);
+    current_query_tree->getJoinTree() = buildJoinTree(is_subquery, select_query_typed, current_context);
 
     auto select_with_list = select_query_typed.with();
     if (select_with_list)
@@ -706,6 +699,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
 
+            auto lambda_arguments_nodes = std::make_shared<ListNode>();
             Names lambda_arguments;
             NameSet lambda_arguments_set;
 
@@ -739,12 +733,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 }
             }
 
-            auto lambda_arguments_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_arguments));
-
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments_node), std::move(lambda_expression_node), function->isOperator());
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
         }
         else
         {
@@ -971,7 +963,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<StreamSettings> stream_settings;
+                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -987,10 +979,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression.stream_settings)
                 {
+                    stream_settings = TableExpressionModifiers::StreamSettings{};
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    stream_settings = StreamSettings{};
-                    stream_settings->cursor = ast_stream_settings.cursor;
-                    stream_settings->watermark = ast_stream_settings.watermark;
+                    if (ast_stream_settings.settings.cursor_tree.has_value())
+                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
@@ -1259,7 +1251,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
         }
         else if (auto * except_transformer = child->as<ASTColumnsExceptTransformer>())
         {
-            auto matcher = getColumnsExceptMatcher(*except_transformer);
+            auto matcher = except_transformer->getMatcher();
             if (matcher)
             {
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(matcher)));
@@ -1333,22 +1325,7 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     auto function_node = std::make_shared<FunctionNode>(function->name);
     function_node->setNullsAction(function->getNullsAction());
 
-    /// Keep existing parameters (the optional limit)
-    ///  the second argument overrides the delimiter at slot 0
-    auto & parameters = function_node->getParameters().getNodes();
-    if (function->parameters)
-    {
-        const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
-        for (const auto & parameter : function_parameters_list)
-            parameters.push_back(buildExpression(parameter, context));
-    }
-
-    auto delimiter_node = buildExpression(function->arguments->children[1], context); // Separator
-    if (parameters.empty())
-        parameters.push_back(std::move(delimiter_node));
-    else
-        parameters[0] = std::move(delimiter_node);
-
+    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
     function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
     if (function->isWindowFunction())

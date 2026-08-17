@@ -110,12 +110,7 @@ export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
 
-# The default keeper-client timeouts are 10s each. Under heavy sanitizer builds
-# (msan/asan) the keeper handshake or a response can legitimately take longer,
-# which makes keeper-client tests flake with a client-side
-# "Nothing is received in session timeout of 10000 ms" (KEEPER_EXCEPTION).
-# Raise the timeouts so the client waits out a slow-but-alive server.
-KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER --connection-timeout 60 --session-timeout 60 --operation-timeout 60"
+KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER"
 
 if [ -n "$CLICKHOUSE_KEEPER_IDENTITY" ] && [ "$CLICKHOUSE_KEEPER_IDENTITY" != "" ]
 then
@@ -259,10 +254,7 @@ function with_lock()
 
 # BASH_XTRACEFD is supported only since 4.1
 if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
-    # Append, not truncate: an expect test spawns bash several times and each spawn sources this
-    # file, so truncating here would keep only the last spawn's trace. clickhouse-test removes the
-    # file once before starting the test, and this redirection re-creates it.
-    exec 3>>"$CLICKHOUSE_BASH_TRACING_FILE"
+    exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3
     #

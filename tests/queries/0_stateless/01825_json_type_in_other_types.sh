@@ -7,17 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_nested"
 
-# The test prints whole `Map` values, whose key order `with_buckets` serialization does not
-# preserve (keys are reassembled in hash-bucket order). Pin the serialization, which CI randomizes.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_json_nested
     (
         id UInt32,
         data Tuple(String, Map(String, Array(JSON)), JSON)
     )
-    ENGINE = MergeTree ORDER BY id
-    SETTINGS map_serialization_version = 'basic',
-             map_serialization_version_for_zero_level_parts = 'basic'" --enable_json_type 1
+    ENGINE = MergeTree ORDER BY id" --enable_json_type 1
 
 cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_nested FORMAT JSONEachRow"
 {

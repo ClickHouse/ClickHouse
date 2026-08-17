@@ -21,7 +21,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatFactory.h>
 #include <optional>
 #include <memory>
 #include <string>
@@ -37,6 +36,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 
@@ -342,17 +342,12 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        /// When the storage carries no format settings (table functions pass none),
-        /// derive them from the context. Substituting FormatSettings{} here (struct
-        /// defaults, e.g. `output_string_as_string = false`) made table-function
-        /// writes produce parquet without the `String` annotation, unreadable for
-        /// external Iceberg readers such as Spark.
         return current_metadata->write(
             sample_block,
             table_id,
             object_storage,
             shared_from_this(),
-            format_settings.has_value() ? *format_settings : getFormatSettings(context),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
             context,
             catalog);
     }
@@ -420,10 +415,9 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            const auto & table_path = this->getPathForRead().path;
-            if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
+            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
                 throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
+                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
     }
 

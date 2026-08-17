@@ -13,7 +13,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
-#include <Poco/Net/IPAddress.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -52,7 +51,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
-    extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
 namespace ErrorCodes
@@ -65,7 +63,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeForModel(std::string_view input)
+String sanitizeTextForAI(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -77,17 +75,6 @@ String sanitizeForModel(std::string_view input)
             output.push_back(static_cast<char>(ch));
     }
     return output;
-}
-
-/// Whether an endpoint host refers to the local machine.
-bool isLoopbackHost(const String & host)
-{
-    if (host == "localhost")
-        return true;
-    Poco::Net::IPAddress address;
-    if (Poco::Net::IPAddress::tryParse(host, address))
-        return address.isLoopback();
-    return false;
 }
 
 /// Providers serialize integer fields (`max_tokens`, `dimensions`) as `Int64` (Poco JSON has no
@@ -275,19 +262,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    const Poco::URI endpoint_uri(params.collection.endpoint);
-    context->getRemoteHostFilter().checkURL(endpoint_uri);
-
-    /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
-    /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
-    if (endpoint_uri.getScheme() != "https"
-        && !isLoopbackHost(endpoint_uri.getHost())
-        && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
-            "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
-            "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
-            credentials, params.collection.endpoint);
+    context->getRemoteHostFilter().checkURL(Poco::URI(params.collection.endpoint));
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -326,15 +301,16 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
-bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
 {
+    /// Catch order matters: more derived exception types must come first.
     try
     {
-        std::rethrow_exception(exception);
+        std::rethrow_exception(eptr);
     }
-    catch (const AIProviderHTTPException & exception)
+    catch (const AIProviderHTTPException & e)
     {
-        return isRetriableHTTPError(exception.getHTTPStatus());
+        return isRetriableHTTPError(e.getHTTPStatus());
     }
     catch (const NetException &)
     {
@@ -351,16 +327,16 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
         /// Connect or receive timeout.
         return true;
     }
-    catch (const Poco::IOException & exception)
+    catch (const Poco::IOException & e)
     {
         /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
         /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
-        return exception.code() != POCO_EMFILE;
+        return e.code() != POCO_EMFILE;
     }
     catch (...)
     {
-        /// Ok: any other exception is a deterministic and non-retrieable error, e.g. a malformed
-        /// provider response, bad configuration, JSON parse failure, etc.
+        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
+        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
         return false;
     }
 }
@@ -377,7 +353,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
-    String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
@@ -434,14 +410,15 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
+        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
         String result;
         bool success = false;
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+            /// Enforce the API-call quota before every provider request, including retries, so a flaky
+            /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
             if (quota.checkQuotas())
                 break;
 
@@ -472,6 +449,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             }
             catch (...)
             {
+                /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                /// `url` table function does; deterministic errors are surfaced immediately.
                 if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));

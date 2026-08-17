@@ -20,11 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsTimezone session_timezone;
-}
-
 namespace
 {
 
@@ -77,20 +72,12 @@ namespace
 
 
     /// Returns timezone for current session.
-    /// When session_timezone is explicitly set it is propagated to every remote shard as
-    /// a query setting, so the value is query-wide constant and can always be folded.
-    /// When session_timezone is empty the effective timezone falls back to the server's
-    /// local timezone, which may differ per shard — preserve per-shard evaluation then.
     class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context)
-            : FunctionServerConstantBase(
-                DateLUT::instance().getTimeZone(),
-                context->isDistributed() && context->getSettingsRef()[Setting::session_timezone].value.empty())
-        {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
     };
 
     /// Returns the server time zone (timezone in which server runs).
@@ -316,7 +303,7 @@ SELECT timezone()
 REGISTER_FUNCTION(ServerTimezone)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings/other#timezone) setting.
+Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "serverTimezone()";

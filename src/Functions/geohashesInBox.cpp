@@ -7,9 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
-#include <Common/CurrentThread.h>
 
 #include <memory>
 #include <string>
@@ -22,7 +19,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
-extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -41,10 +37,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
             {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
         };
         validateFunctionArguments(*this, arguments, args);
@@ -74,16 +70,9 @@ public:
         const IColumn * lat_max_column,
         const IColumn * precision_column,
         ColumnPtr & result,
-        size_t input_rows_count,
-        const QueryStatusPtr & process_list_element) const
+        size_t input_rows_count) const
     {
         static constexpr size_t max_array_size = 10'000'000;
-        /// The span between two checkpoints is the work a cancelled query still has to finish, so it
-        /// is what the caller waits for. 100k items are ~1.2 MB of geohashes: tens of milliseconds
-        /// of work against a check that costs a clock read and an uncontended lock. A million items,
-        /// the first choice here, was over three seconds of uninterruptible work on a loaded
-        /// sanitizer build, which is not what "cancelled promptly" should mean.
-        static constexpr UInt64 items_between_cancellation_checks = 100'000;
 
         const auto * lon_min_const = typeid_cast<const ColumnConst *>(lon_min_column);
         const auto * lat_min_const = typeid_cast<const ColumnConst *>(lat_min_column);
@@ -121,8 +110,6 @@ public:
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
-        UInt64 items_since_check = 0;
-
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const LonAndLatType lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
@@ -141,17 +128,6 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "{} would produce {} array elements, "
                                 "which is bigger than the allowed maximum of {}",
                                 getName(), prepared_args.items_count, max_array_size);
-            }
-
-            /// The whole block's rows run inside one `executeImpl` call, so the pipeline's
-            /// between-blocks cancellation check cannot interrupt them. Throttle on accumulated work
-            /// units rather than rows, counting each row as at least one: a row can hold up to
-            /// max_array_size items, and a degenerate box (reversed bounds or NaN) holds none.
-            items_since_check += std::max<UInt64>(1, prepared_args.items_count);
-            if (items_since_check >= items_between_cancellation_checks)
-            {
-                items_since_check = 0;
-                checkQueryTimeLimit(process_list_element);
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -190,31 +166,12 @@ public:
         const IColumn * precision = arguments[4].column.get();
         ColumnPtr res;
 
-        /// Resolved from the executing thread rather than captured: this instance can be stored in table
-        /// metadata and then run by any later query.
-        QueryStatusPtr process_list_element;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            process_list_element = query_context->getProcessListElementSafe();
-
-        // Dispatch on the declared argument type, not the runtime column class: a constant
-        // coordinate stays wrapped in ColumnConst when the call mixes const and non-const
-        // arguments, so checkColumn<ColumnVector<...>> on the raw column would misclassify it.
-        if (WhichDataType(arguments[0].type).isFloat32())
-            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count, process_list_element);
+        if (checkColumn<ColumnVector<Float32>>(lon_min))
+            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
-            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count, process_list_element);
+            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
 
         return res;
-    }
-
-private:
-    /// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode; for the 'break' mode it
-    /// returns false instead. A half-filled `Array(String)` result is a wrong value, not a smaller one,
-    /// so we throw on the false return too; the pipeline absorbs it into a clean cancellation.
-    static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element)
-    {
-        if (process_list_element && !process_list_element->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 };
 

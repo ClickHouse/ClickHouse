@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
@@ -130,6 +129,3 @@ Pipe StorageSystemStoragePolicies::read(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStoragePolicies) }

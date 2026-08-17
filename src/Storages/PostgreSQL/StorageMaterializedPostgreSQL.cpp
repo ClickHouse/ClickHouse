@@ -28,8 +28,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
-#include <Databases/LoadingStrictnessLevel.h>
-
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -54,15 +52,12 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
-    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_BACKUP_TABLE;
 }
 
 
@@ -281,102 +276,9 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 }
 
 
-void StorageMaterializedPostgreSQL::checkTableSizeBelowDropLimit(ContextPtr query_context) const
-{
-    /// In MaterializedPostgreSQL database engine mode there is no per-table nested storage
-    /// to size-check (the database engine owns the nested tables); mirror `dropInnerTableIfAny`.
-    if (is_materialized_postgresql_database)
-        return;
-
-    /// Mirror `dropInnerTableIfAny`'s tolerance: if the nested table is missing for any reason
-    /// the drop is a no-op, so the size check is too.
-    if (auto nested = tryGetNested())
-        nested->checkTableSizeBelowDropLimit(query_context);
-}
-
-
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, getNested());
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsPrewhere() const
-{
-    /// `read` hands the `SelectQueryInfo` over to the nested table untouched, so whatever the nested table
-    /// can do with `PREWHERE` the wrapper can do too. While the nested table is not created yet there is
-    /// nothing to read from anyway, so the default is good enough.
-    if (auto nested = tryGetNested())
-        return nested->supportsPrewhere();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::canMoveConditionsToPrewhere() const
-{
-    if (auto nested = tryGetNested())
-        return nested->canMoveConditionsToPrewhere();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportedPrewhereColumnsIncludeSubcolumns() const
-{
-    /// `StorageMerge` ANDs this bit across its children, so leaving it at the `IStorage` default would
-    /// silently drop a subcolumn condition from `PREWHERE` for the whole `Merge` table.
-    if (auto nested = tryGetNested())
-        return nested->supportedPrewhereColumnsIncludeSubcolumns();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsSubcolumns() const
-{
-    if (auto nested = tryGetNested())
-        return nested->supportsSubcolumns();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
-{
-    if (auto nested = tryGetNested())
-        return nested->supportsOptimizationToSubcolumns();
-    return false;
-}
-
-
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
-{
-    if (auto nested = tryGetNested())
-        return nested->getColumnSizes();
-    return {};
-}
-
-
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns) const
-{
-    if (auto nested = tryGetNested())
-        return nested->getColumnSizes(columns);
-    return {};
-}
-
-
-std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_context) const
-{
-    /// An estimate: as for any `ReplacingMergeTree`, the deleted rows and the superseded versions of the
-    /// updated rows are still counted until the parts are merged.
-    if (auto nested = tryGetNested())
-        return nested->totalRows(query_context);
-    return {};
-}
-
-
-std::optional<UInt64> StorageMaterializedPostgreSQL::totalBytes(ContextPtr query_context) const
-{
-    if (auto nested = tryGetNested())
-        return nested->totalBytes(query_context);
-    return {};
 }
 
 
@@ -398,58 +300,6 @@ void StorageMaterializedPostgreSQL::read(
     auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
     query_plan.addTableLock(lock);
     query_plan.addStorageHolder(shared_from_this());
-}
-
-
-void StorageMaterializedPostgreSQL::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
-{
-    /// The data lives in the nested ReplacingMergeTree table, delegate the backup to it.
-    auto nested = tryGetNested();
-    if (!nested)
-        throw Exception(
-            ErrorCodes::CANNOT_BACKUP_TABLE,
-            "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not have "
-            "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
-            "backup with table metadata but no data.",
-            getStorageID().getNameForLogs());
-
-    nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsBackupPartition() const
-{
-    /// Partition backups are delegated to the nested ReplacingMergeTree (see `backupData`), so report whatever
-    /// it supports. If the nested table does not exist yet, fall back to the default (no partition support);
-    /// `backupData` will then fail closed with a clear message anyway.
-    if (auto nested = tryGetNested())
-        return nested->supportsBackupPartition();
-    return false;
-}
-
-
-void StorageMaterializedPostgreSQL::restoreDataFromBackup(
-    RestorerFromBackup &, const String &, const std::optional<ASTs> &)
-{
-    /// A MaterializedPostgreSQL table starts replicating from the live PostgreSQL source as soon as it is
-    /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
-    /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
-    /// current remote state, so an in-place restore into an already-existing MaterializedPostgreSQL table cannot
-    /// faithfully represent the backup. Fail closed and direct the user to restore the data into a separately
-    /// pre-created ReplacingMergeTree table instead - the data is still captured by `backupData`. Restoring
-    /// `... AS <new_table>` into a not-yet-existing table never reaches this point: that path would recreate the
-    /// table from the backup definition (again as MaterializedPostgreSQL) and is rejected earlier, in the storage
-    /// factory, before the table is created (see `registerStorageMaterializedPostgreSQL`). `allow_different_table_def`
-    /// only skips the definition comparison against an already existing target.
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
-        "replicating from the live PostgreSQL source and mix it with the backup snapshot. "
-        "Restore the data into a separate ReplacingMergeTree table that you have created beforehand with the same "
-        "structure as the nested table (including the _sign and _version columns), e.g.: "
-        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
-        getStorageID().getNameForLogs());
 }
 
 
@@ -679,23 +529,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        /// Restoring a MaterializedPostgreSQL table from a backup is not supported, and must be rejected here -
-        /// before the storage is constructed - to fail closed. The constructor calls `replication_handler->startup`,
-        /// so by the time `restoreDataFromBackup` could reject the restore the table would already exist and be
-        /// replicating from the live PostgreSQL source (`RestorerFromBackup` does not roll back the created table on
-        /// a later failure). The table data is still captured by the backup (delegated to the nested
-        /// ReplacingMergeTree, see `backupData`); restore it into a ReplacingMergeTree created beforehand instead.
-        if (args.is_restore_from_backup)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Restoring a MaterializedPostgreSQL table ({}) from a backup is not supported, because the table "
-                "would start replicating from the live PostgreSQL source as soon as it is created, mixing the backup "
-                "snapshot with the current remote state. The table data is still captured by the backup (delegated "
-                "to the nested ReplacingMergeTree); restore it into a ReplacingMergeTree table that you have created "
-                "beforehand with the same structure as the nested table (including the _sign and _version columns), "
-                "e.g.: RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
-                args.table_id.getNameForLogs());
-
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
@@ -717,38 +550,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         else
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, {}, args.getContext());
 
-        /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
-        /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
-
-        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
-        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
-        /// below is built from `host` / `port`. This engine keeps a single replication connection,
-        /// so exactly one address is accepted; canonicalize it back into `host` / `port`. This mirrors
-        /// `registerDatabaseMaterializedPostgreSQL`.
-        if (configuration.host.empty())
-        {
-            if (configuration.addresses.size() == 1)
-            {
-                configuration.host = configuration.addresses.front().first;
-                configuration.port = configuration.addresses.front().second;
-            }
-            else if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
-                                configuration.addresses.size());
-            }
-            /// When replaying previously persisted metadata (server startup, and DETACH / ATTACH
-            /// with the short syntax, which re-reads the stored definition) a legacy multi-address
-            /// definition keeps its historical behavior: it could be created before this validation
-            /// existed (replication starts asynchronously, so the broken connection string never
-            /// aborted the CREATE), and the table must keep loading with replication failing and
-            /// retrying in the background rather than abort startup. A user ATTACH with a full
-            /// table definition is a fresh definition, not a replay, and stays fail-closed
-            /// (the same distinction `StorageDistributed` draws for its skipping-indices check).
-        }
-
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
@@ -763,19 +565,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
-        /// For the table engine the user declares the column types explicitly, so this setting cannot
-        /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
-        /// where the nested table structure is derived from PostgreSQL.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
-            && (*postgresql_replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].isChanged())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `materialized_postgresql_use_extended_date_and_time_types` is not applicable to the "
-                            "MaterializedPostgreSQL table engine, where column types are declared explicitly. "
-                            "It only affects the MaterializedPostgreSQL database engine. "
-                            "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
-
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };
@@ -813,7 +604,7 @@ SET allow_experimental_materialized_postgresql_table=1
 ```
 :::
 
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
+If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
 ## Creating a table {#creating-a-table}
 
@@ -835,7 +626,7 @@ PRIMARY KEY key;
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](/reference/engines/database-engines/materialized-postgresql#requirements)).
+2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](../../../engines/database-engines/materialized-postgresql.md#requirements)).
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
@@ -843,9 +634,9 @@ PRIMARY KEY key;
 
 ## Virtual columns {#virtual-columns}
 
-- `_version` — Transaction counter. Type: [UInt64](/reference/data-types/int-uint).
+- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
-- `_sign` — Deletion mark. Type: [Int8](/reference/data-types/int-uint). Possible values:
+- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
   - `1` — Row is not deleted,
   - `-1` — Row is deleted.
 

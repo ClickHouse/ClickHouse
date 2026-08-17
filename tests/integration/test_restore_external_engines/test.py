@@ -12,7 +12,6 @@ node1 = cluster.add_instance(
     with_zookeeper=True,
     with_mysql8=True,
     main_configs=configs,
-    user_configs=["configs/allow_server_credentials.xml"],
     external_dirs=["/backups/"],
 )
 node2 = cluster.add_instance(
@@ -20,7 +19,6 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
     with_mysql8=True,
     main_configs=configs,
-    user_configs=["configs/allow_server_credentials.xml"],
     external_dirs=["/backups/"],
 )
 node3 = cluster.add_instance(
@@ -28,7 +26,6 @@ node3 = cluster.add_instance(
     with_zookeeper=True,
     with_mysql8=True,
     main_configs=configs,
-    user_configs=["configs/allow_server_credentials.xml"],
     external_dirs=["/backups/"],
 )
 nodes = [node1, node2, node3]

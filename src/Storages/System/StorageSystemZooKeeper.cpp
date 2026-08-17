@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
@@ -851,6 +850,3 @@ void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeper) }

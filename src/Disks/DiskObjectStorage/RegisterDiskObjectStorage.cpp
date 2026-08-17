@@ -77,6 +77,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         LOG_DEBUG(getLogger("registerDiskObjectStorage"), "Metadata type hint: {}", compatibility_metadata_type_hint);
         auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, cluster, object_storages, compatibility_metadata_type_hint);
 
+        bool use_fake_transaction = config.getBool(config_prefix + ".use_fake_transaction", metadata_storage->getType() != MetadataStorageType::Keeper);
         DiskPtr disk = std::make_shared<DiskObjectStorage>(
             name,
             std::move(cluster),
@@ -84,7 +85,8 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(object_storages),
             /*wrapped_disk=*/nullptr,
             config,
-            config_prefix);
+            config_prefix,
+            use_fake_transaction);
 
         /// If this disk was created "on the fly" in order to serve as a temporary read-only disk.
         bool is_read_only_disk = config.getBool(config_prefix + ".read_only", false);

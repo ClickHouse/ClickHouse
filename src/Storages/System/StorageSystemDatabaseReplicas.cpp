@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <future>
 #include <memory>
@@ -339,6 +338,3 @@ void StorageSystemDatabaseReplicas::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseReplicas) }

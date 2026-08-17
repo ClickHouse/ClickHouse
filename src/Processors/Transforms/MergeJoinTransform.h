@@ -43,7 +43,7 @@ struct JoinKeyRow
 
     void reset();
 
-    Columns row;
+    std::vector<ColumnPtr> row;
 };
 
 /// Remembers previous key if it was joined in previous block
@@ -258,9 +258,6 @@ private:
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
     Columns getEmptyResultColumns(size_t pos) const;
-    /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
-    /// used to fill non-joined rows with the proper type default instead of a raw zero.
-    DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;

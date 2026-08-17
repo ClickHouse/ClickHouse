@@ -1,9 +1,7 @@
 #include <algorithm>
-#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <mutex>
-#include <optional>
 #include <ranges>
 #include <variant>
 #include <Coordination/Changelog.h>
@@ -83,7 +81,6 @@ void moveChangelogBetweenDisks(
                     description->disk = disk_to;
                     description->path = path_to;
                 });
-            return true;
         },
         getLogger("Changelog"),
         keeper_context);
@@ -2260,21 +2257,11 @@ void Changelog::writeThread()
     WriteOperation write_operation;
     bool batch_append_ok = true;
     size_t pending_appends = 0;
+    bool try_batch_flush = false;
 
-    /// Flush request that we delay to batch it with more appends and to limit the flush frequency.
-    /// A newer Flush request subsumes an older pending one: its index is not less,
-    /// and one completion notification is enough for both.
-    std::optional<Flush> pending_flush;
-
-    /// We don't start a flush earlier than min_time_between_fsyncs_ms after the start of the previous flush.
-    std::chrono::steady_clock::time_point earliest_next_flush_time{};
-
-    const auto flush_logs = [&](const Flush & flush)
+    const auto flush_logs = [&](const auto & flush)
     {
         LOG_TEST(log, "Flushing {} logs", pending_appends);
-
-        earliest_next_flush_time
-            = std::chrono::steady_clock::now() + std::chrono::milliseconds(flush_settings.min_time_between_fsyncs_ms);
 
         {
             std::lock_guard writer_lock(writer_mutex);
@@ -2308,46 +2295,21 @@ void Changelog::writeThread()
         /// We assume that after some number of appends, we always get flush request
         while (true)
         {
-            if (pending_flush)
+            if (try_batch_flush)
             {
-                bool do_flush = false;
-
-                if (!batch_append_ok)
+                try_batch_flush = false;
+                /// we have Flush request stored in write operation
+                /// but we try to get new append operations
+                /// if there are none, we apply the currently set Flush
+                chassert(std::holds_alternative<Flush>(write_operation));
+                if (!write_operations.tryPop(write_operation))
                 {
-                    /// An append failed, fail the flush without batching more operations.
-                    do_flush = true;
-                }
-                else if (const auto now = std::chrono::steady_clock::now(); now < earliest_next_flush_time)
-                {
-                    /// Wait out the flush throttling interval, batching all appends that arrive in the meantime.
-                    /// (The batch may exceed max_flush_batch_size since we can't flush earlier anyway.)
-                    /// tryPop returns false either when the timeout expires or on shutdown; flush in both cases.
-                    const auto timeout = std::chrono::ceil<std::chrono::milliseconds>(earliest_next_flush_time - now);
-                    do_flush = !write_operations.tryPop(write_operation, timeout.count());
-                }
-                else
-                {
-                    /// Flush if we have the maximum allowed number of pending appends
-                    /// or no more operations are immediately available for batching.
-                    do_flush = pending_appends >= flush_settings.max_flush_batch_size || !write_operations.tryPop(write_operation);
-                }
-
-                if (do_flush)
-                {
-                    if (batch_append_ok)
-                    {
-                        flush_logs(*pending_flush);
-                    }
-                    else
-                    {
-                        std::lock_guard lock{durable_idx_mutex};
-                        *pending_flush->failed = true;
-                    }
-
+                    chassert(batch_append_ok);
+                    const auto & flush = std::get<Flush>(write_operation);
+                    flush_logs(flush);
                     notify_append_completion();
-                    pending_flush.reset();
-                    batch_append_ok = true;
-                    continue;
+                    if (!write_operations.pop(write_operation))
+                        break;
                 }
             }
             else if (!write_operations.pop(write_operation))
@@ -2370,7 +2332,26 @@ void Changelog::writeThread()
             }
             else
             {
-                pending_flush = std::get<Flush>(write_operation);
+                const auto & flush = std::get<Flush>(write_operation);
+
+                if (batch_append_ok)
+                {
+                    /// we can try batching more logs for flush
+                    if (pending_appends < flush_settings.max_flush_batch_size)
+                    {
+                        try_batch_flush = true;
+                        continue;
+                    }
+                    /// we need to flush because we have maximum allowed pending records
+                    flush_logs(flush);
+                }
+                else
+                {
+                    std::lock_guard lock{durable_idx_mutex};
+                    *flush.failed = true;
+                }
+                notify_append_completion();
+                batch_append_ok = true;
             }
         }
     }
@@ -2764,8 +2745,6 @@ void Changelog::backgroundChangelogOperationsThread()
             chassert(false);
         }
         changelog_operation->done = true;
-        /// Wake up `waitAllAsyncOperations`; a bare store does not wake an `std::atomic::wait`.
-        changelog_operation->done.notify_all();
     }
 }
 
