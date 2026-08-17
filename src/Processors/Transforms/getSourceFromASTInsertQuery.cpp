@@ -52,6 +52,8 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
     extern const SettingsSnappyMode snappy_mode;
 }
 
@@ -1506,7 +1508,16 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
-    if (ast_insert_query->format.empty())
+    const Settings & settings = context->getSettingsRef();
+
+    /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.
+    String resolved_format = ast_insert_query->format;
+    if (!settings[Setting::input_format].value.empty())
+        resolved_format = settings[Setting::input_format].value;
+    else if (!settings[Setting::format].value.empty())
+        resolved_format = settings[Setting::format].value;
+
+    if (resolved_format.empty())
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -1518,10 +1529,8 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const bool has_streamed_tail = ast_insert_query->tail != nullptr;
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast, context->getSettingsRef()[Setting::snappy_mode])
+        ? getReadBufferFromASTInsertQuery(ast, settings[Setting::snappy_mode])
         : std::make_unique<EmptyReadBuffer>();
-
-    const Settings & settings = context->getSettingsRef();
 
     /// The parse-error diagnostic re-reads the inline data of the query (`ASTInsertQuery::data`) to infer
     /// its structure. That is only possible, and only sufficient, when all of the data is inline: as soon
@@ -1549,7 +1558,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     ReadBuffer & format_input = capturing_buffer ? static_cast<ReadBuffer &>(*capturing_buffer) : *input_buffer;
 
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, format_input, header,
+    auto format = context->getInputFormat(resolved_format, format_input, header,
                                           settings[Setting::max_insert_block_size], std::nullopt,
                                           settings[Setting::max_insert_block_size_bytes],
                                           settings[Setting::min_insert_block_size_rows],
@@ -1569,7 +1578,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     {
         if (captured_prefix_buffer)
             format->setParseErrorDiagnosticProvider(
-                [captured_prefix_buffer, expected_header = header, format_name = ast_insert_query->format, context](
+                [captured_prefix_buffer, expected_header = header, format_name = resolved_format, context](
                     std::optional<size_t> rows_reached_by_parser) -> String
                 {
                     return getInsertDataSchemaMismatchDescription(
@@ -1581,7 +1590,20 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                         captured_prefix_buffer->isPrefixTruncated());
                 });
         else
-            setInsertSchemaMismatchDiagnostic(*format, ast, header, context);
+            format->setParseErrorDiagnosticProvider(
+                [ast, expected_header = header, format_name = resolved_format, context](
+                    std::optional<size_t> rows_reached_by_parser) -> String
+                {
+                    const auto * insert = ast->as<ASTInsertQuery>();
+                    if (!insert || !insert->data)
+                        return {};
+                    return getInsertDataSchemaMismatchDescription(
+                        std::string_view(insert->data, insert->end - insert->data),
+                        format_name,
+                        expected_header,
+                        context,
+                        rows_reached_by_parser);
+                });
     }
 
     return format;
