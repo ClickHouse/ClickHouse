@@ -6,7 +6,9 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (id UInt32) ENGINE = MergeTree ORDER BY id;
+-- The projection assertions below depend on whether a granule lies wholly inside the range the
+-- condition is definitely true for, so the granularity has to be fixed.
+CREATE TABLE t (id UInt32) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO t SELECT number FROM numbers(40);
 
 -- An all-NULL expression under NOT must not make the range provably true.
@@ -24,6 +26,7 @@ SELECT count() FROM (SELECT number FROM numbers(100) WHERE NOT (number = 5 AND N
 SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t WHERE id < 1000) WHERE explain ILIKE '%_exact_count_projection%';
 SELECT count() FROM t WHERE id < 1000;
 SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t WHERE NOT (id >= 20 AND NULL)) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE NOT (id >= 20 AND NULL)) WHERE explain ILIKE '%Condition:%id%';
 
 -- A positive all-NULL conjunct stays exact, so an unbounded source must not be read.
 SELECT count() FROM t WHERE id >= 20 AND NULL;
