@@ -44,6 +44,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Analyzer/UnionNode.h>
+#include <Common/logger_useful.h>
 
 #include <stack>
 
@@ -440,6 +441,22 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
+/// `buildQueryPlanForAutomaticParallelReplicas` arms the deferral flag on the context it builds from and
+/// on the query context. The context that reaches here is derived from one of them, but it was copied
+/// before the arming, so it does not carry the flag itself - consult the query context as well.
+ContextMutablePtr contextHoldingDeferralFlag(const ContextMutablePtr & context)
+{
+    if (context->isSubqueryMaterializationDeferred())
+        return context;
+    if (context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        if (query_context->isSubqueryMaterializationDeferred())
+            return query_context;
+    }
+    return nullptr;
+}
+
 TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
@@ -492,6 +509,22 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
+
+    /// Building the automatic-parallel-replicas probe plan must not execute the query's subqueries: the
+    /// probe exists to be costed and is usually discarded, so the rows would be thrown away with it. Only
+    /// the table's structure is needed to cost the plan, and the caller rebuilds it - materializing for
+    /// real - before any of it is executed. Measured on TPC-H q15, where the probe's copy of the
+    /// `revenue0` view was a third of every mark the query read.
+    if (auto deferring_context = contextHoldingDeferralFlag(mutable_context))
+    {
+        deferring_context->setSubqueryMaterializationDeferred();
+        LOG_DEBUG(
+            getLogger("buildQueryTreeForShard"),
+            "Leaving temporary table {} empty: this plan is a probe that has not been chosen yet",
+            temporary_table_name);
+        mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
+        return temporary_table_expression_node;
+    }
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);

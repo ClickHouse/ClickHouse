@@ -374,7 +374,12 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    /// The probe is only costed, so it is built without materializing the subqueries a `GLOBAL IN` /
+    /// `GLOBAL JOIN` rewrite would execute. If replicas win, the plan is rebuilt for real below - the
+    /// deferred one describes the query but its temporary tables are empty.
+    auto built_sets = collectBuiltSets(query_plan);
+    auto probe_build = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*defer_materialization*/ true);
+    auto & plan_with_parallel_replicas = probe_build.plan;
     if (!plan_with_parallel_replicas)
         return;
 
@@ -477,6 +482,34 @@ void considerEnablingParallelReplicas(
                         stats->input_bytes / num_replicas,
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                     return;
+                }
+
+                /// Replicas are worth it, so the probe is about to become the plan that runs. If it was
+                /// built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty, build it again
+                /// and materialize them this time - only now is it known that the rows will be used. If
+                /// that build does not come back, decline rather than execute a plan whose temporary
+                /// tables are empty, which would silently return wrong results.
+                if (probe_build.materialization_deferred)
+                {
+                    auto materialized = optimization_settings.query_plan_with_parallel_replicas_builder(
+                        built_sets, /*defer_materialization*/ false);
+                    /// `materialization_deferred` must be false here - this build was asked to
+                    /// materialize. Check it anyway: a plan that still holds empty temporary tables
+                    /// would run and return wrong results rather than fail, so decline instead.
+                    if (!materialized.plan || materialized.materialization_deferred)
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Could not rebuild the parallel replicas plan with its subqueries materialized "
+                            "(plan built: {}, still deferred: {}). Not enabling parallel replicas reading",
+                            materialized.plan != nullptr,
+                            materialized.materialization_deferred);
+                        return;
+                    }
+                    plan_with_parallel_replicas = std::move(materialized.plan);
+                    final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
+                    if (!final_node_in_replica_plan)
+                        return;
                 }
 
                 transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode());
