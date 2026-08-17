@@ -473,39 +473,43 @@ void DatabaseMySQL::cleanOutdatedTables()
         /// Reconcile remove_or_detach_tables with the live remote schema (mirrors DatabasePostgreSQL::removeOutdatedTables):
         /// a table that was DETACH'd/DROP'd locally but has since disappeared from the remote MySQL server has nothing left
         /// to ATTACH, so it should stop being reported by system.detached_tables.
-        try
+        /// Skip reconciliation if there are no detached tables to avoid unnecessary network I/O.
+        if (!remove_or_detach_tables.empty())
         {
-            /// Release mutex before network I/O to avoid blocking other operations
-            lock.unlock();
-
-            auto tables_on_remote = fetchTablesWithModificationTime(getContext());
-
-            /// Re-acquire mutex to update remove_or_detach_tables
-            lock.lock();
-
-            auto db_disk = getDisk();
-            for (auto iter = remove_or_detach_tables.begin(); iter != remove_or_detach_tables.end();)
+            try
             {
-                if (!tables_on_remote.contains(*iter))
-                {
-                    const auto & table_name = *iter;
-                    if (persistent)
-                    {
-                        fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-                        db_disk->removeFileIfExists(remove_flag);
-                    }
-                    iter = remove_or_detach_tables.erase(iter);
-                }
-                else
-                    ++iter;
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            /// Ensure we re-acquire the lock before wait_for
-            if (!lock.owns_lock())
+                /// Release mutex before network I/O to avoid blocking other operations
+                lock.unlock();
+
+                auto tables_on_remote = fetchTablesWithModificationTime(getContext());
+
+                /// Re-acquire mutex to update remove_or_detach_tables
                 lock.lock();
+
+                auto db_disk = getDisk();
+                for (auto iter = remove_or_detach_tables.begin(); iter != remove_or_detach_tables.end();)
+                {
+                    if (!tables_on_remote.contains(*iter))
+                    {
+                        const auto & table_name = *iter;
+                        if (persistent)
+                        {
+                            fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                            db_disk->removeFileIfExists(remove_flag);
+                        }
+                        iter = remove_or_detach_tables.erase(iter);
+                    }
+                    else
+                        ++iter;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                /// Ensure we re-acquire the lock before wait_for
+                if (!lock.owns_lock())
+                    lock.lock();
+            }
         }
 
         cond.wait_for(lock, cleaner_sleep_time);
