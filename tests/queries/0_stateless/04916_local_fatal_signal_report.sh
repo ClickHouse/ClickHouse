@@ -34,8 +34,10 @@ abort_arm()
     (
         cd "$PREFIX".d/"$arm" || exit 1
         ulimit -c 0
-        exec $CLICKHOUSE_LOCAL "${ABORT_PRE_ARGS[@]}" \
-            --query "SELECT 'ready'; SELECT sum(sipHash64(number)) FROM numbers_mt(100000000000)" \
+        # Idle on one thread until signalled, and outlive an unsignalled arm by at most
+        # the row count in seconds.
+        exec $CLICKHOUSE_LOCAL "${ABORT_PRE_ARGS[@]}" --max_threads=1 \
+            --query "SELECT 'ready'; SELECT sleep(1) FROM numbers(60) SETTINGS max_block_size = 1 FORMAT Null" \
             >stdout 2>stderr -- "$@"
     ) &
     local pid=$!
