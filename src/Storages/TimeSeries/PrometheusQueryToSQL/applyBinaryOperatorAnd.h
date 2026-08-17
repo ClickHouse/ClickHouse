@@ -22,4 +22,7 @@ void checkArgumentTypesForSetBinaryOperator(
     const SQLQueryPiece & right_argument,
     const ConverterContext & context);
 
+/// Build a compact per-step presence mask for a vector grid.
+ASTPtr makePresenceMask(ASTPtr values);
+
 }

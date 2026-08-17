@@ -24,6 +24,12 @@
 [('__name__','m'),('dc','b'),('host','h4')]	[('1970-01-01 00:01:40.000',4),('1970-01-01 00:02:10.000',4)]
 -- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)
 2	1
+-- and uses a compact per-step presence mask
+1	1
+-- or uses a compact per-step presence mask
+1	1
+-- unless uses a compact per-step presence mask
+1	1
 -- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized
 1	0
 -- subqueries referenced once stay inlined: a binary operator reads each of its two operands once, nothing is materialized

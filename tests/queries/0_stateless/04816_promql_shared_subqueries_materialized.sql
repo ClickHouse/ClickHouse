@@ -59,6 +59,21 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
 
+SELECT '-- and uses a compact per-step presence mask';
+SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+       countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) and last_over_time(n[10])', 100, 130, 10));
+
+SELECT '-- or uses a compact per-step presence mask';
+SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+       countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10));
+
+SELECT '-- unless uses a compact per-step presence mask';
+SELECT countIf(explain LIKE '%maxForEach%') > 0 AS uses_presence_mask,
+       countIf(explain LIKE '%countForEach%') = 0 AS avoids_count_aggregate
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) unless last_over_time(n[10])', 100, 130, 10));
+
 SELECT '-- subqueries referenced once stay inlined: plain sum(rate(...)) reads the samples table once, nothing is materialized';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte

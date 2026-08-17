@@ -57,6 +57,19 @@ void checkArgumentTypesForSetBinaryOperator(
     }
 }
 
+ASTPtr makePresenceMask(ASTPtr values)
+{
+    return makeASTFunction(
+        "maxForEach",
+        makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
+            std::move(values)));
+}
+
 
 SQLQueryPiece applyBinaryOperatorAnd(
     const PrometheusQueryTree::BinaryOperator * operator_node,
@@ -82,7 +95,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
 
     /// Step 1:
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-    ///        countForEach(values) AS join_count
+    ///        maxForEach(arrayMap(x -> isNotNull(x), values)) AS join_presence
     /// GROUP BY join_group
     /// FROM right
     ///
@@ -98,8 +111,8 @@ SQLQueryPiece applyBinaryOperatorAnd(
             right_metric_name_dropped));
         builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-        builder.select_list.back()->setAlias(ColumnNames::JoinCount);
+        builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
 
@@ -112,7 +125,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
 
     /// Step 2:
     /// SELECT group,
-    ///        arrayMap(x, y -> if(y > 0, x, NULL), values, join_count) AS values
+    ///        arrayMap(x, y -> if(y > 0, x, NULL), values, join_presence) AS values
     /// FROM left LEFT SEMI JOIN step1
     /// ON timeSeriesRemoveAllTagsExcept(group, on_tags) == join_group
     ///
@@ -133,7 +146,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
                     make_intrusive<ASTIdentifier>("x"),
                     make_intrusive<ASTLiteral>(Field{} /* NULL */))),
             make_intrusive<ASTIdentifier>(ColumnNames::Values),
-            make_intrusive<ASTIdentifier>(ColumnNames::JoinCount)));
+            make_intrusive<ASTIdentifier>(ColumnNames::JoinPresence)));
 
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
