@@ -336,6 +336,21 @@ void LocalServer::processError(std::string_view) const
 }
 
 
+LocalServer::~LocalServer()
+{
+#if !defined(OS_WASM)
+    /// Stop and join the asynchronous logging threads, like `BaseDaemon` does at shutdown.
+    /// They must not keep consuming the log queues while `exit` runs static destructors,
+    /// and ThreadSanitizer reports finished but unjoined threads as leaks at exit.
+    /// Only the asynchronous channel is closed: with `logger.async = 0` there are no logging
+    /// threads to stop, and logging must stay usable because later destructors still log
+    /// (e.g. `~ClientApplicationBase` reports failures via `tryLogCurrentException`).
+    /// A closed asynchronous channel delivers messages synchronously, so those logs survive too.
+    closeAsyncLogging();
+#endif
+}
+
+
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
