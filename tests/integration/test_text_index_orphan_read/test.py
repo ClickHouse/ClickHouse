@@ -46,9 +46,10 @@ def part_path(table, part_name):
 
 
 def stop_merges(table):
-    # A merge rebuilds an index that is not accounted in the source part, so it destroys the
-    # carrier as well as the part names. The lock is held on the storage instance, so it must be
-    # re-taken after every ATTACH.
+    # Redundant second line of defence. The guard that actually holds is
+    # `max_bytes_to_merge_at_max_space_in_pool = 0` in the table metadata: this statement locks
+    # the storage instance, and `ATTACH TABLE` runs `startup` on a fresh instance before
+    # returning, so a merge can be selected before any later statement reaches the server.
     node.query(f"SYSTEM STOP MERGES {table}")
 
 
@@ -67,7 +68,9 @@ def make_partially_materialized(table, packed_max_bytes=0):
     # A partially materialized index is what arms the direct-read optimization while still
     # requiring the first part to be read through the virtual column's default expression.
     # `mm_k` gives the first part a skip-index file to copy from; the remaining settings keep
-    # index filenames and sizes predictable.
+    # index filenames and sizes predictable. A merge would rebuild the unaccounted index and
+    # repair the very shape these arms assert on, so merges are disabled in table metadata,
+    # which is checked before any merge selector runs and applies on every startup.
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"""
@@ -77,7 +80,8 @@ def make_partially_materialized(table, packed_max_bytes=0):
                  packed_skip_index_max_bytes = {packed_max_bytes},
                  index_granularity = 100,
                  replace_long_file_name_to_hash = 0,
-                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0,
+                 max_bytes_to_merge_at_max_space_in_pool = 0
         """
     )
     stop_merges(table)
@@ -94,8 +98,20 @@ def make_partially_materialized(table, packed_max_bytes=0):
 
 
 def reattach(table):
-    node.query(f"DETACH TABLE {table}")
+    # `DETACH` must be `SYNC`: an asynchronous detach leaves the instance tracked in
+    # `DatabaseAtomic::detached_tables` while another subsystem still holds a `StoragePtr`, and
+    # the following `ATTACH` then throws `TABLE_ALREADY_EXISTS` rather than waiting.
+    node.query(f"DETACH TABLE {table} SYNC")
     node.query(f"ATTACH TABLE {table}")
+    # The merge guard lives in table metadata so that it is already in force during the startup
+    # `ATTACH` performs before it returns; assert it survived rather than assuming it.
+    engine_full = scalar(
+        f"SELECT engine_full FROM system.tables "
+        f"WHERE database = currentDatabase() AND name = '{table}'"
+    )
+    assert "max_bytes_to_merge_at_max_space_in_pool = 0" in engine_full, (
+        f"merge guard missing from table metadata after reattach: {engine_full}"
+    )
     stop_merges(table)
 
 
@@ -212,12 +228,15 @@ def test_no_orphan_is_unaffected(started_cluster):
 def test_index_materialized_in_no_part(started_cluster):
     # An index materialized in no part disables the direct-read rewrite entirely, so no virtual
     # column is created and the predicate answers through the ordinary row-level path.
+    # The fixture inserts every row in one statement, so this arm has a single part and asserts
+    # only table-level counts; a two-part layout guard would never hold here.
     table = "orphan_read_unmaterialized"
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"""
         CREATE TABLE {table} (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 max_bytes_to_merge_at_max_space_in_pool = 0
         """
     )
     node.query(
@@ -253,7 +272,8 @@ def test_fully_materialized_index_still_prunes(started_cluster):
         CREATE TABLE {table}
         (k UInt64, s String, INDEX tx s TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 max_bytes_to_merge_at_max_space_in_pool = 0
         """
     )
     stop_merges(table)
@@ -347,7 +367,8 @@ def test_partially_materialized_index_without_corruption(started_cluster):
     node.query(
         f"""
         CREATE TABLE {table} (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 max_bytes_to_merge_at_max_space_in_pool = 0
         """
     )
     stop_merges(table)
@@ -399,7 +420,8 @@ def test_orphan_index_file_on_compact_part(started_cluster):
         ENGINE = MergeTree ORDER BY k
         SETTINGS packed_skip_index_max_bytes = 0, index_granularity = 100,
                  replace_long_file_name_to_hash = 0,
-                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0,
+                 max_bytes_to_merge_at_max_space_in_pool = 0
         """
     )
     stop_merges(table)
