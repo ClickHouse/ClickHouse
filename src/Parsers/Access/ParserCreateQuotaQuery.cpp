@@ -166,7 +166,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
+            max_value = type_info.scaleToValue(fieldToNumber<double>(max_field));
         return true;
     }
 

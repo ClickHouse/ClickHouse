@@ -390,9 +390,9 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 
 قبل ClickHouse v24.8، كانت أجزاء الإسقاط إما تفقد التزامن مع البيانات الأساسية بصمت، أو أن بعض العمليات مثل التحديثات وعمليات الحذف لم يكن ممكنًا تشغيلها مطلقًا لأن قاعدة البيانات كانت تطرح استثناءً تلقائيًا إذا كان للجدول إسقاطات.
 
-اعتبارًا من v24.8، يتحكم إعداد جديد على مستوى الجدول [`deduplicate_merge_projection_mode`](/ar/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) في السلوك عند حدوث عمليات الدمج غير البسيطة المذكورة أعلاه في أجزاء الجدول الأصلي.
+اعتبارًا من v24.8، يتحكم إعداد جديد على مستوى الجدول [`deduplicate_merge_projection_mode`](/ar/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) في السلوك عند حدوث عمليات الدمج غير البسيطة المذكورة أعلاه في أجزاء الجدول الأصلي.
 
-تُعد Delete mutations مثالًا آخر على عمليات دمج الأجزاء التي تُسقط صفوفًا من أجزاء الجدول الأصلي. واعتبارًا من v24.7، يتوفر أيضًا إعداد للتحكم في السلوك فيما يتعلق بـ delete mutations التي تُفعَّل بواسطة lightweight deletes: [`lightweight_mutation_projection_mode`](/ar/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+تُعد Delete mutations مثالًا آخر على عمليات دمج الأجزاء التي تُسقط صفوفًا من أجزاء الجدول الأصلي. واعتبارًا من v24.7، يتوفر أيضًا إعداد للتحكم في السلوك فيما يتعلق بـ delete mutations التي تُفعَّل بواسطة lightweight deletes: [`lightweight_mutation_projection_mode`](/ar/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
 
 فيما يلي القيم الممكنة لكل من `deduplicate_merge_projection_mode` و`lightweight_mutation_projection_mode`:
 
