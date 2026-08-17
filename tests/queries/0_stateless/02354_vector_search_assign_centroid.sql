@@ -67,6 +67,23 @@ SELECT countIf(a != b) FROM (
     FROM (SELECT v FROM probes ORDER BY id LIMIT 50)
 );
 
+SELECT '-- the cached centroid matrix is invalidated by a dictionary reload';
+-- The cache lives on the function object and must not be keyed on a raw dictionary address: a reloaded
+-- dictionary can land at the address the old one had, which would silently serve stale centroids.
+DROP TABLE IF EXISTS reload_src;
+DROP DICTIONARY IF EXISTS reload_dict;
+CREATE TABLE reload_src (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid;
+INSERT INTO reload_src VALUES (0, [0.0]), (1, [100.0]);
+CREATE DICTIONARY reload_dict (cid UInt64, vec Array(Float32))
+PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'reload_src')) LAYOUT(FLAT(MAX_ARRAY_SIZE 1000)) LIFETIME(0);
+SELECT assignCentroid([99.0]::Array(Float32), 'reload_dict');
+TRUNCATE TABLE reload_src;
+INSERT INTO reload_src VALUES (0, [99.0]), (1, [-100.0]);
+SYSTEM RELOAD DICTIONARY reload_dict;
+SELECT assignCentroid([99.0]::Array(Float32), 'reload_dict');
+DROP DICTIONARY reload_dict;
+DROP TABLE reload_src;
+
 SELECT '-- errors';
 -- Float32 exactly, on both arguments: the kernel reads them as ColumnFloat32.
 SELECT assignCentroid([1.0, 2.0], [[0.0, 0.0], [1.0, 2.0]]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

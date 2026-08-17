@@ -28,20 +28,49 @@
 #include <limits>
 #include <numeric>
 
-/// `hierarchicalKMeans(k [, branching] [, max_iter] [, sample_cap] [, seed] [, spherical])(vec)`
+/// hierarchicalKMeans(k [, branching] [, max_iter] [, sample_cap] [, seed] [, spherical])(vec)
 ///
-/// Trains `k` centroids from the aggregated vectors and returns them as `Array(Array(Float32))` - the coarse
-/// quantizer for a SQL-side IVF index. Keeps a bounded reservoir of `sample_cap` vectors, so memory is
+/// Trains k centroids from the aggregated vectors and returns them as Array(Array(Float32)) - the coarse
+/// quantizer for a SQL-side IVF index. Keeps a bounded reservoir of sample_cap vectors, so memory is
 /// O(sample_cap * dim) whatever the input size; centroids follow the distribution, not the row count.
 ///
-/// "Hierarchical" is the training algorithm, not the output: centroids grow by recursive `branching`-way
-/// splits, so per-point work is O(branching * log_branching(k)) rather than flat Lloyd's O(k), which is what
-/// makes k in the tens of thousands trainable. The output is the flat set of `k` leaves.
-/// See https://en.wikipedia.org/wiki/K-means_clustering
+/// Hierarchical k-means avoids running a very large k-means directly.
 ///
-/// Squared L2 throughout, matching `assignCentroid`. `spherical = 1` renormalizes centroids to unit length,
-/// making the same L2 argmin an exact cosine argmin - for when the search ranks by `cosineDistance` and the
-/// vectors are not normalized at ingest. Training runs on the vector-index build pool; hot loops are SIMD.
+/// For example, to find 32K centroids, instead of comparing every vector
+/// against all 32K centroids, we first split the data into a small number
+/// of groups (e.g. 16), then split each group again, and continue until
+/// we have the requested number of final clusters:
+///
+///                 1M vectors
+///                     │
+///                 k-means(16)
+///                     │
+///          ┌──────────┼──────────┐
+///          │          │          │
+///        group 0    group 1    ...
+///          │          │
+///       k-means(16) k-means(16)
+///          │          │
+///         ...        ...
+///          │
+///       32K final centroids
+///
+/// At every level, ordinary k-means is used to split a group into a small
+/// number of children. The number of final centroids assigned to each child
+/// is proportional to the number of vectors in that child, so large groups
+/// receive more centroids than small groups.
+///
+/// The implementation processes the tree level by level. Near the root there
+/// are only a few large groups, so vectors are split across threads. At deeper
+/// levels there are many smaller groups, so entire groups can be processed
+/// concurrently.
+///
+/// If a split produces fewer than two non-empty groups (for example, all
+/// vectors are identical), we stop splitting and run flat k-means at that
+/// node. This also guarantees that the recursion makes progress.
+///
+/// The result is the requested number of centroids without ever performing
+/// a single k-means assignment against the full set of 32K centroids.
 
 namespace DB
 {
@@ -912,6 +941,13 @@ public:
         /// The reservoir holds at most `sample_cap` points and a point yields at most one centroid, so a
         /// smaller cap makes the exact-`k` contract unsatisfiable: training would silently return `sample_cap`
         /// centroids instead of `k`.
+        /// `TrainTask::rows` indexes the sample with `UInt32`. A reservoir past that is unreachable anyway -
+        /// 2^32 vectors is 12 TB at dim 768 - so cap it rather than double the index memory for a case that
+        /// cannot occur.
+        if (sample_cap > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "hierarchicalKMeans: sample_cap must not exceed {}, got {}",
+                std::numeric_limits<UInt32>::max(), sample_cap);
         if (sample_cap < k)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "hierarchicalKMeans: sample_cap ({}) must be at least k ({}), otherwise the reservoir cannot "
@@ -1066,14 +1102,17 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
 void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description =
-        "Trains k cluster centroids from the aggregated vectors using hierarchical k-means and returns them as "
-        "Array(Array(Float32)). Distance is squared L2; pass `spherical = 1` to renormalize the centroids to unit "
-        "length after each iteration, which makes the same centroids an exact cosine/inner-product quantizer.";
+        "Trains up to k cluster centroids from the aggregated vectors using hierarchical k-means and returns "
+        "them as Array(Array(Float32)). Fewer than k are returned when the input holds fewer than k distinct "
+        "points, since a point can yield at most one centroid. Distance is squared L2; pass `spherical = 1` to "
+        "renormalize the centroids to unit length after each iteration, which makes the same centroids an exact "
+        "cosine/inner-product quantizer.";
     FunctionDocumentation::Syntax syntax = "hierarchicalKMeans(k[, branching[, max_iter[, sample_cap[, seed[, spherical]]]]])(vec)";
     FunctionDocumentation::Arguments arguments = {
         {"vec", "Input vector to cluster.", {"Array(Float32)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"An array of k centroids.", {"Array(Array(Float32))"}};
+    FunctionDocumentation::ReturnedValue returned_value =
+        {"An array of up to k centroids, capped by the number of input points.", {"Array(Array(Float32))"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT length(hierarchicalKMeans(256)(vec)) FROM sample", ""}
     };

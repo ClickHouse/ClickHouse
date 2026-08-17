@@ -15,4 +15,7 @@
 250
 -- inline and dictionary forms agree when the ids line up
 0
+-- the cached centroid matrix is invalidated by a dictionary reload
+1
+0
 -- errors

@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <utility>
 
@@ -367,7 +368,12 @@ public:
 private:
     mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
-    mutable const IDictionary * cached_dict_ptr = nullptr; /// identity changes on dictionary reload
+    /// A `weak_ptr`, not a raw pointer: expression actions can outlive a query, and comparing raw addresses
+    /// is unsafe across a reload - the old dictionary can be destroyed and a later one allocated at the same
+    /// address, which would hand back a matrix built from the previous version. A `weak_ptr` expires with the
+    /// object it pointed at, so a reused address can never look like a hit. It also does not keep the old
+    /// dictionary alive, which a `shared_ptr` here would.
+    mutable std::weak_ptr<const IDictionary> cached_dict;
     mutable std::shared_ptr<const CentroidMatrix> cached_matrix;
 
     static bool isCentroidsArray(const DataTypePtr & type)
@@ -421,7 +427,7 @@ private:
 
         {
             std::lock_guard lock(cache_mutex);
-            if (cached_matrix && cached_dict_ptr == dictionary.get())
+            if (cached_matrix && cached_dict.lock() == dictionary)
                 return cached_matrix;
         }
 
@@ -498,7 +504,7 @@ private:
         {
             std::lock_guard lock(cache_mutex);
             cached_matrix = matrix;
-            cached_dict_ptr = dictionary.get();
+            cached_dict = dictionary;
         }
         return matrix;
     }

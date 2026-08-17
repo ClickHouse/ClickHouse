@@ -68,6 +68,8 @@ SELECT hierarchicalKMeans(4, 16, 20, 1000000, 0, 1, 999)(v) FROM blobs; -- { ser
 -- Invalid parameters are rejected, not silently clamped to something the caller did not ask for.
 SELECT hierarchicalKMeans(256, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(256, 16, 0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+-- Row indices in the training tree are UInt32, and a reservoir past that is unreachable anyway.
+SELECT hierarchicalKMeans(4, 16, 20, 5000000000)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- A reservoir smaller than k could never yield k centroids, so the contract is rejected up front.
 SELECT hierarchicalKMeans(2, 16, 20, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- Aggregate states are user-transportable, so a crafted one must not be trusted to size an allocation.
