@@ -7,37 +7,37 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-17T04:15:23.106Z",
+          "updatedAt": "2026-08-17T07:40:23.105Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-17T04:15:23.286Z",
+          "updatedAt": "2026-08-17T07:40:23.311Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-17T04:15:23.456Z",
+          "updatedAt": "2026-08-17T07:40:23.505Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-17T04:15:23.633Z",
+          "updatedAt": "2026-08-17T07:40:23.690Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-17T04:15:23.812Z",
+          "updatedAt": "2026-08-17T07:40:23.871Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-17T04:15:23.986Z",
+          "updatedAt": "2026-08-17T07:40:24.064Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-17T04:15:24.145Z",
+          "updatedAt": "2026-08-17T07:40:24.257Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-17T04:15:24.305Z",
+          "updatedAt": "2026-08-17T07:40:24.464Z",
           "fileName": "docs.json",
-          "postProcessHash": "056f16568bb1cb895535e54afba88cff7df57aaa36568b165162b7c0d19e258d"
+          "postProcessHash": "ebe131808da6abc128f3dabd78f89901139e9c092ef4c81c3d81d64cbffd0d88"
         }
       },
       "fileName": "docs.json",
@@ -2685,47 +2685,47 @@
     },
     {
       "fileId": "97d515841344e7419ab3374f1881985799b44af14c662f8b121dabf2c86fd0c3",
-      "versionId": "9f79a897b060e590450c6c57447988ebf461b98d0892f3aab125d108f6c15c3d",
+      "versionId": "7afec3578f629b17855bcd3daee49b5a08e3443a1a8d58ab9030595a7f97e40e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:05.620Z",
+          "updatedAt": "2026-08-17T07:40:29.763Z",
           "fileName": "snippets/es/_generic_settings.mdx",
-          "postProcessHash": "0753ce648d73531d67f276d8fe7639ff4248a89e0d97b8c31121f106811dabfe"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.621Z",
-          "fileName": "snippets/ja/_generic_settings.mdx",
-          "postProcessHash": "97afcefbfa9ae587f8e521de9daf2d3c41ec44da1844e63db0ad2ea5c67819c6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.621Z",
-          "fileName": "snippets/ko/_generic_settings.mdx",
-          "postProcessHash": "bb59e07ef5f5142c8da375c87da010061eefa094215d696a1aa063e5fcdca848"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.621Z",
-          "fileName": "snippets/pt-BR/_generic_settings.mdx",
-          "postProcessHash": "6ea259be4aaa783f58048b70c0c2cb8ae153e33043ce75a789f4e9655155143e"
+          "postProcessHash": "1e204ed51564f7115afb3d39b97d813534a4cff3d9d6f340308812c8bd2b1e71"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.621Z",
+          "updatedAt": "2026-08-17T07:40:29.765Z",
           "fileName": "snippets/ru/_generic_settings.mdx",
-          "postProcessHash": "5f68009bd22b42d617e978eb8af55329d909daab164009258080cb4b3ced4810"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.621Z",
-          "fileName": "snippets/zh/_generic_settings.mdx",
-          "postProcessHash": "2be1973815739fc4343fee6d2ed81617fbbb8ddfa5722c8fd4aaaa097fdbe7be"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.622Z",
-          "fileName": "snippets/ar/_generic_settings.mdx",
-          "postProcessHash": "0eb811e35f0ea868a7815dfb802617b5f78521b235e6378192e70ce8e75ae1fd"
+          "postProcessHash": "54fd56ac4545b50f5ceba0b6b4683e3defd3538eaad198c6f1ed9b59f0613ccd"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.622Z",
+          "updatedAt": "2026-08-17T07:40:29.766Z",
           "fileName": "snippets/fr/_generic_settings.mdx",
-          "postProcessHash": "eed19fa0c35362149bb642c5afd13f92728ec8a8ca819e21b16ef26903c08eaf"
+          "postProcessHash": "49a2c91341f07ef56262195fe961b7b38bcb761c03410289da96cd57c72d884c"
+        },
+        "zh": {
+          "updatedAt": "2026-08-17T07:40:29.767Z",
+          "fileName": "snippets/zh/_generic_settings.mdx",
+          "postProcessHash": "7c1139a103bb499535c50a8455a4c05002aa4a6ccb1fc07695c883720fe46a8c"
+        },
+        "ko": {
+          "updatedAt": "2026-08-17T07:40:29.767Z",
+          "fileName": "snippets/ko/_generic_settings.mdx",
+          "postProcessHash": "9bb4f2f3c5f2e699327523c580ce4ba911758ad2b1cb1d4b74510ed9ce9dc699"
+        },
+        "ja": {
+          "updatedAt": "2026-08-17T07:40:29.768Z",
+          "fileName": "snippets/ja/_generic_settings.mdx",
+          "postProcessHash": "602d522eec2e987c076816234a5bc795d9653af46b02cc3ed19e56ad116146b0"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-17T07:40:29.769Z",
+          "fileName": "snippets/pt-BR/_generic_settings.mdx",
+          "postProcessHash": "a69648f4fe3915820e8759d8bc2011308ddb73d937c074cdbeea85e2bbacfec4"
+        },
+        "ar": {
+          "updatedAt": "2026-08-17T07:40:29.769Z",
+          "fileName": "snippets/ar/_generic_settings.mdx",
+          "postProcessHash": "205e3d8e5104082d608a57babc15f1d6f5aa2ab16a148fd0fae90e9fae500b01"
         }
       },
       "fileName": "snippets/_generic_settings.mdx",
@@ -136025,6 +136025,54 @@
         }
       },
       "fileName": "guides/use-cases/data-warehousing/seaweedfs-catalog.mdx",
+      "staged": false
+    },
+    {
+      "fileId": "75f59d4980c6d0cc6400f2b5bb9a6891a5b1f9728114db8cfeda98e5e2ce4e49",
+      "versionId": "c8f78098bda614e47b0cb9b033985989d73af95860000fd88d77778ded4542ff",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-08-17T07:40:29.761Z",
+          "fileName": "ko/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "f27f4b5904dd3c04bf77b8910b020282dde1994ac20ee5d4930d0e13a37749cb"
+        },
+        "ru": {
+          "updatedAt": "2026-08-17T07:40:29.761Z",
+          "fileName": "ru/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "031d86146f303e286019497471d9a43b3911895b44201409a95eb77c4fd84485"
+        },
+        "ja": {
+          "updatedAt": "2026-08-17T07:40:29.762Z",
+          "fileName": "ja/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "eca8708468e9c0d1666b6d58000b0788e8da8657f52251c95126d4e474d66c88"
+        },
+        "es": {
+          "updatedAt": "2026-08-17T07:40:29.763Z",
+          "fileName": "es/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "b1754f05224252b982f63fe0fb0cff3020cf54f8b3d08d0dbf9a1ece959a0370"
+        },
+        "fr": {
+          "updatedAt": "2026-08-17T07:40:29.763Z",
+          "fileName": "fr/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "1a1da1c8469bbc0832815f09b1db4c2e969dba8fa394d31031cab57268e21cb9"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-17T07:40:29.764Z",
+          "fileName": "pt-BR/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "10fd374e521c777611c844115bc8fd255018e34ea3add5c07990a758c4fb5b9d"
+        },
+        "ar": {
+          "updatedAt": "2026-08-17T07:40:29.764Z",
+          "fileName": "ar/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "0e3155625b07444c6f635c8cec2298c9be603bae1b41a1bb52c582c52d220532"
+        },
+        "zh": {
+          "updatedAt": "2026-08-17T07:40:29.768Z",
+          "fileName": "zh/concepts/features/backup-restore/restore-settings.mdx",
+          "postProcessHash": "9af861a770a81d63cad48757e48747cf13b309a9a5dc8cc0d75f04d090817c78"
+        }
+      },
+      "fileName": "concepts/features/backup-restore/restore-settings.mdx",
       "staged": false
     }
   ]
