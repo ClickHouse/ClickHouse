@@ -6,10 +6,11 @@
 namespace DB
 {
 
-bool AdaptiveAggregationSession::ThawSampler::fold(const PaddedPODArray<UInt64> & hashes)
+std::optional<AdaptiveAggregationSession::ThawSampler::FiredMeasurement>
+AdaptiveAggregationSession::ThawSampler::fold(const PaddedPODArray<UInt64> & hashes, size_t batch_bytes)
 {
     if (fired())
-        return false;
+        return {};
 
     /// The sample is collected outside the lock (a batch contributes on the order of its
     /// size / 256 entries) and folded into the shared sampler under it.
@@ -20,18 +21,28 @@ bool AdaptiveAggregationSession::ThawSampler::fold(const PaddedPODArray<UInt64> 
 
     std::lock_guard lock(mutex);
     staged_records += hashes.size();
+    staged_bytes += batch_bytes;
     sampled_records += sampled_hashes.size();
     for (const auto hash : sampled_hashes)
         distinct_sampled_hashes.insert(hash);
 
     /// Re-checked under the lock: a thread that sampled while another was firing would
-    /// otherwise fire a second time.
-    if (fired() || staged_records < min_staged_records
-        || sampled_records <= repeat_factor * distinct_sampled_hashes.size())
-        return false;
+    /// otherwise fire a second time. The verdict compares the wasted staged bytes per
+    /// distinct key, (repeat - 1) * bytes per record, against the bound; rearranged onto a
+    /// common denominator so the arithmetic stays integral:
+    /// (sampled - distinct) * staged_bytes > bound * distinct * staged_records.
+    const size_t distinct = distinct_sampled_hashes.size();
+    if (fired() || staged_records < min_staged_records || sampled_records <= distinct
+        || (sampled_records - distinct) * staged_bytes <= wasted_bytes_per_key_bound * distinct * staged_records)
+        return {};
 
     thaw_all.store(true, std::memory_order_relaxed);
-    return true;
+    const double repeat = static_cast<double>(sampled_records) / static_cast<double>(distinct);
+    return FiredMeasurement{
+        staged_records,
+        staged_bytes,
+        repeat,
+        static_cast<size_t>((repeat - 1.0) * static_cast<double>(staged_bytes / staged_records))};
 }
 
 void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)

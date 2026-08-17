@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <optional>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -211,12 +212,32 @@ struct AdaptiveAggregationSession
     /// hashes in at staging time; repeats of a key collapse onto one entry across all threads,
     /// so sampled records per distinct sampled hash estimates the repeat factor of the staged
     /// stream as a whole, independently of how a key's occurrences spread over the threads.
+    /// The verdict weighs the repeats by the records' bytes: storing a key's first record is
+    /// the price of storing-it-once (repaid by the merge working on deduplicated keys), and
+    /// every further record of the same key is waste the baseline would have absorbed as an
+    /// in-place update - so the stream thaws once the wasted bytes per distinct staged key,
+    /// (repeat factor - 1) * bytes per record, exceed the bound. The weighting is what
+    /// separates the shapes: a near-unique stream never fires regardless of how heavy its
+    /// records are (repeat ~ 1), a repetitive stream of tiny count records tolerates high
+    /// repeats, and a mildly repetitive stream of wide keys or wide arguments fires early.
     class ThawSampler
     {
     public:
-        /// Folds one staging batch into the sample; returns true when this fold fired the
-        /// thaw. Every thread applies a fired thaw at its next block (see `fired`).
-        bool fold(const PaddedPODArray<UInt64> & hashes);
+        /// The measured verdict inputs at fire time, for the thaw's log line.
+        struct FiredMeasurement
+        {
+            size_t staged_records;
+            size_t staged_bytes;
+            double repeat_factor;
+            size_t wasted_bytes_per_key;
+        };
+
+        /// Folds one staging batch into the sample; `batch_bytes` is the batch's estimated
+        /// staged footprint (key bytes + argument bytes + per-record overhead), on the same
+        /// pre-deduplication basis as the sampled hashes. Returns the measurement when this
+        /// fold fired the thaw; every thread applies a fired thaw at its next block (see
+        /// `fired`).
+        std::optional<FiredMeasurement> fold(const PaddedPODArray<UInt64> & hashes, size_t batch_bytes);
 
         bool fired() const { return thaw_all.load(std::memory_order_relaxed); }
 
@@ -225,7 +246,7 @@ struct AdaptiveAggregationSession
         struct Measurement
         {
             bool measured;
-            bool repeat_dominated;
+            bool wasteful_staging;
         };
         Measurement measure()
         {
@@ -234,24 +255,24 @@ struct AdaptiveAggregationSession
         }
 
     private:
-        /// The sampled bound on the staged stream's repeat factor. Staged misses are supposed
-        /// to be rare keys, each staged about once; a uniform mid-cardinality stream instead
-        /// misses on the same keys over and over, and staging then re-processes the bulk of
-        /// the stream that ordinary insertion would absorb as cheap in-place updates. The unit
-        /// is the delayed record, because staging and draining cost per record (a run of one
-        /// key collapses into a single value-staged record). Streams that want the freeze stay
-        /// well below the bound (high-cardinality keys repeat a few times in total, a skewed
-        /// tail almost never); a stream that crosses it fires after about the bound times the
-        /// distinct staged keys in records, a small share of a repeat-dominated stream.
+        /// The bound on the wasted staged bytes per distinct staged key, calibrated on the
+        /// measured shapes with about a 30% margin to the nearest keeper on either side:
+        /// firing shapes measure >= ~440 (a 90-byte string key repeating ~3x, a 90-byte
+        /// argument on a ~5x-repeating key, and every high-repeat case lands in
+        /// the kilobytes), keeping shapes <= ~240 (near-unique streams measure ~0 by
+        /// construction, light count records tolerate repeats, and a wide-key count stream
+        /// stays under through the smaller record). `min_staged_records` is the trust floor
+        /// of the sample; the sparse mask keeps the fold's cost negligible.
         static constexpr UInt64 sample_mask = 0xFF;
         static constexpr size_t min_staged_records = 524'288;
-        static constexpr size_t repeat_factor = 12;
+        static constexpr size_t wasted_bytes_per_key_bound = 300;
 
         std::mutex mutex;
         HashSet<UInt64> distinct_sampled_hashes;
         size_t sampled_records = 0;
         size_t staged_records = 0;
-        /// Set once the staged stream proves repeat-dominated; every thread then thaws its
+        size_t staged_bytes = 0;
+        /// Set once the staged stream proves wasteful; every thread then thaws its
         /// local table at the next block and returns to the baseline path for good.
         std::atomic<bool> thaw_all{false};
     };

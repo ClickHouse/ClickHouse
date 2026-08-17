@@ -29,10 +29,11 @@ namespace DB
 /// two-level conversion, when freezing cannot pay. A table that consumes many times the
 /// threshold in rows while staying below it in keys gives up on freezing, per thread: the
 /// stream has few groups (typically with fat states, which want the conversion and its
-/// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
-/// over and over, every thread thaws its table: those repeats are neither frequent enough for
-/// the local tables nor rare keys to store once, and staging them re-processes the bulk of the
-/// stream that ordinary insertion would absorb as cheap in-place updates. The thaw verdict is
+/// bucket-parallel merge). And when the staged stream as a whole proves wasteful, every thread
+/// thaws its table: a key's first staged record is the price of storing-it-once, but every
+/// repeat is bytes the baseline would have absorbed as a cheap in-place update, so the thaw
+/// fires once the wasted staged bytes per distinct key exceed a bound - catching repetitive
+/// streams early in proportion to how heavy their keys and arguments are. The thaw verdict is
 /// remembered in the hash-table statistics, so later runs of the query skip the engagement
 /// altogether instead of re-measuring the stream.
 ///

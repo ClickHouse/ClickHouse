@@ -632,13 +632,42 @@ void Aggregator::stageRecordedMisses(
     if (!total)
         return;
 
+    /// The batch's estimated staged footprint for the thaw's byte-weighted verdict, on the
+    /// same pre-deduplication basis as the sampled hashes: the keys as the kernel staged
+    /// them, the aggregate arguments at the block's average width (a count batch stages a
+    /// four-byte run length instead), and the per-record bookkeeping (routing hash plus row
+    /// or offset).
+    size_t batch_bytes = 0;
+    if constexpr (DB::adaptive_key_stages_bytes<SharedKey>)
+        for (const auto size : adaptive.staging.misses.key_sizes)
+            batch_bytes += size;
+    else
+        batch_bytes = total * sizeof(SharedKey);
+    if (counts_only)
+        batch_bytes += total * sizeof(UInt32);
+    else
+    {
+        size_t argument_bytes_per_row = 0;
+        for (const auto & argument_positions : aggregates_positions)
+            for (const auto position : argument_positions)
+                argument_bytes_per_row += columns[position]->byteSize() / num_rows;
+        batch_bytes += total * argument_bytes_per_row;
+    }
+    batch_bytes += total * 16;
+
     /// The thaw rule: the verdict takes effect at every thread's next block, through the
     /// ordinary dispatch on the per-thread flags. The current records are still staged: their
     /// rows were deferred by the frozen kernel and only the drain will aggregate them.
-    if (adaptive.session->thaw_sampler.fold(miss_hashes))
+    if (const auto fired = adaptive.session->thaw_sampler.fold(miss_hashes, batch_bytes))
     {
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
-        LOG_TRACE(log, "Adaptive aggregation: thawing the local tables after the staged stream proved repeat-dominated");
+        LOG_TRACE(
+            log,
+            "Adaptive aggregation: thawing the local tables after {} staged records ({} bytes, repeat factor {:.2f}, {} wasted bytes per key)",
+            fired->staged_records,
+            fired->staged_bytes,
+            fired->repeat_factor,
+            fired->wasted_bytes_per_key);
     }
 
     adaptive.staging.stageMisses<SharedKey>(
