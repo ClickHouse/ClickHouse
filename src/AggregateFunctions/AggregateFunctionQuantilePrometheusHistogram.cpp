@@ -234,7 +234,7 @@ using FuncQuantilesPrometheusHistogram = AggregateFunctionQuantile<
     true,
     false>;
 
-template <typename CumulativeHistogramValue>
+template <typename CumulativeHistogramValue, bool is_float>
 struct QuantilePrometheusHistogramArrayData
 {
     using UnderlyingType = Float64;
@@ -295,8 +295,6 @@ struct QuantilePrometheusHistogramArrayData
             values_nested = &nullable->getNestedColumn();
         }
 
-        const auto & values = assert_cast<const ColumnVector<CumulativeHistogramValue> &>(*values_nested).getData();
-
         Bucket * bucket = nullptr;
         if (!isNaN(le))
         {
@@ -318,7 +316,10 @@ struct QuantilePrometheusHistogramArrayData
 
             if (bucket)
             {
-                bucket->values[t] += values[value_index];
+                if constexpr (is_float)
+                    bucket->values[t] += values_nested->getFloat64(value_index);
+                else
+                    bucket->values[t] += values_nested->getUInt(value_index);
                 bucket->present[t] = 1;
             }
         }
@@ -474,14 +475,14 @@ struct NameQuantilePrometheusHistogramArray
     static constexpr auto name = "quantilePrometheusHistogramArray";
 };
 
-template <typename CumulativeHistogramValue>
+template <typename CumulativeHistogramValue, bool is_float>
 class AggregateFunctionQuantilePrometheusHistogramArray final
     : public IAggregateFunctionDataHelper<
-        QuantilePrometheusHistogramArrayData<CumulativeHistogramValue>,
-        AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue>>
+        QuantilePrometheusHistogramArrayData<CumulativeHistogramValue, is_float>,
+        AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue, is_float>>
 {
-    using Data = QuantilePrometheusHistogramArrayData<CumulativeHistogramValue>;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue>>;
+    using Data = QuantilePrometheusHistogramArrayData<CumulativeHistogramValue, is_float>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue, is_float>>;
 
     Float64 level = 0.5;
 
@@ -523,8 +524,8 @@ public:
     }
 };
 
-template <typename CumulativeHistogramValue>
-using FuncQuantilePrometheusHistogramArray = AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue>;
+template <typename CumulativeHistogramValue, bool is_float>
+using FuncQuantilePrometheusHistogramArray = AggregateFunctionQuantilePrometheusHistogramArray<CumulativeHistogramValue, is_float>;
 
 AggregateFunctionPtr createAggregateFunctionQuantilePrometheusHistogramArray(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
@@ -541,12 +542,10 @@ AggregateFunctionPtr createAggregateFunctionQuantilePrometheusHistogramArray(
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for aggregate function {} must be an array", name);
 
     WhichDataType which_value(removeNullable(values_array_type->getNestedType()));
-    if (which_value.idx == TypeIndex::Float32)
-        return std::make_shared<FuncQuantilePrometheusHistogramArray<Float32>>(argument_types, params);
-    if (which_value.idx == TypeIndex::Float64)
-        return std::make_shared<FuncQuantilePrometheusHistogramArray<Float64>>(argument_types, params);
-    if (which_value.idx == TypeIndex::UInt64)
-        return std::make_shared<FuncQuantilePrometheusHistogramArray<UInt64>>(argument_types, params);
+    if (which_value.isFloat())
+        return std::make_shared<FuncQuantilePrometheusHistogramArray<Float64, true>>(argument_types, params);
+    if (which_value.isUInt())
+        return std::make_shared<FuncQuantilePrometheusHistogramArray<UInt64, false>>(argument_types, params);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument for aggregate function {}", argument_types[1]->getName(), name);
 }
