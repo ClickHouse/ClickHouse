@@ -433,8 +433,6 @@ Field QueryFuzzer::getRandomField(int type)
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
             /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
-            /// 1900 and 2299 are kept as the date LUT's edges, past which reads take a cctz
-            /// escape path, and `10000-01-01` as the one value no date type can parse.
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
