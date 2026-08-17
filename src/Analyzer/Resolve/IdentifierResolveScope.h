@@ -201,6 +201,13 @@ struct IdentifierResolveScope
     /// nullptr when not resolving any JOIN ON expression
     const IQueryTreeNode * resolving_join_on_expression = nullptr;
 
+    /** True while the `PREWHERE` expression of this query is being resolved.
+      * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
+      * so the `rewrite_in_to_join` rewrite of `x IN (subquery)` into `exists(...)` must not be
+      * applied there - the plain `IN` is kept instead.
+      */
+    bool in_prewhere = false;
+
     /// JOINs count
     size_t joins_count = 0;
 

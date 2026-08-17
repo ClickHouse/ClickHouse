@@ -30,8 +30,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
-        /// Inherit the JOIN ON marker so nested scopes (e.g. lambda bodies) resolving a matcher or
-        /// column inside the same ON expression keep the both-sides exemption for SEMI/ANTI JOIN.
+        in_prewhere = parent_scope->in_prewhere;
         resolving_join_on_expression = parent_scope->resolving_join_on_expression;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
@@ -48,6 +47,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = union_node->getContext();
+        in_prewhere = false;
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
@@ -57,6 +57,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        in_prewhere = false;
     }
 
     if (context)

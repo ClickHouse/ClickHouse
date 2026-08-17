@@ -57,9 +57,9 @@ When using the analyzer, enabling [`semi_join_compatibility`](../../../operation
 - The `ON` expression of the same `JOIN` can still reference both sides.
 
 When these settings are disabled, ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
-:::
+</Note>
 
-:::note
+<Note>
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 </Note>
 

@@ -1667,6 +1667,12 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
         if (!table_node->getTemporaryTableName().empty())
             additional_column_qualification_parts = {table_node->getTemporaryTableName()};
+        /** A materialized CTE is stored under a randomly generated internal temporary table name.
+          * The user refers to it by its visible name, so qualify the columns with that name -
+          * otherwise the result header would leak an unstable implementation detail.
+          */
+        if (table_node->isMaterializedCTE())
+            additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
@@ -1694,7 +1700,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             forced_qualifier = table_expression_node->getAlias();
         else if (auto * table_node = table_expression_node->as<TableNode>())
         {
-            if (!table_node->getTemporaryTableName().empty())
+            /// Same as above: a materialized CTE must be qualified with its visible name,
+            /// not the internal temporary table name it is stored under.
+            if (table_node->isMaterializedCTE())
+                forced_qualifier = table_node->getMaterializedCTE()->cte_name;
+            else if (!table_node->getTemporaryTableName().empty())
                 forced_qualifier = table_node->getTemporaryTableName();
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
@@ -2053,6 +2063,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -2085,6 +2096,48 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         }
         else
         {
+            /// `analyzer_compatibility_prefer_alias_over_subcolumn` also applies to a qualified
+            /// matcher. If its qualifier names a table, prefer that table over a same-named Tuple
+            /// column and run the SEMI/ANTI access check before expanding the Tuple subcolumns.
+            if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
+            {
+                IdentifierResolveContext identifier_resolve_settings;
+                identifier_resolve_settings.allow_to_check_cte = false;
+                identifier_resolve_settings.allow_to_check_database_catalog = false;
+
+                auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+                auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
+                if (table_identifier_resolve_result.resolved_identifier)
+                    checkSemiAntiJoinTableAccess(table_identifier_resolve_result.resolved_identifier, scope, matcher_node);
+                else
+                {
+                    const auto & element_names = tuple_data_type->getElementNames();
+                    QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
+
+                    auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+                    for (const auto & element_name : element_names)
+                    {
+                        if (!matcher_node_typed.isMatchingColumn(element_name))
+                            continue;
+
+                        auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+                        get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+                        get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+
+                        QueryTreeNodePtr function_query_node = get_subcolumn_function;
+                        resolveFunction(function_query_node, scope);
+
+                        qualified_matcher_element_identifier.push_back(element_name);
+                        node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+                        qualified_matcher_element_identifier.pop_back();
+
+                        matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+                    }
+
+                    return matched_expression_nodes_with_column_names;
+                }
+            }
+
             const auto & element_names = tuple_data_type->getElementNames();
             QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
@@ -3078,7 +3131,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_table_expression*/);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+    {
         validateGroupByKeyType(partition_by_node->getResultType(), scope);
+        validateWindowKeyType(partition_by_node->getResultType(), "PARTITION BY");
+    }
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
@@ -4809,6 +4865,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
         if (table_function_argument->as<TableFunctionNode>())
         {
+            /// An argument already marked unresolved must stay marked: `resolve` below overwrites the whole
+            /// index set, and traversal helpers rely on it to not descend into a not-fully-resolved subtree.
+            const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
+            if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
+                != previous_unresolved_indexes.end())
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -6598,7 +6661,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
+        bool in_prewhere = scope.in_prewhere;
+        scope.in_prewhere = true;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.

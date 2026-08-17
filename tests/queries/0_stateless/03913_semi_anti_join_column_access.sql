@@ -62,6 +62,10 @@ SELECT t2.b
 FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS t2) AS l
 LEFT SEMI JOIN (SELECT 1 AS b) AS t2 ON true
 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT t2.*
+FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS t2) AS l
+LEFT SEMI JOIN (SELECT 1 AS b) AS t2 ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
@@ -267,6 +271,17 @@ FROM (SELECT 1 AS a) t1
 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON ignore(t2.*) = 0 AND t1.a = t2.b
 RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
 
+-- An inner ON in the preserved subtree must not be allowed to read a sibling table from
+-- the skipped outer side.
+SELECT *
+FROM (SELECT 1 AS a) t1
+RIGHT SEMI JOIN
+(
+    (SELECT 1 AS b) t2
+    LEFT SEMI JOIN (SELECT 1 AS c) t3 ON t1.a = t2.b
+) AS s
+ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
 -- Same shape with an inner ANTI JOIN under an outer SEMI JOIN.
 SELECT *
 FROM (SELECT 1 AS a) t1
@@ -317,6 +332,11 @@ SELECT cte_r.b FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { server
 -- Dead-branch reference to the non-preserved materialized CTE: still denied, not folded to 42.
 WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
 SELECT if(false, cte_r.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Qualified wildcards resolve through table-expression lookup and must have the same denial.
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT cte_r.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
+SELECT if(false, cte_r.*, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN cte_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- Same shape with LEFT ANTI JOIN.
 WITH cte_r AS MATERIALIZED (SELECT 2 AS b)
 SELECT if(false, cte_r.b, 42) FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN cte_r ON false; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
