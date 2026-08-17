@@ -1,0 +1,154 @@
+---
+description: '仮想（what-if）索引のドキュメント'
+sidebarTitle: 'HYPOTHETICAL INDEX'
+slug: /sql-reference/statements/hypothetical-index
+title: '仮想索引'
+doc_type: 'reference'
+---
+
+仮想索引は、実際に構築したり保存したりすることなく `MergeTree` ファミリーのテーブルにアタッチできる、セッションスコープの仮想的なスキップ索引です。これらは現在のセッション内にのみ存在し、実際のスキップ索引がクエリにどのような影響を与えるかを見積もるために [`EXPLAIN WHATIF`](/ja/reference/statements/explain#explain-whatif) で使用されます。通常は、スキップ率 (スキップ可能なマークの割合) や、マーク数およびバイト数に基づくおおよそのコストを見積もります。
+
+仮想索引を使うと、ディスク上にマテリアライズするコストをかける前に、候補となる索引を評価できます。
+
+<div id="create-hypothetical-index">
+  ## CREATE HYPOTHETICAL INDEX
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+構文は `ALTER TABLE ... ADD INDEX` と同様ですが、索引は構築も書き込みもされず、現在のセッションでは索引の定義だけが保存されます。
+
+* `name` — 索引名。このセッションでは、`(database, table)` 内で一意である必要があります。
+* `expression` — 索引対象のカラムまたは式です。
+* `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`。`text` と `vector_similarity` はサポートされておらず、`CREATE` 時に拒否されます。これは、実際の `ALTER TABLE ... ADD INDEX` の検証が、セッション専用ストアでは再現できないテーブルレベルの設定に依存しているためです。
+* `GRANULARITY value` — インデックスグラニュールあたりのデータグラニュール数。デフォルトは 1 です。
+
+ターゲットテーブルは、`Atomic` データベース内の `MergeTree` ファミリーのテーブルである必要があります (UUID を持っている必要があります) 。UUID を持たないテーブル — たとえば従来の `Ordinary` データベース内のテーブルや、旧構文の `MergeTree` — は拒否されます。これは、セッションストアが仮想索引をテーブル UUID をキーとして管理するためです。
+
+**例**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## EXPLAIN WHATIF を使用した仮想索引の評価
+</div>
+
+仮想索引は、定義しただけでは何の効果もありません。クエリにどのような影響を与えるかを確認するには、代表的な `SELECT` に対して [`EXPLAIN WHATIF`](/ja/reference/statements/explain#explain-whatif) を実行します。この推定では、各候補索引の適用可否、読み取られるマーク数、結果として得られるスキップ率、さらにその推定がどのように算出されたか (`empirical`、`statistical`、または `applicability_only`) が示されます。
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+結果:
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes` はテーブルの平均行サイズに基づく推定値であるため、正確な値はストレージや圧縮によって変わります。
+
+メモリ内での実測スキャンを省略し、代わりに [カラム STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) から推定するには、まず対象のカラムでそれらを定義し (デフォルトでは無効です) 、materialize mutation が完了するのを待ってから、empirical path を無効にします:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+出力スキーマと設定の詳細については、[`EXPLAIN WHATIF`](/ja/reference/statements/explain#explain-whatif) のリファレンスを参照してください。
+
+<div id="drop-hypothetical-index">
+  ## DROP HYPOTHETICAL INDEX
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+現在のセッション内の仮想索引を削除します。
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+テーブルに関係なく、現在のセッションで定義されているすべての仮想索引を削除します。
+
+<div id="scope-and-lifetime">
+  ## スコープと有効期間
+</div>
+
+* 仮想索引は**現在のセッション**にのみ存在します。ほかのセッションからは見えず、セッションが終了すると破棄されます。
+* これを定義または削除しても、実際の索引が構築されることはなく、そのテーブルに対する通常のクエリにも影響しません。`EXPLAIN WHATIF` は、候補となる索引をメモリ内に構築するためにテーブルデータを読み取ります。このスキャンは、セッションの読み取り制限とクォータに計上されます。
+* 現在のセッションの仮想索引は、[`system.hypothetical_indexes`](/ja/reference/system-tables/hypothetical_indexes) で確認できます。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+`text` と `vector_similarity` の候補は、実際の検証がセッション専用ストアでは再現できないテーブルレベルの設定に依存するため、`CREATE HYPOTHETICAL INDEX` の時点で却下されます。
+
+`EXPLAIN WHATIF` は、`FINAL` を含むクエリに対しては `status: not_applicable` を返し (スキップ索引の pruning が `PrimaryKeyExpand` と相互作用するため) 、クエリがプロジェクションから処理される場合は `NOT_IMPLEMENTED` エラーになります (親テーブルの索引はプロジェクション パーツには materialized されません) 。
+
+経験的な `skip_ratio``は**上限**です。これは、読み込み対象として残った各グラニュールを個別に数えており、seek-gap の coalescing（`merge&#95;tree&#95;min&#95;rows&#95;for&#95;seek`/`merge&#95;tree&#95;min&#95;bytes&#95;for&#95;seek`）や、選言的な（`OR&#96;) predicate のもとで候補を既存のスキップ索引と組み合わせるケースはモデル化していません。そのため、実際に materialized された索引では、読み込み量がわずかに多くなることもあれば、この推定では pruning されないケースで pruning されることもあります。
+
+<div id="required-privileges">
+  ## 必要な権限
+</div>
+
+`CREATE HYPOTHETICAL INDEX` には、索引式で参照されるカラムに対する `SELECT` 権限が必要です。`EXPLAIN WHATIF` ではそれらのカラムが実際に読み取られるため、カラムレベルの `SELECT` (たとえば `GRANT SELECT(b)`) で十分です。
+
+`DROP HYPOTHETICAL INDEX` および `DROP ALL HYPOTHETICAL INDEXES` には、追加の権限は必要ありません。これらはセッションローカルなストアからエントリを削除するだけです。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`EXPLAIN WHATIF`](/ja/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/ja/reference/system-tables/hypothetical_indexes)
+* [データスキッピングインデックス](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)

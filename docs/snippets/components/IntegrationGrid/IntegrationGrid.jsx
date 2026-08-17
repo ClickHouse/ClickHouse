@@ -245,8 +245,8 @@ export const IntegrationGrid = () => {
     return {
       slug: item.slug.startsWith('/') ? item.slug : `/${item.slug}`,
       docsLink: item.docsLink,
-      integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : '',
-      integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+      integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : '',
+      integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
       integration_type: integrationTypes,
       integration_title: item.name,
       integration_tier: integrationTier
@@ -579,7 +579,7 @@ function useCMSIntegrations() {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;

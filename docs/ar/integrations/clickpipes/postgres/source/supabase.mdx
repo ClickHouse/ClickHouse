@@ -62,7 +62,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي `clickpipes` publication على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لإدخال تدفق النسخ المتماثل.
+يحدّد `clickpipes` publication مجموعة الجداول التي سيتم بث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل جدول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="increase-max_slot_wal_keep_size">
   ## زِد قيمة `max_slot_wal_keep_size`

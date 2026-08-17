@@ -173,6 +173,10 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     MutationCounters getMutationCounters() const override;
 
+protected:
+    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
+public:
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     bool optimize(

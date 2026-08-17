@@ -1,57 +1,50 @@
 -- The input is table(test text, query text, run UInt32, version UInt8, metrics Array(float)).
--- Run like this:
--- clickhouse-local --queries-file eqmed.sql -S 'test text, query text, run UInt32, version UInt8, metrics Array(float)' --file analyze/tmp/modulo_0.tsv
-select
-   arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[1] as l) l_rounded,
-   arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[2] as r) r_rounded,
-   arrayMap(x, y -> floor((y - x) / x, 3), l, r) diff_percent,
-   arrayMap(x, y -> floor(x / y, 3), threshold, l) threshold_percent,
-   test, query
+-- Randomization test for the median difference between the two versions.
+--
+-- Two optimizations over the naive cross-join approach:
+--  1) Keep each query's measurements as one array and reshuffle per iteration
+--     (bounded by max_block_size), instead of materializing/sorting numbers*T rows.
+--  2) Only randomize metrics that actually vary across the measurements.
+--     A metric that is constant has identical medians in every random split, so
+--     its threshold is exactly 0; computing it is pure waste (most of the ~230
+--     ProfileEvents are constant per query). The threshold is scattered back to
+--     full width with 0 for the constant metrics.
+WITH
+    (SELECT groupArray(metrics) FROM table) AS all_metrics,
+    length(all_metrics[1]) AS num_metrics,
+    arrayFilter(i -> arrayMin(arrayMap(row -> row[i], all_metrics))
+                     != arrayMax(arrayMap(row -> row[i], all_metrics)),
+                range(1, num_metrics + 1)) AS varying,
+    arrayMap(row -> arrayMap(i -> row[i], varying), all_metrics) AS projected
+SELECT
+    arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[1] as l) l_rounded,
+    arrayMap(x -> floor(x, 4), original_medians_array.medians_by_version[2] as r) r_rounded,
+    arrayMap(x, y -> floor((y - x) / x, 3), l, r) diff_percent,
+    arrayMap(x, y -> floor(x / y, 3), threshold, l) threshold_percent,
+    test, query
 from
-   (
-      -- quantiles of randomization distributions
-      -- note that for small number of runs, the exact quantile might not make
-      -- sense, because the last possible value of randomization distribution
-      -- might take a larger percentage of distribution (i.e. the distribution
-      -- actually has discrete values, and the last step can be large).
-      select quantileExactForEach(0.99)(
-        arrayMap(x, y -> abs(x - y), metrics_by_label[1], metrics_by_label[2]) as d
-      ) threshold
-      ---- Uncomment to see what the distribution is really like. This debug
-      ---- code only works for single (the first) metric.
-      --, uniqExact(d[1]) u
-      --, arraySort(x->x.1,
-      --      arrayZip(
-      --          (sumMap([d[1]], [1]) as f).1,
-      --          f.2)) full_histogram
-      from
-         (
-            -- make array 'random label' -> '[median metric]'
-            select virtual_run, groupArrayInsertAt(median_metrics, random_label) metrics_by_label
-            from (
-                  -- get [median metric] arrays among virtual runs, grouping by random label
-                  select medianExactForEach(metrics) median_metrics, virtual_run, random_label
-                  from (
-                        -- randomly relabel measurements
-                        select *, toUInt32(rowNumberInAllBlocks() % 2) random_label
-                        from (
-                              select metrics, number virtual_run
-                              from
-                                -- strip the query away before the join -- it might be several kB long;
-                                (select metrics, run, version from table) no_query,
-                                -- duplicate input measurements into many virtual runs
-                                numbers(1, 10000) nn
-                              -- for each virtual run, randomly reorder measurements
-                              order by virtual_run, rand()
-                           ) virtual_runs
-                     ) relabeled
-                  group by virtual_run, random_label
-               ) virtual_medians
-            group by virtual_run -- aggregate by random_label
-         ) virtual_medians_array
-      -- this select aggregates by virtual_run
-   ) rd,
-   (
+    (
+        -- randomization over the varying metrics only, then scattered back to
+        -- full width (constant metrics get threshold 0)
+        select arrayMap(i -> if(has(varying, i), thr_small[indexOf(varying, i)], 0.),
+                        range(1, num_metrics + 1)) threshold
+        from
+        (
+            select quantileExactForEach(0.99)(d) thr_small
+            from
+            (
+                select
+                    arrayShuffle(projected) as sh,
+                    intDiv(length(sh), 2) as h,
+                    arrayReduce('medianExactForEach', arraySlice(sh, 1, h)) as ma,
+                    arrayReduce('medianExactForEach', arraySlice(sh, h + 1)) as mb,
+                    arrayMap(x, y -> abs(x - y), ma, mb) as d
+                from numbers(10000)
+                settings max_block_size = 64
+            )
+        )
+    ) rd,
+    (
         select groupArrayInsertAt(median_metrics, version) medians_by_version
         from
         (
@@ -59,12 +52,11 @@ from
             from table
             group by version
         ) original_medians
-   ) original_medians_array,
-   (
+    ) original_medians_array,
+    (
         select any(test) test, any(query) query from table
-   ) any_query,
-   (
+    ) any_query,
+    (
        select throwIf(uniq((test, query)) != 1) from table
-   ) check_single_query -- this subselect checks that there is only one query in the input table;
-                        -- written this way so that it is not optimized away (#10523)
+    ) check_single_query
 ;

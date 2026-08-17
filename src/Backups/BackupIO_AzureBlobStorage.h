@@ -84,7 +84,6 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
-    void removeFilesBatch(const Strings & file_names);
 
     const DataSourceDescription data_source_description;
     std::shared_ptr<const AzureBlobStorage::ContainerClient> client;

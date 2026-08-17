@@ -42,14 +42,15 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// MergingSortedTransform supposed to consume virtual row
-/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual row before output,
-/// otherwise it can reach downstream steps and cause issues because of conversions are valid only for current step.
+/// `MergingSortedTransform` is supposed to consume virtual rows.
+/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual rows before output,
+/// otherwise they can reach downstream steps and cause issues, both because the attached conversions are valid only for the current step
+/// and because the virtual rows are empty chunks that some downstream transforms (e.g. `LimitTransform` with `WITH TIES`) do not expect.
 class RemoveVirtualRowTransform : public ISimpleTransform
 {
 public:
     explicit RemoveVirtualRowTransform(SharedHeader header)
-        : ISimpleTransform(header, header, false)
+        : ISimpleTransform(header, header, /*skip_empty_chunks=*/ true)
     {
     }
 
@@ -57,6 +58,13 @@ public:
 
     void transform(Chunk & chunk) override
     {
+        if (isVirtualRow(chunk))
+        {
+            /// Drop the virtual row entirely: it was a marker for the merging algorithm,
+            /// and there is no merging in this branch (single stream), so it has no downstream purpose.
+            chunk.clear();
+            return;
+        }
         chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     }
 
@@ -108,6 +116,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LIMIT_EXCEEDED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
@@ -117,14 +126,14 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
 
     double ratio = max_bytes_ratio_before_external_sort;
     if (ratio < 0 || ratio >= 1.)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({:.3f})", ratio);
 
     auto available_system_memory = getMostStrictAvailableSystemMemory();
     if (available_system_memory.has_value())
     {
         size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
-        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
+        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {:.3f}, available system memory: {})",
             formatReadableSizeWithBinarySuffix(ratio_in_bytes),
             ratio,
             formatReadableSizeWithBinarySuffix(*available_system_memory));
@@ -256,7 +265,7 @@ SortingStep::SortingStep(
     const Settings & settings_,
     UInt64 limit_,
     bool always_read_till_end_)
-    : ITransformingStep(input_header, input_header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_), /*collect_processors*/ false)
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
@@ -313,19 +322,30 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
+/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
+/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
+/// `max_threads` cannot explode the port/processor count.
+static void checkScatterConnectionLimit(size_t threads, size_t streams)
+{
+    const size_t connection_count_limit = 1000000;
+    if (threads * streams > connection_count_limit)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+            threads, streams, connection_count_limit);
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
-    size_t threads = pipeline.getNumThreads();
+    /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
+    /// both sides of the join scatter into the same number of shards even if they read a different number
+    /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
+    size_t threads = scatter_partitions > 0 ? scatter_partitions : pipeline.getNumThreads();
     size_t streams = pipeline.getNumStreams();
 
     if (!partition_by_description.empty() && threads > 1)
     {
         /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
         /// Let's limit this by some sane value to avoid explosion.
-        const size_t connection_count_limit = 1000000;
-        if (threads * streams > connection_count_limit)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-                threads, streams, connection_count_limit);
+        checkScatterConnectionLimit(threads, streams);
 
         auto stream_header = pipeline.getSharedHeader();
 
@@ -494,10 +514,10 @@ void SortingStep::fullSortStreams(
     mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
 }
 
-void SortingStep::fullSort(
-    QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
+void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
     scatterByPartitionIfNeeded(pipeline);
+    scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
@@ -506,6 +526,7 @@ void SortingStep::fullSort(
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
+        sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
@@ -518,10 +539,14 @@ void SortingStep::fullSort(
             always_read_till_end);
 
         pipeline.addTransform(std::move(transform));
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
     }
     else if (apply_virtual_row_conversions)
     {
         pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
+        sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
     }
 }
 
@@ -530,6 +555,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
     /// So we'll try to infer sorting to use only in case of Full sorting
+    QueryPipelineProcessorsCollector collector(pipeline, this);
 
     if (type == Type::MergingSorted)
     {
@@ -539,6 +565,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
         return;
     }
 
@@ -553,17 +581,25 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        finalizing = collector.detachProcessors(static_cast<size_t>(SortingStage::FinishSort));
         return;
     }
 
     if (type == Type::PartitionedFinishSorting)
     {
+        /// The input is already partitioned upstream: the primary-key-range join sharding path
+        /// (`convertToPartitionedFinishSorting`) feeds one pre-sorted stream per shard, so each stream only
+        /// needs its sort suffix finished. No scatter is inserted here - an order-preserving scatter feeding
+        /// the selective per-shard merge consumers can deadlock (see `optimizeParallelFullSortingMergeJoin`).
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
@@ -573,13 +609,26 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        finalizing = collector.detachProcessors(static_cast<size_t>(SortingStage::FinishSort));
         return;
     }
 
-    fullSort(pipeline, result_description, limit);
+    fullSort(pipeline, result_description, limit, collector);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+    if (!merge_streams.empty())
+    {
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+        merge_streams.insert(merge_streams.end(), tail.begin(), tail.end());
+    }
+    else
+    {
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
+        sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
+    }
 }
 
 void SortingStep::describeActions(FormatSettings & settings) const
@@ -649,27 +698,52 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     sort_settings.updatePlanSettings(settings);
 }
 
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
+
 void SortingStep::serialize(Serialization & ctx) const
 {
-    if (type != Type::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
+    if (type != Type::Full && type != Type::FinishSorting)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Serialization of SortingStep is implemented only for Full and FinishSorting");
 
-    /// Do not serialize type here; Later we can use different names if needed.\
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serialization of SortingStep requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
-
     serializeSortDescription(result_description, ctx.out);
 
-    /// Later
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
+    serializeSortDescription(partition_by_description, ctx.out);
 
-    writeVarUInt(partition_by_description.size(), ctx.out);
+    /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
+    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
+    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
+    /// bit is set), so a plain full sort always writes a plain 0.
+    UInt8 flags = 0;
+    if (type == Type::FinishSorting)
+    {
+        flags |= 1;
+        if (use_buffering)
+            flags |= 2;
+        if (apply_virtual_row_conversions)
+            flags |= 4;
+    }
+    writeIntBinary(flags, ctx.out);
+
+    if (type == Type::FinishSorting)
+        serializeSortDescription(prefix_description, ctx.out);
+}
+
+QueryPlanStepPtr SortingStep::clone() const
+{
+    return std::make_unique<SortingStep>(*this);
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
@@ -679,17 +753,84 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Deserialization of SortingStep requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
+
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size = 0;
-    readVarUInt(partition_desc_size, ctx.in);
+    SortDescription partition_by_description;
+    deserializeSortDescription(partition_by_description, ctx.in);
 
-    if (partition_desc_size)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    bool finish_sorting = flags & 1;
+    bool use_buffering = flags & 2;
+    bool apply_virtual_row_conversions = flags & 4;
 
-    return std::make_unique<SortingStep>(
-        ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+    SortDescription prefix_description;
+    if (finish_sorting)
+        deserializeSortDescription(prefix_description, ctx.in);
+
+    std::unique_ptr<SortingStep> step;
+    if (partition_by_description.empty())
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+    else
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), 0, sort_settings);
+
+    if (finish_sorting)
+        step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
+
+    return step;
+}
+
+std::vector<size_t> SortingStep::getStepGroups() const
+{
+    return { static_cast<size_t>(SortingStage::Scatter),
+        static_cast<size_t>(SortingStage::Sort),
+        static_cast<size_t>(SortingStage::MergeStreams),
+        static_cast<size_t>(SortingStage::FinishSort)
+    };
+}
+
+String SortingStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<SortingStage>(group))
+    {
+        case SortingStage::Scatter: return "scatter by partition";
+        case SortingStage::Sort: return "sorting";
+        case SortingStage::MergeStreams: return "merge sorted streams";
+        case SortingStage::FinishSort: return "finish sort";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SortingStage group {}", group);
+}
+
+void SortingStep::describePipeline(FormatSettings & settings) const
+{
+    if (type == Type::Full)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+        IQueryPlanStep::describePipeline(sorting_stage, settings);
+        IQueryPlanStep::describePipeline(scatter_stage, settings);
+    }
+    else if (type == Type::MergingSorted)
+    {
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+    }
+    else if (type == Type::FinishSorting)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+    }
+    else if (type == Type::PartitionedFinishSorting)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+    }
 }
 
 void registerSortingStep(QueryPlanStepRegistry & registry);

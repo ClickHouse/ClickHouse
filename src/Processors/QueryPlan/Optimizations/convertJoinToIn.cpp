@@ -141,6 +141,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join)
         return 0;
 
+    /// The set created here uses `transform_null_in = false` and transfer limits, which the
+    /// serialized set record does not carry; a distributed-plan worker would rebuild the set
+    /// with its task settings and could get a different membership policy. Keep the join.
+    if (settings.make_distributed_plan)
+        return 0;
+
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
     if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&

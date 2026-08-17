@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -42,6 +43,7 @@
 #include <boost/algorithm/string.hpp>
 
 #if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
@@ -288,7 +290,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             AccessFlags flags;
 
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+            {
                 flags |= AccessType::CREATE_DATABASE;
+
+                /// The last point on this path that still runs as the real user. An existing local
+                /// database means nothing is created here, and `create_fn` authorizes it if it is
+                /// dropped in between. Under CHECK_ACCESS_ONLY the creating host is a different one,
+                /// so a local existence answer says nothing about it.
+                const bool database_exists_so_nothing_is_created
+                    = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
+
+                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
+                        && create.storage->engine->arguments)
+                        DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+            }
 
             if (!flags)
                 flags = AccessType::SHOW_DATABASES;
@@ -754,6 +774,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
         boost::intrusive_ptr<ASTCreateQuery> create_table_query;
         DatabasePtr database;
+#if CLICKHOUSE_CLOUD
+        String data_path_in_backup;
+        std::optional<ASTs> partitions;
+#endif
 
         {
             std::lock_guard lock{mutex};
@@ -765,7 +789,33 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
             create_table_query = boost::static_pointer_cast<ASTCreateQuery>(table_info.create_table_query->clone());
             database = table_info.database;
+#if CLICKHOUSE_CLOUD
+            data_path_in_backup = table_info.data_path_in_backup;
+            partitions = table_info.partitions;
+#endif
         }
+
+#if CLICKHOUSE_CLOUD
+        /// Capture the source table's UUID before it is overwritten below; a mounted table needs it to
+        /// scope its restore revalidation to the source table's per-part locks.
+        String source_table_uuid;
+        if (create_table_query->has_uuid)
+            source_table_uuid = toString(create_table_query->uuid);
+
+        /// For a lightweight restore, resolve the mount provenance to be persisted when the table is
+        /// created (handed to the storage via the create-query context below).
+        auto snapshot_mount_provenance = computeSnapshotMountProvenance(
+            restore_settings, backup, backup_info_for_restore, context, *create_table_query, data_path_in_backup, source_table_uuid);
+
+        /// Partition-filtered mount restore is unimplemented: provenance is persisted in the table-creation
+        /// multi-op, before the PARTITIONS filter runs in the data phase, so a no-match would strand an empty
+        /// mounted table that reopens an unpinned source. Reject up front, before any table is created.
+        if (snapshot_mount_provenance && partitions && !partitions->empty())
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "mount_readonly_parts_from_snapshot does not support a PARTITIONS filter. Restore the whole table "
+                "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
+#endif
 
         /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
         /// The generated UUID will be ignored if the database does not support UUIDs.
@@ -818,6 +868,9 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
+#if CLICKHOUSE_CLOUD
+        create_query_context->setSnapshotMountProvenanceToPersist(snapshot_mount_provenance);
+#endif
 
         /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
         /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished
@@ -969,15 +1022,6 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 
     std::lock_guard lock{mutex};
     data_restore_tasks.push_back(std::move(new_task));
-}
-
-void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
-{
-    if (current_stage != Stage::INSERTING_DATA_TO_TABLES)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
-
-    std::lock_guard lock{mutex};
-    insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }
 
 void RestorerFromBackup::runDataRestoreTasks()

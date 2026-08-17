@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 En una consulta a la función `dictGet*`, se pasa una tupla como clave. Ejemplo: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+Cuando la clave compuesta consta de un solo atributo, el valor de la clave puede pasarse directamente, sin necesidad de envolverlo en `tuple`. Por ejemplo, tanto `dictGetString('dict_name', 'attr_name', 'key')` como `dictGetString('dict_name', 'attr_name', tuple('key'))` son válidos.
+
 <div id="attributes">
   ## Atributos
 </div>

@@ -71,7 +71,7 @@ Le CDC n’est **pas pris en charge** en Private Preview, mais le sera à l’av
   #### Identifiants du compte de service
 </div>
 
-ClickPipes s&#39;authentifie sur votre projet Google Cloud à l&#39;aide d&#39;une [clé de compte de service](https://docs.cloud.google.com/iam/docs/keys-create-delete). Nous recommandons de créer un compte de service dédié avec le minimum d&#39;[autorisations](#permissions) nécessaires pour permettre à ClickPipes d&#39;exporter les données depuis BigQuery, de les charger dans le bucket GCS de staging, puis de les importer dans ClickHouse.
+ClickPipes s&#39;authentifie sur votre projet Google Cloud à l&#39;aide d&#39;une [clé de compte de service](https://docs.cloud.google.com/iam/docs/keys-create-delete). Nous recommandons de créer un compte de service dédié avec le minimum d&#39;[autorisations](#permissions) nécessaires pour permettre à ClickPipes d&#39;exporter les données depuis BigQuery, de les charger dans le bucket GCS de transit, puis de les importer dans ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Création d'une clé de compte de service avec des autorisations BigQuery et Cloud Storage" size="lg" border />
 

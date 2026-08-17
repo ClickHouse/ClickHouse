@@ -1,10 +1,14 @@
-#include <Functions/isDistinctFrom.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isDistinctFrom.h>
+#include <Functions/isNotDistinctFrom.h>
 
 
 namespace DB
 {
+
+/// avoid second copy
+extern template class FunctionComparison<EqualsOp, NameEquals, true>;
 
 REGISTER_FUNCTION(IsDistinctFrom)
 {
@@ -68,6 +72,25 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cm
         func_builder_not_equals,
         func_builder_and,
         x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals, true /* is null safe cmp*/>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    /// `executeArrayLexicographicEqualityImpl` expects the resolver to return 1 for equal element
+    /// pairs, so use the null-safe equality probe (`FunctionIsNotDistinctFrom`); the impl inverts
+    /// the per-row result for `NotEqualsOp` instantiations.
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
+
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
 }
 
 }

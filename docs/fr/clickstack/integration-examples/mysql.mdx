@@ -35,9 +35,7 @@ Si vous souhaitez tester l’intégration des logs MySQL avant de configurer vot
 * Espace disque suffisant pour les fichiers journaux
 
 <Steps>
-  <Step>
-    #### Configurer la journalisation de MySQL
-
+  <Step title="Configurer la journalisation de MySQL" id="configure-mysql">
     MySQL prend en charge plusieurs types de journaux. Pour une supervision complète avec OpenTelemetry, nous recommandons d’activer le journal des erreurs et le journal des requêtes lentes.
 
     Le fichier de configuration `my.cnf` ou `my.ini` se trouve généralement à l’un des emplacements suivants :
@@ -89,9 +87,7 @@ Si vous souhaitez tester l’intégration des logs MySQL avant de configurer vot
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration personnalisée pour l’OTel collector
-
+  <Step title="Créer une configuration personnalisée pour l’OTel collector" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `mysql-logs-monitoring.yaml` avec la configuration suivante :
@@ -176,12 +172,10 @@ Si vous souhaitez tester l’intégration des logs MySQL avant de configurer vot
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, montez le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml` et définissez la variable d’environnement `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
 
-    Mettez à jour la configuration de déploiement de ClickStack :
+    Mettez à jour la configuration de déploiement de ClickStack :
 
     ```yaml
     services:
@@ -201,9 +195,7 @@ Si vous souhaitez tester l’intégration des logs MySQL avant de configurer vot
     </Note>
   </Step>
 
-  <Step>
-    #### Vérifier les logs dans HyperDX
-
+  <Step title="Vérifier les logs dans HyperDX" id="verifying-logs">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs remontent correctement :
 
     1. Accédez à la vue Search
@@ -224,9 +216,7 @@ Si vous souhaitez tester l’intégration des logs MySQL avant de configurer vot
 Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple contenant des logs MySQL pré-générés aux schémas réalistes.
 
 <Steps>
-  <Step>
-    #### Téléchargez le jeu de données d’exemple
-
+  <Step title="Téléchargez le jeu de données d’exemple" id="download-sample">
     Téléchargez les exemples de fichiers journaux :
 
     ```bash
@@ -245,9 +235,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de
     * Des séquences de démarrage et d’arrêt du serveur de base de données
   </Step>
 
-  <Step>
-    #### Créer une configuration de test du collecteur
-
+  <Step title="Créer une configuration de test du collecteur" id="test-config">
     Créez un fichier nommé `mysql-logs-demo.yaml` avec la configuration suivante :
 
     ```yaml
@@ -313,9 +301,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de
     ```
   </Step>
 
-  <Step>
-    #### Exécuter ClickStack avec la configuration de démonstration
-
+  <Step title="Exécuter ClickStack avec la configuration de démonstration" id="run-demo">
     Exécutez ClickStack avec les logs et la configuration de démonstration :
 
     ```bash
@@ -329,9 +315,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de
     ```
   </Step>
 
-  <Step>
-    #### Vérifier les logs dans HyperDX
-
+  <Step title="Vérifier les logs dans HyperDX" id="verify-demo-logs">
     Une fois ClickStack démarré :
 
     1. Attendez quelques instants que ClickStack soit complètement initialisé (généralement 30 à 60 secondes)
@@ -360,18 +344,16 @@ Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de
   ## Tableaux de bord et visualisations
 </div>
 
-Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fournissons des visualisations essentielles pour les logs MySQL.
+Pour vous aider à démarrer la surveillance de MySQL avec ClickStack, nous fournissons des visualisations essentielles pour les logs MySQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer le tableau de bord préconfiguré
-
+  <Step title="Importer le tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section Dashboards
-    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, dans le menu des points de suspension
+    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, sous le menu à points de suspension
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
 
@@ -380,15 +362,13 @@ Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fourn
     <Image img="/images/clickstack/mysql/finish-import.webp" alt="Terminer l’importation" />
   </Step>
 
-  <Step>
-    #### Afficher le tableau de bord
-
+  <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations préconfigurées.
 
     <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Exemple de tableau de bord" />
 
     <Note>
-      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, le tableau de bord importé n’aura pas d’intervalle de temps défini.
+      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Le tableau de bord importé n’aura pas d’intervalle de temps défini par défaut.
     </Note>
   </Step>
 </Steps>
@@ -491,4 +471,4 @@ Si votre format diffère sensiblement, ajustez les motifs d’expression réguli
   ## Passage en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en route rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
+Ce guide s&#39;appuie sur l&#39;OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers le endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

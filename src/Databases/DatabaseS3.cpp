@@ -88,10 +88,6 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
-    std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
-        return true;
-
     return checkUrl(getFullUrl(name), context_, false);
 }
 
@@ -175,8 +171,7 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
 
 bool DatabaseS3::empty() const
 {
-    std::lock_guard lock(mutex);
-    return loaded_tables.empty();
+    return true;
 }
 
 ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
@@ -208,20 +203,6 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
 
 void DatabaseS3::shutdown()
 {
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = loaded_tables;
-    }
-
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
-        kv.second->flushAndShutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    loaded_tables.clear();
 }
 
 DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)

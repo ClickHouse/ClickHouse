@@ -66,38 +66,49 @@ Outros parâmetros comuns são herdados da configuração do servidor ClickHouse
 
 As configurações internas de coordenação ficam na seção `<keeper_server>.<coordination_settings>` e têm os seguintes parâmetros:
 
-| Parameter                          | Description                                                                                                                                                                                                                 | Default          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `operation_timeout_ms`             | Tempo limite para uma única operação do cliente (ms)                                                                                                                                                                        | `10000`          |
-| `min_session_timeout_ms`           | Tempo limite mínimo da sessão do cliente (ms)                                                                                                                                                                               | `10000`          |
-| `session_timeout_ms`               | Tempo limite máximo da sessão do cliente (ms)                                                                                                                                                                               | `100000`         |
-| `dead_session_check_period_ms`     | Com que frequência o ClickHouse Keeper verifica sessões expiradas e as remove (ms)                                                                                                                                          | `500`            |
-| `heart_beat_interval_ms`           | Com que frequência um líder do ClickHouse Keeper envia heartbeats aos seguidores (ms)                                                                                                                                       | `500`            |
-| `election_timeout_lower_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele pode iniciar uma eleição de líder. Deve ser menor ou igual a `election_timeout_upper_bound_ms`. O ideal é que não sejam iguais.               | `1000`           |
-| `election_timeout_upper_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele deverá iniciar uma eleição de líder.                                                                                                          | `2000`           |
-| `rotate_log_storage_interval`      | Quantos registros de log armazenar em um único arquivo.                                                                                                                                                                     | `100000`         |
-| `reserved_log_items`               | Quantos registros de log de coordenação armazenar antes da compactação.                                                                                                                                                     | `100000`         |
-| `snapshot_distance`                | Com que frequência o ClickHouse Keeper criará novos snapshots (em número de registros nos logs).                                                                                                                            | `100000`         |
-| `snapshots_to_keep`                | Quantos snapshots manter.                                                                                                                                                                                                   | `3`              |
-| `stale_log_gap`                    | Limite a partir do qual o líder considera o seguidor desatualizado e envia o snapshot para ele em vez dos logs.                                                                                                            | `10000`          |
-| `fresh_log_gap`                    | Quando o nó passa a ser considerado atualizado.                                                                                                                                                                             | `200`            |
-| `max_requests_batch_size`          | Tamanho máximo do batch em número de requisições antes de ser enviado ao RAFT.                                                                                                                                              | `100`            |
-| `force_sync`                       | Chama `fsync` a cada gravação no log de coordenação.                                                                                                                                                                        | `true`           |
-| `quorum_reads`                     | Executa requisições de leitura como gravações em todo o consenso RAFT, com velocidade semelhante.                                                                                                                           | `false`          |
-| `raft_logs_level`                  | Nível de logging em texto sobre coordenação (trace, debug etc.).                                                                                                                                                            | `system default` |
-| `auto_forwarding`                  | Permite encaminhar requisições de gravação dos seguidores para o líder.                                                                                                                                                     | `true`           |
-| `shutdown_timeout`                 | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                            | `5000`           |
-| `startup_timeout`                  | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                              | `30000`          |
-| `async_replication`                | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores | `false`          |
-| `latest_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                  | `1GiB`           |
-| `commit_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log necessárias em seguida para commit                                                                                                                             | `500MiB`         |
-| `disk_move_retries_wait_ms`        | Quanto tempo esperar entre retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos                                                                                                             | `1000`           |
-| `disk_move_retries_during_init`    | Quantidade de retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos durante a inicialização                                                                                                  | `100`            |
-| `experimental_use_rocksdb`         | Usa rocksdb como armazenamento backend                                                                                                                                                                                      | `0`              |
+| Parâmetro                                 | Descrição                                                                                                                                                                                                                                                                                                                                                                                                               | Padrão           |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                    | Tempo limite para uma única operação do cliente (ms)                                                                                                                                                                                                                                                                                                                                                                    | `10000`          |
+| `min_session_timeout_ms`                  | Tempo limite mínimo da sessão do cliente (ms)                                                                                                                                                                                                                                                                                                                                                                           | `10000`          |
+| `session_timeout_ms`                      | Tempo limite máximo da sessão do cliente (ms)                                                                                                                                                                                                                                                                                                                                                                           | `100000`         |
+| `dead_session_check_period_ms`            | Com que frequência o ClickHouse Keeper verifica sessões expiradas e as remove (ms)                                                                                                                                                                                                                                                                                                                                      | `500`            |
+| `heart_beat_interval_ms`                  | Com que frequência um líder do ClickHouse Keeper envia heartbeats aos seguidores (ms)                                                                                                                                                                                                                                                                                                                                   | `500`            |
+| `election_timeout_lower_bound_ms`         | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele pode iniciar uma eleição de líder. Deve ser menor ou igual a `election_timeout_upper_bound_ms`. O ideal é que não sejam iguais.                                                                                                                                                                                                             | `1000`           |
+| `election_timeout_upper_bound_ms`         | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele deverá iniciar uma eleição de líder.                                                                                                                                                                                                                                                                                                        | `2000`           |
+| `rotate_log_storage_interval`             | Quantos registros de log armazenar em um único arquivo.                                                                                                                                                                                                                                                                                                                                                                 | `100000`         |
+| `reserved_log_items`                      | Quantos registros de log de coordenação armazenar antes da compactação.                                                                                                                                                                                                                                                                                                                                                 | `100000`         |
+| `snapshot_distance`                       | Com que frequência o ClickHouse Keeper criará novos snapshots (em número de registros nos logs).                                                                                                                                                                                                                                                                                                                        | `100000`         |
+| `snapshots_to_keep`                       | Quantos snapshots manter.                                                                                                                                                                                                                                                                                                                                                                                               | `3`              |
+| `stale_log_gap`                           | Limite a partir do qual o líder considera o seguidor desatualizado e envia o snapshot para ele em vez dos logs.                                                                                                                                                                                                                                                                                                         | `10000`          |
+| `fresh_log_gap`                           | Quando o nó passa a ser considerado atualizado.                                                                                                                                                                                                                                                                                                                                                                         | `200`            |
+| `max_requests_batch_size`                 | Tamanho máximo do batch em número de requisições antes de ser enviado ao RAFT.                                                                                                                                                                                                                                                                                                                                          | `100`            |
+| `force_sync`                              | Chama `fsync` a cada gravação no log de coordenação.                                                                                                                                                                                                                                                                                                                                                                    | `true`           |
+| `quorum_reads`                            | Executa requisições de leitura como gravações em todo o consenso RAFT, com velocidade semelhante.                                                                                                                                                                                                                                                                                                                       | `false`          |
+| `raft_logs_level`                         | Nível de logging em texto sobre coordenação (trace, debug etc.).                                                                                                                                                                                                                                                                                                                                                        | `system default` |
+| `auto_forwarding`                         | Permite encaminhar requisições de gravação dos seguidores para o líder.                                                                                                                                                                                                                                                                                                                                                 | `true`           |
+| `shutdown_timeout`                        | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                                                                                                                                                                                                                        | `5000`           |
+| `startup_timeout`                         | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                                                                                                                                                                                                                          | `30000`          |
+| `async_replication`                       | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores                                                                                                                                                                                             | `false`          |
+| `latest_logs_cache_size_threshold`        | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                                                                                                                                                                                                              | `1GiB`           |
+| `commit_logs_cache_size_threshold`        | Descontinuado. Usado para `log_readahead_commit_window_bytes` caso essa configuração não esteja definida.                                                                                                                                                                                                                                                                                                               | -                |
+| `commit_logs_cache_entry_count_threshold` | Descontinuado, não tem efeito. Use `log_readahead_commit_window_bytes` em vez disso.                                                                                                                                                                                                                                                                                                                                    | -                |
+| `log_readahead_enabled`                   | Habilita a leitura antecipada decodificada por par para leituras de recuperação do changelog (replicação de seguidores).                                                                                                                                                                                                                                                                                                | `false`          |
+| `log_readahead_window_bytes`              | Máximo de bytes de entradas decodificadas armazenadas em buffer por leitor de par. Deve ser pelo menos tão grande quanto um batch típico de append-entries.                                                                                                                                                                                                                                                             | `64MiB`          |
+| `log_readahead_max_peer_readers`          | Número máximo de leitores de leitura antecipada simultâneos por par.                                                                                                                                                                                                                                                                                                                                                    | `8`              |
+| `log_readahead_eviction_timeout_ms`       | Tempo limite de inatividade após o qual um leitor de leitura antecipada por par inativo, ou o leitor de commit, é removido (uma ausência subsequente o recria).                                                                                                                                                                                                                                                         | `30000`          |
+| `log_readahead_pool_threads`              | Número de threads no pool de threads dedicado à leitura antecipada. `0` deriva o valor de `log_readahead_max_peer_readers`.                                                                                                                                                                                                                                                                                             | `0`              |
+| `log_readahead_serve_wait_timeout_ms`     | Tempo máximo de espera pelo preenchimento da leitura antecipada em segundo plano antes de recorrer a uma leitura direta.                                                                                                                                                                                                                                                                                                | `200`            |
+| `log_readahead_chunk_size`                | Número de entradas de log decodificadas por fragmento na tarefa de preenchimento de pré-leitura.                                                                                                                                                                                                                                                                                                                        | `16`             |
+| `log_readahead_commit_window_bytes`       | Tamanho total máximo das entradas de log decodificadas armazenadas em buffer à frente da thread de commit. `0` desabilita a pré-leitura de commit (o commit lê as entradas do disco uma a uma).                                                                                                                                                                                                                         | `500MiB`         |
+| `log_startup_read_max_streams`            | Número máximo de arquivos de changelog lidos simultaneamente durante a inicialização do Keeper. `0` = usa automaticamente o número de núcleos de CPU. `1` = usa a leitura de inicialização serial (pré-paralela). O paralelismo efetivo é limitado pelo número de arquivos de changelog que precisam ser lidos; considere reduzir esse valor em armazenamentos limitados por buscas (HDDs, volumes com IOPS limitadas). | `0`              |
+| `log_startup_read_buffer_size`            | Tamanho do buffer de leitura por fluxo (bytes) usado ao ler changelogs durante a inicialização do Keeper. Deve ser maior que `0`. O buffer também é limitado ao tamanho do arquivo.                                                                                                                                                                                                                                     | `8MiB`           |
+| `disk_move_retries_wait_ms`               | Quanto tempo esperar entre retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos                                                                                                                                                                                                                                                                                                         | `1000`           |
+| `disk_move_retries_during_init`           | Quantidade de retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos durante a inicialização                                                                                                                                                                                                                                                                                              | `100`            |
+| `experimental_use_rocksdb`                | Usa rocksdb como armazenamento backend                                                                                                                                                                                                                                                                                                                                                                                  | `0`              |
 
-A configuração de quórum fica na seção `<keeper_server>.<raft_configuration>` e contém a descrição dos servidores.
+A configuração de quórum está localizada na seção `<keeper_server>.<raft_configuration>` e contém a descrição dos servidores.
 
-O único parâmetro para todo o quórum é `secure`, que habilita conexão criptografada para a comunicação entre os participantes do quórum. O parâmetro pode ser definido como `true` se uma conexão SSL for necessária para a comunicação interna entre os nós, ou deixado sem especificação caso contrário.
+O único parâmetro para todo o quórum é `secure`, que habilita uma conexão criptografada para a comunicação entre os participantes do quórum. O parâmetro pode ser definido como `true` se uma conexão SSL for necessária para a comunicação interna entre os nós ou deixado sem especificação caso contrário.
 
 Os principais parâmetros de cada `<server>` são:
 
@@ -107,7 +118,7 @@ Os principais parâmetros de cada `<server>` são:
 * `can_become_leader` — Defina como `false` para configurar o servidor como `learner`. Se omitido, o valor será `true`.
 
 <Note>
-  Em caso de mudança na topologia do seu cluster ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
+  Em caso de mudança na topologia do seu cluster do ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
 
   Se o host de uma instância do Keeper puder mudar, recomendamos definir e usar um hostname em vez de endereços IP. Alterar o hostname equivale a remover e adicionar o servidor novamente, o que, em alguns casos, pode ser impossível (por exemplo, por não haver instâncias do Keeper suficientes para quórum).
 </Note>
@@ -507,7 +518,7 @@ Registre as métricas de comparação antes da migração para poder verificar a
 
 4. Opcional, mas recomendado: identifique o nó líder do ZooKeeper, inicie-o e interrompa-o novamente. Isso força o ZooKeeper a gravar um snapshot consistente em disco antes da conversão.
 
-5. Execute `clickhouse-keeper-converter` no nó líder. Se você tiver o binário completo do ClickHouse instalado, use o subcomando `keeper-converter` (`clickhouse keeper-converter`). Se nenhum dos dois estiver disponível, [baixe o binário](/getting-started/quick-start/oss#install-clickhouse).
+5. Execute `clickhouse-keeper-converter` no nó líder. Se você tiver o binário completo do ClickHouse instalado, use o subcomando `keeper-converter` (`clickhouse keeper-converter`). Se nenhum dos dois estiver disponível, [baixe o binário](/pt-BR/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \
@@ -720,18 +731,28 @@ Além disso, todos os arquivos de snapshot serão movidos de `snapshot_local` e 
   ## Configurando o cache de logs
 </div>
 
-Para minimizar a quantidade de dados lidos do disco, o Keeper mantém entradas de log em cache na memória.
-Se as solicitações forem grandes, as entradas de log consumirão memória demais, então o volume de logs em cache é limitado.
-O limite é controlado por estas duas configurações:
+Para minimizar a quantidade de dados lidos do disco, o Keeper armazena em cache na memória as entradas de log.
+Se as solicitações forem grandes, as entradas de log ocuparão muita memória; por isso, a quantidade de logs armazenados em cache é limitada.
+O limite do cache dos logs mais recentes é controlado por:
 
 * `latest_logs_cache_size_threshold` - tamanho total dos logs mais recentes armazenados no cache
-* `commit_logs_cache_size_threshold` - tamanho total dos logs subsequentes que precisam ser confirmados em seguida
 
-Se os valores padrão forem grandes demais, você pode reduzir o uso de memória diminuindo essas duas configurações.
+Se o valor padrão for muito alto, reduza esta configuração para diminuir o uso de memória.
+
+As entradas de log necessárias para o próximo commit são fornecidas por um leitor de leitura antecipada decodificada, dimensionado por
+`log_readahead_commit_window_bytes` (`0` desativa a leitura antecipada para commit). Essa configuração substitui as
+configurações obsoletas `commit_logs_cache_size_threshold` e `commit_logs_cache_entry_count_threshold`,
+mantidas apenas para compatibilidade de configuração (a primeira ainda é mapeada para `log_readahead_commit_window_bytes` se
+este não estiver definido; a segunda não tem efeito). O mesmo mecanismo de leitura antecipada também atende às leituras de recuperação da
+replicação do seguidor quando `log_readahead_enabled` é `true`; consulte
+`log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
+`log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms` e `log_readahead_chunk_size`
+nas [configurações internas de coordenação](#internal-coordination-settings) para conhecer os parâmetros de ajuste
+do lado do peer.
 
 <Note>
-  Você pode usar o comando `pfev` para verificar a quantidade de logs lidos de cada cache e do arquivo.
-  Você também pode usar métricas do endpoint do Prometheus para acompanhar o tamanho atual de ambos os caches.
+  Você pode usar o comando `pfev` para verificar a quantidade de logs lidos de cada cache e de um arquivo.
+  Também pode usar as métricas do endpoint do Prometheus para acompanhar o tamanho atual de ambos os caches.
 </Note>
 
 <div id="prometheus">
@@ -779,270 +800,266 @@ Consulte também a [integração com Prometheus do ClickHouse Cloud](/pt-BR/prod
 
 Este guia apresenta configurações simples e mínimas para configurar o ClickHouse Keeper, com um exemplo de como testar operações distribuídas. Este exemplo é executado em 3 nós Linux.
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. Configure os nós com as configurações do Keeper
-</div>
+<Steps>
+  <Step title="Configure os nós com as configurações do Keeper" id="1-configure-nodes-with-keeper-settings">
+    1. Instale 3 instâncias do ClickHouse em 3 hosts (`chnode1`, `chnode2`, `chnode3`). (Consulte o [Quick Start](/pt-BR/get-started/setup/install) para mais detalhes sobre a instalação do ClickHouse.)
 
-1. Instale 3 instâncias do ClickHouse em 3 hosts (`chnode1`, `chnode2`, `chnode3`). (Consulte o [Quick Start](/pt-BR/get-started/setup/install) para mais detalhes sobre a instalação do ClickHouse.)
+    2. Em cada nó, adicione a seguinte entrada para permitir a comunicação externa por meio da interface de rede.
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. Em cada nó, adicione a seguinte entrada para permitir a comunicação externa por meio da interface de rede.
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. Adicione a seguinte configuração do ClickHouse Keeper aos três servidores, atualizando a configuração `<server_id>` em cada servidor; para `chnode1`, seria `1`, para `chnode2`, seria `2` e assim por diante.
 
-3. Adicione a seguinte configuração do ClickHouse Keeper aos três servidores, atualizando a configuração `<server_id>` em cada servidor; para `chnode1`, seria `1`, para `chnode2`, seria `2` e assim por diante.
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       Estas são as configurações básicas usadas acima:
 
-   Estas são as configurações básicas usadas acima:
+       | Parâmetro                 | Descrição                                                                         | Exemplo                                             |
+       | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+       | tcp&#95;port              | porta a ser usada pelos clientes do Keeper                                        | 9181, equivalente padrão ao 2181, como no ZooKeeper |
+       | server&#95;id             | identificador de cada servidor do ClickHouse Keeper usado na configuração do Raft | 1                                                   |
+       | coordination&#95;settings | seção de parâmetros como timeouts                                                 | timeouts: 10000, nível de log: trace                |
+       | server                    | definição do servidor participante                                                | lista com a definição de cada servidor              |
+       | raft&#95;configuration    | configurações de cada servidor no cluster do Keeper                               | servidor e configurações de cada um                 |
+       | id                        | ID numérico do servidor para os serviços do Keeper                                | 1                                                   |
+       | hostname                  | hostname, IP ou FQDN de cada servidor no cluster do Keeper                        | `chnode1.domain.com`                                |
+       | port                      | porta usada para escutar conexões entre servidores do Keeper                      | 9234                                                |
 
-   | Parâmetro                 | Descrição                                                                         | Exemplo                                             |
-   | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-   | tcp&#95;port              | porta a ser usada pelos clientes do Keeper                                        | 9181, equivalente padrão ao 2181, como no ZooKeeper |
-   | server&#95;id             | identificador de cada servidor do ClickHouse Keeper usado na configuração do Raft | 1                                                   |
-   | coordination&#95;settings | seção de parâmetros como timeouts                                                 | timeouts: 10000, nível de log: trace                |
-   | server                    | definição do servidor participante                                                | lista com a definição de cada servidor              |
-   | raft&#95;configuration    | configurações de cada servidor no cluster do Keeper                               | servidor e configurações de cada um                 |
-   | id                        | ID numérico do servidor para os serviços do Keeper                                | 1                                                   |
-   | hostname                  | hostname, IP ou FQDN de cada servidor no cluster do Keeper                        | `chnode1.domain.com`                                |
-   | port                      | porta usada para escutar conexões entre servidores do Keeper                      | 9234                                                |
+    4. Habilite o componente Zookeeper. Ele usará o mecanismo ClickHouse Keeper:
 
-4. Habilite o componente Zookeeper. Ele usará o mecanismo ClickHouse Keeper:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       Estas são as configurações básicas usadas acima:
 
-   Estas são as configurações básicas usadas acima:
+       | Parâmetro | Descrição                                            | Exemplo                                    |
+       | --------- | ---------------------------------------------------- | ------------------------------------------ |
+       | node      | lista de nós para conexões com o ClickHouse Keeper   | entrada de configuração para cada servidor |
+       | host      | hostname, IP ou FQDN de cada nó do ClickHouse Keeper | `chnode1.domain.com`                       |
+       | port      | porta do cliente do ClickHouse Keeper                | 9181                                       |
 
-   | Parâmetro | Descrição                                            | Exemplo                                    |
-   | --------- | ---------------------------------------------------- | ------------------------------------------ |
-   | node      | lista de nós para conexões com o ClickHouse Keeper   | entrada de configuração para cada servidor |
-   | host      | hostname, IP ou FQDN de cada nó do ClickHouse Keeper | `chnode1.domain.com`                       |
-   | port      | porta do cliente do ClickHouse Keeper                | 9181                                       |
+    5. Reinicie o ClickHouse e verifique se cada instância do Keeper está em execução. Execute o comando a seguir em cada servidor. O comando `ruok` retorna `imok` se o Keeper estiver em execução e funcionando corretamente:
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. Reinicie o ClickHouse e verifique se cada instância do Keeper está em execução. Execute o comando a seguir em cada servidor. O comando `ruok` retorna `imok` se o Keeper estiver em execução e funcionando corretamente:
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. O banco de dados `system` tem uma tabela chamada `zookeeper` que contém os detalhes das suas instâncias do ClickHouse Keeper. Vamos ver essa tabela:
 
-6. O banco de dados `system` tem uma tabela chamada `zookeeper` que contém os detalhes das suas instâncias do ClickHouse Keeper. Vamos ver essa tabela:
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       A tabela tem esta aparência:
 
-   A tabela tem esta aparência:
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="Configure um cluster no ClickHouse" id="2--configure-a-cluster-in-clickhouse">
+    1. Vamos configurar um cluster simples com 2 shards e apenas uma réplica em 2 dos nós. O terceiro nó será usado para atingir um quorum exigido pelo ClickHouse Keeper. Atualize a configuração em `chnode1` e `chnode2`. O cluster a seguir define 1 shard em cada nó, totalizando 2 shards sem replicação. Neste exemplo, parte dos dados ficará em um nó e parte ficará no outro:
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  Configure um cluster no ClickHouse
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. Vamos configurar um cluster simples com 2 shards e apenas uma réplica em 2 dos nós. O terceiro nó será usado para atingir o quórum exigido pelo ClickHouse Keeper. Atualize a configuração em `chnode1` e `chnode2`. O cluster a seguir define 1 shard em cada nó, totalizando 2 shards sem replicação. Neste exemplo, parte dos dados ficará em um nó e parte ficará no outro:
+       | Parâmetro | Descrição                                                                     | Exemplo                                  |
+       | --------- | ----------------------------------------------------------------------------- | ---------------------------------------- |
+       | shard     | lista de réplicas na definição do cluster                                     | lista de réplicas de cada shard          |
+       | replica   | lista de configurações de cada réplica                                        | entradas de configuração de cada réplica |
+       | host      | hostname, IP ou FQDN do servidor que hospedará um shard de réplica            | `chnode1.domain.com`                     |
+       | port      | porta usada para comunicação por meio do protocolo TCP nativo                 | 9000                                     |
+       | user      | nome de usuário que será usado para autenticação nas instâncias do cluster    | default                                  |
+       | password  | senha do usuário definido para permitir conexões com as instâncias do cluster | `ClickHouse123!`                         |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. Reinicie o ClickHouse e verifique se o cluster foi criado:
 
-   | Parâmetro | Descrição                                                                  | Exemplo                                  |
-   | --------- | -------------------------------------------------------------------------- | ---------------------------------------- |
-   | shard     | lista de réplicas na definição do cluster                                  | lista de réplicas de cada shard          |
-   | replica   | lista de configurações de cada réplica                                     | entradas de configuração de cada réplica |
-   | host      | hostname, IP ou FQDN do servidor que hospedará a réplica do shard          | `chnode1.domain.com`                     |
-   | port      | porta usada para comunicação pelo protocolo TCP nativo                     | 9000                                     |
-   | user      | nome de usuário que será usado para autenticação nas instâncias do cluster | default                                  |
-   | password  | senha do usuário definida para permitir conexões às instâncias do cluster  | `ClickHouse123!`                         |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. Reinicie o ClickHouse e verifique se o cluster foi criado:
+       Você deverá ver seu cluster:
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   Você deverá ver seu cluster:
+  <Step title="Criar e testar a tabela distribuída" id="3-create-and-test-distributed-table">
+    1. Crie um novo banco de dados no novo cluster usando o clickhouse client em `chnode1`. A cláusula `ON CLUSTER` cria automaticamente o banco de dados em ambos os nós.
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. Crie uma nova tabela no banco de dados `db1`. Mais uma vez, `ON CLUSTER` cria a tabela em ambos os nós.
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. Criar e testar tabela distribuída
-</div>
+    3. No nó `chnode1`, adicione algumas linhas:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. Crie um novo banco de dados no novo cluster usando o cliente ClickHouse em `chnode1`. A cláusula `ON CLUSTER` cria automaticamente o banco de dados em ambos os nós.
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. Adicione algumas linhas no nó `chnode2`:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. Crie uma nova tabela no banco de dados `db1`. Mais uma vez, `ON CLUSTER` cria a tabela em ambos os nós.
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. Observe que executar uma instrução `SELECT` em cada nó mostra apenas os dados daquele nó. Por exemplo, em `chnode1`:
 
-3. No nó `chnode1`, adicione algumas linhas:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. Adicione algumas linhas no nó `chnode2`:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. Observe que executar uma instrução `SELECT` em cada nó mostra apenas os dados desse nó. Por exemplo, em `chnode1`:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       Em `chnode2`:
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   Em `chnode2`:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. Você pode criar uma tabela `Distributed` para representar os dados nos dois shards. Tabelas com o engine `Distributed` não armazenam dados próprios, mas permitem o processamento distribuído de consultas em vários servidores. As leituras atingem todos os shards, e as gravações podem ser distribuídas entre os shards. Execute a seguinte consulta em `chnode1`:
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. Observe que consultar `dist_table` retorna todas as quatro linhas de dados dos dois shards:
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. Você pode criar uma tabela `Distributed` para representar os dados nos dois shards. As tabelas com o table engine `Distributed` não armazenam dados próprios, mas permitem o processamento distribuído de consultas em vários servidores. As leituras acessam todos os shards, e as gravações podem ser distribuídas entre eles. Execute a seguinte consulta em `chnode1`:
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. Observe que consultar `dist_table` retorna todas as quatro linhas de dados dos dois shards:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### Resumo

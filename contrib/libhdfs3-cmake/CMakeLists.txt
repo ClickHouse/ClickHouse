@@ -195,6 +195,6 @@ endif()
 add_library(ch_contrib::hdfs ALIAS _hdfs3)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
-     add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
+    add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
      target_link_libraries(perf_checksum PRIVATE ch_contrib::hdfs)
 endif ()

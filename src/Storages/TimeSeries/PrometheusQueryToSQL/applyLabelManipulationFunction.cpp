@@ -25,7 +25,8 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a label manipulation function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -119,8 +120,8 @@ bool isLabelManipulationFunction(std::string_view function_name)
 }
 
 
-SQLQueryPiece
-applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyLabelManipulationFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
 
@@ -158,7 +159,8 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
-            group_function_args.push_back(make_intrusive<ASTLiteral>(0u)); /// Group "0" means no tags
+            group_function_args.push_back(makeASTFunction(
+                "CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"))); /// Group "0" means no tags
 
             size_t array_argument_index = impl_info->array_argument_index;
             insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));

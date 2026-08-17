@@ -31,8 +31,7 @@ This embedded version is **not designed for production use**. The following feat
 <Tab title="Docker">
 
 <Steps>
-<Step>
-### Start ClickHouse {#start-clickhouse-docker}
+<Step title="Start ClickHouse" id="start-clickhouse-docker">
 
 Pull and run the ClickHouse server image with a password set:
 
@@ -50,8 +49,7 @@ docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 click
 ```
 </Tip>
 </Step>
-<Step>
-### Open the ClickStack UI {#open-clickstack-ui-docker}
+<Step title="Open the ClickStack UI" id="open-clickstack-ui-docker">
 
 Open [http://localhost:8123](http://localhost:8123) in your browser and click **ClickStack**.
 
@@ -59,8 +57,7 @@ Enter the username `default` and the password `password` to connect to the local
 
 <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Authenticate" size="lg"/>
 </Step>
-<Step>
-### Create a source {#create-a-source-docker}
+<Step title="Create a source" id="create-a-source-docker">
 
 If you have existing OpenTelemetry tables, ClickStack will detect them and create sources automatically.
 
@@ -76,8 +73,7 @@ If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/inde
 <Tab title="Binary">
 
 <Steps>
-<Step>
-### Start ClickHouse {#start-clickhouse-binary}
+<Step title="Start ClickHouse" id="start-clickhouse-binary">
 
 Download and start ClickHouse:
 
@@ -132,13 +128,11 @@ Start the server:
 ./clickhouse server
 ```
 </Step>
-<Step>
-### Open the ClickStack UI {#open-clickstack-ui-binary}
+<Step title="Open the ClickStack UI" id="open-clickstack-ui-binary">
 
 Open [http://localhost:8123](http://localhost:8123) in your browser and click **ClickStack**. A connection to the local instance is created automatically.
 </Step>
-<Step>
-### Create a source {#create-a-source-binary}
+<Step title="Create a source" id="create-a-source-binary">
 
 If you have existing OpenTelemetry tables, ClickStack will detect them and create sources automatically.
 

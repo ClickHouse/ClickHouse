@@ -7,3 +7,4 @@ self-hosted-runner:
     - style-checker
     - style-checker-aarch64
     - release-maker
+    - amd-release-maker

@@ -37,8 +37,7 @@ The architecture of the cluster you will be setting up is shown below:
 - You have docker installed on your machine
 
 <Steps>
-<Step>
-## Set up directory structure and test environment {#set-up}
+<Step title="Set up directory structure and test environment" id="set-up">
 
 <ExampleFiles/>
 
@@ -140,8 +139,7 @@ done
 
 <ConfigExplanation/>
 </Step>
-<Step>
-## Configure ClickHouse nodes {#configure-clickhouse-servers}
+<Step title="Configure ClickHouse nodes" id="configure-clickhouse-servers">
 
 ### Server setup {#server-setup}
 
@@ -378,8 +376,7 @@ In practice, this is discouraged.
 In this example, each `users.xml` file is identical for all nodes in the cluster.
 </Note>
 </Step>
-<Step>
-## Configure ClickHouse Keeper {#configure-clickhouse-keeper-nodes}
+<Step title="Configure ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
 
 ### Keeper setup {#configuration-explanation}
 
@@ -395,8 +392,7 @@ In this example, each `users.xml` file is identical for all nodes in the cluster
 
 <CloudTip/>
 </Step>
-<Step>
-## Test the setup {#test-the-setup}
+<Step title="Test the setup" id="test-the-setup">
 
 Make sure that docker is running on your machine.
 Start the cluster using the `docker-compose up` command from the root of the `cluster_1S_2R` directory:
@@ -475,8 +471,7 @@ WHERE path IN ('/', '/clickhouse')
 With this, you have successfully set up a ClickHouse cluster with a single shard and two replicas.
 In the next step, you will create a table in the cluster.
 </Step>
-<Step>
-## Create a database {#creating-a-database}
+<Step title="Create a database" id="creating-a-database">
 
 Now that you have verified the cluster is correctly setup and is running, you
 will be recreating the same table as the one used in the [UK property prices](/get-started/sample-datasets/uk-price-paid)
@@ -533,8 +528,7 @@ SHOW DATABASES;
    └────────────────────┘
 ```
 </Step>
-<Step>
-## Create a table on the cluster {#creating-a-table}
+<Step title="Create a table on the cluster" id="creating-a-table">
 
 Now that the database has been created, create a table on the cluster.
 Run the following query from any of the host clients:
@@ -586,8 +580,7 @@ SHOW TABLES IN uk;
    └─────────────────────┘
 ```
 </Step>
-<Step>
-## Insert data {#inserting-data}
+<Step title="Insert data" id="inserting-data">
 
 As the data set is large and takes a few minutes to completely ingest, we will
 insert only a small subset to begin with.
