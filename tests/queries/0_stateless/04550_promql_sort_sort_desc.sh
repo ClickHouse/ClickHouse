@@ -100,7 +100,7 @@ SELECT '-- group_right takes both the labels and the order from the right (many)
 -- the tags are mem's, and the order is sort_desc(mem)'s (host3, host2, host1), not sort(up)'s.
 SELECT * FROM prometheusQuery(ts, 'sort(up) > on(instance) group_right sort_desc(mem)', $EVAL_TIME);
 
-SELECT '-- or appends the unmatched right rows after the left rows, keeping each side''s own order';
+SELECT '-- or appends the unmatched right rows after the left rows, keeping the order of each side';
 SELECT * FROM prometheusQuery(ts, 'sort_desc(up{instance=\"host1\"}) or (up{instance=\"host2\"} or up{instance=\"host3\"})', $EVAL_TIME);
 
 SELECT '-- swapping the nested or operands flips the suffix: its order follows the or structure, not tag hashes';
