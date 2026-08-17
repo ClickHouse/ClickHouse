@@ -278,6 +278,49 @@ def test_new_user(started_cluster):
     cur.execute(f"DROP DATABASE {db_id}")
 
 
+def test_scram_user_with_multiple_auth_methods(started_cluster):
+    # A user that has a non-password authentication method (e.g. ssh_key) in addition to
+    # scram_sha256_password must still be able to authenticate over the PostgreSQL protocol
+    # with the password, regardless of the order of the methods.
+    node = cluster.instances["node"]
+
+    ssh_key = "AAAAC3NzaC1lZDI1NTE5AAAAIAKI0BUOuCJvCglpUyvIuJhF3cOlzzVcG53LTOHznXYL"
+
+    users = {
+        "user_scram_then_ssh": f"scram_sha256_password BY 'p123', ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519'",
+        "user_ssh_then_scram": f"ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519', scram_sha256_password BY 'p123'",
+        "user_scram_then_sha256": "scram_sha256_password BY 'p123', sha256_password BY 'other_password'",
+    }
+    try:
+        for name, methods in users.items():
+            node.query(f"CREATE USER {name} IDENTIFIED WITH {methods}")
+            node.query(f"GRANT SELECT ON system.one TO {name}")
+
+            ch = py_psql.connect(
+                host=node.ip_address,
+                port=server_port,
+                user=name,
+                password="p123",
+                database="system",
+            )
+            cur = ch.cursor()
+            cur.execute("SELECT 1;")
+            assert cur.fetchall() == [(1,)]
+            ch.close()
+
+            with pytest.raises(py_psql.OperationalError):
+                py_psql.connect(
+                    host=node.ip_address,
+                    port=server_port,
+                    user=name,
+                    password="wrong_password",
+                    database="system",
+                )
+    finally:
+        for name in users:
+            node.query(f"DROP USER IF EXISTS {name}")
+
+
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
 

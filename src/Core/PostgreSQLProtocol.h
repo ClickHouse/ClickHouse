@@ -1638,7 +1638,15 @@ public:
             {
                 for (const auto & auth_method : user->authentication_methods)
                 {
-                    salt = auth_method.getSalt();
+                    /// The user may have several authentication methods: send the salt of the SCRAM
+                    /// one. The salt of any other method (empty for e.g. `ssh_key`, an unrelated
+                    /// random salt for `sha256_password`) would make the client derive a salted
+                    /// password that can never match the stored SCRAM verifier.
+                    if (auth_method.getType() == AuthenticationType::SCRAM_SHA256_PASSWORD)
+                    {
+                        salt = auth_method.getSalt();
+                        break;
+                    }
                 }
             }
         }
