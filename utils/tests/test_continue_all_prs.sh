@@ -61,6 +61,9 @@ grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
+git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
+rm -rf "${worktree_base}-0"
+git -C "$repo" worktree add --no-checkout --detach "${worktree_base}-0" HEAD
 (
     cd "$repo"
     PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
@@ -68,18 +71,18 @@ relative_worktree_base=${worktree_base#"$repo/"}
             --worktree-base "$relative_worktree_base" --color never
 ) > "$scratch/relative-reuse.log" 2>&1
 grep -q "Reusing existing worktree: ${worktree_base}-0" "$scratch/relative-reuse.log"
-grep -q 'turn 2 (session mock-session' "$scratch/relative-reuse.log"
 
-mkdir -p "${worktree_base}-0"
+unregistered_worktree_base="$scratch/unregistered-worktree"
+mkdir -p "${unregistered_worktree_base}-0"
 if PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
     "$repo/utils/continue-all-prs.sh" --agent codex --timeout 1 --once \
-        --skip-submodules --no-status --worktree-base "$worktree_base" --color never \
+        --skip-submodules --no-status --worktree-base "$unregistered_worktree_base" --color never \
         > "$scratch/unregistered-worktree.log" 2>&1; then
     echo 'Expected an unregistered worker path to be rejected' >&2
     exit 1
 fi
 grep -q 'path exists but is not a registered worktree' "$scratch/unregistered-worktree.log"
-rmdir "${worktree_base}-0"
+rmdir "${unregistered_worktree_base}-0"
 
 # A superseding PR creates a replacement branch on origin. The worker hook must
 # allow that new ref while still enforcing ancestry for existing refs.

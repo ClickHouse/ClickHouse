@@ -578,7 +578,7 @@ ensure_worktree()
 
     canonical_wt=$(realpath -m "$wt")
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $canonical_wt"; then
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
         banner "Reusing existing worktree: $canonical_wt"
         return 0
     fi
