@@ -19,11 +19,11 @@ SELECT tuple((materialize(toNullable(1::Int32)) != 1) AND (assumeNotNull(materia
 
 -- 2) The optimizer still runs on such a `Nothing`-collapsed AND: the directly-Nullable operand is
 --    kept as-is (the new opaque-filter fallback) while a redundant non-null comparison in the SAME
---    AND is still folded. In `x > 3 AND x > 5`, `x > 3` is redundant and pruned, so the enabled tree
---    has strictly fewer `greater` nodes than the disabled tree.
-SELECT
-    (SELECT count() FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = 2)) SETTINGS optimize_redundant_comparisons = 1) WHERE explain LIKE '%function_name: greater,%')
-  < (SELECT count() FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = 2)) SETTINGS optimize_redundant_comparisons = 0) WHERE explain LIKE '%function_name: greater,%');
+--    AND is still folded. In `x > 3 AND x > 5`, `x > 3` is redundant and pruned, so exactly one
+--    `greater` survives when enabled against both when disabled. Pin both counts: a relative
+--    comparison also holds when the predicates disappear entirely.
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = 2)) SETTINGS optimize_redundant_comparisons = 1) WHERE explain LIKE '%function_name: greater,%';
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = 2)) SETTINGS optimize_redundant_comparisons = 0) WHERE explain LIKE '%function_name: greater,%';
 -- The exact predicate that used to hit the assertion is `equals(...) -> Nullable(Nothing)`; assert it
 -- survives (exactly one such node) rather than being silently dropped. The chain's other `equals`
 -- returns `Nothing`, so match the `Nullable(Nothing)` result type specifically.
@@ -41,6 +41,11 @@ SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x > 3) AND 
 SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 1);
 SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 0);
 DROP TABLE t_and_chain_nullable;
+-- The checks above compare results, which stay equal even if `optimize_and_compare_chain` stops
+-- deriving anything. Pin the derivation itself with exact node counts: `a < b AND b < 5` gains the
+-- transitive `a < 5`, so the enabled tree holds exactly 3 `less` nodes against 2 when disabled.
+SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT a, b FROM values('a Int32, b Int32', (1, 2), (4, 9)) WHERE (a < b) AND (b < 5) SETTINGS optimize_and_compare_chain = 1) WHERE explain ILIKE '%function_name: less,%';
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT a, b FROM values('a Int32, b Int32', (1, 2), (4, 9)) WHERE (a < b) AND (b < 5) SETTINGS optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: less,%';
 
 -- 4) In a `Nothing`-collapsed AND, an operand may be a comparison whose constant side is itself
 --    NULL-valued (e.g. `expr = NULL`), found by the AST fuzzer mutating case 2's `= 2` to `= NULL`.
