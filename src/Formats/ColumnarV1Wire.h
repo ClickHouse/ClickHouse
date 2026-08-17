@@ -491,10 +491,12 @@ inline uint64_t buildColDescriptor(
     //     uint8[3] pad
     //     ColDescriptor dict_desc          (40 bytes, abs buffer offsets)
     //     (dictionary sub-column data at positions given by dict_desc)
-    // null_offset is unused: nullability lives inside the dictionary type
-    // (e.g. LowCardinality(Nullable(String))'s dictionary sub-column is itself
-    // Nullable(String) and carries its own null map via the ordinary recursive
-    // buildColDescriptor call below).
+    // null_offset is unused, and so is the dictionary sub-column's: for
+    // LowCardinality(Nullable(T)) the recursive buildColDescriptor call below
+    // passes is_nullable=false and unwraps ColumnUnique::getNestedColumn's
+    // Nullable wrapper, so no dictionary null map is written. Nullability is
+    // conveyed by ColumnUnique's reserved slot layout instead — slot 0 is the
+    // NULL sentinel — which the reader reconstructs from the declared type.
     if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
     {
         desc.type        = COL_LOWCARD | (is_const ? COL_IS_CONST : 0u);
@@ -1481,34 +1483,22 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_LOWCARD index {} at row {} exceeds dictionary size {}",
                     idx_col->getUInt(i), i, dict_row_count);
 
-        // `ColumnUnique` does not store dictionary nullability as a null map: it keeps a
-        // non-nullable holder in which slot 0 is the reserved NULL sentinel and slot 1 the
-        // nested default (`numSpecialValues`), while the wire carries the dictionary of a
-        // LowCardinality(Nullable(T)) column as an ordinary Nullable sub-column. Handing the
-        // decoded Nullable column straight to createColumnUnique is therefore wrong twice
-        // over: the ColumnUnique constructor rejects a nullable holder outright, and a
-        // malformed frame that moves the NULL marker off slot 0 would otherwise have an
-        // ordinary value silently reinterpreted as NULL. Verify the sentinel layout, then
-        // unwrap to the nested column that ColumnUnique actually expects.
+        // `ColumnUnique` reserves the leading dictionary slots for its special values:
+        // `numSpecialValues` is 1 for a plain dictionary (slot 0 = the nested default) and 2
+        // for a nullable one (slot 0 = the NULL sentinel, slot 1 = the nested default). The
+        // wire carries the dictionary of a LowCardinality(Nullable(T)) column as a
+        // NON-nullable sub-column: the writer above unwraps ColumnUnique::getNestedColumn's
+        // Nullable wrapper and passes is_nullable=false, so nullability is conveyed purely by
+        // slot 0's position, not by an encoded null map. A frame that is short of those
+        // reserved slots is malformed; the ColumnUnique constructor would otherwise report it
+        // as ILLEGAL_COLUMN ("Too small holder column"), which reads as an internal error
+        // rather than as bad input.
         const auto & dictionary_type = *lowcard_type->getDictionaryType();
-        if (dictionary_type.isNullable())
-        {
-            const auto * nullable_dict = typeid_cast<const ColumnNullable *>(dict_col.get());
-            if (!nullable_dict)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_LOWCARD nullable dictionary was decoded as a non-nullable column");
-            if (dict_row_count < 2)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: COL_LOWCARD nullable dictionary has {} rows, but the reserved NULL and "
-                    "default slots require at least 2", dict_row_count);
-            const auto & null_map = nullable_dict->getNullMapData();
-            for (uint32_t i = 0; i < dict_row_count; ++i)
-                if ((null_map[i] != 0) != (i == 0))
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "COLUMNAR_V1: COL_LOWCARD nullable dictionary must mark exactly slot 0 as NULL, "
-                        "but slot {} is {}", i, null_map[i] != 0 ? "NULL" : "not NULL");
-            dict_col = IColumn::mutate(nullable_dict->getNestedColumnPtr());
-        }
+        const uint32_t num_special_values = dictionary_type.isNullable() ? 2 : 1;
+        if (dict_row_count < num_special_values)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD dictionary of type {} has {} rows, but its reserved leading "
+                "slots require at least {}", dictionary_type.getName(), dict_row_count, num_special_values);
         auto unique_col = DataTypeLowCardinality::createColumnUnique(dictionary_type, std::move(dict_col));
         col = ColumnLowCardinality::create(std::move(unique_col), std::move(idx_col), /* is_shared */ false);
     }

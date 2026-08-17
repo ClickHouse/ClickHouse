@@ -109,7 +109,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT number::LowCardinality(UInt64) AS v FROM nu
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04903_variant FROM INFILE '${VALID_VARIANT}' FORMAT ColumnBinary"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04903_lowcard FROM INFILE '${VALID_LOWCARD}' FORMAT ColumnBinary"
 
-${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_04903_variant ORDER BY v"
+# Order by the typed subcolumn: `Variant` itself is rejected as an ORDER BY key.
+${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_04903_variant ORDER BY v.UInt64"
 ${CLICKHOUSE_CLIENT} --query "SELECT v FROM t_04903_lowcard ORDER BY v"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
