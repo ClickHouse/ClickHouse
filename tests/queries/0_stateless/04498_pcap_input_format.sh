@@ -10,7 +10,7 @@ DATA_DIR="$CUR_DIR/data_pcap"
 python3 "$DATA_DIR/generate.py"
 
 echo "--- schema ---"
-$CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/http.pcap', PCAP) FORMAT TSV" | cut -f1,2
+$CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV" | cut -f1,2
 
 echo "--- classic pcap (HTTP over TCP) ---"
 $CLICKHOUSE_LOCAL -q "
