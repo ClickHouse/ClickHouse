@@ -314,14 +314,14 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
-    /// 3. A dialect parser reading the raw text may legitimately contain tokens the SQL lexer
-    /// rejects, such as PromQL's `=~`; it only uses the tokens to find the end of the statement.
+    /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's
+    /// `=~`) to find the statement end — except terminal `ErrorMaxQuerySizeExceeded`, still fatal.
     IParser::Pos lookahead(token_iterator);
-    if (!parser.consumesRawText() && !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
-            if (lookahead->isError())
+            if (lookahead->isError() && (!parser.consumesRawText() || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
             {
                 // Advance the position for further processing of possible test hint.
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
@@ -364,8 +364,10 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
+    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
+    /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
+    UnmatchedParentheses unmatched_parens
+        = parser.consumesRawText() ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
