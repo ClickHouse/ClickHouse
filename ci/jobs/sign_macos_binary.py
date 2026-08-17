@@ -55,29 +55,6 @@ def report_tooling():
     return ok
 
 
-def probe_kms_access():
-    Shell.check("aws sts get-caller-identity", verbose=True)
-
-    described = Shell.check(
-        f"aws kms describe-key --key-id {KMS_KEY_ARN} --region {KMS_REGION}"
-        " --query 'KeyMetadata.{Arn:Arn,Spec:KeySpec,Usage:KeyUsage,State:KeyState}'",
-        verbose=True,
-    )
-    print(f"kms:DescribeKey allowed: {described}")
-
-    probe = TEMP_DIR / "kms-probe.bin"
-    probe.write_bytes(b"clickhouse macos signing probe")
-    signed = Shell.check(
-        f"aws kms sign --key-id {KMS_KEY_ARN} --region {KMS_REGION}"
-        f" --message fileb://{probe} --message-type RAW"
-        " --signing-algorithm RSASSA_PKCS1_V1_5_SHA_256"
-        " --query SigningAlgorithm --output text",
-        verbose=True,
-    )
-    print(f"kms:Sign allowed: {signed}")
-    return True
-
-
 def looks_like_self_extracting_archive(path):
     size = path.stat().st_size
     if size < 16:
@@ -261,7 +238,6 @@ def main():
 
     steps = [
         ("report tooling", report_tooling),
-        ("probe KMS access (informational)", probe_kms_access),
         ("configure KMS module", configure_kms_module),
         ("check certificate against key", check_certificate_matches_key),
         ("check input", check_input_binary),
