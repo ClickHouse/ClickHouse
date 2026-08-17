@@ -130,6 +130,7 @@ void registerDeltaTableInCatalog(
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
     const std::optional<ColumnsDescription> & columns,
     bool created_fresh,
+    bool if_not_exists,
     const StorageID & table_id)
 {
     auto kernel_helper = getKernelHelper(configuration_ptr, object_storage);
@@ -158,7 +159,25 @@ void registerDeltaTableInCatalog(
     const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
 
     /// Do not roll back commit 0 on failure: a generic catalog error is ambiguous (a racing server may have already registered our `_delta_log`), so we keep the log and surface the error rather than risk corrupting that entry.
-    catalog->createTable(namespace_name, table_name, location, metadata_content);
+    try
+    {
+        catalog->createTable(namespace_name, table_name, location, metadata_content);
+    }
+    catch (...)
+    {
+        /// A concurrent creator may have registered this table between the pre-CREATE existence check and
+        /// now. For `IF NOT EXISTS`, treat an existing catalog entry as success (a no-op) rather than
+        /// surfacing the registration conflict.
+        if (if_not_exists && catalog->existsTable(namespace_name, table_name))
+        {
+            LOG_DEBUG(
+                getLogger("DeltaLakeCatalogRegistration"),
+                "Table {}.{} is already registered in the catalog; treating IF NOT EXISTS create as a no-op",
+                namespace_name, table_name);
+            return;
+        }
+        throw;
+    }
 }
 
 }

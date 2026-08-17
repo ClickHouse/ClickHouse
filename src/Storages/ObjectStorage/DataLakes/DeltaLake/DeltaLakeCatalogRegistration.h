@@ -24,6 +24,7 @@ void registerDeltaTableInCatalog(
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
     const std::optional<ColumnsDescription> & columns,
     bool created_fresh,
+    bool if_not_exists,
     const StorageID & table_id);
 
 }

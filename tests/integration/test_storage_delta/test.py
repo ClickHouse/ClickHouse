@@ -6184,3 +6184,58 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
         f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )
+
+
+def test_create_table_concurrent_race_attaches(started_cluster):
+    # Two CREATE TABLE statements for the SAME location race to write commit 0. Creator A pauses right
+    # after its `_delta_log` existence check via the delta_lake_create_table_pause failpoint; while it is
+    # paused, creator B (a different table name, so no DDL-guard serialization) creates the table and writes
+    # commit 0. When A resumes, its own commit loses the race, the kernel reports the conflict, and
+    # `DeltaLakeMetadataDeltaKernel::createTable` must attach to the now-existing table instead of failing.
+    # Regression for the lost-race attach path in createTable.
+    instance = started_cluster.instances["node1"]
+    failpoint = "delta_lake_create_table_pause"
+    table_path = f"/var/lib/clickhouse/user_files/{randomize_table_name('concurrent_create')}"
+    table_a = randomize_table_name("t_dl_race_a")
+    table_b = randomize_table_name("t_dl_race_b")
+
+    # PAUSEABLE_ONCE: only the first creator to reach the window (A) pauses; B passes straight through.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    # A thread assertion does not fail the test on its own, so hand any worker error back to the main thread.
+    create_error = []
+
+    def run_create_a():
+        try:
+            _, error = instance.query_and_get_answer_with_error(
+                f"CREATE TABLE {table_a} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+            )
+            assert error == "", f"CREATE A should attach to the concurrently-created table, not fail: {error}"
+        except BaseException as e:  # noqa: BLE001
+            create_error.append(e)
+
+    thread = threading.Thread(target=run_create_a)
+    thread.start()
+    try:
+        # Bounded wait so a never-hit failpoint fails the test instead of hanging.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        # B wins the race and writes commit 0 while A is paused.
+        instance.query(
+            f"CREATE TABLE {table_b} (id Int32, name String) ENGINE = DeltaLakeLocal('{table_path}')"
+        )
+        # Resume A; its commit now loses the race and must fall back to attaching.
+        instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        thread.join()
+
+    if create_error:
+        raise create_error[0]
+
+    # Both tables point at the same Delta table and read consistently.
+    instance.query(f"INSERT INTO {table_b} VALUES (1, 'a')")
+    assert instance.query(f"SELECT count() FROM {table_a}").strip() == "1"
+    assert instance.query(f"SELECT count() FROM {table_b}").strip() == "1"
+
+    instance.query(f"DROP TABLE {table_a}")
+    instance.query(f"DROP TABLE {table_b}")

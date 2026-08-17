@@ -49,11 +49,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int DELTA_KERNEL_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char delta_lake_metadata_iterate_pause[];
+    extern const char delta_lake_create_table_pause[];
 }
 
 namespace Setting
@@ -757,7 +759,25 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     auto schema_list = columns.getAllPhysical();
 
     auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
-    write_transaction->createTable(partition_columns);
+
+    /// Test hook: pause after the existence check so a concurrent CREATE can write the `_delta_log`
+    /// first, exercising the lost-race attach path in the catch below.
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_create_table_pause);
+
+    try
+    {
+        write_transaction->createTable(partition_columns);
+    }
+    catch (const Exception & e)
+    {
+        /// If the commit lost a race and a `_delta_log` now exists, attach to it; otherwise propagate the genuine kernel error.
+        if (e.code() == ErrorCodes::DELTA_KERNEL_ERROR && deltaLogExists(*object_storage_, data_path))
+        {
+            LOG_DEBUG(log, "Delta table was created concurrently at `{}`; attaching to it instead", data_path);
+            return false;
+        }
+        throw;
+    }
 
     LOG_DEBUG(
         log,
@@ -834,7 +854,7 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
 
     if (register_with_catalog)
         registerDeltaTableInCatalog(
-            catalog, object_storage, configuration_ptr, columns, created_fresh, table_id_);
+            catalog, object_storage, configuration_ptr, columns, created_fresh, if_not_exists, table_id_);
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
