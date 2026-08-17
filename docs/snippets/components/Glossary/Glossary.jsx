@@ -1,10 +1,10 @@
-const normalizeSearchText = value => value
-  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, ' ')
-  .trim();
-
 export const Glossary = ({ children, metadata = {} }) => {
+  const normalizeSearchText = value => value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
   const nodeText = (node) => {
     if (node === null || node === undefined || typeof node === 'boolean') return '';
     if (typeof node === 'string' || typeof node === 'number') return String(node);
