@@ -84,6 +84,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -9187,18 +9188,52 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
         return std::nullopt;
 
-    /// A subquery that is still present here is evaluated independently by the pruning pass and
-    /// by the mutation execution. It can therefore produce a different partition set between
-    /// those evaluations. This is also unsafe for foreground lightweight updates: their
-    /// partition block numbers bound the parts that `updateLightweightImpl` reads, rather than
-    /// merely serving as an optimization hint. Conservatively leave such commands unpruned.
-    auto contains_subquery = [](const ASTPtr & ast, const auto & self) -> bool
+    /// A deferred set is evaluated independently by the pruning pass and by mutation execution.
+    /// It can therefore produce a different partition set between those evaluations. This is
+    /// also unsafe for foreground lightweight updates: their partition block numbers bound the
+    /// parts that `updateLightweightImpl` reads, rather than merely serving as an optimization
+    /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
+    /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
+    auto contains_deferred_set = [](const ASTPtr & ast, const auto & self) -> bool
     {
         if (ast->as<ASTSubquery>())
             return true;
+
+        if (const auto * function = ast->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+        {
+            const auto & arguments = function->arguments->children;
+            if (arguments.size() >= 2)
+            {
+                const auto & right_argument = arguments[1];
+                if (right_argument->as<ASTTableIdentifier>())
+                    return true;
+
+                /// A non-literal function in the right-hand side may be a table function. It is
+                /// resolved to a prepared set by the analyzer, whereas literal tuples and arrays
+                /// are always stable constant sets.
+                auto is_literal_enumeration = [](const ASTPtr & node, const auto & literal_self) -> bool
+                {
+                    if (node->as<ASTLiteral>())
+                        return true;
+
+                    const auto * rhs_function = node->as<ASTFunction>();
+                    if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                        return false;
+
+                    return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child)
+                    {
+                        return literal_self(child, literal_self);
+                    });
+                };
+
+                if (right_argument->as<ASTFunction>() && !is_literal_enumeration(right_argument, is_literal_enumeration))
+                    return true;
+            }
+        }
+
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
     };
-    if (contains_subquery(predicate, contains_subquery))
+    if (contains_deferred_set(predicate, contains_deferred_set))
         return std::nullopt;
 
     auto predicate_clone = predicate->clone();
