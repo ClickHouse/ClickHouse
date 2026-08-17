@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # no-fasttest: the Azure data lake table engines are not in the fast test build.
+# no-msan: delta-kernel-rs is disabled under MSan, so DeltaLakeAzure is unavailable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
