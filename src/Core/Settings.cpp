@@ -4098,8 +4098,8 @@ Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy d
     DECLARE(Bool, resumable_backup_from_snapshot, false, R"(
 Enables resumable `BACKUP FROM SNAPSHOT`: a failed attempt can be rerun without recopying the
 entries of batches that already completed. Only available in ClickHouse Cloud, for directory-style
-`S3` and `AzureBlobStorage` destinations. Setting it has no effect in ClickHouse open-source builds,
-where `BACKUP FROM SNAPSHOT` itself is unavailable.
+`S3` and `AzureBlobStorage` destinations. Enabling it in ClickHouse open-source builds, where
+`BACKUP FROM SNAPSHOT` itself is unavailable, makes `BACKUP` fail with `WRONG_BACKUP_SETTINGS`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
