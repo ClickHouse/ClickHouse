@@ -106,8 +106,8 @@ struct AdaptiveAggregationProducer
             /// many times that many rows, so the stream is repeat-dominated locally.
             TooFewDistinctKeys,
             /// The global thaw: the session-wide staged-key sample proved the whole stream
-            /// repeat-dominated (see `stageRecordedMisses`).
-            RepeatedStagedKeys,
+            /// wasteful (see `stageRecordedMisses`).
+            WastefulStagedStream,
         };
         Reason reason;
     };

@@ -414,15 +414,15 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
+    /// A prior run measured the query's staged stream as wasteful and thawed: freezing
     /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
     /// statistics; a run without it takes the ordinary path with the statistics-driven
     /// initialization, exactly as if the feature were off.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
-            return "a prior run measured the staged stream as repeat-dominated";
+        if (hint && hint->adaptive_staging_wasteful)
+            return "a prior run measured the staged stream as wasteful";
     }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.

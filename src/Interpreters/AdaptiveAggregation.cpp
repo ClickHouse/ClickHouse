@@ -72,10 +72,10 @@ void Aggregator::recordAdaptiveStagingVerdict(AdaptiveAggregationSession & share
     const auto measurement = shared.thaw_sampler.measure();
     if (!measurement.measured)
         return;
-    const bool repeat_dominated = measurement.repeat_dominated;
+    const bool wasteful_staging = measurement.wasteful_staging;
 
     auto & stats = getHashTablesStatistics<AggregationEntry>();
-    AggregationEntry entry{.sum_of_sizes = 0, .median_size = 0, .adaptive_staging_repeat_dominated = repeat_dominated};
+    AggregationEntry entry{.sum_of_sizes = 0, .median_size = 0, .adaptive_staging_wasteful = wasteful_staging};
     if (const auto prev = stats.getSizeHint(stats_params))
     {
         entry.sum_of_sizes = prev->sum_of_sizes;

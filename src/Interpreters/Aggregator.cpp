@@ -156,24 +156,24 @@ void updateStatistics(
     /// A run that staged enough records to trust the thaw sampler records the measured verdict;
     /// any other run carries the stored verdict over, so that runs without an adaptive
     /// measurement do not erase it. The verdict gates the admission of later runs (see
-    /// `AggregatingStep::canUseAdaptiveAggregator`), so a query marked repeat-dominated is not
+    /// `AggregatingStep::canUseAdaptiveAggregator`), so a query marked wasteful is not
     /// re-measured until its cache entry is evicted.
-    bool repeat_dominated = false;
+    bool wasteful_staging = false;
     bool measured = false;
     if (adaptive_session)
     {
         const auto measurement = adaptive_session->thaw_sampler.measure();
         measured = measurement.measured;
-        repeat_dominated = measurement.repeat_dominated;
+        wasteful_staging = measurement.wasteful_staging;
     }
     if (!measured)
     {
         if (const auto prev = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params))
-            repeat_dominated = prev->adaptive_staging_repeat_dominated;
+            wasteful_staging = prev->adaptive_staging_wasteful;
     }
 
     DB::getHashTablesStatistics<DB::AggregationEntry>().update(
-        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
+        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_wasteful = wasteful_staging}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -1847,7 +1847,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                 /// The thaw verdict outranks the crossing: stand down now and finish the block
                 /// on the baseline path (the between-blocks hook then treats this producer as
                 /// baseline, with the ordinary conversion checks).
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::WastefulStagedStream);
                 executeImpl(
                     result,
                     split,
@@ -1890,14 +1890,14 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         if (adaptive->session->thaw_sampler.fired())
         {
-            /// The staged stream proved repeat-dominated (see `stageRecordedMisses`): thaw and
+            /// The staged stream proved wasteful (see `stageRecordedMisses`): thaw and
             /// return to the baseline checks below, permanently. The table resumes ordinary
             /// insertion; the records staged so far stay published and the merge drains them.
             /// A thread that has not frozen yet stands down the same way, so that it does not
             /// freeze against the verdict.
             if (adaptive->isFrozen())
                 LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", result_size);
-            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
+            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::WastefulStagedStream);
         }
         else
         {
