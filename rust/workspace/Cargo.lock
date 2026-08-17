@@ -35,7 +35,11 @@ version = "0.1.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",
+ "async-task",
+ "concurrent-queue",
  "futures",
+ "kanal",
+ "parking",
  "vortex",
 ]
 

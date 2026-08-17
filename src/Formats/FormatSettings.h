@@ -565,6 +565,7 @@ struct FormatSettings
     struct
     {
         bool filter_push_down = true;
+        bool preserve_order = false;
     } vortex{};
 
     /// For capnProto format we should determine how to
