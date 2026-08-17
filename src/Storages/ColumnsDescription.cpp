@@ -934,8 +934,7 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() &&
-        it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+    return it != columns.get<1>().end() && it->isPhysical();
 }
 
 bool ColumnsDescription::hasNotAlias(const String & column_name) const

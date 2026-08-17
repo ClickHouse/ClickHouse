@@ -643,7 +643,7 @@ ColumnsStatistics::ColumnsStatistics(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
-        if (!column.statistics.empty())
+        if (!column.statistics.empty() && column.isPhysical())
             emplace(column.name, factory.get(column));
     }
 }
@@ -893,8 +893,7 @@ void removeImplicitStatistics(ColumnsDescription & columns)
 {
     for (const auto & column : columns)
     {
-        auto default_kind = column.default_desc.kind;
-        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
+        if (!column.isPhysical())
             continue;
 
         columns.modify(
@@ -924,8 +923,7 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
 
     for (const auto & column : columns)
     {
-        auto default_kind = column.default_desc.kind;
-        if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
+        if (!column.isPhysical())
             continue;
 
         ColumnStatisticsDescription stats_desc;

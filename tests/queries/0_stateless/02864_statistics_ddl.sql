@@ -262,3 +262,38 @@ ALTER TABLE tab DROP STATISTICS f64, f32;
 SHOW CREATE TABLE tab;
 
 DROP TABLE tab;
+
+SET materialize_statistics_on_insert = 1;
+
+-- Statistics declared on a non-physical column are accepted but ignored: the column is never
+-- present in a written block, so INSERT must not try to build them.
+
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
+INSERT INTO tab VALUES (1);
+SELECT a, b FROM tab;
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS validate_mutation_query = 0; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab MATERIALIZE STATISTICS ALL;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
+ALTER TABLE tab DROP STATISTICS b;
+DROP TABLE tab;
+
+CREATE TABLE tab (a UInt64, b UInt64 EPHEMERAL 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
+INSERT INTO tab (a) VALUES (1);
+SELECT a FROM tab;
+DROP TABLE tab;
+
+CREATE TABLE tab (a UInt64) Engine = MergeTree() ORDER BY tuple();
+ALTER TABLE tab ADD COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest);
+INSERT INTO tab VALUES (1);
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 2 STATISTICS(tdigest);
+INSERT INTO tab VALUES (2);
+SELECT a, b FROM tab ORDER BY a;
+DROP TABLE tab;
+
+-- A physical column with statistics must keep building them.
+CREATE TABLE tab (a UInt64, b UInt64 MATERIALIZED a * 2 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple();
+INSERT INTO tab (a) VALUES (1);
+SELECT a, b FROM tab;
+SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
+DROP TABLE tab;

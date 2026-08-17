@@ -1314,7 +1314,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    if (!column_desc.statistics.empty())
+                    /// ALL is a bulk request: a non-physical column is skipped so the statement
+                    /// stays usable on a table that carries such a declaration.
+                    if (!column_desc.statistics.empty() && column_desc.isPhysical())
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
                         materialized_statistics.emplace(column_desc.name);
