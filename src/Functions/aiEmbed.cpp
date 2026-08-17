@@ -254,7 +254,7 @@ requests a vector of the given size; otherwise the model's native size is return
         .examples
         = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SET allow_experimental_ai_functions = 1;\nSELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
            {"With explicit dimensions", "SET allow_experimental_ai_functions = 1;\nSELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
-           {"Embed a column of texts", "SET allow_experimental_ai_functions = 1;\nSELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
+           {"Embed a column of texts", "SET allow_experimental_ai_functions = 1;\nCREATE TABLE articles (title String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');\nSELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
 
