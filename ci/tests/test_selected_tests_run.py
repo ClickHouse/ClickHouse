@@ -160,6 +160,21 @@ def test_selected_tests_add_smoke_tests_for_harness_change():
     ]
 
 
+def test_selected_tests_add_smoke_tests_for_store_data_hook_change():
+    targeter = Targeting.__new__(Targeting)
+    targeter.info = SimpleNamespace(
+        is_local_run=False, get_changed_files=lambda: [], job_name="Stateless tests"
+    )
+    targeter._diff_text = (
+        "+++ b/ci/jobs/scripts/workflow_hooks/store_data.py\n"
+    )
+
+    assert targeter.get_changed_tests(include_harness_smoke=True) == [
+        "00001_select_1.",
+        "01109_exchange_tables.",
+    ]
+
+
 def test_selected_tests_add_smoke_tests_for_rendered_workflow_change():
     targeter = Targeting.__new__(Targeting)
     targeter.info = SimpleNamespace(
