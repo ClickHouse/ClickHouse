@@ -90,6 +90,14 @@ bool containsFloat(const DataTypePtr & type)
     });
 }
 
+bool containsDynamic(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isDynamic();
+    });
+}
+
 bool containsColumnedAsDecimal(const DataTypePtr & type)
 {
     return containsType(*type, [](const IDataType & nested_type)
@@ -155,10 +163,10 @@ bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
     const DataTypePtr & constant_type)
 {
-    if (hasDynamicType(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
+    if (containsDynamic(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
         return false;
 
-    const bool constant_type_is_dynamic = hasDynamicType(constant_type);
+    const bool constant_type_is_dynamic = containsDynamic(constant_type);
 
     if (containsColumnedAsDecimal(result_type)
         && (containsFloat(constant_type) || constant_type_is_dynamic))
