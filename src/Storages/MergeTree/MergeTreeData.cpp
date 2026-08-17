@@ -6160,7 +6160,8 @@ void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
     if (!disk->existsFile(format_version_path))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
 
-    if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
+    auto buf = disk->readFileIfExists(format_version_path, getReadSettings());
+    if (buf)
     {
         UInt32 current_format_version{0};
         if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
