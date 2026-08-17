@@ -17,8 +17,8 @@ struct JoinTreeQueryPlan
 {
     QueryPlan query_plan;
     QueryProcessingStage::Enum stage{}; // stage till query plan has been built
-    /// Whether this plan reads through custom-key parallel replicas (the row split does not align with
-    /// LIMIT BY / DISTINCT / aggregation keys, so those must be finalized on the initiator).
+    /// Whether this plan reads through custom-key parallel replicas. The arbitrary row split need not align
+    /// with DISTINCT / LIMIT BY keys, so those per-stream operators are finalized again on the initiator.
     bool is_parallel_replicas_custom_key = false;
     std::set<std::string> used_row_policies{};
     UsefulSets useful_sets{};

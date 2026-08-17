@@ -2618,8 +2618,16 @@ void Planner::buildPlanForQueryNode()
             query_tree,
             select_query_options);
 
+        /// Custom-key parallel replicas split rows across replicas by an arbitrary key that need not align
+        /// with the DISTINCT / LIMIT BY keys, so the per-replica pass is not final and the initiator must
+        /// finalize over the merged stream (#111555). Use the flag from the actual plan, not the ambient
+        /// setting: the setting can be on while sharding-key pushdown (not custom-key) built the
+        /// after-aggregation stage. (GROUP BY finalization over custom-key streams is a separate gap, #50593.)
+        const bool custom_key_parallel_replicas = is_parallel_replicas_custom_key;
+        const bool custom_key_finalize = custom_key_parallel_replicas && query_processing_info.isFinalizingStage();
+
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
-        if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
+        if ((!query_processing_info.isFromAggregationState() || custom_key_finalize) && query_node.isDistinct())
         {
             addDistinctStep(query_plan,
                 query_analysis_result,
@@ -2630,15 +2638,8 @@ void Planner::buildPlanForQueryNode()
                 false /*pre_distinct*/);
         }
 
-        /// Under custom-key parallel replicas the per-replica LIMIT BY is not final (the split does not align
-        /// with the LIMIT BY key), so the initiator must re-apply it over the merged stream (#111555). The
-        /// replica applies it as a preliminary, deferring OFFSET to the finalizing initiator. Use the flag
-        /// from the actual plan, not the ambient setting: the setting can be on while sharding-key pushdown
-        /// (not custom-key) built the after-aggregation stage.
-        const bool custom_key_parallel_replicas = is_parallel_replicas_custom_key;
         const bool apply_limit_by = expression_analysis_result.hasLimitBy()
-            && (!query_processing_info.isFromAggregationState()
-                || (custom_key_parallel_replicas && query_processing_info.isFinalizingStage()));
+            && (!query_processing_info.isFromAggregationState() || custom_key_finalize);
         if (apply_limit_by)
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
