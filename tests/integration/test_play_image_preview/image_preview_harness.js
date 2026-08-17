@@ -1028,8 +1028,10 @@ async function main() {
             const explainPayload = await detectExplicitFormatClause("EXPLAIN AST INSERT INTO FUNCTION null('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
             const restored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
             renderFailedSnapshot(restored, '{"exception":"each-row failure"}\\n', 'JSONEachRow', undefined, 'each-row failure');
+            const transportRestored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
+            renderFailedSnapshot(transportRestored, '{"exception":"ordinary row"}\\n', 'JSONEachRow', undefined, 'Network error');
             const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
-            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, restored, parallelWithWrite });
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, restored, transportRestored, parallelWithWrite });
         })()`));
         check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
             !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
@@ -1051,6 +1053,8 @@ async function main() {
             res.explainPayload === null, res);
         check('failed-snapshot', 'a saved JSONEachRow HTTP exception restores as the live error alone',
             res.restored.error === 'each-row failure' && res.restored.raw === null, res);
+        check('failed-snapshot', 'a transport failure preserves an ordinary JSONEachRow exception field as raw output',
+            res.transportRestored.error === 'Network error' && res.transportRestored.raw === '{"exception":"ordinary row"}\n', res);
         check('fallback-tokenizer', '`PARALLEL WITH` is a retry and Run all barrier without WASM',
             !res.parallelWithWrite, res);
     }

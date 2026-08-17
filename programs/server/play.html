@@ -8704,16 +8704,17 @@ function parseInbandException(text, format)
 /// An HTTP error in a plain `JSONEachRow` / `JSONLines` / `NDJSON` response is a line containing
 /// `{"exception":...}`. These formats deliberately remain absent from `parseInbandException`:
 /// under `200 OK`, such an object can be an ordinary row. The non-OK path knows it is an error,
-/// however, and saves the displayed exception separately. Recognize that saved carrier on restore
-/// so a Back/Forward replay keeps the live error-only presentation instead of echoing the JSON line
-/// and then placing the error beneath it.
-function parsePlainHttpExceptionLine(text)
+/// however, and saves the displayed exception separately. Match the saved display text as well:
+/// transport failures can leave an ordinary row with an `exception` field in the partial body, and
+/// that row must remain raw output with its separate transport error below it on replay.
+function parsePlainHttpExceptionLine(text, display_error)
 {
+    if (typeof display_error !== 'string') return null;
     for (const line of text.split('\n')) {
         if (!line.startsWith('{"exception":')) continue;
         try {
             const parsed = JSON.parse(line);
-            if (typeof parsed.exception === 'string') return parsed.exception;
+            if (parsed.exception === display_error) return parsed.exception;
         } catch (e) {
             return null;
         }
@@ -10232,7 +10233,7 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
     ///   - an HTTP-error response (`!response.ok`) whose body IS the error text: there `postImpl` sets
     ///     `display_error` equal to the saved `data`, so this branch steps aside on the equality and
     ///     the fallthrough below renders `data` as the error alone, without first echoing it as output.
-    const plain_http_exception = parsePlainHttpExceptionLine(data);
+    const plain_http_exception = parsePlainHttpExceptionLine(data, display_error);
     const has_failure_signal_in_data =
         exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null || plain_http_exception !== null;
     if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
