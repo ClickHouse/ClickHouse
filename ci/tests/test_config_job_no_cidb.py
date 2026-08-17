@@ -1,14 +1,14 @@
 """Tests for the config-time CIDB reachability invariant of the workflow filter hooks.
 
-`Config Workflow` is declared with `timeout=1200` (`ci/praktika/native_jobs.py`), and
-praktika marks every dependee job `DROPPED` when it fails. `CIDB.query` retries 5 times
-with a 60s per-request timeout and exponential backoff, so one query can take
-5 * 60 + (2 + 4 + 8 + 16) = 330s. The filter hooks run once per job
-(`ci/praktika/native_jobs.py`), so a single CIDB call in `should_skip_job` is multiplied
-by the number of jobs that reach it: three such queries outlast the job's whole
-allowance, and a transient CIDB slowdown then voids the entire test matrix. Most of that
-allowance is already committed to populating the submodule cache
-(`SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC`), which leaves far less than 1200s of slack.
+`Config Workflow` is declared with `timeout=SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC + 600`,
+1200s at the default (`ci/praktika/native_jobs.py`), and praktika marks every dependee job
+`DROPPED` when it fails. `CIDB.query` retries 5 times with a 60s per-request timeout and
+exponential backoff, so one query can take 5 * 60 + (2 + 4 + 8 + 16) = 330s. The filter
+hooks run once per job (`ci/praktika/native_jobs.py`), so a single CIDB call in
+`should_skip_job` is multiplied by the number of jobs that reach it: four such queries
+outlast the job's whole allowance, and a transient CIDB slowdown then voids the entire
+test matrix. Half of that allowance is already committed to populating the submodule
+cache (`SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC`), which leaves 600s of slack.
 
 The hooks must therefore issue no CIDB query at all. That is asserted here by
 monkeypatching `requests.post` in `ci.praktika.cidb` (the single network boundary of
@@ -344,6 +344,21 @@ def test_get_changed_tests_issues_no_cidb_query(monkeypatch):
     calls = _record_cidb_requests(monkeypatch)
     assert Targeting(info=info).get_changed_tests() == [CHANGED_TEST_NAME]
     assert calls == [], f"config-time CIDB requests: {calls}"
+
+
+def test_config_job_outlives_the_submodule_cache_bound():
+    """The job cap must exceed the clone's own bound, or the job watchdog fires first.
+
+    The outer watchdog covers the whole job command and starts before any configuration
+    work, while the clone's bound starts only when the clone does; if the two are equal the
+    job is killed instead of degrading to a GitHub clone.
+    """
+    from ci.praktika.native_jobs import _workflow_config_job
+    from ci.praktika.settings import Settings
+
+    assert (
+        _workflow_config_job.timeout > Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
 
 
 if __name__ == "__main__":

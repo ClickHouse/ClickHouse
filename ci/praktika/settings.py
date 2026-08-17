@@ -113,8 +113,7 @@ class _Settings:
     # (required for private submodules); otherwise they run anonymously.
     ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
-    # Bound on the clone that populates the submodule cache. Exceeding it discards the
-    # cache and dependent jobs clone from GitHub instead.
+    # Exceeding it discards the cache; dependent jobs then clone from GitHub.
     SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 600
 
     CACHE_VERSION: int = 1
