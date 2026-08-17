@@ -1803,12 +1803,13 @@ class JobConfigs:
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,
-        allow_failure=True,
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
+            include_paths=build_digest_config.include_paths
+            + [
                 "./ci/jobs/sign_macos_binary.py",
                 "./ci/signing",
             ],
+            with_git_submodules=True,
         ),
     ).parametrize(
         Job.ParamSet(

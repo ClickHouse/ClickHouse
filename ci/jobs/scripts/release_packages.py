@@ -26,6 +26,8 @@ PACKAGE_ARCHS = ("amd", "arm")
 # version-less object name.
 MACOS_S3_OBJECT = "clickhouse"
 
+MACOS_SIGNED_S3_OBJECT = "clickhouse-macos.zip"
+
 
 def s3_release_prefix(release: str) -> str:
     """The S3 key prefix release artifacts live under for this branch."""
@@ -67,11 +69,23 @@ def iter_package_objects(version: str):
             yield "tgz", f"{tgz}.sha512", job
 
 
+def sign_macos_job_name(package_arch: str) -> str:
+    """CI job dir that holds the signed macOS zip for this arch."""
+    return f"sign_macos_binary_{package_arch}_darwin"
+
+
 def iter_macos_objects():
     """Yield `(package_arch, job_name)` for each per-arch macOS build. The S3
     object basename is always `MACOS_S3_OBJECT`."""
     for package_arch in PACKAGE_ARCHS:
         yield package_arch, darwin_job_name(package_arch)
+
+
+def iter_macos_signed_objects():
+    """Yield `(package_arch, job_name)` for each per-arch signed macOS zip. The
+    S3 object basename is always `MACOS_SIGNED_S3_OBJECT`."""
+    for package_arch in PACKAGE_ARCHS:
+        yield package_arch, sign_macos_job_name(package_arch)
 
 
 def expected_s3_objects(version: str):
@@ -83,6 +97,8 @@ def expected_s3_objects(version: str):
         by_job.setdefault(job, set()).add(filename)
     for _package_arch, job in iter_macos_objects():
         by_job.setdefault(job, set()).add(MACOS_S3_OBJECT)
+    for _package_arch, job in iter_macos_signed_objects():
+        by_job.setdefault(job, set()).add(MACOS_SIGNED_S3_OBJECT)
     return by_job
 
 

@@ -36,13 +36,18 @@ class TestReleasePackagesEnumeration(unittest.TestCase):
                 "build_arm_release",
                 "build_amd_darwin",
                 "build_arm_darwin",
+                "sign_macos_binary_amd_darwin",
+                "sign_macos_binary_arm_darwin",
             },
         )
         # 6 packages * 4 files (deb/rpm/tgz/tgz.sha512) per build job.
         self.assertEqual(len(objs["build_amd_release"]), 24)
         self.assertEqual(objs["build_amd_darwin"], {rp.MACOS_S3_OBJECT})
-        # 6*4*2 packages + 2 macOS binaries.
-        self.assertEqual(sum(len(v) for v in objs.values()), 50)
+        self.assertEqual(
+            objs["sign_macos_binary_amd_darwin"], {rp.MACOS_SIGNED_S3_OBJECT}
+        )
+        # 6*4*2 packages + 2 macOS binaries + 2 signed macOS zips.
+        self.assertEqual(sum(len(v) for v in objs.values()), 52)
         # Exact filenames for one package pin the deb/rpm/tgz naming pattern.
         amd = objs["build_amd_release"]
         self.assertIn("clickhouse-server_26.3.9.100_amd64.deb", amd)
@@ -92,6 +97,21 @@ class TestReleaseBuildArtifactsReady(unittest.TestCase):
             )
         )
 
+    def test_fails_closed_on_a_missing_signed_macos_zip(self):
+        keys = self._all_keys("26.3", "deadbeef", "26.3.9.100")
+        keys = [
+            k
+            for k in keys
+            if not k.endswith(
+                f"/sign_macos_binary_arm_darwin/{rp.MACOS_SIGNED_S3_OBJECT}"
+            )
+        ]
+        self.assertFalse(
+            rp.release_build_artifacts_ready(
+                _FakeS3(keys), "26.3", "deadbeef", "26.3.9.100"
+            )
+        )
+
 
 class TestPackageDownloaderCoupling(unittest.TestCase):
     """The producer (`PackageDownloader`) and the checker (`expected_s3_objects`)
@@ -111,6 +131,8 @@ class TestPackageDownloaderCoupling(unittest.TestCase):
             pd_objects.setdefault(job, set()).add(package_file)
         for job in pd.macos_binary_to_job_name.values():
             pd_objects.setdefault(job, set()).add(rp.MACOS_S3_OBJECT)
+        for job in pd.macos_signed_to_job_name.values():
+            pd_objects.setdefault(job, set()).add(rp.MACOS_SIGNED_S3_OBJECT)
         self.assertEqual(
             pd_objects,
             rp.expected_s3_objects(version),
