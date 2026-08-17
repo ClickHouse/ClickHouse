@@ -176,6 +176,17 @@ Read each partition through separate port: 1
 SELECT (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_skewed_partitions) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_skewed_partitions) SETTINGS allow_creating_set_partitions_independently = 1, force_creating_set_partitions_independently = 1);
 1
 DROP TABLE test_in_skewed_partitions;
+-- NEGATIVE: the lazy FINAL optimization builds an internal primary-key set through the same
+-- `CreatingSetStep`; the per-partition pre-deduplication is scoped to `IN (subquery)` set fills and must
+-- stay out of it. The `LazyFinalKeyAnalysis` marker pins that the lazy FINAL plan actually formed.
+DROP TABLE IF EXISTS test_in_lazy_final;
+CREATE TABLE test_in_lazy_final (a UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY a PARTITION BY a % 8;
+SYSTEM STOP MERGES test_in_lazy_final;
+INSERT INTO test_in_lazy_final SELECT number % 64, number, 1 FROM numbers_mt(400);
+INSERT INTO test_in_lazy_final SELECT number % 32, number, 2 FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT sum(v) FROM test_in_lazy_final FINAL WHERE v != 3 SETTINGS allow_creating_set_partitions_independently = 1, query_plan_optimize_lazy_final = 1) WHERE explain LIKE '%LazyFinalKeyAnalysis%' OR explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
+LazyFinalKeyAnalysis
+DROP TABLE test_in_lazy_final;
 -- NEGATIVE: GLOBAL IN fills an external temporary table alongside the set, so the optimization does not apply
 DROP TABLE IF EXISTS test_in_global;
 CREATE TABLE test_in_global (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
