@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
@@ -357,7 +358,8 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
         /// here as well - otherwise a real mismatch like
         /// `CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1)` would slip through.
         size_t left_columns_count = 1;
-        if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(in_first_argument_result_type.get()))
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(in_first_argument_result_type.get());
+        if (left_tuple_type)
             left_columns_count = left_tuple_type->getElements().size();
 
         NamesAndTypes right_projection_columns;
@@ -406,6 +408,21 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 
         size_t right_columns_count = right_projection_columns.size();
 
+        /// A scalar is not a one-element tuple. Both sides have one physical column in
+        /// this shape, so the ordinary column-count check below cannot detect it. The
+        /// set builder also rejects this conversion, but it must be reported here before
+        /// constant folding can remove the `IN` expression from an unreachable predicate.
+        if (right_columns_count == 1 && !left_tuple_type)
+        {
+            const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
+            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get()))
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Cannot cast {} to {} in IN",
+                    in_first_argument_result_type->getName(),
+                    right_projection_columns.front().type->getName());
+        }
+
         if (right_columns_count > 0 && left_columns_count != right_columns_count)
         {
             /// When the right side returns a single column, `FunctionIn` does not unpack the
@@ -424,10 +441,10 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
             {
                 const auto & right_single_type = right_projection_columns.front().type;
 
-                /// A single right `Tuple` column of the same arity as the left tuple is always an
-                /// arity match: the whole left tuple is compared against it as one key, element by
-                /// element. Whether the element types are compatible is a runtime question - an
-                /// incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
+                /// A single right `Tuple` column of the same arity as a top-level left tuple is
+                /// always an arity match: the whole left tuple is compared against it as one key,
+                /// element by element. Whether the element types are compatible is a runtime
+                /// question - an incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
                 /// elements are `Decimal` vs `Date`) surfaces at runtime as `ILLEGAL_COLUMN` /
                 /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. The structural probe
                 /// below would instead reject such a same-arity tuple whenever an element cast is
@@ -442,7 +459,7 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
                 /// cast failure as a column-count mismatch.
                 auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_single_type));
                 const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_key_type.get());
-                if (right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
+                if (left_tuple_type && right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
                 {
                     left_comparable_as_single_key = true;
                 }
