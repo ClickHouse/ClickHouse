@@ -771,8 +771,8 @@ void Aggregator::stageRecordedMisses(
         }
     }
 
-    StagedChunkBacklogSink sink(*this, shared);
-    adaptive.staging.stageMisses<SharedKey>(columns, num_rows, local_find_state, scratch_pool, counts_only, key_row_override, sink);
+    adaptive.staging.stageMisses<SharedKey>(
+        columns, num_rows, local_find_state, scratch_pool, counts_only, key_row_override, *adaptive.staging_sink);
 }
 
 template <typename SharedKey, typename State>

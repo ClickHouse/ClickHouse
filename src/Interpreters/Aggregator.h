@@ -314,6 +314,12 @@ public:
     /// time the last finisher assembles the merge.
     void flushStaging(AdaptiveAggregationProducer & adaptive) const;
 
+    /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
+    /// its argument columns, in the chunk's own stable storage. Called by the transport on the
+    /// producing thread, so the preparation runs in parallel across producers and every chunk
+    /// reaches publication already prepared.
+    void prepareStagedChunk(StagedChunk & block) const;
+
     /// The production-time memory valve: claims a bounded batch of staged chunks under the
     /// sweep lock, drains it into a producer-local table outside the lock, and writes that
     /// table through the ordinary external machinery; a sub-floor tail accumulates in the
@@ -673,10 +679,6 @@ private:
     /// checks the structural invariants in debug builds) and hands it over as immutable to
     /// the session's backlog.
     void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
-
-    /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
-    /// its argument columns, in the chunk's own stable storage.
-    void prepareStagedChunk(StagedChunk & block) const;
 
     /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`
     /// selects the ownership: merge-time drains emplace keys pointing into the retained

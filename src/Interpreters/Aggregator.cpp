@@ -1912,10 +1912,12 @@ bool Aggregator::executeOnBlock(Columns columns,
             {
                 /// The memory valve: under the same trigger the baseline uses for spilling, the
                 /// staged backlogs are drained early into the shared table, which sheds their
-                /// staging overhead and collapses duplicate keys into states. The frozen local
-                /// itself is bounded and is deliberately kept away from the baseline spill
-                /// branch below (a spilled table converts to two-level, which the frozen kernel
-                /// cannot pair with its twin).
+                /// staging overhead and collapses duplicate keys into states. The flush moves
+                /// this producer's seal buffer toward the store; chunks still in flight on the
+                /// pipeline ports escape this sweep, but their total is bounded by one sealed
+                /// chunk per producer. The frozen local itself is bounded and is deliberately
+                /// kept away from the baseline spill branch below (a spilled table converts to
+                /// two-level, which the frozen kernel cannot pair with its twin).
                 if (params.max_bytes_before_external_group_by
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {

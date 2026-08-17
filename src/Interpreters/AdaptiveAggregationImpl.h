@@ -323,6 +323,11 @@ struct AdaptiveAggregationProducer
     AdaptiveAggregationSessionPtr session;
 
     StagedChunkBuilder staging;
+
+    /// Where this producer's sealed staged chunks go, chosen and installed by the transform
+    /// that owns the producer (see `AggregatingTransform`) right after construction, and
+    /// fixed for the producer's lifetime.
+    std::unique_ptr<IStagedChunkSink> staging_sink;
 };
 
 /// The production-time destination of sealed staged chunks: finishes the chunk and publishes

@@ -38,6 +38,8 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
 
 std::unique_ptr<AdaptiveAggregationProducer> Aggregator::createAdaptiveProducer(AdaptiveAggregationSessionPtr session) const
 {
+    /// The owner (the producing transform) installs the staging sink right after this call:
+    /// the destination is transport policy, not the aggregator's.
     return std::make_unique<AdaptiveAggregationProducer>(
         std::move(session), StagedChunkBuilder(aggregates_positions, params.aggregates_size, log));
 }
@@ -52,10 +54,12 @@ void Aggregator::publishStagedChunk(
 {
     chassert(block->wellFormed());
 
-    /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
-    /// see it.
-    if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
-        prepareStagedChunk(*block);
+    /// The transport prepared the chunk on the producing thread (see the pipeline staging
+    /// sink), where the preparation parallelizes across producers, so the chunk is immutable
+    /// by the time any bucket can see it.
+    chassert(
+        !std::holds_alternative<StagedChunk::AggregatePayload>(block->payload)
+        || std::get<StagedChunk::AggregatePayload>(block->payload).prepared);
 
     shared.backlog.publish(std::move(block));
 }
@@ -118,8 +122,7 @@ void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, Adapt
 
 void Aggregator::flushStaging(AdaptiveAggregationProducer & adaptive) const
 {
-    StagedChunkBacklogSink sink(*this, *adaptive.session);
-    adaptive.staging.flush(sink);
+    adaptive.staging.flush(*adaptive.staging_sink);
 }
 
 /// The flushed variants' sizes are meaningless by the time the external path finishes, so a
