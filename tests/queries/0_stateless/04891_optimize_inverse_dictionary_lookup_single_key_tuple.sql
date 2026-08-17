@@ -324,6 +324,15 @@ SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple
 SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', tuple(w)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 
+-- When the attribute value matches no keys, the whole predicate constant-folds to `0`
+-- without evaluating the key expression, so the conversion error above disappears
+-- together with the lookup. This is pre-existing constant-fold behavior (a bare
+-- mistyped key behaves the same way before this fix).
+SELECT 'lossy key conversion, zero-match fold';
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing';
+SELECT count() FROM data_wide_oor WHERE dictGet('dict_narrow_key', 'attr', w) = 'missing'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
 -- Control: the bare key form must keep working exactly as before.
 SELECT 'bare key, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1

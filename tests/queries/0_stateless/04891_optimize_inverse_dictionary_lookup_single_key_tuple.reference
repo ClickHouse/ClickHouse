@@ -138,6 +138,8 @@ lossy key conversion, wrapped, in-range values
 2
 lossy key conversion, wrapped, in-range values, opt off
 2
+lossy key conversion, zero-match fold
+0
 bare key, equals - plan
 SELECT count() AS `count()`
 FROM default.data AS __table1

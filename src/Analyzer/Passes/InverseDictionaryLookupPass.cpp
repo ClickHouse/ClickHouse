@@ -423,7 +423,10 @@ public:
             /// itself the supertype (a total widening, e.g. a narrow integer column against
             /// a wide key type) - keep such expressions untouched, which also keeps them
             /// usable for index analysis (the same criterion `canReplaceWithDictGetKeys`
-            /// uses for the attribute side). Otherwise mirror the `dictGet` conversion with
+            /// uses for the attribute side). The criterion is total for integer-to-float
+            /// pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
+            /// (not enough mantissa bits), so an integer expression stays on this fast path
+            /// only when the float key type represents every its value exactly. Otherwise mirror the `dictGet` conversion with
             /// `accurateCast`: it makes `String` keys comparable with e.g. `UUID` columns
             /// (the comparison alone throws NO_COMMON_TYPE) and preserves the throwing
             /// behavior on lossy conversions where the comparison would silently return
@@ -529,6 +532,12 @@ public:
                 /// non-null `0` - observable via `isNull(predicate)`.
                 /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
                 /// `0` with it.
+                ///
+                /// Like any constant fold, this replaces the predicate without evaluating the
+                /// key expression: when the key needs the accurate conversion inserted above,
+                /// `dictGet` throws for rows whose key value does not convert, and that error
+                /// disappears here together with the lookup. This matches the pre-existing
+                /// behavior for bare mistyped key expressions.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
