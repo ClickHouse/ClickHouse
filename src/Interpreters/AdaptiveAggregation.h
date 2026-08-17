@@ -16,8 +16,11 @@ namespace DB
 /// anywhere: it becomes a delayed record in one of the 256 backlogs, chosen by the two-level
 /// bucket of the key's hash. A record is the key value itself with a run-length count when the
 /// only aggregate is count, and otherwise the key plus its row's aggregate-argument values,
-/// gathered into dense per-block columns at publish so the source block is released; both
-/// carry the precomputed routing hash. Nothing is drained while production runs unless memory
+/// gathered into dense per-block columns at build time so the source block is released; both
+/// carry the precomputed routing hash. Sealed chunks travel as pipeline data: they leave each
+/// producing transform through its output port and the staged-chunk store
+/// (`AdaptiveAggregationMergeTransform`) absorbs them into the backlogs as their only writer,
+/// with a full port pacing the producer. Nothing is drained while production runs unless memory
 /// demands it: past the external-aggregation threshold a pressure sweep drains the backlogs
 /// early into the shared routing table and, if that is not enough, spills the routing table
 /// through the ordinary external-aggregation machinery, so the memory bound holds.
@@ -33,10 +36,12 @@ namespace DB
 /// remembered in the hash-table statistics, so later runs of the query skip the engagement
 /// altogether instead of re-measuring the stream.
 ///
-/// Merge phase: at the end of input every local table converts to two-level and the standard
-/// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
-/// into the destination's bucket b (it is the exclusive owner, so no locks are needed) and only
-/// then folds the locals' bucket b in as usual.
+/// Merge phase: when its input ends, every producer flushes its staging, converts its local
+/// table to two-level, and closes its output port - the closed port is the producer's
+/// completion signal. Once every port closed, the store assembles the standard bucket-parallel
+/// merge, except that the merge task owning bucket b first drains backlog b into the
+/// destination's bucket b (it is the exclusive owner, so no locks are needed) and only then
+/// folds the locals' bucket b in as usual.
 ///
 /// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
 /// and emplaced exactly once, by one thread, instead of once per thread that saw it.
