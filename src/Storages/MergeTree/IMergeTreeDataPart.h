@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -149,7 +150,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_,
-        bool part_may_exist_on_disk = true);
+        PartDirIntent intent);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -435,6 +436,12 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+
+        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
+        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
+        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
+        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
+        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
@@ -578,8 +585,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(
+        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -845,8 +852,6 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
-
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 

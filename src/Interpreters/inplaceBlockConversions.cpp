@@ -392,6 +392,18 @@ static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const
     return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
 }
 
+/// `column` may have come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter,
+/// so only its full `name` still describes the metadata shape. Returns nothing without a snapshot.
+static std::optional<NameAndTypePair> tryGetColumnInStorage(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+{
+    if (!storage_snapshot)
+        return {};
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    return storage_snapshot->tryGetColumn(options, column.name);
+}
+
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
 {
     if (!storage_snapshot)
@@ -400,23 +412,21 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
     if (storage_snapshot->getDefault(column.name).has_value())
         return true;
 
-    auto name_in_storage = column.getNameInStorage();
+    auto column_in_storage = tryGetColumnInStorage(storage_snapshot, column);
+    auto name_in_storage = column_in_storage ? column_in_storage->getNameInStorage() : column.getNameInStorage();
     return storage_snapshot->getDefault(name_in_storage).has_value();
 }
 
-/// `column` may have come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter,
-/// so its own `getNameInStorage` is not necessarily the parent. Resolve the parent from metadata.
 static bool isSubcolumnOfAvailableColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & column,
     const NamesAndTypesList & available_columns,
     const NameSet & additional_available_columns)
 {
-    if (!storage_snapshot || !column.isSubcolumn())
+    if (!column.isSubcolumn())
         return false;
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-    auto column_in_storage = storage_snapshot->tryGetColumn(options, column.name);
+    auto column_in_storage = tryGetColumnInStorage(storage_snapshot, column);
 
     /// Not a subcolumn according to the metadata: a plain column missing from the part,
     /// which the offsets branch below legitimately owns.
@@ -525,13 +535,19 @@ void fillMissingColumns(
 
         if (!current_offsets.empty())
         {
+            /// The subcolumn path and the storage type must come from the metadata shape, not from
+            /// the possibly remapped pair: `getBaseTypeOfArray` silently stops descending when a
+            /// name does not resolve, so a mismatched pair yields a column of the wrong type.
+            auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
+            const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
+
             Names tuple_elements;
-            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
+            SerializationPtr serialization = IDataType::getSerialization(column_for_type);
 
             /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
             /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
             /// and must be kept, otherwise the Tuple wrapper is lost.
-            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
+            const auto & requested_subcolumn_name = column_for_type.getSubcolumnName();
             IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
             {
                 if (path.back().type != ISerialization::Substream::TupleElement)
@@ -546,12 +562,12 @@ void fillMissingColumns(
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
 
-            auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
+            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements);
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
 
             /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
-            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, tuple_elements);
             res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)

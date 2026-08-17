@@ -17,9 +17,9 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xa
         -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
         -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
     && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
-ARG LLVM_APT_VERSION="1:21.1.5~"
+ARG LLVM_APT_VERSION="1:22.1.8~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -68,6 +68,7 @@ RUN apt-get update \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         libmpfr6 \
         lsof \
@@ -127,6 +128,15 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+# lldb (installed with clang above) is the native debugger used by
+# clickhouse-test's `print_c_stacktraces` to dump server backtraces.
+# Symlink the versioned binary into /usr/bin so callers can run `lldb`
+# directly, and grant suid so non-root tests can still attach. gdb is kept
+# above for the fuzzer, perf comparison, stress, upgrade, and
+# integration-test harnesses that still drive it directly.
+RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
