@@ -109,6 +109,11 @@ def test_experimental_gate(pulsar_cluster):
     full_attach = pulsar_table("test.pulsar_reader_full_attach", "gate_topic", "gate_group").replace(
         "CREATE TABLE", "ATTACH TABLE", 1
     )
+    full_attach = full_attach.replace(
+        "ATTACH TABLE test.pulsar_reader_full_attach",
+        "ATTACH TABLE test.pulsar_reader_full_attach UUID '00000000-0000-0000-0000-000000000001'",
+        1,
+    )
     error = instance.query_and_get_error(full_attach, settings={"allow_experimental_pulsar_storage_engine": 0})
     assert "SUPPORT_IS_DISABLED" in error
 
