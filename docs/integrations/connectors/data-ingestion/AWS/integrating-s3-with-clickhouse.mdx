@@ -21,7 +21,7 @@ You can insert data from S3 into ClickHouse and also use S3 as an export destina
 The `s3` table function allows you to read and write files from and to S3 compatible storage. The outline for this syntax is:
 
 ```sql
-s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
 ```
 
 where:
@@ -332,7 +332,7 @@ While the `s3` functions allow ad-hoc queries to be performed on data stored in 
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
-    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS ...]
 ```
 
@@ -393,7 +393,7 @@ CREATE TABLE trips_raw
    `dropoff_ntacode`       FixedString(4),
    `dropoff_ntaname`       String,
    `dropoff_puma`          UInt16
-) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', NOSIGN, 'TabSeparatedWithNames', 'gzip');
 ```
 
 Notice the use of the `{0..9}` pattern to limit to the first ten files. Once created, we can query this table like any other table:

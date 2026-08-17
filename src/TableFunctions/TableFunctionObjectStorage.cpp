@@ -652,7 +652,8 @@ Extracting data from these archives is possible using ::. Globs can be used both
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -715,7 +716,7 @@ The setting also applies to the [S3](/reference/engines/table-engines/integratio
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 ## Storage Settings {#storage-settings}
