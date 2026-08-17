@@ -1237,8 +1237,12 @@ ColumnPtr AdaptiveExpressionActions::executeFunction(
         }
     }
 
+    /// `IExecutableFunction::execute` profiles only the implementation, while the lazy path profiles the whole call.
+    /// Time the eager call here as well, so the adaptive decision compares the same end-to-end cost.
+    Stopwatch watch;
     auto res = action.node->function->execute(arguments, result_type, num_rows, dry_run, &profile);
-    /// Function execution updates `execution_elapsed` itself, so add the time spent reducing lazy arguments afterwards.
+    profile.execution_elapsed = watch.elapsed();
+    /// Add the time spent reducing lazy arguments afterwards.
     profile.execution_elapsed += lazy_arguments_elapsed;
     accumulateProfile(action_index, profile);
     return res;
