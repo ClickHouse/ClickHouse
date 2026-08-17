@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -85,14 +84,17 @@ bool keepsUnmatchedProbeRows(JoinKind kind, JoinStrictness strictness)
     return isLeftOrFull(kind);
 }
 
-/// The tile's view of `column`: `indexes` picks one source row per candidate pair. Lazy
-/// replication keeps the source values from being copied into the tile; for narrow fixed-size
-/// values the copy costs less than the indirection, which is what `isLazyReplicationUseful` decides.
+/// The tile's view of `column`: `indexes` picks one source row per candidate pair.
 ColumnPtr tileColumn(const ColumnPtr & column, const ColumnPtr & indexes)
 {
-    if (isLazyReplicationUseful(column))
-        return ColumnReplicated::create(column, indexes);
     return column->index(*indexes, 0);
+}
+
+/// A side whose window is one row, as a constant: what that buys is what a function makes of a
+/// constant argument - a `LIKE` pattern compiled once for the tile rather than once per pair.
+ColumnPtr tileColumnFromSingleRow(const ColumnPtr & column, size_t row, size_t tile_rows)
+{
+    return ColumnConst::create(column->cut(row, 1)->convertToFullIfWrapped(), tile_rows);
 }
 
 size_t estimateRowBytes(const Columns & columns, size_t num_rows)
@@ -126,6 +128,10 @@ constexpr size_t TILE_PAIRS = DEFAULT_BLOCK_SIZE;
 /// executor a chance to notice cancellation; how long it may be held is not a property of how large
 /// the chunks the query asks for are, so the budget does not follow `max_block_size`.
 constexpr size_t WORK_BUDGET_PAIRS = 8 * TILE_PAIRS;
+
+/// A probe window at least this wide fills a tile on its own, so the tile takes a single build row and
+/// the condition sees it as a constant; a narrower one packs build rows in to fill the tile instead.
+constexpr size_t MIN_PROBE_WINDOW_PAIRS = 8192;
 
 /// How many bytes of build blocks a probe stream may keep alive for pairs it has not emitted yet.
 /// The bound is the operator's own, deliberately not `max_joined_block_size_bytes`: what it limits
@@ -325,13 +331,22 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     /// it, or the build rows in between would be left out of the walk.
     const size_t probe_window_rows = std::min<size_t>(walk.active_probe_rows.size(), TILE_PAIRS);
     const size_t tile_probe_rows = std::min(walk.active_probe_rows.size() - walk.probe_window_cursor, probe_window_rows);
-    const size_t build_rows_per_tile = std::max<size_t>(1, TILE_PAIRS / probe_window_rows);
+    const size_t build_rows_per_tile = probe_window_rows >= MIN_PROBE_WINDOW_PAIRS
+        ? 1
+        : std::max<size_t>(1, TILE_PAIRS / probe_window_rows);
     const size_t tile_build_rows = std::min(block_rows - walk.build_row_cursor, build_rows_per_tile);
     const size_t tile_rows = tile_probe_rows * tile_build_rows;
 
-    auto probe_tile_indexes = ColumnUInt64::create();
-    auto build_tile_indexes = ColumnUInt64::create();
+    /// One build row against probe rows nothing has been dropped from: the tile is a range of the chunk
+    /// against a constant, which needs no index columns of its own.
+    const bool probe_window_is_range = tile_build_rows == 1 && walk.active_probe_rows.size() == walk.probe_num_rows;
+
+    ColumnPtr probe_tile;
+    ColumnPtr build_tile;
+    if (!probe_window_is_range)
     {
+        auto probe_tile_indexes = ColumnUInt64::create();
+        auto build_tile_indexes = ColumnUInt64::create();
         auto & probe_values = probe_tile_indexes->getData();
         auto & build_values = build_tile_indexes->getData();
         probe_values.resize_exact(tile_rows);
@@ -349,17 +364,25 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
                 std::copy_n(build_values.begin(), tile_build_rows, build_values.begin() + offset);
             std::fill_n(probe_values.begin() + offset, tile_build_rows, walk.active_probe_rows[walk.probe_window_cursor + i]);
         }
-    }
 
-    const ColumnPtr probe_tile = std::move(probe_tile_indexes);
-    const ColumnPtr build_tile = std::move(build_tile_indexes);
+        probe_tile = std::move(probe_tile_indexes);
+        build_tile = std::move(build_tile_indexes);
+    }
 
     Columns condition_inputs;
     condition_inputs.reserve(predicate.inputs.size());
     for (const auto & source : predicate.inputs)
     {
-        const auto & column = source.side == 0 ? walk.probe_columns[source.position] : block.columns[source.position];
-        condition_inputs.push_back(tileColumn(column, source.side == 0 ? probe_tile : build_tile));
+        const bool from_probe = source.side == 0;
+        const auto & column = from_probe ? walk.probe_columns[source.position] : block.columns[source.position];
+        if (from_probe && probe_window_is_range)
+            condition_inputs.push_back(tile_probe_rows == walk.probe_num_rows
+                ? column
+                : column->cut(walk.probe_window_cursor, tile_probe_rows));
+        else if (!from_probe && tile_build_rows == 1)
+            condition_inputs.push_back(tileColumnFromSingleRow(column, walk.build_row_cursor, tile_rows));
+        else
+            condition_inputs.push_back(tileColumn(column, from_probe ? probe_tile : build_tile));
     }
 
     size_t num_rows = tile_rows;
@@ -376,7 +399,27 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     /// `Sparse` one.
     FilterDescription matched(*condition.at(0));
     if (const size_t num_matched = matched.countBytesInFilter(); num_matched != 0)
-        appendMatchedPairs(*matched.filter(*probe_tile, num_matched), *matched.filter(*build_tile, num_matched), num_matched);
+    {
+        if (probe_window_is_range)
+        {
+            /// Pair `i` is probe row `probe_window_cursor + i` against the row the build cursor is on.
+            auto matched_probe_rows = ColumnUInt64::create();
+            auto & matched_probe_values = matched_probe_rows->getData();
+            matched_probe_values.reserve_exact(num_matched);
+            const auto & filter = *matched.data;
+            for (size_t i = 0; i < tile_rows; ++i)
+            {
+                if (filter[i])
+                    matched_probe_values.push_back(walk.probe_window_cursor + i);
+            }
+
+            auto matched_build_rows = ColumnUInt64::create();
+            matched_build_rows->getData().resize_fill(num_matched, walk.build_row_cursor);
+            appendMatchedPairs(*matched_probe_rows, *matched_build_rows, num_matched);
+        }
+        else
+            appendMatchedPairs(*matched.filter(*probe_tile, num_matched), *matched.filter(*build_tile, num_matched), num_matched);
+    }
 
     /// The build rows are only left behind once every probe row still in the walk has been matched
     /// against them. That keeps the order a pair is seen in - and with it which pair a strictness
