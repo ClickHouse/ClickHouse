@@ -1735,7 +1735,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     catch (const DB::HTTPException & ex)
     {
         const auto status = static_cast<int>(ex.getHTTPStatus());
-        if (status == 409 || status == 429 || status >= 500)
+        if (status == 408 || status == 409 || status == 429 || status >= 500)
         {
             LOG_WARNING(log, "Iceberg REST updateMetadata for {}.{} got retryable HTTP {}: {}",
                 namespace_name, table_name, status, ex.displayText());
@@ -1769,7 +1769,7 @@ bool RestCatalog::updateSchema(
     catch (const DB::HTTPException & ex)
     {
         const auto status = static_cast<int>(ex.getHTTPStatus());
-        if (status == 409 || status == 429 || status >= 500)
+        if (status == 408 || status == 409 || status == 429 || status >= 500)
         {
             LOG_WARNING(log, "Iceberg REST updateSchema for {}.{} got retryable HTTP {}: {}",
                 namespace_name, table_name, status, ex.displayText());

@@ -114,8 +114,7 @@ static bool alterAlreadyApplied(const MetadataGenerator & generator, const Alter
         case AlterCommand::Type::RENAME_COLUMN:
             return generator.isRenameColumnApplied(command.column_name, command.rename_to);
         case AlterCommand::Type::MODIFY_COLUMN:
-            /// `generateModifyColumnMetadata` already reports an unchanged schema as a no-op.
-            return false;
+            return generator.isModifyColumnApplied(command.column_name, command.data_type);
         default:
             return false;
     }
@@ -973,7 +972,7 @@ void alter(
 
     if (!succeeded)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-            "ALTER TABLE commit kept losing to concurrent modifications after {} retries",
+            "ALTER TABLE commit did not succeed after {} retries (concurrent modification or catalog rejection)",
             MAX_TRANSACTION_RETRIES);
 
     /// Invalidate the metadata files cache so that subsequent operations on this table see the

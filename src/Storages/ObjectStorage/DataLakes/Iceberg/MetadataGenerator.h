@@ -58,6 +58,7 @@ public:
     bool isAddColumnApplied(const String & column_name, DataTypePtr type) const;
     bool isDropColumnApplied(const String & column_name) const;
     bool isRenameColumnApplied(const String & column_name, const String & new_column_name) const;
+    bool isModifyColumnApplied(const String & column_name, DataTypePtr type) const;
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
