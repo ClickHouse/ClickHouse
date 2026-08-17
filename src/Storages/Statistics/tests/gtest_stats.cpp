@@ -779,3 +779,4 @@ TEST(Statistics, BasicDefaultCountArray)
     ASSERT_TRUE(eq_empty.has_value());
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
+

@@ -4,8 +4,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <atomic>
-
 namespace DB
 {
 
@@ -29,6 +27,7 @@ private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
+
 };
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
