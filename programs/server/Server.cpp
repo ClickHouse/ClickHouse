@@ -3846,6 +3846,9 @@ try
             }
 
             startServers(servers, listen_try, log);
+            if (servers.empty())
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");

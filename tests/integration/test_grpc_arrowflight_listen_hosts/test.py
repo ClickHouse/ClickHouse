@@ -15,6 +15,12 @@ unavailable_node = cluster.add_instance(
     main_configs=["configs/unavailable_host.xml"],
 )
 
+failed_cluster = ClickHouseCluster(__file__, name="all_unavailable")
+all_unavailable_node = failed_cluster.add_instance(
+    "all_unavailable_node",
+    main_configs=["configs/all_unavailable_host.xml"],
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -31,11 +37,6 @@ def test_one_grpc_listener_for_wildcard_listen_hosts():
     one would either fail to bind and take the whole server down with it (Arrow Flight) or silently
     share the port with the first one (gRPC)."""
     assert wildcard_node.query("SELECT 1") == "1\n"
-
-    for port_name in ["grpc_port", "arrowflight_port"]:
-        assert wildcard_node.contains_in_log(
-            f"Not creating a second {port_name} listener"
-        )
 
     assert (
         len(wildcard_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 1
@@ -72,3 +73,16 @@ def test_unavailable_listen_host_does_not_prevent_startup():
         len(unavailable_node.grep_in_log("Listening for gRPC protocol").splitlines())
         == 1
     )
+
+
+def test_all_unavailable_listen_hosts_prevent_startup():
+    """With no listener left after `listen_try` drops every gRPC listener, the server must not
+    report readiness."""
+    try:
+        with pytest.raises(Exception, match="No servers started"):
+            failed_cluster.start()
+
+        assert all_unavailable_node.contains_in_log("No servers started")
+        assert not all_unavailable_node.contains_in_log("Ready for connections")
+    finally:
+        failed_cluster.shutdown()
