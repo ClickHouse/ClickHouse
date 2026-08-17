@@ -992,6 +992,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
                     stream_settings = StreamSettings{};
                     stream_settings->subscribe_for_updates = ast_stream_settings.subscribe_for_updates;
+                    stream_settings->unordered = ast_stream_settings.unordered;
                     stream_settings->cursor = ast_stream_settings.cursor;
                     stream_settings->watermark = ast_stream_settings.watermark;
                 }

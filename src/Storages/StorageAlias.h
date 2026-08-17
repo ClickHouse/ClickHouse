@@ -147,6 +147,11 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToSubcolumns();
     }
+    bool supportsOptimizationToTupleElementSubcolumns() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsOptimizationToTupleElementSubcolumns();
+    }
     bool supportsParallelInsert() const override
     {
         auto target = tryGetTargetTable();
@@ -188,6 +193,7 @@ public:
     }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+    bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
