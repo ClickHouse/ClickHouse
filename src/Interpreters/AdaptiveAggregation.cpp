@@ -44,6 +44,34 @@ std::unique_ptr<AdaptiveAggregationProducer> Aggregator::createAdaptiveProducer(
         std::move(session), StagedChunkBuilder(aggregates_positions, params.aggregates_size, log));
 }
 
+bool AdaptiveAggregationSession::ThawSampler::fold(const PaddedPODArray<UInt64> & hashes)
+{
+    if (fired())
+        return false;
+
+    /// The sample is collected outside the lock (a batch contributes on the order of its
+    /// size / 256 entries) and folded into the shared sampler under it.
+    PaddedPODArray<UInt64> sampled_hashes;
+    for (const auto hash : hashes)
+        if ((hash & sample_mask) == 0)
+            sampled_hashes.push_back(hash);
+
+    std::lock_guard lock(mutex);
+    staged_records += hashes.size();
+    sampled_records += sampled_hashes.size();
+    for (const auto hash : sampled_hashes)
+        distinct_sampled_hashes.insert(hash);
+
+    /// Re-checked under the lock: a thread that sampled while another was firing would
+    /// otherwise fire a second time.
+    if (fired() || staged_records < min_staged_records
+        || sampled_records <= repeat_factor * distinct_sampled_hashes.size())
+        return false;
+
+    thaw_all.store(true, std::memory_order_relaxed);
+    return true;
+}
+
 void StagedChunkBacklogSink::consume(MutableStagedChunkPtr chunk)
 {
     aggregator.publishStagedChunk(session, std::move(chunk));
@@ -134,15 +162,10 @@ void Aggregator::recordAdaptiveStagingVerdict(AdaptiveAggregationSession & share
     if (!stats_params.isCollectionAndUseEnabled())
         return;
 
-    bool measured = false;
-    bool repeat_dominated = false;
-    {
-        std::lock_guard lock(shared.thaw_sample_mutex);
-        measured = shared.staged_records >= adaptive_thaw_min_staged_records;
-        repeat_dominated = shared.thaw_all.load(std::memory_order_relaxed);
-    }
-    if (!measured)
+    const auto measurement = shared.thaw_sampler.measure();
+    if (!measurement.measured)
         return;
+    const bool repeat_dominated = measurement.repeat_dominated;
 
     auto & stats = getHashTablesStatistics<AggregationEntry>();
     AggregationEntry entry{.sum_of_sizes = 0, .median_size = 0, .adaptive_staging_repeat_dominated = repeat_dominated};

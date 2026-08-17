@@ -260,16 +260,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     auto update_bypass_sampling = [&](size_t hits, size_t rows)
     {
-        if (frozen.bypass_local_probe)
-            return;
-        frozen.sampled_hits += hits;
-        frozen.sampled_rows += rows;
-        if (frozen.sampled_rows >= adaptive_bypass_sample_rows
-            && frozen.sampled_hits * adaptive_bypass_hit_rate_inverse < frozen.sampled_rows)
-        {
-            frozen.bypass_local_probe = true;
+        if (frozen.recordProbeSample(hits, rows))
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
-        }
     };
     const bool bypass_local_probe = frozen.bypass_local_probe;
 
@@ -736,39 +728,13 @@ void Aggregator::stageRecordedMisses(
     if (!total)
         return;
 
-    auto & shared = *adaptive.session;
-
-    /// The thaw check (see the tuning constants). The sample is collected outside the lock (a
-    /// publish contributes on the order of `total` / 256 entries) and folded into the shared
-    /// sampler; the verdict takes effect at every thread's next block, through the ordinary
-    /// dispatch on the per-thread flags. The current records are still published: their rows
-    /// were deferred by the frozen kernel and only the drain will aggregate them.
-    if (!shared.thaw_all.load(std::memory_order_relaxed))
+    /// The thaw rule: the verdict takes effect at every thread's next block, through the
+    /// ordinary dispatch on the per-thread flags. The current records are still staged: their
+    /// rows were deferred by the frozen kernel and only the drain will aggregate them.
+    if (adaptive.session->thaw_sampler.fold(miss_hashes))
     {
-        PaddedPODArray<UInt64> sampled_hashes;
-        for (const auto hash : miss_hashes)
-            if ((hash & adaptive_thaw_sample_mask) == 0)
-                sampled_hashes.push_back(hash);
-
-        std::lock_guard lock(shared.thaw_sample_mutex);
-        shared.staged_records += total;
-        shared.thaw_sampled_records += sampled_hashes.size();
-        for (const auto hash : sampled_hashes)
-            shared.distinct_sampled_hashes.insert(hash);
-        /// Re-checked under the lock: a thread that sampled while another was firing would
-        /// otherwise fire a second time.
-        if (!shared.thaw_all.load(std::memory_order_relaxed)
-            && shared.staged_records >= adaptive_thaw_min_staged_records
-            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.distinct_sampled_hashes.size())
-        {
-            shared.thaw_all.store(true, std::memory_order_relaxed);
-            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
-            LOG_TRACE(
-                log,
-                "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
-                shared.staged_records,
-                shared.thaw_sampled_records / shared.distinct_sampled_hashes.size());
-        }
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+        LOG_TRACE(log, "Adaptive aggregation: thawing the local tables after the staged stream proved repeat-dominated");
     }
 
     adaptive.staging.stageMisses<SharedKey>(

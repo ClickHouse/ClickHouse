@@ -162,9 +162,9 @@ void updateStatistics(
     bool measured = false;
     if (adaptive_session)
     {
-        std::lock_guard lock(adaptive_session->thaw_sample_mutex);
-        measured = adaptive_session->staged_records >= DB::adaptive_thaw_min_staged_records;
-        repeat_dominated = adaptive_session->thaw_all.load(std::memory_order_relaxed);
+        const auto measurement = adaptive_session->thaw_sampler.measure();
+        measured = measurement.measured;
+        repeat_dominated = measurement.repeat_dominated;
     }
     if (!measured)
     {
@@ -1842,7 +1842,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
         if (split < row_end)
         {
-            if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
+            if (adaptive->session->thaw_sampler.fired())
             {
                 /// The thaw verdict outranks the crossing: stand down now and finish the block
                 /// on the baseline path (the between-blocks hook then treats this producer as
@@ -1888,7 +1888,7 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     if (adaptive && !adaptive->isBaseline())
     {
-        if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
+        if (adaptive->session->thaw_sampler.fired())
         {
             /// The staged stream proved repeat-dominated (see `stageRecordedMisses`): thaw and
             /// return to the baseline checks below, permanently. The table resumes ordinary
@@ -1904,9 +1904,27 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// The freeze replaces the local two-level conversion: from now on the local table
             /// only updates the keys it already holds, so it stays single-level and bounded by
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
-                && result.isConvertibleToTwoLevel())
-                freezeAdaptive(result, *adaptive);
+            if (adaptive->isLearning())
+            {
+                auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
+                switch (learning.decide(
+                    row_end - row_begin, result_size, params.adaptive_aggregator_freeze_threshold, result.isConvertibleToTwoLevel()))
+                {
+                    case AdaptiveAggregationProducer::LearningState::Verdict::Freeze:
+                        freezeAdaptive(result, *adaptive);
+                        break;
+                    case AdaptiveAggregationProducer::LearningState::Verdict::GiveUp:
+                    {
+                        const size_t rows_seen = learning.rows_seen;
+                        adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+                        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
+                        LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
+                        break;
+                    }
+                    case AdaptiveAggregationProducer::LearningState::Verdict::KeepLearning:
+                        break;
+                }
+            }
 
             if (adaptive->isFrozen())
             {
@@ -1930,23 +1948,6 @@ bool Aggregator::executeOnBlock(Columns columns,
                     return false;
 
                 return true;
-            }
-
-            /// A table that consumed this many rows while staying below the freeze threshold in
-            /// keys is repeat-dominated and will not freeze in practice: either the group count
-            /// plateaus below the threshold (few groups with fat states, e.g. `uniqExact` per
-            /// region, where the freeze would foreclose the byte-triggered conversion and its
-            /// bucket-parallel merge), or the hot share is so extreme that staging the sliver of
-            /// a tail cannot pay. The thread falls back to the baseline checks below, permanently.
-            auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
-            learning.rows_seen += row_end - row_begin;
-            if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
-                && result_size < params.adaptive_aggregator_freeze_threshold)
-            {
-                const size_t rows_seen = learning.rows_seen;
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
-                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, result_size);
             }
 
             /// A learning table has no frozen twin to pair with and nothing staged, so unlike the
