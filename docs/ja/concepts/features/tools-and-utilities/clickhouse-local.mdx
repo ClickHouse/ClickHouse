@@ -72,6 +72,13 @@ ClickHouse は、ファイル名の拡張子から、そのファイルがタブ
   ```
 </Tip>
 
+データはローカルに存在する必要はありません。ファイル名の代わりに URL を使用でき、URL スキームに応じて対応するテーブルエンジンが選択されます (`http://` と `https://` は [url](/ja/reference/functions/table-functions/url) 関数のように読み取られ、`s3://` は [s3](/ja/reference/functions/table-functions/s3) 関数のように、`file://` は [file](/ja/reference/functions/table-functions/file) 関数のように読み取られます) ：
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -90,7 +97,7 @@ review_body    Nullable(String)
 review_date    Nullable(Date)
 ```
 
-最も評価の高い製品を見つけてみましょう：
+評価が最も高い製品を見つけてみましょう：
 
 ```bash
 ./clickhouse local -q "SELECT
