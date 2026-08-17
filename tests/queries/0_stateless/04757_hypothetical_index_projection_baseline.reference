@@ -1,7 +1,7 @@
 --- projection-served read: baseline is reported, candidate is not_applicable ---
 Baseline (after PK + partition + existing indexes):
 status: not_applicable
-reason: The query is served from projection 'p_b', so an index on the base table's parts would not be read
+reason: The query is served from projection \'p_b\', so an index on the base table\'s parts would not be read
 --- and the statement succeeds ---
 no exception
 --- with projections off the same candidate is estimated as usual ---
