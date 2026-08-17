@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: enables a global failpoint
+# no-fasttest: the archive destination needs minizip
 
 # A backup that fails AFTER it is published must be reported as failed without being deleted.
 # `.backup` (or, for an archive, the finalized archive file) is already readable at the destination
