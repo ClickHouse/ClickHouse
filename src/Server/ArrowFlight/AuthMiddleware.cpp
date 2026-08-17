@@ -9,8 +9,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Base64.h>
+#include <Common/Exception.h>
 #include <Interpreters/Context.h>
 
+#include <Poco/Exception.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -18,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SESSION_TIMEOUT;
 }
@@ -90,7 +93,17 @@ namespace
         if (!Poco::toLower(std::string(auth_str)).starts_with(basic_prefix))
             return std::nullopt;
 
-        auto credentials = base64Decode(std::string(auth_str.substr(basic_prefix.size())));
+        /// Some clients (e.g. the Go Flight client used by the ADBC Flight SQL driver) send the Base64-encoded
+        /// credentials without the '=' padding. The `BASE64_NO_PADDING` option accepts both padded and unpadded input.
+        std::string credentials;
+        try
+        {
+            credentials = base64Decode(std::string(auth_str.substr(basic_prefix.size())), /* url_encoding = */ false, /* no_padding = */ true);
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Cannot decode the Base64-encoded credentials in the 'authorization' header");
+        }
 
         auto pos = credentials.find(':');
         if (pos == std::string::npos)
@@ -222,6 +235,13 @@ arrow::Status AuthMiddlewareFactory::StartCall(
     {
         return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, e.what());
     }
+    catch (...)
+    {
+        /// An exception escaping this method would be caught inside gRPC and converted to a meaningless
+        /// "Unexpected error in RPC handling" status, so we convert it to a proper error status ourselves.
+        return arrow::flight::MakeFlightError(
+            arrow::flight::FlightStatusCode::Unauthenticated, getCurrentExceptionMessage(/* with_stacktrace = */ false));
+    }
 
     try
     {
@@ -270,6 +290,10 @@ arrow::Status AuthMiddlewareFactory::StartCall(
     catch (DB::Exception & e)
     {
         return arrow::Status::Invalid(e.what());
+    }
+    catch (...)
+    {
+        return arrow::Status::Invalid(getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
     return arrow::Status::OK();
