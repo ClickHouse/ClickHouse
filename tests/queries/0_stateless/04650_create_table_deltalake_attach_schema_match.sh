@@ -20,7 +20,7 @@ rm -rf "$TABLE_PATH"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_fresh (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 "
 [ -f "$INITIAL_LOG" ] && echo "fresh: created" || echo "fresh: fail: no initial commit"
@@ -29,7 +29,7 @@ CREATE TABLE t_dl_fresh (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_match (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_match;
 "
@@ -40,7 +40,7 @@ echo "match: attached"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_differing (id Int64, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_differing;
 "
@@ -50,7 +50,7 @@ echo "differing: attached"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_columnless ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 SELECT count() FROM t_dl_columnless;
 "

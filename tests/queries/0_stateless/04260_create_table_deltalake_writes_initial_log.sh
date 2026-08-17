@@ -25,7 +25,7 @@ echo "pre-create: no _delta_log"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_initial;
 CREATE TABLE t_dl_initial (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
@@ -49,7 +49,7 @@ MTIME_BEFORE=$(stat -c "%Y" "$INITIAL_LOG" 2>/dev/null || stat -f "%m" "$INITIAL
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 
 INSERT INTO t_dl_initial SELECT number, toString(number) FROM numbers(3);
 SELECT id, name FROM t_dl_initial ORDER BY id;
@@ -62,7 +62,7 @@ sleep 1   # so any rewrite of the commit file would show up as a newer mtime
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
-SET allow_experimental_delta_lake_create_table = 1;
+SET allow_delta_lake_create_table = 1;
 
 DROP TABLE t_dl_initial;
 CREATE TABLE IF NOT EXISTS t_dl_initial (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);

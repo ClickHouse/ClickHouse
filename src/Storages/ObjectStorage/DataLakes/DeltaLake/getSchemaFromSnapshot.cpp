@@ -935,11 +935,12 @@ uintptr_t visitClickHouseSchema(void * schema_void, ffi::KernelSchemaVisitorStat
         for (const auto & col : *ctx->schema_list)
             field_ids.push_back(visitFieldFromClickHouseType(state, col.name, col.type));
 
-        /// Top-level struct has an empty name; the kernel ignores it for the root schema.
-        auto empty_name = KernelUtils::toDeltaString("");
+        /// Top-level struct has an empty name; the kernel ignores it for the root schema. Keep the backing
+        /// string alive so the `KernelStringSlice` does not dangle (it points into the string's buffer).
+        static const std::string empty_name;
         return KernelUtils::unwrapResult(
             ffi::visit_field_struct(
-                state, empty_name, field_ids.data(), field_ids.size(),
+                state, KernelUtils::toDeltaString(empty_name), field_ids.data(), field_ids.size(),
                 /* nullable */ false,
                 &KernelUtils::allocateError),
             "visit_field_struct(top-level)");

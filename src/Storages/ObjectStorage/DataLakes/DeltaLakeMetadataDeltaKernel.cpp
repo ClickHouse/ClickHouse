@@ -60,7 +60,7 @@ namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
-    extern const SettingsBool allow_experimental_delta_lake_create_table;
+    extern const SettingsBool allow_delta_lake_create_table;
     extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -815,11 +815,11 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     const bool delta_log_exists = deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
     const bool fresh_create = has_explicit_columns && !delta_log_exists;
     if ((fresh_create || register_with_catalog)
-        && !local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_create_table])
+        && !local_context->getSettingsRef()[Setting::allow_delta_lake_create_table])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Creating a new DeltaLake table or registering an existing one into a catalog with CREATE TABLE "
-            "is experimental; set allow_experimental_delta_lake_create_table = 1 to enable it");
+            "is experimental; set allow_delta_lake_create_table = 1 to enable it");
 
     /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
     /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
