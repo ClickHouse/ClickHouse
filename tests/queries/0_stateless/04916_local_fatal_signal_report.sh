@@ -113,7 +113,7 @@ cat > "$PREFIX".d/textlog/config.xml <<EOF
 EOF
 echo "textlog rows $($CLICKHOUSE_LOCAL --config-file="$PREFIX".d/textlog/config.xml \
     --path="$PREFIX".d/textlog/db \
-    --query "SELECT 1 FORMAT Null; SYSTEM FLUSH LOGS; SELECT count() > 0 FROM system.text_log WHERE logger_name = 'executeQuery'")"
+    --query "SELECT 1 FORMAT Null; SYSTEM FLUSH LOGS text_log; SELECT count() > 0 FROM system.text_log WHERE logger_name = 'executeQuery'")"
 echo "textlog channels 0 $(find "$PREFIX".d/textlog -maxdepth 1 -name '*.log' | wc -l)"
 
 # Below fatal severity nothing reaches stderr, which is the program's own output.
