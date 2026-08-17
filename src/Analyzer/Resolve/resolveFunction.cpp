@@ -182,6 +182,11 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
         if (isFunctionAliasInScope(function->getFunctionName(), scope))
             return true;
 
+        /// throwIf is eligible for runtime lazy execution itself, but when it is inside a
+        /// non-lazy comparison the comparison evaluates it eagerly. Never erase it speculatively.
+        if (function->getFunctionName() == "throwIf")
+            return true;
+
         auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
         if (!resolver)
         {
