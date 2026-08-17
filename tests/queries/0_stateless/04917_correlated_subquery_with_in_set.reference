@@ -4,11 +4,15 @@
 -- plain IN (SELECT ...) inside a correlated EXISTS
 100
 100
+20
+20
 -- partially matching IN set
 60
 60
--- empty IN set
+-- IN set with no matching value
 0
+0
+-- empty IN set
 0
 -- per-row equality against the constant-set rewrite
 0
@@ -22,8 +26,8 @@
 20
 20
 -- tuple key
-100
-100
+60
+60
 -- constant on the left of IN
 0
 0
@@ -31,10 +35,11 @@
 51
 51
 -- NOT IN
-100
-100
+80
+80
 -- GLOBAL IN
-100
+60
+60
 -- correlated NOT EXISTS
 40
 40
@@ -45,17 +50,17 @@
 51
 51
 -- two independent IN sets in one body
-100
-100
+20
+20
 -- two-level nested correlated subquery, IN set in the inner body
 100
 100
 -- a correlated set subquery is still rejected
--- a materialized CTE body without an IN set is unaffected
+-- an ordinary CTE body without an IN set is unaffected
 100
 -- unchanged with parallel replicas enabled
 100
--- the set is built once, before the main query, and no delayed step survives
+-- the delayed step is expanded before execution and does not survive
 1
 0
 -- the same query without a set subquery builds no set at all

@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS t_src;
 DROP TABLE IF EXISTS t_main;
 DROP DICTIONARY IF EXISTS d_src;
 
+SET enable_analyzer = 1;
+
 CREATE TABLE t_src (id UInt64, val UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_src SELECT number, number % 97 FROM numbers(500);
 
@@ -31,7 +33,8 @@ FROM numbers(100);
 SELECT '-- dictGet comparison rewritten to an IN set inside a correlated EXISTS';
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i
-    WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3);
+    WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3)
+SETTINGS optimize_inverse_dictionary_lookup = 1;
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i
     WHERE i.s = o.s AND dictGet(currentDatabase() || '.d_src', 'val', toUInt64(i.k)) >= 3)
@@ -42,6 +45,10 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6));
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (0, 1, 2, 3, 4, 5, 6));
+SELECT count() FROM t_main AS o WHERE EXISTS (
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8 AND i.g IN (SELECT val FROM t_src WHERE val = 3));
+SELECT count() FROM t_main AS o WHERE EXISTS (
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8 AND i.g IN (3));
 
 SELECT '-- partially matching IN set';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -49,11 +56,15 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (3));
 
-SELECT '-- empty IN set';
+SELECT '-- IN set with no matching value';
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val > 90));
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (91, 92, 93, 94, 95, 96));
+
+SELECT '-- empty IN set';
+SELECT count() FROM t_main AS o WHERE EXISTS (
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val > 200));
 
 SELECT '-- per-row equality against the constant-set rewrite';
 SELECT count() FROM (
@@ -64,7 +75,8 @@ FULL JOIN (
     SELECT o.k FROM t_main AS o WHERE EXISTS (
         SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (0, 1, 2, 3, 4, 5, 6))
 ) AS b ON a.k = b.k
-WHERE a.k IS NULL OR b.k IS NULL;
+WHERE a.k IS NULL OR b.k IS NULL
+SETTINGS join_use_nulls = 1;
 
 SELECT '-- Nullable key';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -86,10 +98,10 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
 
 SELECT '-- tuple key';
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND (i.g, i.k) IN (SELECT val, id FROM t_src WHERE id < 20));
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND (i.g, i.k) IN (SELECT val, id FROM t_src WHERE id < 3));
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND (i.g, i.k) IN (
-        SELECT number % 7, number FROM numbers(20)));
+        SELECT number, number FROM numbers(3)));
 
 SELECT '-- constant on the left of IN';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -105,13 +117,15 @@ SELECT count() FROM t_main AS o WHERE o.g >= (
 
 SELECT '-- NOT IN';
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g NOT IN (SELECT val FROM t_src WHERE val <= 2));
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 12 AND i.g NOT IN (SELECT val FROM t_src WHERE val <= 2));
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g NOT IN (0, 1, 2));
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 12 AND i.g NOT IN (0, 1, 2));
 
 SELECT '-- GLOBAL IN';
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g GLOBAL IN (SELECT val FROM t_src WHERE val <= 6));
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g GLOBAL IN (SELECT val FROM t_src WHERE val = 3));
+SELECT count() FROM t_main AS o WHERE EXISTS (
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 20 AND i.g IN (3));
 
 SELECT '-- correlated NOT EXISTS';
 SELECT count() FROM t_main AS o WHERE NOT EXISTS (
@@ -141,11 +155,11 @@ SELECT count() FROM t_main AS o WHERE o.g >= (
 
 SELECT '-- two independent IN sets in one body';
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s
-      AND i.g IN (SELECT val FROM t_src WHERE val <= 6)
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8
+      AND i.g IN (SELECT val FROM t_src WHERE val = 3)
       AND i.k IN (SELECT id FROM t_src WHERE id < 50));
 SELECT count() FROM t_main AS o WHERE EXISTS (
-    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (0, 1, 2, 3, 4, 5, 6) AND i.k < 50);
+    SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.k < 8 AND i.g IN (3) AND i.k < 50);
 
 SELECT '-- two-level nested correlated subquery, IN set in the inner body';
 SELECT count() FROM t_main AS o WHERE EXISTS (
@@ -159,7 +173,7 @@ SELECT '-- a correlated set subquery is still rejected';
 SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT g FROM t_main WHERE s = o.s)); -- { serverError NOT_IMPLEMENTED }
 
-SELECT '-- a materialized CTE body without an IN set is unaffected';
+SELECT '-- an ordinary CTE body without an IN set is unaffected';
 WITH c AS (SELECT k, g, s FROM t_main)
 SELECT count() FROM t_main AS o WHERE EXISTS (SELECT 1 FROM c AS i WHERE i.s = o.s);
 
@@ -168,7 +182,7 @@ SELECT count() FROM t_main AS o WHERE EXISTS (
     SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6))
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3;
 
-SELECT '-- the set is built once, before the main query, and no delayed step survives';
+SELECT '-- the delayed step is expanded before execution and does not survive';
 SELECT count() > 0 FROM (
     EXPLAIN SELECT count() FROM t_main AS o WHERE EXISTS (
         SELECT 1 FROM t_main AS i WHERE i.s = o.s AND i.g IN (SELECT val FROM t_src WHERE val <= 6))
