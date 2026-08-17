@@ -16,8 +16,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsBool extremes;
@@ -40,8 +40,8 @@ ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
         || settings[Setting::max_result_rows] != 0 || settings[Setting::max_result_bytes] != 0
         || settings[Setting::extremes])
     {
-        inner_context->setSetting("limit", Field(UInt64(0)));
-        inner_context->setSetting("offset", Field(UInt64(0)));
+        inner_context->setSetting("limit", Field(0.));
+        inner_context->setSetting("offset", Field(0.));
         inner_context->setSetting("max_result_rows", Field(UInt64(0)));
         inner_context->setSetting("max_result_bytes", Field(UInt64(0)));
         inner_context->setSetting("extremes", Field(false));
