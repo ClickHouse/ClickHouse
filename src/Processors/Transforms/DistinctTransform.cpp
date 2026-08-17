@@ -34,7 +34,7 @@ void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chu
     }
 }
 
-void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows)
+void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
 {
     if (abandoned)
         return;
@@ -43,7 +43,7 @@ void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_r
     rows_observed += num_rows;
     unique_rows_observed += num_unique_rows;
 
-    if (chunks_observed < OBSERVATION_CHUNK_COUNT)
+    if (chunks_observed < OBSERVATION_CHUNK_COUNT && set_bytes < MAX_OBSERVATION_SET_BYTES)
         return;
 
     double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
@@ -269,7 +269,7 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (abandon_controller)
     {
-        abandon_controller->update(num_rows, num_selected);
+        abandon_controller->update(num_rows, num_selected, data->getTotalByteCount());
         if (abandon_controller->isAbandoned())
             data.reset();
     }

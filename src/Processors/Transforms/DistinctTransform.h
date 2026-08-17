@@ -67,11 +67,18 @@ class DeduplicationAbandonController
 public:
     bool isAbandoned() const { return abandoned; }
 
-    void update(size_t num_rows, size_t num_unique_rows);
+    void update(size_t num_rows, size_t num_unique_rows, size_t set_bytes);
 
 private:
     /// Number of chunks to observe before the rate is checked.
     static constexpr size_t OBSERVATION_CHUNK_COUNT = 5;
+
+    /// The observation itself retains memory: until the first check, the hash table keeps every unique
+    /// key seen, which for wide keys is chunk count * block size * key size per stream. One chunk of
+    /// rows already gives a meaningful rate, so once the set is this large the check starts immediately
+    /// instead of waiting out the chunk window. Integer keys stay on the full window (their set is
+    /// about half this size at the fifth chunk).
+    static constexpr size_t MAX_OBSERVATION_SET_BYTES = 16 * 1024 * 1024;
 
     /// Fraction of the observed rows that survived deduplication. Above this rate the removal is too
     /// small to help the consumer, while the hash table keeps growing with the unique rows.
