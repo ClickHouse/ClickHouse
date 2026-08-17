@@ -12,13 +12,20 @@
 -- Merges stay stopped so the three parts below reach the SELECT separately: one projection
 -- part per part is what carries enough keys past the frozen hash table for a null place to
 -- appear, and over a single merged part every count below is 3000 instead.
+--
+-- `index_granularity_bytes = 0` turns adaptive granularity off so that the parts of `p` and of
+-- the parent table are cut into the same number of granules. `p` stores five aggregate states
+-- per row and is therefore several times wider than the parent's three `UInt64` columns, so
+-- under a small `index_granularity_bytes` — the test runner randomizes it down to 1 KiB — `p`
+-- takes more marks than the parent table, `optimizeUseAggregateProjections` discards it as
+-- "not better than the original table", and `force_optimize_projection_name` throws.
 
 DROP TABLE IF EXISTS t_orfill;
 
 CREATE TABLE t_orfill (k UInt64, k2 UInt64, v UInt64,
     PROJECTION p (SELECT k, sumOrNull(v), sumOrDefault(v), sumTupleOrNull(tuple(v)), sumOrNullTuple(tuple(v)) GROUP BY k),
     PROJECTION p2 (SELECT k, k2, sumOrNull(v) GROUP BY k, k2))
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity_bytes = 0;
 
 SYSTEM STOP MERGES t_orfill;
 
