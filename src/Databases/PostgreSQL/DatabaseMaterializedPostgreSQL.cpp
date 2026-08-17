@@ -978,6 +978,7 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
     /// path adopt a half-dead shared tree: a ghost replica that never answers part fetches, and stale block
     /// deduplication hashes.
     DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, isCoordinated() || sync);
+    nested_table_removed_during_drop = true;
 }
 
 
@@ -1042,6 +1043,8 @@ void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_con
 
 void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
 {
+    nested_table_removed_during_drop = false;
+
     /// The generic DROP DATABASE path drops every nested table (in `InterpreterDropQuery::executeToDatabaseImpl`)
     /// before it ever reaches `DatabaseMaterializedPostgreSQL::drop` / `PostgreSQLReplicationHandler::
     /// shutdownFinal`. In coordinated mode the nested tables are this replica's local copy of the shared
@@ -1153,7 +1156,7 @@ void DatabaseMaterializedPostgreSQL::onDropDatabaseFailed(ContextPtr)
     /// re-arm is needed for a plain database just as much. Recovery is idempotent, so a double call (a failure
     /// inside `beforeDropDatabase`, which recovers in its own catch, is also routed here) is harmless.
     std::lock_guard lock(handler_mutex);
-    recoverAfterRefusedDrop(/* force_resnapshot */ true);
+    recoverAfterRefusedDrop(/* force_resnapshot */ nested_table_removed_during_drop);
 }
 
 

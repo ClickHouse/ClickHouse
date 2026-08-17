@@ -1531,28 +1531,6 @@ def test_refused_drop_when_nested_table_drop_fails_recovers_database(started_clu
     check_tables_are_synchronized(instance, "test_table")
     wait_for_marker(instance)
 
-    try:
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
-        )
-        error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
-        assert "Injected failure while dropping a nested table" in error
-        assert "test_database" in instance.query("SHOW DATABASES")
-    finally:
-        instance.query(
-            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
-        )
-
-    # Replication must recover without a server restart. There is no peer to receive the rows from,
-    # so their arrival proves this replica's own rebuilt handler is consuming again.
-    instance.query(
-        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
-    )
-
-    # The recovery drops the shut-down nested table and recreates it, so the table is transiently
-    # absent (UNKNOWN_TABLE), and the recreate on the just-dropped Keeper path can itself hit a
-    # transient "dropped right now" error that the retrying startup resolves - poll instead of
-    # failing on the first error.
     def wait_for_database_count(expected, timeout=120):
         for _ in range(timeout):
             try:
@@ -1566,9 +1544,32 @@ def test_refused_drop_when_nested_table_drop_fails_recovers_database(started_clu
             time.sleep(1)
         raise AssertionError(f"test_database.test_table did not reach {expected} rows")
 
-    wait_for_database_count(200)
+    # A failed nested-table drop before any table was removed must recover in attach mode. In
+    # particular, it must not resnapshot into the existing nested table and revive this deletion.
+    instance.query("DELETE FROM postgres_database.test_table WHERE key = 0")
+    wait_for_database_count(99)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
+        assert "Injected failure while dropping a nested table" in error
+        assert "test_database" in instance.query("SHOW DATABASES")
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+
+    # Replication must recover without a server restart and preserve the still-live nested table.
+    wait_for_database_count(99)
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+
+    wait_for_database_count(199)
     check_tables_are_synchronized(instance, "test_table")
-    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 199
 
     # A retried drop succeeds and removes the shared state.
     instance.query("DROP DATABASE test_database SYNC")

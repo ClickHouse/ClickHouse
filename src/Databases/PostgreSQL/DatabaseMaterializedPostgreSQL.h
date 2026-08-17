@@ -147,6 +147,11 @@ private:
     /// When both mutexes are needed, `handler_mutex` is taken first.
     std::map<std::string, StoragePtr> materialized_tables TSA_GUARDED_BY(tables_mutex);
 
+    /// Set after the generic `DROP DATABASE` path successfully removes a nested table. A refused drop
+    /// needs a fresh snapshot only in this case; otherwise attach-style recovery preserves the still-live
+    /// publication and nested tables.
+    std::atomic_bool nested_table_removed_during_drop{false};
+
     /// Distinguishes the two states in which `materialized_tables` is empty. After `stopReplication`
     /// (server shutdown or `DROP DATABASE`) user-facing access legitimately falls back to the nested
     /// `ReplacingMergeTree` tables. But the map is also empty right after `CREATE` / `ATTACH DATABASE`

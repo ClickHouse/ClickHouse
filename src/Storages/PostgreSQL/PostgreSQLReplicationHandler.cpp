@@ -3562,7 +3562,10 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         /// so startSynchronization recreates it from `tables_list` before the consumer
                         /// starts.
                         execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
-                        return std::set(expected_tables.begin(), expected_tables.end());
+                        /// Do not return yet: the normalization pass below SQL-quotes `tables_list` before
+                        /// `createPublicationIfNeeded` uses it to recreate the publication. In particular,
+                        /// an unquoted keyword or mixed-case table identifier must not be emitted verbatim.
+                        result_tables = std::set(expected_tables.begin(), expected_tables.end());
                     }
                 }
             }
