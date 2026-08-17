@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
 
