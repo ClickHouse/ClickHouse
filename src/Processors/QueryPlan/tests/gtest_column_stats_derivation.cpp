@@ -292,9 +292,6 @@ TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
     EXPECT_EQ(stats[current->result_name].num_distinct_values, distinct_values);
 }
 
-/// The bound propagates through a chain of deterministic single-argument functions: no link can
-/// increase the distinct count, so the final output is still bounded by the source column. A
-/// multi-argument link anywhere in the chain breaks the propagation.
 TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
 {
     tryRegisterFunctions();
@@ -348,6 +345,9 @@ TEST(ColumnStatsDerivation, LineageUsesInputPositionsWithDuplicateNames)
     EXPECT_EQ(lineage[1].input->input_position, 1u);
 }
 
+/// The bound propagates through a chain of deterministic single-argument functions: no link can
+/// increase the distinct count, so the final output is still bounded by the source column. A
+/// multi-argument link anywhere in the chain breaks the propagation.
 TEST(ColumnStatsDerivation, ChainOfFunctionsPropagatesBound)
 {
     tryRegisterFunctions();
