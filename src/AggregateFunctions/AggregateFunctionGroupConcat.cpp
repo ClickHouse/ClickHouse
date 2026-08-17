@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
 
@@ -50,18 +51,21 @@ UInt64 GroupConcatData::getString(size_t i) const
     return offsets[i * 2];
 }
 
+void GroupConcatData::insertString(std::string_view str, Arena * arena)
+{
+    checkAndUpdateSize(str.size(), arena);
+    memcpy(data + data_size, str.data(), str.size());
+    offsets.push_back(data_size, arena);
+    data_size += str.size();
+    offsets.push_back(data_size, arena);
+    num_rows++;
+}
+
 void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
 {
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, {});
-    auto string = buff.stringView();
-
-    checkAndUpdateSize(string.size(), arena);
-    memcpy(data + data_size, string.data(), string.size());
-    offsets.push_back(data_size, arena);
-    data_size += string.size();
-    offsets.push_back(data_size, arena);
-    num_rows++;
+    insertString(buff.stringView(), arena);
 }
 
 template <bool has_limit>
@@ -101,6 +105,16 @@ void GroupConcatImpl<has_limit>::add(
 
     if (isFixedString(type))
     {
+        /// Trailing zero bytes are cut, matching CAST(FixedString AS String).
+        if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(columns[0]))
+        {
+            std::string_view ref = col_fixed->getDataAt(row_num);
+            while (!ref.empty() && ref.back() == 0)
+                ref.remove_suffix(1);
+            cur_data.insertString(ref, arena);
+            return;
+        }
+
         ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
         const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
         cur_data.insert(col_str.get(), serialization, row_num, arena);
