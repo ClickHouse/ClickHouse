@@ -45,7 +45,7 @@ std::vector<std::pair<UInt64, UInt64>> runFullJoinWithStarvedTotals(
     auto right_header = keyHeader("rk");
 
     Settings settings;
-    auto table_join = std::make_shared<TableJoin>(settings, nullptr, nullptr);
+    auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, nullptr, nullptr);
     table_join->getTableJoin().kind = JoinKind::Full;
     table_join->getTableJoin().strictness = JoinStrictness::All;
     table_join->addDisjunct();
