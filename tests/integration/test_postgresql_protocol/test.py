@@ -344,19 +344,6 @@ def test_new_user(started_cluster):
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
 
-    with pytest.raises(py_psql.OperationalError) as exc_info:
-        ch = py_psql.connect(
-            host=node.ip_address,
-            port=server_port,
-            user="default",
-            password="123",
-            database="",
-        )
-        cur = ch.cursor()
-        cur.execute("select name from tables;")
-
-    assert exc_info.value.args == ("SSL connection has been closed unexpectedly\n",)
-
     ch = py_psql.connect(
         host=node.ip_address,
         port=server_port,
@@ -365,6 +352,13 @@ def test_python_client(started_cluster):
         database="",
     )
     cur = ch.cursor()
+
+    # A failed query returns an error and keeps the connection usable
+    # (as in PostgreSQL) instead of closing the connection.
+    with pytest.raises(py_psql.errors.SqlRoutineException) as exc_info:
+        cur.execute("select name from tables;")
+
+    assert "Unknown table expression identifier" in str(exc_info.value)
 
     cur.execute("select 1 as a, 2 as b")
     assert (cur.description[0].name, cur.description[1].name) == ("a", "b")
