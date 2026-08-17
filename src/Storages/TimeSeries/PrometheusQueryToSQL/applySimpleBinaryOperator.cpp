@@ -306,8 +306,8 @@ namespace
 
                 /// Either group_left or group_right is specified.
                 /// There are two sides: "one" and "many".
-                size_t side_many_index;
-                size_t side_one_index;
+                size_t side_many_index = 0;
+                size_t side_one_index = 0;
                 bool metric_name_dropped_from_side_many = false;
                 bool metric_name_dropped_from_side_one = false;
 

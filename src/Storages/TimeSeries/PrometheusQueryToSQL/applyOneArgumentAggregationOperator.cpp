@@ -174,7 +174,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     /// The transformed group expression is aliased directly as `group`: in
     /// `SELECT f(group) AS group ... GROUP BY group` the identifier inside the aliased expression
     /// resolves to the source column while `GROUP BY group` resolves to the alias (this holds for
-    /// both the old and the new analyzer), so no extra column-renaming step is needed.
+    /// both `enable_analyzer=0` and `enable_analyzer=1`), so no extra column-renaming step is needed.
     {
         SelectQueryBuilder builder;
 
