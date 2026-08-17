@@ -3625,6 +3625,15 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             return false;
         };
 
+        auto has_statement_terminator = [&](const char * statement_begin)
+        {
+            Tokens terminator_tokens(statement_begin, end, 0, true);
+            for (TokenIterator it(terminator_tokens); !it->isEnd(); ++it)
+                if (it->type == TokenType::Semicolon)
+                    return true;
+            return false;
+        };
+
         unsigned max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
         unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
 
@@ -3694,6 +3703,21 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// here, but `token_iterator.max()` is not: the parse was abandoned
                 /// at an arbitrary point, so anything else is committed and reported
                 /// by the regular query-processing path.
+                if (has_statement_terminator(statement_begin))
+                    return false;
+
+                /// PromQL and PRQL validate their entire statement with external
+                /// parsers and communicate syntax errors by throwing. Unlike the
+                /// SQL parser's `Expected`, their error positions are available only
+                /// through dialect-specific probes. Preserve the general rule that
+                /// exceptions are submitted, except when those probes identify EOF
+                /// as the missing input.
+                const auto query = std::string_view{statement_begin, static_cast<size_t>(end - statement_begin)};
+                if (effective_settings[Setting::dialect] == Dialect::promql && ParserPrometheusQuery::isIncompleteAtEOF(query))
+                    return true;
+                if (effective_settings[Setting::dialect] == Dialect::prql && ParserPRQLQuery::isIncompleteAtEOF(query))
+                    return true;
+
                 return has_unclosed_opener(statement_begin);
             }
 
