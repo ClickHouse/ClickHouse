@@ -808,14 +808,16 @@ def kill_process_group(pgid, fatal_log):
     print(f"Process group {pgid} should be killed")
 
 
-def cleanup_child_processes(pid):
+def kill_out_of_group_children(pid):
+    """Kill the process groups of `pid`'s children that are outside our own
+    group. Returns our pgid, or None when the process is already gone."""
     print(f"Child processes of {pid}:")
     try:
         pgid = os.getpgid(os.getpid())
     except OSError as e:
         if e.errno == ESRCH:
             print(f"Process {pid} does not exist. Ignoring.")
-            return
+            return None
         raise
     print(
         '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(ppid=pid)),
@@ -836,6 +838,13 @@ def cleanup_child_processes(pid):
         if child_pgid != pgid:
             kill_process_group(child_pgid, None)
 
+    return pgid
+
+
+def cleanup_child_processes(pid):
+    pgid = kill_out_of_group_children(pid)
+    if pgid is None:
+        return
     # SIGKILL should not be sent, since this will kill the script itself
     os.killpg(pgid, signal.SIGTERM)
 
@@ -4826,8 +4835,8 @@ def run_tests_array(
                 # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
-                        # Dump stacktraces *before* stop_tests() kills the
-                        # client connections.  This is the only moment
+                        # Dump stacktraces *before* the client connections are
+                        # killed below.  This is the only moment
                         # the offending user query is still wedged on the
                         # server with its query_id — once the TCP
                         # connection drops, the server typically cancels
@@ -4836,7 +4845,10 @@ def run_tests_array(
                         # end-of-run.
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
-                        stop_tests()
+                        # This test's own clients only. `stop_tests()` would
+                        # `killpg` the shared group, so one test's deadline
+                        # would kill every worker and the parent (143).
+                        kill_out_of_group_children(os.getpid())
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
