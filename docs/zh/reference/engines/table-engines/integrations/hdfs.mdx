@@ -266,13 +266,15 @@ libhdfs3 支持 HDFS NameNode 高可用 (HA) 。
 * `_size` — 文件大小 (单位为字节) 。类型：`Nullable(UInt64)`。如果大小未知，则值为 `NULL`。
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 
+- `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。HDFS 没有原生 ETag，因此该值会根据文件的修改时间和大小合成，格式为 `<mtime_seconds>_<size>`。由于 `libhdfs3` 仅以秒级精度提供修改时间，在同一秒内重写且文件大小不变时，会产生相同的值；因此，该合成 ETag 不会用作内容缓存键。
+
 <div id="storage-settings">
   ## 存储设置
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings#hdfs_truncate_on_insert) - 允许在向文件插入数据前先将其截断。默认禁用。
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings#hdfs_create_new_file_on_insert) - 如果 格式 带有 suffix，则允许在每次插入时创建新文件。默认禁用。
-* [hdfs&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#hdfs_skip_empty_files) - 允许在读取时跳过空文件。默认禁用。
+* [hdfs&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - 允许在向文件插入数据前先将其截断。默认禁用。
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - 如果 格式 带有 suffix，则允许在每次插入时创建新文件。默认禁用。
+* [hdfs&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - 允许在读取时跳过空文件。默认禁用。
 
 **另请参见**
 
