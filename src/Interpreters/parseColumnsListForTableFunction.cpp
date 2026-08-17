@@ -71,7 +71,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 auto * base_aggregate_function_type = aggregate_function_type;
                 while (base_aggregate_function_type->getNestedFunction() != nullptr)
                 {
-                    base_aggregate_function_type = base_aggregate_function_type->getNestedFunction()
+                    base_aggregate_function_type = base_aggregate_function_type->getNestedFunction();
                 }
                 const String function_name = base_aggregate_function_type->getFunctionName();
                 is_experimental_time_decay_type
