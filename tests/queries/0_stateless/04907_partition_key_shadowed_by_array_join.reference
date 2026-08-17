@@ -2,7 +2,7 @@
 1
 -- old analyzer, DISTINCT on the exploded column: must not engage even when forced
 1
--- new analyzer: the exploded column gets a synthetic name and never matches; results stay equal
+-- the analyzer: the exploded column gets a synthetic name and never matches; results stay equal
 1
 1
 -- window partitioned by a table column with an unrelated ARRAY JOIN: still engages

@@ -32,7 +32,7 @@ SELECT (SELECT count() FROM (SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr) S
 
 SET enable_analyzer = 1;
 
-SELECT '-- new analyzer: the exploded column gets a synthetic name and never matches; results stay equal';
+SELECT '-- the analyzer: the exploded column gets a synthetic name and never matches; results stay equal';
 SELECT (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(arr, s)) FROM (SELECT arr, sum(v) OVER (PARTITION BY arr ORDER BY v) AS s FROM t_shadow ARRAY JOIN arr) SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1);
 SELECT (SELECT count() FROM (SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr) SETTINGS allow_distinct_partitions_independently = 0) = (SELECT count() FROM (SELECT DISTINCT arr FROM t_shadow ARRAY JOIN arr) SETTINGS allow_distinct_partitions_independently = 1, force_distinct_partitions_independently = 1);
 
