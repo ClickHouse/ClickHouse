@@ -2,6 +2,11 @@
 -- no-shared-merge-tree: relies on the merge assignment of ReplicatedMergeTree
 -- no-replicated-database: fails due to additional shard
 
+-- A merge of patch parts across the data version of an existing part used to produce a patch that
+-- neither wholly applies nor wholly does not apply to that part, so every later operation on the
+-- partition failed with "Found patch part ... that intersects mutation with version ...".
+-- Related: https://github.com/ClickHouse/ClickHouse/issues/98898
+
 DROP TABLE IF EXISTS t_lwu_span SYNC;
 
 CREATE TABLE t_lwu_span (id UInt64, c1 UInt64, c2 UInt64)
