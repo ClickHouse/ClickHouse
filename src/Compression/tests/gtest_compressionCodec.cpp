@@ -3055,6 +3055,30 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 2), "Cannot decompress Wallaby-encoded data, corrupt exception position", 16);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaAtNonQuantizableException)
+{
+    /// A DECIMAL_DELTA exception that cannot be quantized at alpha = 0 has a zero lane: the
+    /// encoder leaves the chain unchanged before patching its raw value. A non-zero lane would
+    /// otherwise silently alter the values after the exception.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x01,                                           // bits = 1
+        0x00,                                           // adjustment_bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// Float64 FFOR packs the first 16 lanes in separate UInt64 words. Set the lane at
+    /// position 1 to one, which a valid encoder cannot emit for the NaN exception below.
+    vectors.resize(vectors.size() + 128);
+    vectors[11 + sizeof(UInt64)] = 0x01;
+    vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x7F}); // quiet NaN
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, non-zero delta at a non-quantizable exception", 24);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)
 {
     /// The declared XOR payload size is cut below the 72 bits the flags byte and the raw first

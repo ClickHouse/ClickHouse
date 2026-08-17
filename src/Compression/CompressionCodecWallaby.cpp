@@ -2038,6 +2038,32 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 }
                 src += adjustment_bytes;
 
+                /// An exception that cannot be quantized at this scale is represented by a
+                /// zero delta lane: it must not advance the delta chain before its raw value is
+                /// patched back. Check this encoder invariant before reconstructing the lanes,
+                /// so a malformed payload cannot bias the values after an exception.
+                std::array<bool, WALLABY_VECTOR_VALUES> non_quantizable_exception{};
+                require(exception_count * (sizeof(UInt16) + sizeof(T)));
+                const char * exception_src = src;
+                for (UInt32 i = 0; i < exception_count; ++i)
+                {
+                    const UInt16 position = unalignedLoadLittleEndian<UInt16>(exception_src);
+                    exception_src += sizeof(UInt16);
+                    const T raw = unalignedLoadLittleEndian<T>(exception_src);
+                    exception_src += sizeof(T);
+                    if (position >= count)
+                        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt exception position");
+
+                    if (mode == VectorMode::DecimalDelta)
+                    {
+                        SignedType ignored_quantized = 0;
+                        T ignored_adjustment = 0;
+                        const auto status = quantizeValueWithAdjustment<T>(
+                            std::bit_cast<typename Traits::FloatType>(raw), alpha, ignored_quantized, ignored_adjustment);
+                        non_quantizable_exception[position] = status != QuantizeStatus::Ok;
+                    }
+                }
+
                 const bool negative_scale = alpha < 0;
                 const Float64 scale = WALLABY_POW10[negative_scale ? -alpha : alpha];
                 const auto reconstruct = [scale, negative_scale](SignedType q) ALWAYS_INLINE
@@ -2068,6 +2094,8 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     T accumulator = static_cast<T>(base);
                     for (UInt32 i = 0; i < count; ++i)
                     {
+                        if (non_quantizable_exception[i] && unpacked[i] != 0)
+                            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, non-zero delta at a non-quantizable exception");
                         if (i > 0)
                         {
                             const T zigzag = unpacked[i];
@@ -2078,7 +2106,6 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     }
                 }
 
-                require(exception_count * (sizeof(UInt16) + sizeof(T)));
                 for (UInt32 i = 0; i < exception_count; ++i)
                 {
                     const UInt16 position = unalignedLoadLittleEndian<UInt16>(src);
