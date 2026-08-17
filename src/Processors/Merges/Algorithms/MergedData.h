@@ -36,6 +36,12 @@ public:
     void setLimit(UInt64 limit) { total_row_limit = limit; }
     bool reachedLimit() const { return total_row_limit && total_merged_rows >= total_row_limit; }
 
+    size_t rowsToInsertBeforeFlush(
+        const ColumnRawPtrs & raw_columns,
+        size_t start_index,
+        size_t max_rows,
+        size_t block_size) const;
+
     UInt64 mergedRows() const { return merged_rows; }
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }
