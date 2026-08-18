@@ -74,139 +74,6 @@ TEST_RESULT_PATTERN = re.compile(
     r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
 )
 
-# Markers that indicate a real server crash. If any of these appears in
-# `clickhouse-server.err.log`, the run must NOT be reclassified as a
-# CIDB-staging-cluster overload, even if the rest of the log looks like
-# shipping failures.
-_REAL_CRASH_PATTERN = re.compile(
-    r"<Fatal>|AddressSanitizer:|MemorySanitizer:|ThreadSanitizer:|UndefinedBehaviorSanitizer:|LOGICAL_ERROR"
-)
-
-# How the CIDB log-export shipping errors are identified.
-#
-# The setup script `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`
-# ships system logs by creating one `Distributed` table per `system.%_log`
-# table, named `system.<table>_sender` (e.g. `system.query_log_sender`), that
-# points at the CIDB staging cluster. When that cluster is overloaded, the
-# background sender keeps retrying and every such `<Error>` line is logged
-# under that table's directory-queue logger, whose name is
-# `system.<table>_sender.DistributedInsertQueue.<disk>` (see
-# `DistributedAsyncInsertDirectoryQueue::getLoggerName`) - so it always
-# contains the `system.<table>_sender.` substring.
-#
-# We deliberately do NOT match a bare `_log_sender` / `_sender` name PATTERN:
-# a functional test CAN create a table in the `system` database (e.g.
-# `02494_query_cache_system_tables.sql` creates `system.system`), so any
-# name pattern is forgeable - a test could create `system.fake_log_sender`
-# and flood the log with matching shipping errors. Instead, the classifier
-# is given the CONCRETE `system.<table>_sender` table names that setup
-# created for THIS run (captured from `system.tables` right after
-# `start_log_exports` succeeds, before any test runs - see
-# `ci/jobs/functional_tests.py`). A test that later forges a
-# `system.*_sender` name is not in that set, so it cannot be counted. With
-# no concrete senders (every `ci/jobs/fast_test.py` run, any local run, or a
-# run whose log export failed to start) the classifier abstains entirely and
-# the run stays on the `Server died` path.
-
-# Minimum number of `<Error>` lines that must point at the CIDB staging
-# cluster before we treat the run as "infrastructure-only". A handful of
-# transient shipping errors should not silence a real failure; the
-# pathological cases @alexey-milovidov flagged on PR #106154 had ~1900
-# such errors in a single job, so a threshold in the low hundreds is
-# both safely above noise and well below real overload signatures.
-_STAGING_OVERLOAD_MIN_ERRORS = 100
-
-# Fraction of `<Error>` lines that must be CIDB-shipping retries for the
-# log to be classified as "staging-cluster-only". Conservative (95%) so
-# any non-shipping `<Error>` line — almost always a more interesting
-# failure — keeps us on the `Server died` path.
-_STAGING_OVERLOAD_MIN_FRACTION = 0.95
-
-
-def _build_sender_pattern(sender_tables) -> Optional["re.Pattern"]:
-    """Build a regex that matches the directory-queue logger name of the
-    concrete `system.<table>_sender` `Distributed` tables that
-    `setup_log_cluster.sh` created for this run.
-
-    ``sender_tables`` is the set of names (e.g. ``{"query_log_sender",
-    "trace_log_sender"}``) captured from `system.tables` right after log
-    export started, before any test ran. Returns ``None`` when the set is
-    empty, so the caller abstains rather than matching a forgeable pattern.
-    """
-    if not sender_tables:
-        return None
-    # `DistributedAsyncInsertDirectoryQueue::getLoggerName` emits
-    # `system.<table>.DistributedInsertQueue.<disk>`, so anchor on the exact
-    # `system.<name>.` prefix for each concrete sender table.
-    alternation = "|".join(re.escape(name) for name in sorted(sender_tables))
-    return re.compile(r"system\.(?:" + alternation + r")\.")
-
-
-def is_ci_logs_cluster_overload(server_err_log: Path, sender_tables=None) -> bool:
-    """Return ``True`` iff `clickhouse-server.err.log` looks like the CIDB
-    staging log cluster was unresponsive during the run and the server
-    itself was healthy.
-
-    ``sender_tables`` is the set of concrete `system.<table>_sender` table
-    names that `setup_log_cluster.sh` created for this run (captured before
-    any test ran). A line counts as a CIDB-shipping retry only when it names
-    one of those exact tables, so a test that later forges a
-    `system.*_sender` name cannot be counted. When the set is empty (or
-    ``None``) the classifier abstains: with no concrete senders there is
-    nothing a shipping error could legitimately come from.
-
-    The classifier requires:
-
-    * a non-empty ``sender_tables`` set;
-    * no real-crash markers (`<Fatal>`, sanitizer report, `LOGICAL_ERROR`)
-      anywhere in the file;
-    * at least `_STAGING_OVERLOAD_MIN_ERRORS` `<Error>` lines in the file;
-    * at least `_STAGING_OVERLOAD_MIN_FRACTION` of those `<Error>` lines
-      naming one of the concrete CIDB log-export `system.<table>_sender`
-      tables. Errors from any other `Distributed` table - including
-      test-owned ones and test-forged `system.*_sender` names - do not
-      count, so a real non-CIDB regression is never mistaken for a
-      log-export outage.
-
-    The file is streamed line by line because under chronic staging
-    overload it can grow to hundreds of MiB; any fixed byte cap on the
-    scan window could hide a real-crash marker appended after a large
-    initial block of shipping noise.
-
-    This is the heuristic @alexey-milovidov asked for on PR #106154: when
-    the only thing wrong is a flaky CIDB log staging cluster, the harness
-    wall-clock timeout that kills `clickhouse-test` should not paint the
-    job red. A green run with a `SKIPPED` informational leaf is more
-    honest than a synthetic `Server died` `FAIL`.
-    """
-    sender_pattern = _build_sender_pattern(sender_tables)
-    if sender_pattern is None:
-        return False
-    if not server_err_log.exists():
-        return False
-
-    error_lines = 0
-    shipping_lines = 0
-    try:
-        with server_err_log.open("r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                # A real-crash marker anywhere in the file disqualifies
-                # the run, so scan the full stream — never bail early on
-                # the dominance counts before the whole file is read.
-                if _REAL_CRASH_PATTERN.search(line):
-                    return False
-                if "<Error>" not in line:
-                    continue
-                error_lines += 1
-                if sender_pattern.search(line):
-                    shipping_lines += 1
-    except OSError:
-        return False
-
-    if error_lines < _STAGING_OVERLOAD_MIN_ERRORS:
-        return False
-    return shipping_lines >= _STAGING_OVERLOAD_MIN_FRACTION * error_lines
-
 
 class FTResultsProcessor:
     @dataclasses.dataclass
@@ -222,37 +89,8 @@ class FTResultsProcessor:
         success_finish: bool = False
         test_end: bool = True
 
-    def __init__(
-        self,
-        wd,
-        server_err_log_path: Optional[str] = None,
-        log_export_senders=None,
-    ):
+    def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
-        # Path to the server's `err.log`. Used by the CIDB-staging-cluster
-        # overload classifier to distinguish a real `Server died` from a
-        # harness-killed runner that timed out shipping logs to a flaky
-        # staging cluster. Falls back to the conventional location used by
-        # `ci/jobs/scripts/clickhouse_proc.py` so callers that don't pass
-        # the path explicitly still get the heuristic.
-        self.server_err_log_path = Path(
-            server_err_log_path
-            or f"{wd}/var/log/clickhouse-server/clickhouse-server.err.log"
-        )
-        # The concrete `system.<table>_sender` `Distributed` table names that
-        # `clickhouse_proc.start_log_exports` / `setup_logs_replication`
-        # created for THIS run, captured from `system.tables` before any test
-        # ran (see `ci/jobs/functional_tests.py`). This is both the gate and
-        # the identifier for the CIDB-staging-overload reclassification:
-        #  * a run that never started log export - every `ci/jobs/fast_test.py`
-        #    run, any local run, or a run whose export setup failed - leaves
-        #    this empty, so the heuristic never fires;
-        #  * only log lines naming one of these exact tables are counted, so a
-        #    test that later forges a `system.*_sender` name (a test CAN create
-        #    tables under `system`) cannot flip the run green.
-        # A test cannot influence this set: it is snapshotted by the harness
-        # process before the suite starts.
-        self.log_export_senders = set(log_export_senders or ())
         self.debug_files = []
 
     def _process_test_output(self):
@@ -389,98 +227,45 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
 
         info = ""
-        # Set when the run was killed by the harness but the only thing
-        # wrong was the CIDB staging log cluster being unresponsive. In
-        # that case we surface an informational `SKIPPED` leaf instead of
-        # a synthetic `Server died` `FAIL`, and we must also bypass the
-        # non-zero-exit-code `FAIL` guard further down.
-        ci_logs_cluster_overload = False
         if s.hung:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
+            state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
-            # `@ alexey-milovidov` directive on PR #106154: when the only
-            # evidence in `clickhouse-server.err.log` is repeated shipping
-            # retries from the CIDB log-export `system.<table>_sender`
-            # `Distributed` tables to the staging cluster (with
-            # `TOO_MANY_PARTS` / `SOCKET_TIMEOUT` / `NETWORK_ERROR`), the
-            # ClickHouse server itself is healthy. The runner only got
-            # killed by the harness wall-clock timeout because flushing
-            # logs to the unresponsive staging cluster piled up. Treat
-            # this as an infrastructure outage, not a server crash, and
-            # don't paint the check red.
-            #
-            # `s.success_finish` is required so an incomplete run is
-            # never reclassified: if the wall-clock fires mid-suite, no
-            # test may have emitted `FAIL` yet, but not all selected
-            # tests ran either - the result must stay `Server died`.
-            #
-            # `self.log_export_senders` is both the un-forgeable gate and
-            # the identifier: reclassification is considered ONLY for a job
-            # that actually created CIDB log-export `system.<table>_sender`
-            # tables this run, and only log lines naming one of those exact
-            # tables are counted as shipping retries. A test cannot add to
-            # this harness-captured set, so a run that never shipped logs
-            # (every `fast_test.py` run, any local run) or a test-forged
-            # `system.*_sender` name can never green the run.
-            if (
-                self.log_export_senders
-                and s.success_finish
-                and not failed_results
-                and is_ci_logs_cluster_overload(
-                    self.server_err_log_path, self.log_export_senders
-                )
-            ):
-                ci_logs_cluster_overload = True
-                test_results.append(
-                    Result(
-                        "CIDB log cluster unresponsive",
-                        Result.Status.SKIPPED,
-                        info=(
-                            "Test runner was killed by the wall-clock timeout while the "
-                            "ClickHouse server was healthy; `clickhouse-server.err.log` is "
-                            "dominated by `Distributed`-shipping retries to the CIDB staging "
-                            "log cluster. Not failing CI for an external-infrastructure outage. "
-                            "See ClickHouse/ClickHouse#106154."
-                        ),
-                    )
-                )
-            else:
-                state = Result.Status.FAIL
-                if len(failed_results) > 1:
-                    # Multiple tests failed when the server died - this is a parallel
-                    # run where we can't tell which test (if any) caused the crash.
-                    # Mark them all as UNKNOWN so they don't pollute failure reports.
-                    # The actual failure is captured by the "Server died" / LOGICAL_ERROR
-                    # entry added from the server log.
-                    for result in failed_results:
-                        result.status = Result.Status.UNKNOWN
-                elif len(failed_results) == 1:
-                    # Exactly one FAIL was captured before the server died. The
-                    # runner may still have been parallel (`--jobs` is always
-                    # passed), so this is best-effort attribution of the culprit,
-                    # not proof of a single-test sequential run. Demote it to
-                    # ERROR so a test that merely witnessed the server death is
-                    # not reported as an ordinary test failure - except in bugfix
-                    # validation, where the job runs only the PR's own changed
-                    # tests: a server death while they run is the expected
-                    # reproduction of the bug regardless of which of them got its
-                    # FAIL printed first, so keep the FAIL for
-                    # `invert_bugfix_validation_status` instead of tripping its
-                    # fail-closed ERROR guard and reporting the run inconclusive
-                    # (#105789). This matches the >1-failed path (UNKNOWN rows +
-                    # flipped `Server died` row), which already validates the
-                    # parallel-crash case. Accepted tradeoff:
-                    # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
-                    # 128+SIGKILL from an OOM of the runner), so in bugfix
-                    # validation such a death with a single failed test reads as
-                    # a reproduction too.
-                    if not is_bugfix_validation:
-                        failed_results[0].status = Result.Status.ERROR
-                test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+            if len(failed_results) > 1:
+                # Multiple tests failed when the server died - this is a parallel
+                # run where we can't tell which test (if any) caused the crash.
+                # Mark them all as UNKNOWN so they don't pollute failure reports.
+                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                # entry added from the server log.
+                for result in failed_results:
+                    result.status = Result.Status.UNKNOWN
+            elif len(failed_results) == 1:
+                # Exactly one FAIL was captured before the server died. The
+                # runner may still have been parallel (`--jobs` is always
+                # passed), so this is best-effort attribution of the culprit,
+                # not proof of a single-test sequential run. Demote it to
+                # ERROR so a test that merely witnessed the server death is
+                # not reported as an ordinary test failure - except in bugfix
+                # validation, where the job runs only the PR's own changed
+                # tests: a server death while they run is the expected
+                # reproduction of the bug regardless of which of them got its
+                # FAIL printed first, so keep the FAIL for
+                # `invert_bugfix_validation_status` instead of tripping its
+                # fail-closed ERROR guard and reporting the run inconclusive
+                # (#105789). This matches the >1-failed path (UNKNOWN rows +
+                # flipped `Server died` row), which already validates the
+                # parallel-crash case. Accepted tradeoff:
+                # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
+                # 128+SIGKILL from an OOM of the runner), so in bugfix
+                # validation such a death with a single failed test reads as
+                # a reproduction too.
+                if not is_bugfix_validation:
+                    failed_results[0].status = Result.Status.ERROR
+            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
@@ -526,18 +311,9 @@ class FTResultsProcessor:
         # nothing to blame. The synthetic leaf is added only when the parser
         # found nothing - otherwise the real failure already explains the result
         # and a duplicate entry is just noise.
-        #
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful,
-        # expected stop (handled above), not a failure, even though it is
-        # non-zero. The CIDB-staging-cluster overload heuristic is the
-        # other exception: when the runner was killed by the wall-clock
-        # timeout because shipping system logs to the unresponsive staging
-        # cluster piled up, the server was healthy and the run must read
-        # green.
-        if (
-            runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE)
-            and not ci_logs_cluster_overload
-        ):
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
+        # stop (handled above), not a failure, even though it is non-zero.
+        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
             if state == Result.Status.OK:
                 state = Result.Status.FAIL
                 test_results.append(
