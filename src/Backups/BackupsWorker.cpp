@@ -1381,8 +1381,8 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     /// the operation this host already knows about instead of being refused.
     if (refuse_new_operations)
     {
-        /// UNFINISHED is retriable in DDLWorker, so an ON CLUSTER operation is retried on another
-        /// host rather than recorded as permanently failed. A direct query has nothing to retry.
+        /// UNFINISHED is retriable in DDLWorker, so the task stays queued for a later retry
+        /// instead of being recorded as permanently failed.
         throw Exception(internal ? ErrorCodes::UNFINISHED : ErrorCodes::QUERY_WAS_CANCELLED,
             "Cannot start {} {} because the server is shutting down",
             isBackupStatus(status) ? "backup" : "restore",

@@ -17,6 +17,7 @@ main_configs = [
     "configs/backups_disk.xml",
     "configs/slow_backups.xml",
     "configs/shutdown_cancel_backups.xml",
+    "configs/shutdown_wait_unfinished.xml",
 ]
 
 node = cluster.add_instance(
@@ -247,8 +248,8 @@ def test_shutdown_cancel_wedged_backup():
 
     backup_id = uuid.uuid4().hex
     try:
-        # The paused thread holds the failpoint's own mutex while waiting, so it cannot observe a
-        # cancellation request at all.
+        # This parks the backup at the top of doBackup, upstream of both checkTimeLimit() polls,
+        # so the operation never observes a cancellation request.
         node.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
         node.query(
             f"BACKUP TABLE tbl TO {get_backup_name(backup_id)}"
