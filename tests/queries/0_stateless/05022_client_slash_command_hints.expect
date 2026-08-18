@@ -78,6 +78,11 @@ send -- "/hel\t\r"
 expect "Usage: help <name>"
 
 # ─── 5. A mistake in the name of a command names the similar commands ────────
+# The input that opens the command list is also diagnosed when it is submitted.
+send -- "/\r"
+expect -ex {Unknown command `/`}
+expect -ex {Maybe you meant: ['/clear', '/help', '/man']}
+
 send -- "/hepl\r"
 expect -ex {Unknown command `/hepl`}
 expect -ex {Maybe you meant: ['/help']}

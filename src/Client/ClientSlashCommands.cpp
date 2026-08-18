@@ -62,9 +62,9 @@ VectorWithMemoryTracking<String> getSimilarCommands(std::string_view name)
 
 std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input)
 {
-    /// Only a `/` immediately followed by a letter is a command name: `/*` opens a comment, and a
-    /// lone `/` is the "repeat the last query" alias.
-    if (trimmed_input.size() < 2 || trimmed_input[0] != '/' || !isAlphaASCII(trimmed_input[1]))
+    /// A `/` starts the command list, while `/*` opens a SQL comment.
+    if (trimmed_input.empty() || trimmed_input[0] != '/'
+        || (trimmed_input.size() > 1 && !isAlphaASCII(trimmed_input[1])))
         return {};
 
     const auto name_end = std::find_if(trimmed_input.begin(), trimmed_input.end(), [](char c) { return isWhitespaceASCII(c); });
