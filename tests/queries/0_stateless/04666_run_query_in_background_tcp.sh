@@ -48,6 +48,13 @@ echo '--- a query processing stage other than Complete is rejected synchronously
 $CLICKHOUSE_CLIENT --stage with_mergeable_state --run_query_in_background 1 -q "SELECT 1" 2>&1 \
     | grep -o -m1 "run_query_in_background cannot be used with the WithMergeableState query processing stage"
 
+echo '--- a settings constraint the session applied is enforced synchronously'
+profile="profile_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $profile SETTINGS max_result_rows = 4 CONST"
+$CLICKHOUSE_CLIENT -q "SET profile = '$profile'; SELECT 1 SETTINGS max_result_rows = 8, run_query_in_background = 1" 2>&1 \
+    | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $profile"
+
 echo '--- distributed INSERT in background: shards run in the foreground, all rows land'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_dist (n UInt64) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t, rand())"
 dist_id="dist_${CLICKHOUSE_DATABASE}"
