@@ -3673,4 +3673,17 @@ TEST_F(WallabyTest, ChoosesScaleAfterCappingWideAdjustmentOutlier)
     EXPECT_LT(wallabyCompressedSize(values), 1600u);
 }
 
+TEST_F(WallabyTest, DoesNotAbortScaleBeforeCappingAnEarlyOutlier)
+{
+    /// A high-scale candidate has one early wide value, but capping the delta lanes can exile
+    /// it and leave the rest of the vector in narrow lanes. An uncapped prefix-size abort would
+    /// discard this candidate before the capped packing search gets to evaluate it.
+    std::vector<Float64> values(1024);
+    values[0] = 10000000000.01;
+    for (size_t i = 1; i < values.size(); ++i)
+        values[i] = 1000.0 + static_cast<Float64>(i) + (i % 2 == 0 ? 0.01 : 0.0);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
+}
+
 }

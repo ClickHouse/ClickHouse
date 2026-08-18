@@ -584,9 +584,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// valid count here: every position it did visit is a real position of the vector.
     UInt32 monotone_exceptions = 0;
 
-    /// allow_floor_abort is off for the scan that seeds the reference quantization: the
-    /// trailing-zero candidate generation needs the full vector.
-    const auto quantize_all = [&](Int32 candidate_alpha, bool allow_floor_abort = true) -> bool
+    const auto quantize_all = [&](Int32 candidate_alpha) -> bool
     {
         const UInt32 budget = exception_budget();
         exception_count = 0;
@@ -596,13 +594,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         std::fill(is_quantization_exception, is_quantization_exception + count, false);
         SignedType previous_good = 0;
         Int32 first_good = -1;
-        /// Running bounds for the periodic floor check below: the Frame-of-Reference range and
-        /// the largest zigzag delta only grow as the scan proceeds, so the packed-lane bytes
-        /// they imply are a provable lower bound on any packing of this scale at every point.
-        SignedType running_min = 0;
-        SignedType running_max = 0;
-        T max_delta_zigzag = 0;
-        bool delta_overflow = false;
         for (UInt32 i = 0; i < count; ++i)
         {
             SignedType q;
@@ -618,22 +609,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     /// exceptions they are recoverable at a few bits each.
                     ++soft_exception_count;
                     max_adjustment_zigzag = std::max(max_adjustment_zigzag, adjustment);
-                }
-                if (first_good < 0)
-                {
-                    running_min = q;
-                    running_max = q;
-                }
-                else
-                {
-                    running_min = std::min(running_min, q);
-                    running_max = std::max(running_max, q);
-                    SignedType delta;
-                    if (__builtin_sub_overflow(q, previous_good, &delta))
-                        delta_overflow = true;
-                    else
-                        max_delta_zigzag = std::max(
-                            max_delta_zigzag, (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1)));
                 }
                 previous_good = q;
                 if (first_good < 0)
@@ -651,24 +626,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 /// the previous one keeps both FOR and DELTA packings narrow.
                 quantized[i] = previous_good;
                 adjustments[i] = 0;
-            }
-            /// Abandon a scale whose lanes alone already outgrow the best encoding known for
-            /// this vector: the cheaper of the running Frame-of-Reference and delta widths is a
-            /// provable floor (near-misses cost extra on top, exceptions are counted as seen).
-            /// This is what keeps a probe of a very fine scale over wide-spread data from
-            /// scanning the whole vector; a scale that collapses the lanes keeps them narrow
-            /// from the start and is never touched.
-            if (allow_floor_abort && (i & 127u) == 127u && first_good >= 0)
-            {
-                const T for_range = static_cast<T>(running_max) - static_cast<T>(running_min);
-                const UInt8 for_bits = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
-                const UInt8 delta_bits = delta_overflow ? Traits::width_bits
-                    : (max_delta_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_delta_zigzag)));
-                const UInt32 floor_bytes = header_size
-                    + Compression::FFOR::calculateBitpackedBytes(std::min(for_bits, delta_bits))
-                    + exception_count * exceptionCost<T>();
-                if (floor_bytes >= best_total_size)
-                    return false;
             }
         }
         /// Leading exceptions were filled with zero placeholders before any good value was
@@ -1251,7 +1208,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         if (!estimate_allows(candidate))
             return;
 
-        const bool quantized_all = quantize_all(candidate, reference_filled);
+        const bool quantized_all = quantize_all(candidate);
         monotone_exceptions_at[alpha_index(candidate)] = std::max(monotone_exceptions_at[alpha_index(candidate)], monotone_exceptions);
         if (!quantized_all)
         {
