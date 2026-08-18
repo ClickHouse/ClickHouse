@@ -30,4 +30,9 @@ SELECT __groupingOrdinary(42, CAST(range(64) AS Array(UInt64)), CAST(0 AS UInt8)
 SELECT '-- a direct call shipped to a remote server stays intact';
 SELECT __groupingForRollup(CAST(0 AS UInt64), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8)) FROM remote('127.0.0.{1,2}', system.one);
 
+-- The shape of this call is identical to an analyzer-built node; the original AST tells the
+-- rewrite for old remote servers to leave it alone.
+SELECT '-- a direct call with the exact analyzer-built shape also ships unchanged';
+SELECT __groupingOrdinary(dummy, CAST([0] AS Array(UInt64)), CAST(0 AS UInt8)) FROM remote('127.0.0.{1,2}', system.one);
+
 DROP TABLE t_grouping_validation;

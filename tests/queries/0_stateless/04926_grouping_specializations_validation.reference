@@ -42,3 +42,6 @@ b	y	0	2
 -- a direct call shipped to a remote server stays intact
 0
 0
+-- a direct call with the exact analyzer-built shape also ships unchanged
+1
+1

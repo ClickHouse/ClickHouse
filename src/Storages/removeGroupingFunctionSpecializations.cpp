@@ -6,6 +6,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/grouping.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -29,14 +30,22 @@ public:
             return;
 
 
+        /// The specializations are registered functions, so a query can also spell them directly,
+        /// and such a call must reach the remote server unchanged. The analyzer produces its nodes
+        /// by resolving a `grouping` call in place, so the original AST tells the two apart.
+        if (const auto & original_ast = function->getOriginalAST())
+        {
+            const auto * original_function = original_ast->as<ASTFunction>();
+            if (!original_function || original_function->name != "grouping")
+                return;
+        }
+
         auto & arguments = function->getArguments().getNodes();
 
         /// The analyzer appends constant arguments carrying the specialization parameters (two for
         /// `__groupingOrdinary`, three for the rest), and for the other specializations it prepends
-        /// the `__grouping_set` column; they must not reach the query text. The specializations
-        /// are also registered functions, so a query can call them directly with any arguments;
-        /// leave a node that does not match the analyzer-built shape untouched, the remote server
-        /// resolves it on its own.
+        /// the `__grouping_set` column; they must not reach the query text. As above, leave a node
+        /// that does not match the analyzer-built shape untouched.
         const size_t num_state_arguments = ordinary_grouping ? 2 : 3;
         if (arguments.size() <= num_state_arguments)
             return;
