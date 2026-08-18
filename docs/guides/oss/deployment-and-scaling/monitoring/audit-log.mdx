@@ -36,8 +36,9 @@ flag off no audit file is created or opened at all.
 ```
 
 The audit file reuses the rotation, compression and retention settings of the main log
-(`logger.rotation` / `logger.size`, `logger.compress`, `logger.count`, `logger.flush`,
-`logger.async`, ...), and honours a `logger.formatting` block whose `channel` is `auditlog`.
+(`logger.rotation` / `logger.size`, `logger.compress`, `logger.count`, `logger.flush`, ...),
+and honours a `logger.formatting` block whose `channel` is `auditlog`. Audit records are written
+synchronously so they are not lost if asynchronous logging queues are full.
 
 ## Selecting what is recorded {#selecting-what-is-recorded}
 
@@ -46,8 +47,8 @@ The audit file reuses the rotation, compression and retention settings of the ma
 | Category | Recorded events                                                                             |
 |----------|---------------------------------------------------------------------------------------------|
 | `USER`   | Successful logins, failed logins, and logouts                                                 |
-| `DDL`    | Schema statements: `CREATE`, `DROP`, `ALTER`, `RENAME`, `TRUNCATE`, ...                       |
-| `DML`    | Data statements: `SELECT`, `INSERT`, `DELETE`, `UPDATE`, `OPTIMIZE`, `SHOW`, `EXPLAIN`, ...   |
+| `DDL`    | Schema statements: `CREATE`, `DROP`, `ALTER`, `RENAME`, ...                                   |
+| `DML`    | Data statements: `SELECT`, `INSERT`, `DELETE`, `UPDATE`, `TRUNCATE`, `OPTIMIZE`, `SHOW`, `EXPLAIN`, ... |
 | `DCL`    | Access control: `GRANT`, `REVOKE`, `CREATE USER`, `SET ROLE`, `CHECK GRANT`, ...              |
 | `MISC`   | Everything else, including statements that failed to parse                                    |
 | `ALL`    | All of the above                                                                              |
@@ -70,7 +71,7 @@ writes cannot use a destroyed writer.
 Every record is a single line: the usual ClickHouse log prefix (timestamp, thread, level, and the
 `AUDIT` channel name) followed by comma-separated fields.
 
-Authentication events (`USER`) have three fields:
+Authentication events (`USER`) have four fields:
 
 ```text
 User, USER_NAME, CLIENT_IP, EVENT
