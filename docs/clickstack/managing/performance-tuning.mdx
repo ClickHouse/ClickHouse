@@ -560,12 +560,33 @@ connected server version (`SELECT version()`, cached per connection) and only
 emits the rewritten form when the server is at or above the threshold. Older
 servers fall back to the original Map subscript form automatically.
 
-| ClickHouse branch | Minimum version |
+<Tabs>
+<Tab title="ClickHouse Cloud">
+
+| ClickHouse branch | Minimum Cloud version |
 |---|---|
-| 26.2 | 26.2.19.43 |
-| 26.3 | 26.3.12.3 |
-| 26.4 | 26.4.3.37 |
+| 26.2 | `26.2.19.*` |
+| 26.3 | `26.3.12.*` |
+| 26.4 | `26.4.3.*` |
 | 26.5+ | All versions |
+
+The wildcard (`*`) matches any Cloud build number.
+
+</Tab>
+<Tab title="Self-managed">
+
+For self-managed ClickHouse, compare the complete version number with the
+minimum version below.
+
+| ClickHouse branch | Minimum self-managed version |
+|---|---|
+| 26.2 | `26.2.19.43` |
+| 26.3 | `26.3.12.3` |
+| 26.4 | `26.4.3.37` |
+| 26.5+ | All versions |
+
+</Tab>
+</Tabs>
 
 <Info>
 **Why ALIAS, not MATERIALIZED**
