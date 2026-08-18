@@ -62,6 +62,7 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04538_direct'
+  AND query LIKE 'INSERT INTO mv_metrics_direct%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
@@ -75,6 +76,7 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04538_views'
+  AND query LIKE 'INSERT INTO mv_metrics_src%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
@@ -87,6 +89,7 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04538_views'
+  AND query LIKE 'INSERT INTO mv_metrics_src%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
