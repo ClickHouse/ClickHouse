@@ -650,7 +650,8 @@ bool WriteBufferFromS3::completeMultipartUpload()
         || !request_settings[S3RequestSetting::storage_class_name].value.empty()
         || !write_settings.object_storage_write_if_none_match.empty()
         || !write_settings.object_storage_write_if_match.empty()
-        || client_ptr->hasKMSHeaders())
+        || client_ptr->hasKMSHeaders()
+        || client_ptr->hasExtraHeadersRequiringFullWriteIdentity())
         req.setRequiresFullWriteIdentity();
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;

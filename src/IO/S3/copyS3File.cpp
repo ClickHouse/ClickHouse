@@ -196,7 +196,8 @@ namespace
 
             if (object_metadata.has_value()
                 || !request_settings[S3RequestSetting::storage_class_name].value.empty()
-                || client_ptr->hasKMSHeaders())
+                || client_ptr->hasKMSHeaders()
+                || client_ptr->hasExtraHeadersRequiringFullWriteIdentity())
                 request.setRequiresFullWriteIdentity();
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;

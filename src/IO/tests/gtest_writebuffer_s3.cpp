@@ -267,12 +267,12 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
+    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, DB::HTTPHeaderEntries extra_headers = {})
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(),
+            GetClientConfiguration(std::move(extra_headers)),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
@@ -283,14 +283,14 @@ struct Client : DB::S3::Client
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket")
+    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", DB::HTTPHeaderEntries extra_headers = {})
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store);
+        return std::make_shared<Client>(s3store, std::move(extra_headers));
     }
 
-    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
+    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(DB::HTTPHeaderEntries extra_headers = {})
     {
         DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -309,6 +309,7 @@ struct Client : DB::S3::Client
         /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
         /// aborts every request in debug/sanitizer builds.
         configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
+        configuration.extra_headers = std::move(extra_headers);
         return configuration;
     }
 
@@ -1054,6 +1055,27 @@ TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadata
         auto buffer = getWriteBuffer(
             "complete_multipart_upload_with_metadata",
             ObjectAttributes{{"write-id", "new"}});
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
+}
+
+/// Metadata in `extra_headers` is sent to CreateMultipartUpload but not to completion, so an ETag
+/// alone cannot prove that a recovered completion created the requested object.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadataExtraHeader)
+{
+    client = MockS3::Client::CreateClient(bucket, {{"x-amz-meta-write-id", "new"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer("complete_multipart_upload_with_metadata_extra_header");
         buffer->write('A');
 
         getAsyncPolicy().setAutoExecute(true);

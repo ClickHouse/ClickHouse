@@ -205,6 +205,7 @@ public:
     void setKMSHeaders(RequestType & request) const;
 
     bool hasKMSHeaders() const { return sse_kms_config.key_id.has_value(); }
+    bool hasExtraHeadersRequiringFullWriteIdentity() const;
 
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
     Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
