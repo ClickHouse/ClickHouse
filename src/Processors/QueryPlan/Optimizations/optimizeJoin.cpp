@@ -483,11 +483,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
-        /// `selected_rows` is the exact row count only when nothing can drop rows after the read:
-        /// no filter of any kind, no SAMPLE, and no FINAL deduplication.
+        /// `selected_rows` counts physical rows in the selected ranges, so it is the exact row count
+        /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, and no mutation
+        /// applied while reading (a lightweight delete or patch part filters at read time).
+        const auto & mutations = reading->getMutationsSnapshot();
+        const bool mutations_can_remove_rows = mutations
+            && (mutations->hasLightweightDeletedMask() || mutations->hasDataMutations() || mutations->hasPatchParts());
         const bool no_row_removal_after_read = !has_filter && !reading->getRowLevelFilter()
             && !reading->getDeferredRowLevelFilter() && !reading->isQueryWithSampling()
-            && !reading->isQueryWithFinal();
+            && !reading->isQueryWithFinal() && !mutations_can_remove_rows;
 
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,

@@ -102,6 +102,29 @@ SELECT 'overstated right side keeps orientation',
 
 DROP TABLE residual_04726;
 
+-- A lightweight delete removes rows only while reading, so the range row count is above the true
+-- one and must not count as a lower bound. `deleted_04726` holds one live row out of 100000, so a
+-- plan that trusts the range count puts the bigger side on the build side.
+CREATE TABLE deleted_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO deleted_04726 SELECT number, number % 7 FROM numbers(100000);
+DELETE FROM deleted_04726 WHERE id > 0;
+
+CREATE TABLE small_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO small_04726 SELECT number, number % 7 FROM numbers(20);
+
+SELECT 'deleted right side keeps orientation',
+        countIf(explain ILIKE '%deleted\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: deleted\_04726%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM small_04726 JOIN deleted_04726 ON small_04726.id = deleted_04726.id
+    WHERE small_04726.pad = 3
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE deleted_04726;
+DROP TABLE small_04726;
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)

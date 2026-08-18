@@ -17,6 +17,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/safe_cast.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <ranges>
 #include <unordered_map>
@@ -60,6 +61,34 @@ static std::optional<UInt64> estimateJoinCardinality(
     double selectivity,
     JoinKind join_kind);
 
+/// A join emits at most the cartesian product of its inputs, floored by a preserved side's rows.
+/// Saturating integer arithmetic: `double` rounds products above 2^53 in either direction, and a
+/// bound rounded down is below the true row count.
+static std::optional<UInt64> boundJoinRows(
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    JoinKind join_kind)
+{
+    if (!left_rows || !right_rows)
+        return {};
+
+    constexpr UInt64 saturated = std::numeric_limits<UInt64>::max();
+
+    UInt64 product = 0;
+    if (common::mulOverflow(*left_rows, *right_rows, product))
+        return saturated;
+
+    UInt64 preserved = 0;
+    if (join_kind == JoinKind::Left)
+        preserved = *left_rows;
+    else if (join_kind == JoinKind::Right)
+        preserved = *right_rows;
+    else if (join_kind == JoinKind::Full && common::addOverflow(*left_rows, *right_rows, preserved))
+        return saturated;
+
+    return std::max(product, preserved);
+}
+
 DPJoinEntry::DPJoinEntry(size_t id,
         std::optional<UInt64> rows,
         std::unordered_map<String, ColumnStats> column_stats_,
@@ -88,10 +117,8 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Selectivity 1.0: a join cannot emit more than the cartesian product of its children's
-    /// bounds. A missing child bound yields a missing parent bound.
-    estimated_rows_upper = estimateJoinCardinality(
-        left->estimated_rows_upper, right->estimated_rows_upper, 1.0, join_operator.kind);
+    /// A missing child bound yields a missing parent bound.
+    estimated_rows_upper = boundJoinRows(left->estimated_rows_upper, right->estimated_rows_upper, join_operator.kind);
 
     /// Merge column stats from both children, then update NDVs for equi-join key columns.
     column_stats = left->column_stats;
@@ -356,6 +383,8 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
+    std::optional<UInt64> boundCardinality(
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
 
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
@@ -652,6 +681,12 @@ std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
     std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
+}
+
+std::optional<UInt64> JoinOrderOptimizer::boundCardinality(
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const
+{
+    return boundJoinRows(left_rows, right_rows, join_kind);
 }
 
 static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
