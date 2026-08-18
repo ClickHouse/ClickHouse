@@ -1103,6 +1103,10 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
         while (auto buffer = storage_data.popBuffer())
         {
+            const auto skip_reason = buffer->rows_with_defaulted_key_values.empty()
+                ? "because an unchanged TOAST value cannot be restored"
+                : "because a replica identity column could not be converted";
+
             try
             {
                 if (!buffer->rows_with_defaulted_key_values.empty())
@@ -1125,10 +1129,9 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 tryLogCurrentException(
                     log,
-                    fmt::format("Table {} is skipped from replication because an unchanged TOAST value cannot be restored",
-                                table_name));
+                    fmt::format("Table {} is skipped from replication {}", table_name, skip_reason));
 
-                markTableAsSkipped(buffer->relation_id, table_name);
+                markTableAsSkipped(buffer->relation_id, table_name, skip_reason);
                 break;
             }
 
@@ -1265,7 +1268,8 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     return false;
 }
 
-void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
+void MaterializedPostgreSQLConsumer::markTableAsSkipped(
+    Int32 relation_id, const String & relation_name, const String & skip_reason)
 {
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
@@ -1274,9 +1278,9 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
     tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
-        "Table {} is skipped from replication stream because its structure has changes. "
+        "Table {} is skipped from replication stream {}. "
         "Please detach this table and reattach to resume the replication (relation id: {})",
-        relation_name, relation_id);
+        relation_name, skip_reason, relation_id);
 }
 
 void MaterializedPostgreSQLConsumer::addNested(

@@ -154,7 +154,10 @@ private:
     static Int16 readInt16(const char * message, size_t & pos, size_t size);
     static Int8 readInt8(const char * message, size_t & pos, size_t size);
 
-    void markTableAsSkipped(Int32 relation_id, const String & relation_name);
+    void markTableAsSkipped(
+        Int32 relation_id,
+        const String & relation_name,
+        const String & skip_reason = "because its structure has changes");
 
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
