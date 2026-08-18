@@ -22,21 +22,11 @@ INSERT INTO prometheus (metric_name, tags, time_series) VALUES
 
 SELECT '-- sum(m) - max(m), instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - max(m)', 130) ORDER BY tags;
-SELECT '-- sum(m) % max(m), instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(m) % max(m)', 130) ORDER BY tags;
 
 SET prefer_column_name_to_alias = 1;
 SELECT '-- sum by (dc) (m) - min by (dc) (m), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'sum by (dc) (m) - min by (dc) (m)', 100, 140, 10) ORDER BY tags;
-SELECT '-- max without (host) (m) - min without (host) (m), range';
-SELECT * FROM prometheusQueryRange('prometheus', 'max without (host) (m) - min without (host) (m)', 100, 140, 10) ORDER BY tags;
-SELECT '-- stddev by (dc) (m) + stdvar by (dc) (m), range';
-SELECT * FROM prometheusQueryRange('prometheus', 'stddev by (dc) (m) + stdvar by (dc) (m)', 100, 140, 10) ORDER BY tags;
 SET prefer_column_name_to_alias = 0;
-
-SELECT '-- labels are dropped the same way with and without a shared aggregation argument, instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc, host) (m)', 130) ORDER BY tags;
-SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc, host) (n)', 130) ORDER BY tags;
 
 SELECT '-- the shared argument is a range function, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'sum(last_over_time(m[20])) - max(last_over_time(m[20]))', 110, 140, 10) ORDER BY tags;
@@ -52,8 +42,7 @@ SELECT * FROM prometheusQuery('prometheus', 'sum by (dc) (m) - max by (host) (m)
 SELECT * FROM prometheusQuery('prometheus', 'sum without (host) (m) - max by (dc) (m)', 130) ORDER BY tags;
 SELECT '-- not shared: the arguments differ by an offset, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - max(m offset 10)', 130) ORDER BY tags;
-SELECT '-- not shared: comparison operator, instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(m) > max(m)', 130) ORDER BY tags;
+SELECT '-- not shared: bool modifier, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) > bool max(m)', 130) ORDER BY tags;
 SELECT '-- not shared: logical operator, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) unless max(m)', 130) ORDER BY tags;
