@@ -224,7 +224,9 @@ arrow::Status AuthMiddlewareFactory::StartCall(
     if (session_it != headers.end())
         session_close = std::string(session_it->second);
 
-    const auto bearer_token_timeout = std::chrono::seconds(config.getUInt("arrowflight.bearer_token_timeout_seconds", 60));
+    const auto bearer_token_timeout = config.has("arrowflight.bearer_token_timeout_seconds")
+        ? std::chrono::seconds(config.getUInt("arrowflight.bearer_token_timeout_seconds"))
+        : std::chrono::seconds(config.getInt("default_session_timeout", 60));
 
     std::string username("default");
     std::string password;
@@ -245,7 +247,7 @@ arrow::Status AuthMiddlewareFactory::StartCall(
             token = *token_opt;
             credentials = token_storage.getCredentials(token, bearer_token_timeout);
             if (!credentials)
-                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
+                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Bearer token expired or not authenticated.");
 
             std::tie(username, password) = *credentials;
         }
