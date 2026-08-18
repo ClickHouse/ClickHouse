@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -42,6 +43,7 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <fmt/ranges.h>
 #include <parquet/file_reader.h>
 #include <parquet/arrow/reader.h>
 #include <Poco/JSON/Array.h>
@@ -65,7 +67,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsBool allow_delta_kernel_rs;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -197,7 +199,11 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            /// Commits must be replayed in version order: `metaData` establishes the schema that
+            /// later `add` actions are resolved against, and a later `remove` supersedes an earlier
+            /// `add`. Object listing is unordered, so sort the zero-padded version file names.
+            auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
@@ -296,6 +302,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
                 auto current_schema = parseMetadata(fields_object);
+                validatePartitionColumns(metadata_object, fields_object);
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;
@@ -335,15 +342,24 @@ struct DeltaLakeMetadataImpl
                             auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
-                                const auto value = partition_values->getValue<String>(partition_name);
                                 auto name_and_type = file_schema.tryGetByName(partition_name);
                                 if (!name_and_type)
                                 {
                                     throw Exception(
-                                        ErrorCodes::LOGICAL_ERROR,
+                                        ErrorCodes::INCORRECT_DATA,
                                         "No such column in schema: {} (schema: {})",
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
+
+                                /// A null-equivalent partition value is committed as a JSON null; read it
+                                /// back as NULL instead of throwing while extracting it as a String.
+                                if (partition_values->isNull(partition_name))
+                                {
+                                    current_partition_columns.emplace_back(*name_and_type, Field{});
+                                    continue;
+                                }
+
+                                const auto value = partition_values->getValue<String>(partition_name);
 
                                 LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
                                          partition_name, value, name_and_type->type->getName(), filename);
@@ -393,6 +409,42 @@ struct DeltaLakeMetadataImpl
             schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
         return schema;
+    }
+
+    /// `partitionColumns` carries logical names, while a parsed schema is keyed by physical
+    /// ones, so the declared set is recovered from the schema fields rather than from it.
+    /// Ordered, so that the name list reported on rejection is deterministic.
+    NameOrderedSet getDeclaredLogicalNames(const Poco::JSON::Object::Ptr & schema_json) const
+    {
+        NameOrderedSet declared;
+        const auto fields = schema_json->get("fields").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < fields->size(); ++i)
+            declared.insert(fields->getObject(static_cast<UInt32>(i))->getValue<String>("name"));
+        return declared;
+    }
+
+    void validatePartitionColumn(const String & partition_name, const NameOrderedSet & declared) const
+    {
+        if (!declared.contains(partition_name))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Partition column '{}' is not declared in the table schema (declared columns: {})",
+                partition_name, fmt::join(declared, ", "));
+    }
+
+    void validatePartitionColumns(
+        const Poco::JSON::Object::Ptr & metadata_json, const Poco::JSON::Object::Ptr & schema_json) const
+    {
+        if (!metadata_json->isArray("partitionColumns"))
+            return;
+
+        const auto partition_columns = metadata_json->get("partitionColumns").extract<Poco::JSON::Array::Ptr>();
+        if (partition_columns->size() == 0)
+            return;
+
+        const auto declared = getDeclaredLogicalNames(schema_json);
+        for (size_t i = 0; i < partition_columns->size(); ++i)
+            validatePartitionColumn(partition_columns->getElement<String>(static_cast<UInt32>(i)), declared);
     }
 
 
@@ -529,6 +581,9 @@ struct DeltaLakeMetadataImpl
         auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
         const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
 
+        /// A checkpoint written before this column existed simply carries no partition names.
+        const auto * partition_columns_column = res_block.findByName("metaData.partitionColumns");
+
         for (size_t i = 0; i < path_column.size(); ++i)
         {
             const auto metadata = String(schema_column.getDataAt(i));
@@ -539,6 +594,18 @@ struct DeltaLakeMetadataImpl
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
                 auto current_schema = parseMetadata(object);
+                if (partition_columns_column)
+                {
+                    Field partition_names;
+                    partition_columns_column->column->get(i, partition_names);
+                    if (!partition_names.isNull())
+                    {
+                        const auto declared = getDeclaredLogicalNames(object);
+                        for (const auto & partition_name : partition_names.safeGet<Array>())
+                            if (!partition_name.isNull())
+                                validatePartitionColumn(partition_name.safeGet<String>(), declared);
+                    }
+                }
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;
@@ -580,10 +647,20 @@ struct DeltaLakeMetadataImpl
                         if (!name_and_type)
                         {
                             throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
+                                ErrorCodes::INCORRECT_DATA,
                                 "No such column in schema: {} (schema: {})",
                                 partition_name, file_schema.toString());
                         }
+
+                        /// A null-equivalent partition value is committed as a JSON null; read it
+                        /// back as NULL instead of throwing while extracting it as a String.
+                        if (tuple[1].isNull())
+                        {
+                            current_partition_columns.emplace_back(std::move(name_and_type.value()), Field{});
+                            LOG_TEST(log, "Partition {} value is NULL (for {})", partition_name, filename);
+                            continue;
+                        }
+
                         const auto value = tuple[1].safeGet<String>();
                         auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
                         current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
@@ -621,7 +698,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
     const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
-    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
@@ -651,7 +728,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             ErrorCodes::UNSUPPORTED_METHOD,
             "Time travel (delta_lake_snapshot_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_experimental_delta_kernel_rs = 1");
+            "allow_delta_kernel_rs = 1");
 
     if (settings[Setting::delta_lake_snapshot_start_version].value != -1
         || settings[Setting::delta_lake_snapshot_end_version].value != -1)
@@ -660,7 +737,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             "Change data feed (delta_lake_snapshot_start_version / "
             "delta_lake_snapshot_end_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_experimental_delta_kernel_rs = 1");
+            "allow_delta_kernel_rs = 1");
 
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }

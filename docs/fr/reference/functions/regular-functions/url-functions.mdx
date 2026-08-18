@@ -585,7 +585,8 @@ SELECT
 
 Introduit dans : v1.1.0
 
-Supprime le paramètre `name` d’une URL, s’il est présent.
+Supprime la première occurrence `name=value` de chaque paramètre demandé d’une URL.
+Seuls les paramètres écrits sous la forme `name=` sont pris en compte ; un paramètre indicateur sans valeur reste donc intact. Par exemple, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` renvoie l’URL inchangée.
 Cette fonction n’encode ni ne décode les caractères des noms de paramètres. Par exemple, `Client ID` et `Client%20ID` sont traités comme des noms de paramètres distincts.
 
 **Syntaxe**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **Valeur renvoyée**
 
-URL dont le paramètre `name` a été supprimé. [`String`](/fr/reference/data-types/string)
+URL dont la première occurrence `name=value` de chaque paramètre demandé a été supprimée. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -1098,9 +1099,6 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
-```response title=Response
-```
-
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1220,7 +1218,7 @@ Renvoie l’identifiant de fragment sans le caractère `#` initial. [`String`](/
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1292,7 +1290,7 @@ Renvoie le chemin de l’URL sans chaîne de requête. [`String`](/fr/reference/
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1328,7 +1326,7 @@ Renvoie le chemin de l’URL, y compris la chaîne de requête et le fragment. [
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

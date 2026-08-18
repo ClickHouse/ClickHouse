@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Возможность изменить аргументы запуска JVM
 
 <Steps>
-  <Step>
-    #### Получите ключ API ClickStack
-
+  <Step title="Получите ключ API ClickStack" id="get-api-key">
     Java-агент OpenTelemetry отправляет данные в конечную точку OTLP ClickStack, для которой требуется аутентификация.
 
     1. Откройте HyperDX по URL-адресу ClickStack (например, http://localhost:8080)
@@ -46,9 +44,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/api-key.webp" alt="Ключ API ClickStack" />
   </Step>
 
-  <Step>
-    #### Скачайте Java-агент OpenTelemetry
-
+  <Step title="Скачайте Java-агент OpenTelemetry" id="download-agent">
     Скачайте JAR-файл Java-агента OpenTelemetry:
 
     ```bash
@@ -58,9 +54,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Эта команда скачает агент в текущий каталог. Вы можете разместить его там, где это удобно для вашего развертывания (например, в `/opt/opentelemetry/` или рядом с JAR-файлом вашего приложения).
   </Step>
 
-  <Step>
-    #### Настройте аргументы запуска JVM
-
+  <Step title="Настройте аргументы запуска JVM" id="configure-jvm">
     Добавьте Java-агент в команду запуска JVM. Агент автоматически собирает метрики JVM и отправляет их в ClickStack.
 
     ##### Вариант 1: Флаги командной строки
@@ -81,7 +75,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
     * `opentelemetry-javaagent.jar` → Полный путь к JAR-файлу агента (например, `/opt/opentelemetry/opentelemetry-javaagent.jar`)
     * `my-java-app` → Понятное имя вашего сервиса (например, `payment-service`, `user-api`)
-    * `YOUR_API_KEY` → Ваш ключ API ClickStack из предыдущего шага
+    * `YOUR_API_KEY` → Ваш ключ API ClickStack из предыдущей команды
     * `my-application.jar` → Имя JAR-файла вашего приложения
     * `http://localhost:4318` → Ваша конечная точка ClickStack (используйте `localhost:4318`, если ClickStack работает на той же машине, в противном случае — `http://your-clickstack-host:4318`)
 
@@ -121,9 +115,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Tip>
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verifying-metrics">
     Когда приложение будет запущено с агентом, убедитесь, что метрики поступают в ClickStack:
 
     1. Откройте HyperDX по адресу http://localhost:8080 (или по URL-адресу ClickStack)
@@ -136,12 +128,10 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   ## Демо-набор данных
 </div>
 
-Для пользователей, которые хотят протестировать интеграцию метрик JVM перед тем, как инструментировать свои приложения, мы предоставляем демонстрационный датасет с заранее сгенерированными метриками, отражающими реалистичное поведение JVM в микросервисе среднего размера со стабильной умеренной нагрузкой.
+Для пользователей, которые хотят протестировать интеграцию метрик JVM перед тем, как инструментировать свои приложения, мы предоставляем демо-набор данных с заранее сгенерированными метриками, отражающими реалистичное поведение JVM в микросервисе среднего размера со стабильной умеренной нагрузкой.
 
 <Steps>
-  <Step>
-    #### Скачайте демонстрационный датасет
-
+  <Step title="Скачайте демо-набор данных" id="download-sample">
     ```bash
     # Скачайте метрики gauge (memory, threads, CPU, classes)
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/jvm/jvm-metrics-gauge.jsonl
@@ -159,9 +149,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * характер использования CPU
   </Step>
 
-  <Step>
-    #### Запустите ClickStack
-
+  <Step title="Запустите ClickStack" id="start-clickstack">
     Если ClickStack у вас ещё не запущен:
 
     ```bash
@@ -173,9 +161,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Подождите немного, пока ClickStack полностью запустится.
   </Step>
 
-  <Step>
-    #### Импортируйте демо-набор данных
-
+  <Step title="Импортируйте демо-набор данных" id="import-demo-data">
     ```bash
     # Импортируйте метрики gauge (memory, threads, CPU, classes)
     docker exec -i clickstack clickhouse-client --query="
@@ -191,9 +177,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Это импортирует метрики напрямую в таблицы метрик ClickStack.
   </Step>
 
-  <Step>
-    #### Проверьте демо-данные
-
+  <Step title="Проверьте демо-данные" id="verify-demo-metrics">
     После импорта:
 
     1. Откройте HyperDX по адресу http://localhost:8080 и войдите в систему (при необходимости создайте учётную запись)
@@ -218,13 +202,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы упростить мониторинг JVM-приложений в ClickStack, мы предоставляем преднастроенный дашборд с основными визуализациями для метрик JVM.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Скачайте</TrackedLink> конфигурацию дашборда
+  <Step title="Скачайте конфигурацию дашборда" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Скачайте файл конфигурации дашборда</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенный дашборд
-
+  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -235,9 +217,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step>
-    #### Просмотрите дашборд
-
+  <Step title="Просмотрите дашборд" id="created-dashboard">
     Дашборд будет создан со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Дашборд Kafka Metrics" />
@@ -314,6 +294,6 @@ echo $OTEL_METRICS_EXPORTER
   ## Переход в продакшн
 </div>
 
-В этом руководстве показано, как настроить Java-агент OpenTelemetry для локального тестирования. Для развертываний в продакшн включайте JAR-файл агента в образы контейнеров и настраивайте его через переменные окружения — так им проще управлять. В более крупных окружениях с большим числом экземпляров JVM разверните централизованный OpenTelemetry Collector, чтобы он собирал метрики в батчи и пересылал их из нескольких приложений, вместо того чтобы отправлять их напрямую в ClickStack.
+В этом руководстве показано, как настроить Java-агент OpenTelemetry для локального тестирования. Для развертываний в продакшн включайте JAR-файл агента в образы контейнеров и настраивайте его через переменные окружения — так им проще управлять. В более крупных средах с большим количеством экземпляров JVM разверните централизованный OpenTelemetry Collector, чтобы формировать батчи метрик и пересылать их из нескольких приложений, а не отправлять напрямую в ClickStack.
 
-См. раздел [Приём данных с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) с шаблонами развертывания для продакшн и примерами конфигурации OpenTelemetry Collector.
+См. [Приём данных с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы ознакомиться с паттернами развертывания для продакшн и примерами конфигурации коллектора.

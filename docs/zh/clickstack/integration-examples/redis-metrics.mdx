@@ -35,19 +35,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 如果启用了身份验证，则需要 Redis 密码
 
 <Steps>
-  <Step>
-    #### 验证 Redis 连接
-
+  <Step title="验证 Redis 连接" id="verify-redis">
     首先，确认你可以连接到 Redis，并且 `INFO` 命令能够正常执行：
 
     ```bash
-    # 测试连接
+    # Test connection
     redis-cli ping
-    # 预期输出：PONG
+    # Expected output: PONG
 
-    # 测试 INFO 命令（由指标收集器使用）
+    # Test INFO command (used by metrics collector)
     redis-cli INFO server
-    # 应显示 Redis 服务器信息
+    # Should display Redis server information
     ```
 
     如果 Redis 启用了身份验证：
@@ -63,9 +61,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * **远程**：`<redis-host>:6379`
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
+  <Step title="创建自定义 OTel collector 配置" id="custom-otel">
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `redis-metrics.yaml` 的文件，内容如下：
@@ -75,10 +71,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       redis:
         endpoint: "localhost:6379"
         collection_interval: 10s
-        # 如果 Redis 需要身份验证，请取消注释
+        # Uncomment if Redis requires authentication
         # password: ${env:REDIS_PASSWORD}
         
-        # 配置要收集的指标
+        # Configure which metrics to collect
         metrics:
           redis.commands.processed:
             enabled: true
@@ -146,9 +142,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，您需要：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -162,16 +156,16 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # 可选：如果 Redis 需要身份验证
+          # Optional: If Redis requires authentication
           # - REDIS_PASSWORD=your-redis-password
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./redis-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
-          # ... 其他卷 ...
-        # 如果 Redis 在同一个 compose 文件中：
+          # ... other volumes ...
+        # If Redis is in the same compose file:
         depends_on:
           - redis
 
@@ -179,7 +173,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
         image: redis:7-alpine
         ports:
           - "6379:6379"
-        # 可选：启用身份验证
+        # Optional: Enable authentication
         # command: redis-server --requirepass your-redis-password
     ```
 
@@ -198,13 +192,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     **重要：** 如果 Redis 在另一个容器中运行，请使用 Docker 网络：
 
     ```bash
-    # 创建网络
+    # Create a network
     docker network create monitoring
 
-    # 在该网络中运行 Redis
+    # Run Redis on the network
     docker run -d --name redis --network monitoring redis:7-alpine
 
-    # 在同一网络中运行 ClickStack（在配置中将端点更新为 "redis:6379"）
+    # Run ClickStack on the same network (update endpoint to "redis:6379" in config)
     docker run --name clickstack \
       --network monitoring \
       -p 8080:8080 -p 4317:4317 -p 4318:4318 \
@@ -214,9 +208,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
-
+  <Step title="在 HyperDX 中验证指标" id="verifying-metrics">
     配置完成后，登录 HyperDX 并确认指标是否已开始流入：
 
     1. 打开指标浏览器
@@ -231,13 +223,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-对于想在配置生产系统之前先测试 Redis 指标 集成的用户，我们提供了一个预生成的数据集，其中包含逼真的 Redis 指标 变化模式。
+对于想在配置生产系统之前先测试 Redis 指标集成的用户，我们提供了一个预生成的数据集，其中包含逼真的 Redis 指标变化模式。
 
 <Steps>
-  <Step>
-    #### 下载样本指标数据集
-
-    下载预生成的指标文件 (24 小时的 Redis 指标 数据，包含逼真的变化模式) ：
+  <Step title="下载样本指标数据集" id="download-sample">
+    下载预生成的指标文件 (24 小时的 Redis 指标数据，包含逼真的变化模式) ：
 
     ```bash
     # 下载 gauge 指标（内存、碎片率）
@@ -249,15 +239,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     该数据集包含以下逼真模式：
 
-    * **缓存预热事件 (06:00)&#x20;**&#x20;- 命中率从 30% 升至 80%
-    * **流量突增 (14:30-14:45)&#x20;**&#x20;- 流量激增 5 倍，并伴随连接压力
-    * **内存压力 (20:00)&#x20;**&#x20;- 出现 key 驱逐，缓存性能下降
-    * **每日流量模式** - 工作时段达到高峰、夜间回落、随机出现小尖峰
+    * **缓存预热事件 (06:00)** - 命中率从 30% 升至 80%
+    * **流量突增 (14:30-14:45)** - 流量激增 5 倍，并伴随连接压力
+    * **内存压力 (20:00)** - 出现 key 驱逐，缓存性能下降
+    * **每日流量模式** - 工作时段达到高峰、夜间回落，并随机出现小尖峰
   </Step>
 
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     启动一个 ClickStack 实例：
 
     ```bash
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     等待大约 30 秒，让 ClickStack 完全启动。
   </Step>
 
-  <Step>
-    #### 将指标加载到 ClickStack 中
-
+  <Step title="将指标加载到 ClickStack 中" id="load-metrics">
     将指标直接加载到 ClickHouse：
 
     ```bash
@@ -285,12 +271,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
-
+  <Step title="在 HyperDX 中验证指标" id="verify-metrics">
     加载完成后，查看指标的最快方式是使用预置仪表盘。
 
-    继续前往[仪表盘和可视化](#dashboards)部分，导入仪表盘并一次查看全部 Redis 指标。
+    继续前往 [Dashboards and visualization](#dashboards) 部分，导入仪表盘并一次查看全部 Redis 指标。
 
     <Note>
       演示数据集的时间范围为 2025-10-20 00:00:00 到 2025-10-21 05:00:00。请确保 HyperDX 中的时间范围与该时间窗口一致。
@@ -308,17 +292,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 仪表盘与可视化
 </div>
 
-为帮助你开始使用 ClickStack 监控 Redis，我们提供了 Redis 指标 所需的关键可视化内容。
+为帮助你开始使用 ClickStack 监控 Redis，我们提供了 Redis 指标 的关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预构建仪表盘
-
-    1. 打开 HyperDX 并进入 仪表盘 部分
+  <Step title="导入预构建的仪表盘" id="import-dashboard">
+    1. 打开 HyperDX 并导航到仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
@@ -328,10 +310,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="完成导入对话框" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
-    导入后，仪表盘会创建完成，且所有可视化都已预先配置好：
+  <Step title="查看仪表盘" id="created-dashboard">
+    仪表盘创建完成后，所有可视化都将预先配置好：
 
     <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Redis 指标 仪表盘" />
 
@@ -451,7 +431,7 @@ docker exec <clickstack-container> telnet redis 6379
 * 通过复制 receiver 配置并使用不同的端点和服务名称，监控多个 Redis 实例
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 部署到生产环境
 </div>
 
-本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

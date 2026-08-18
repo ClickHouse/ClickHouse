@@ -32,18 +32,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 请在你的 AWS 账户中按以下步骤操作：
 
 <Steps>
-  <Step>
-    ##### 创建 AWS S3 存储桶
-
+  <Step title="创建 AWS S3 存储桶" id="create-s3-bucket">
     在你的账户中创建一个 AWS S3 存储桶，用于导出备份。
   </Step>
 
-  <Step>
-    ##### 创建 IAM 角色
+  <Step title="创建 IAM 角色" id="create-iam-role">
+    AWS 使用基于角色的身份验证，因此请创建一个 IAM 角色，使 ClickHouse Cloud 服务能够 assume 该角色，以便写入此 S3 存储桶。
 
-    AWS 使用基于角色的身份验证，因此请创建一个 IAM 角色，使 ClickHouse Cloud 服务能够承担该角色并写入此 S3 存储桶。
-
-    * a. 在 ClickHouse Cloud 服务设置页面的 Network security 信息 下获取 ARN，格式类似如下：
+    * a. 在 ClickHouse Cloud 服务设置页面的 Network security 信息下获取 ARN，格式类似如下：
 
     <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
 
@@ -66,11 +62,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ##### 更新角色权限
-
+  <Step title="更新角色权限" id="update-permissions-for-role">
     你还需要为此角色设置权限，以便该 ClickHouse Cloud 服务能够写入 S3 存储桶。
-    具体做法是为该角色创建一条权限策略，JSON 可参考如下，并将其中两处 Resource 替换为你的 S3 存储桶 ARN。
+    具体做法是为该角色创建一条权限策略，JSON 可参考如下，并将其中两处 Resource 替换为你的存储桶 ARN。
 
     ```json
     {
@@ -119,31 +113,23 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 按照以下步骤，在 ClickHouse Cloud 控制台中配置外部存储桶：
 
 <Steps>
-  <Step>
-    ##### 更改外部备份
-
+  <Step title="更改外部备份" id="configure-external-bucket">
     在 “Settings” 页面上，点击 Set up external backup：
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
   </Step>
 
-  <Step>
-    ##### 配置 AWS IAM Role ARN 和 S3 存储桶 详细信息
+  <Step title="配置 AWS IAM Role ARN 和 S3 存储桶详细信息" id="configure-aws-iam-role-arn-and-s3-bucket-details">
+    在下一页中，填写你刚刚创建的 AWS IAM Role ARN，以及以下格式的 S3 存储桶 URL：
 
-    在下一页中，填写你刚刚创建的 AWS IAM Role ARN，以及采用以下格式的 S3 存储桶 URL：
-
-    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="配置 AWS IAM Role ARN 和 S3 存储桶 详细信息" size="lg" />
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="配置 AWS IAM Role ARN 和 S3 存储桶详细信息" size="lg" />
   </Step>
 
-  <Step>
-    ##### 保存更改
-
+  <Step title="保存更改" id="save-changes">
     点击“Save External Bucket”保存设置
   </Step>
 
-  <Step>
-    ##### 更改默认备份计划
-
+  <Step title="更改默认备份计划" id="changing-the-backup-schedule">
     外部备份现在会按默认计划写入你的存储桶。
     你也可以在 “Settings” 页面中配置备份计划。
     如果配置了不同的计划，则会按自定义计划将备份写入你的
@@ -151,9 +137,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ClickHouse Cloud 拥有的存储桶。
   </Step>
 
-  <Step>
-    ##### 查看存储在你的存储桶中的备份
-
+  <Step title="查看存储在你的存储桶中的备份" id="view-backups-stored-in-your-bucket">
     Backups 页面会在单独的表中显示存储在你的存储桶中的这些备份，
     如下所示：
 
@@ -168,22 +152,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 按照以下步骤从 AWS 恢复备份：
 
 <Steps>
-  <Step>
-    ##### 创建用于恢复的新服务
-
+  <Step title="创建用于恢复的新服务" id="create-new-service-to-restore-to">
     创建一个新的服务，作为备份恢复的目标。
   </Step>
 
-  <Step>
-    ##### 添加服务 ARN
-
+  <Step title="添加服务 ARN" id="add-service-arn">
     将新创建服务的 ARN (来自 ClickHouse
     Cloud 控制台中服务设置页面) 添加到 IAM 角色的信任策略中。这与上文 AWS 步骤部分中的[第二步](#create-iam-role)相同。这样新服务才能访问 S3 存储桶。
   </Step>
 
-  <Step>
-    ##### 获取用于恢复备份的 SQL 命令
-
+  <Step title="获取用于恢复备份的 SQL 命令" id="obtain-sql-command-to-restore-backup">
     点击
     UI 中备份列表上方的“访问或恢复备份”链接，以获取用于恢复备份的 SQL 命令。该命令类似如下：
 
@@ -206,9 +184,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### 运行恢复命令
-
+  <Step title="运行恢复命令" id="run-the-restore-command">
     在新创建服务的 SQL 控制台中运行恢复命令，以恢复备份。
   </Step>
 </Steps>
@@ -228,19 +204,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### 创建 GCP 存储分桶
-
-    在您的 GCP 账号中创建一个存储分桶，用于导出备份。
+  <Step title="创建 GCP 存储桶" id="create-a-gcp-storage-bucket">
+    在您的 GCP 账号中创建一个存储桶，用于导出备份。
   </Step>
 
-  <Step>
-    ##### 生成 HMAC Key 和 Secret
-
+  <Step title="生成 HMAC Key 和 Secret" id="generate-an-hmac-key-and-secret">
     生成 HMAC Key 和 Secret，这是基于密码的身份验证所必需的。请按照以下步骤生成密钥：
 
     * a. 创建服务账号
-      * I. 前往 Google Cloud Console 中的 IAM &amp; Admin 部分，然后选择 `Service Accounts`。
+      * I.  前往 Google Cloud Console 中的 IAM &amp; Admin 部分，然后选择 `Service Accounts`。
       * II. 点击 `Create Service Account`，填写名称和 ID，然后点击 `Create and Continue`。
       * III. 为该服务账号授予 Storage Object User 角色。
       * IV. 点击 `Done` 完成服务账号创建。
@@ -249,7 +221,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       * I. 前往 Google Cloud Console 中的 Cloud Storage，然后选择 `Settings`
       * II. 前往 Interoperability 选项卡。
       * III. 在 `Service account HMAC` 部分，点击 `Create a key for a service account`。
-      * IV. 从下拉菜单中选择您在上一步创建的服务账号。
+      * IV. 从下拉列表中选择您在上一步创建的服务账号。
       * V. 点击 `Create key`。
 
     * c. 安全存储凭据：
@@ -264,31 +236,23 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 按照以下步骤在 ClickHouse Cloud 控制台中配置外部存储桶：
 
 <Steps>
-  <Step>
-    ##### 更改外部备份
-
+  <Step title="更改外部备份" id="gcp-configure-external-bucket">
     在 `Settings` 页面中，点击 `Change external backup`
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
   </Step>
 
-  <Step>
-    ##### 配置 GCP HMAC Key 和 Secret
-
+  <Step title="配置 GCP HMAC Key 和 Secret" id="gcp-configure-gcp-hmac-key-and-secret">
     在弹出的对话框中，填写上一节中创建的 GCP 存储桶路径、HMAC key 和 Secret。
 
     <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="配置 GCP HMAC Key 和 Secret" size="md" />
   </Step>
 
-  <Step>
-    ##### 保存外部存储桶
-
+  <Step title="保存外部存储桶" id="gcp-save-external-bucket">
     点击 `Save External Bucket` 以保存设置。
   </Step>
 
-  <Step>
-    ##### 将备份计划从默认计划改为自定义计划
-
+  <Step title="将备份计划从默认计划改为自定义计划" id="gcp-changing-the-backup-schedule">
     现在，外部备份将按默认计划写入你的存储桶。
     你也可以在 `Settings` 页面中配置备份计划。
     如果配置了不同的计划，则会使用自定义计划将备份写入你的
@@ -296,9 +260,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ClickHouse Cloud 拥有的存储桶中。
   </Step>
 
-  <Step>
-    ##### 查看存储在你的存储桶中的备份
-
+  <Step title="查看存储在你的存储桶中的备份" id="gcp-view-backups-stored-in-your-bucket">
     Backups 页面应会在单独的表中显示存储在你的存储桶中的这些备份，如下所示：
 
     <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="查看存储在你的存储桶中的备份" size="lg" />
@@ -312,16 +274,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 按照以下步骤从 GCP 恢复备份：
 
 <Steps>
-  <Step>
-    ##### 创建新的服务作为恢复目标
-
+  <Step title="创建新的服务作为恢复目标" id="gcp-create-new-service-to-restore-to">
     创建一个新的服务，用作备份恢复的目标。
   </Step>
 
-  <Step>
-    ##### 获取用于恢复备份的 SQL 命令
-
-    在 UI 中，点击备份列表上方的 `access or restore a backup` 链接，以获取用于恢复备份的 SQL 命令。该命令应类似如下，
+  <Step title="获取用于恢复备份的 SQL 命令" id="gcp-obtain-sql-command-to-restore-backup">
+    在 UI 中，点击备份列表上方的 `访问或恢复备份` 链接，以获取用于恢复备份的 SQL 命令。该命令应类似如下，
     你也可以从下拉列表中选择相应的备份，以获取该特定备份的恢复
     命令。你需要将你的秘密访问密钥
     添加到该命令中：
@@ -345,9 +303,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### 运行 SQL 命令以恢复备份
-
+  <Step title="运行 SQL 命令以恢复备份" id="gcp-run-sql-command-to-restore-backup">
     在新创建服务的 SQL 控制台中运行恢复命令，以
     恢复备份。
   </Step>
@@ -368,62 +324,48 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### 创建存储账户
-
+  <Step title="创建存储账户" id="azure-create-a-storage-account">
     在 Azure 门户中创建一个存储账户，或选择一个现有的存储账户作为备份存储位置。
   </Step>
 
-  <Step>
-    ##### 获取连接字符串
-
+  <Step title="获取连接字符串" id="azure-get-connection-string">
     * a. 在存储账户的概览页面中，找到名为 `Security + networking` 的部分，然后点击 `Access keys`。
     * b. 在这里，您会看到 `key1` 和 `key2`。在每个 key 下，您都可以找到 `Connection string` 字段。
     * c. 点击 `Show` 以显示连接字符串。复制该连接字符串，您将在 ClickHouse Cloud 中配置时使用它。
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### 在 ClickHouse Cloud 中执行以下步骤
+<div id="azure-cloud-steps">
+  #### 在 ClickHouse Cloud 中执行的步骤
 </div>
 
 按照以下步骤在 ClickHouse Cloud 控制台中配置外部存储桶：
 
 <Steps>
-  <Step>
-    ##### 更改外部备份
-
-    在 `Settings` 页面中，点击 `Change external backup`
+  <Step title="更改外部备份" id="azure-configure-external-bucket">
+    在 `Settings` 页面中，点击 `Change external backup`。
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
   </Step>
 
-  <Step>
-    ##### 提供 Azure 存储账户的连接字符串和容器名称
-
-    在下一页中，提供您在上一节创建的 Azure 存储账户的连接字符串和容器名称：
+  <Step title="提供 Azure 存储账户的连接字符串和容器名称" id="azure-provide-connection-string-and-container-name-azure">
+    在下一页中，输入上一节创建的 Azure 存储账户的 Connection String 和 Container Name：
 
     <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="提供 Azure 存储账户的连接字符串和容器名称" size="md" />
   </Step>
 
-  <Step>
-    ##### 保存外部存储桶
-
-    点击 `Save External Bucket` 保存这些设置
+  <Step title="保存外部存储桶" id="azure-save-external-bucket">
+    点击 `Save External Bucket` 保存设置。
   </Step>
 
-  <Step>
-    ##### 修改默认备份计划
-
-    之后，外部备份将按默认计划写入您的存储桶。您也可以在 `Settings` 页面配置备份计划。如果配置了不同的计划，则会按自定义计划将备份写入您的存储桶，而默认计划 (每 24 小时备份一次) 仍用于 ClickHouse Cloud 自有存储桶中的备份。
+  <Step title="更改默认备份计划" id="azure-changing-the-backup-schedule">
+    此后，外部备份会按默认计划保存到你的存储桶中。你也可以在 `Settings` 页面配置备份计划。如果配置了不同的计划，则会按照自定义计划将备份写入你的存储桶，而默认计划 (每 24 小时备份一次) 则用于 ClickHouse Cloud 拥有的存储桶中的备份。
   </Step>
 
-  <Step>
-    ##### 查看存储在您的存储桶中的备份
+  <Step title="查看存储在你的存储桶中的备份" id="azure-view-backups-stored-in-your-bucket">
+    Backups 页面会在单独的表中显示存储在你的存储桶中的这些备份，如下所示：
 
-    Backups 页面会在单独的表中显示存储在您的存储桶中的这些备份，如下所示：
-
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="查看存储在您的存储桶中的备份" size="md" />
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="查看存储在你的存储桶中的备份" size="md" />
   </Step>
 </Steps>
 
@@ -434,19 +376,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要从 Azure 恢复备份，请按照以下步骤操作：
 
 <Steps>
-  <Step>
-    ##### 创建新的服务作为恢复目标
-
+  <Step title="创建用于恢复的新服务" id="azure-create-new-service-to-restore-to">
     创建一个新的服务，作为备份的恢复目标。目前，我们仅支持将备份恢复到新服务中。
   </Step>
 
-  <Step>
-    ##### 获取用于恢复备份的 SQL 命令
-
-    在 UI 中，点击备份列表上方的 `access or restore a backup` 链接，获取用于恢复备份的 SQL 命令。该命令应类似于
-    下面这样，你还可以从下拉菜单中选择相应的备份，以获取该特定备份的
-    恢复命令。你需要将 Azure 存储账户连接字符串
-    添加到该命令中。
+  <Step title="获取用于恢复备份的 SQL 命令" id="azure-obtain-sql-command-to-restore-backup">
+    在 UI 中，点击备份列表上方的 `访问或恢复备份` 链接，获取用于恢复备份的 SQL 命令。该命令应类似于下面这样，你还可以从下拉列表中选择相应的备份，以获取该特定备份的恢复命令。你需要将 Azure 存储账户连接字符串添加到该命令中。
 
     <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="在 Azure 中恢复备份" size="md" />
 
@@ -459,7 +394,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Tip>
       **ASYNC 命令**
 
-      对于恢复命令，在执行大型恢复时，你也可以选择在末尾添加 `ASYNC` 命令。
+      对于 Restore 命令，在执行大型恢复时，你也可以选择在末尾添加 `ASYNC` 命令。
       这样可使恢复操作异步进行，因此即使连接中断，恢复也会继续运行。
       需要特别注意的是，ASYNC 命令会立即返回成功状态。
       但这并不意味着恢复已经成功。
@@ -467,10 +402,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### 运行 SQL 命令以恢复备份
-
-    在新创建服务的 SQL 控制台中运行恢复命令，以
-    恢复该备份。
+  <Step title="运行 SQL 命令以恢复备份" id="azure-run-sql-command-to-restore-backup">
+    在新创建服务的 SQL 控制台中运行恢复命令，以恢复该备份。
   </Step>
 </Steps>

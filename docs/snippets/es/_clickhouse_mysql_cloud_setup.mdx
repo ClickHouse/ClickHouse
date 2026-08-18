@@ -3,51 +3,55 @@ title: Configuración de MySQL en ClickHouse Cloud
 ---
 
 <Steps>
-  <Step>
-    #### Selecciona `Connect your app`
-
+  <Step title={<>Selecciona <code>Connect your app</code></>} id="select-connect-your-app">
     Después de crear tu servicio de ClickHouse Cloud, en la pantalla `Connect your app`, selecciona MySQL en el menú desplegable.
 
-    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="Pantalla de credenciales de ClickHouse Cloud que muestra el menú desplegable para seleccionar la interfaz MySQL" border />
+    <Frame>
+      <img src="/images/_snippets/mysql1.webp" alt="Pantalla de credenciales de ClickHouse Cloud que muestra el menú desplegable para seleccionar la interfaz MySQL" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### Habilita la interfaz MySQL
-
+  <Step title="Habilita la interfaz MySQL" id="enable-mysql-interface">
     Activa el interruptor para habilitar la interfaz MySQL para este servicio específico.
-    Esto expondrá el puerto `3306` para este servicio y te mostrará una pantalla de conexión de MySQL que incluye tu nombre de usuario único de MySQL.
+    Esto expondrá el puerto `3306` para este servicio y te mostrará una pantalla de conexión MySQL que incluye tu nombre de usuario MySQL único.
 
-    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="Interruptor para habilitar la interfaz MySQL de ClickHouse Cloud y detalles de la conexión" border />
+    <Frame>
+      <img src="/images/_snippets/mysql2.webp" alt="Interruptor para habilitar la interfaz MySQL en ClickHouse Cloud y detalles de conexión" />
+    </Frame>
 
-    Como alternativa, para habilitar la interfaz MySQL para un servicio existente:
+    Como alternativa, para habilitar la interfaz MySQL en un servicio existente:
   </Step>
 
-  <Step>
-    #### Selecciona `Connect`
-
-    Asegúrate de que tu servicio esté en estado `Running` y luego haz clic en el servicio para el que deseas habilitar la interfaz MySQL.
+  <Step title={<>Selecciona <code>Connect</code></>} id="select-connect">
+    Asegúrate de que tu servicio esté en estado `Running` y luego haz clic en el servicio para el que quieres habilitar la interfaz MySQL.
     Selecciona &quot;Connect&quot; en el menú de la izquierda:
 
-    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="Pantalla de conexión del servicio de ClickHouse Cloud con la opción Connect resaltada" border />
+    <Frame>
+      <img src="/images/_snippets/mysql3.webp" alt="Pantalla de conexión del servicio de ClickHouse Cloud con la opción Connect resaltada" />
+    </Frame>
   </Step>
 
-  <Step>
-    #### Elige `MySQL`
-
+  <Step title={<>Elige <code>MySQL</code></>} id="choose-mysql">
     Selecciona `MySQL` en el menú desplegable `Connect With`.
 
-    <Image size="md" img="/images/_snippets/mysql4.webp" alt="Pantalla de conexión de ClickHouse Cloud que muestra la selección de la opción MySQL" border />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/_snippets/mysql4.webp" alt="Pantalla de conexión de ClickHouse Cloud que muestra la selección de la opción MySQL" />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### Habilita la interfaz MySQL
-
+  <Step title="Habilita la interfaz MySQL" id="enable-mysql-interface-existing-service">
     Activa el interruptor para habilitar la interfaz MySQL para este servicio específico.
-    Esto expondrá el puerto `3306` para este servicio y te mostrará tu pantalla de conexión de MySQL, que incluye tu nombre de usuario único de MySQL.
+    Esto expondrá el puerto `3306` para este servicio y te mostrará la pantalla de conexión MySQL, que incluye tu nombre de usuario MySQL único.
   </Step>
 </Steps>
 
-<Image size="md" img="/images/_snippets/mysql5.webp" alt="Pantalla de conexión de ClickHouse Cloud con la interfaz MySQL habilitada que muestra los detalles de la conexión" border />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/_snippets/mysql5.webp" alt="Pantalla de conexión de ClickHouse Cloud con la interfaz MySQL habilitada que muestra los detalles de conexión" />
+  </Frame>
+</div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Crear un usuario MySQL de solo lectura en ClickHouse Cloud
@@ -69,9 +73,7 @@ El cliente de consola de MySQL es un ejemplo de herramienta que lo requiere.
 </Note>
 
 <Steps>
-  <Step>
-    #### Crear un perfil de configuración de solo lectura
-
+  <Step title="Crear un perfil de configuración de solo lectura" id="create-a-custom-settings-user">
     Crea un [perfil de configuración](/es/reference/statements/create/settings-profile) para aplicárselo a tu usuario de solo lectura,
     estableciendo la configuración `readonly` en `1`:
 
@@ -80,9 +82,7 @@ El cliente de consola de MySQL es un ejemplo de herramienta que lo requiere.
     ```
   </Step>
 
-  <Step>
-    #### Crear un nuevo usuario MySQL de solo lectura
-
+  <Step title="Crear un nuevo usuario MySQL de solo lectura" id="create-a-readonly-mysql-user">
     [Crea un usuario](/es/reference/statements/create/user) con un nombre que siga este formato:
 
     ```sql
@@ -98,9 +98,7 @@ El cliente de consola de MySQL es un ejemplo de herramienta que lo requiere.
     ```
   </Step>
 
-  <Step>
-    #### Conceder al nuevo usuario permisos para acceder a las tablas deseadas
-
+  <Step title="Conceder al nuevo usuario permisos para acceder a las tablas deseadas" id="grant-the-new-user-the-necessary-permissions">
     [Concede](/es/reference/statements/grant) al nuevo usuario los permisos necesarios para interactuar con las tablas o bases de datos que quieras.
     Por ejemplo, si quieres conceder acceso solo a `system.query_log`:
 

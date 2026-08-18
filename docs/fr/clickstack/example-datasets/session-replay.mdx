@@ -43,26 +43,20 @@ Pour en savoir plus sur le rejeu de session et sur son intégration dans ClickSt
 </div>
 
 <Steps>
-  <Step>
-    ### Cloner le dépôt
-
+  <Step title="Cloner le dépôt" id="clone-repository">
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step>
-    ### Démarrer ClickStack
-
+  <Step title="Démarrer ClickStack" id="start-clickstack">
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step>
-    ### Obtenir votre clé API
-
+  <Step title="Obtenir votre clé API" id="get-api-key">
     1. Ouvrez HyperDX à l’adresse [http://localhost:8080](http://localhost:8080)
     2. Créez un compte ou connectez-vous si nécessaire
     3. Accédez à **Team Settings → API Keys**
@@ -77,9 +71,7 @@ Pour en savoir plus sur le rejeu de session et sur son intégration dans ClickSt
     ```
   </Step>
 
-  <Step>
-    ### Démarrer l’application de démonstration
-
+  <Step title="Démarrer l’application de démonstration" id="start-demo-app">
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -95,9 +87,7 @@ Pour en savoir plus sur le rejeu de session et sur son intégration dans ClickSt
     Toutes les interactions sont automatiquement capturées par le ClickStack Browser SDK.
   </Step>
 
-  <Step>
-    ### Voir le rejeu de votre session
-
+  <Step title="Voir le rejeu de votre session" id="view-session-replay">
     Retournez dans HyperDX à l’adresse [http://localhost:8080](http://localhost:8080) et accédez à **Client Sessions** depuis la barre latérale gauche.
 
     <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Recherche de rejeu de session" />
@@ -192,7 +182,7 @@ docker-compose down -v
   ## En savoir plus
 </div>
 
-* [Session Replay](/fr/clickstack/features/session-replay) — aperçu de la fonctionnalité, options du SDK et contrôles de confidentialité
+* [Session Replay](/fr/clickstack/features/session-replay) — vue d’ensemble de la fonctionnalité, options du SDK et contrôles de confidentialité
 * [Référence du Browser SDK](/fr/clickstack/ingesting-data/sdks/browser) — toutes les options du SDK et la configuration avancée
-* [Premiers pas avec ClickStack](/fr/clickstack/getting-started/index) — déployez ClickStack et ingérez vos premières données
+* [Prise en main de ClickStack](/fr/clickstack/getting-started/index) — déployez ClickStack et ingérez vos premières données
 * [Tous les jeux de données d’exemple](/fr/clickstack/example-datasets/index) — autres jeux de données d’exemple et guides

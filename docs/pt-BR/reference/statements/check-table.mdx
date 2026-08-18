@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`: (Opcional) Se você quiser verificar uma parte específica da tabela, pode adicionar um literal de string para especificar o nome da parte.
 * `FORMAT format`: (Opcional) Permite especificar o formato de saída do resultado.
 * `SETTINGS`: (Opcional) Permite definir configurações adicionais.
-  * (Opcional): [check&#95;query&#95;single&#95;value&#95;result](/pt-BR/reference/settings/session-settings#check_query_single_value_result): Essa configuração controla se a saída será detalhada (`0`) ou resumida (`1`).
+  * (Opcional): [check&#95;query&#95;single&#95;value&#95;result](/pt-BR/reference/settings/session-settings/check#check_query_single_value_result): Essa configuração controla se a saída será detalhada (`0`) ou resumida (`1`).
   * Outras configurações também podem ser aplicadas. Se você não precisar de uma ordem determinística para os resultados, pode definir max&#95;threads como um valor maior que um para acelerar a consulta.
 
 A resposta da consulta depende do valor da configuração `check_query_single_value_result`.
@@ -162,6 +162,8 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
+
+Para verificar a saúde de um banco de dados inteiro, em vez da integridade de tabelas individuais, use a consulta [`CHECK DATABASE`](/pt-BR/reference/statements/check-database). Ela se destina principalmente a bancos de dados com o motor [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake), em que verifica se o catálogo externo está acessível.
 
 <div id="if-the-data-is-corrupted">
   ## Se os dados estiverem corrompidos

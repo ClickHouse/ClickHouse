@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Connecter votre catalogue Iceberg'
 title: 'Comment connecter votre catalogue Iceberg à ClickHouse Cloud'
-useCases: ['Data warehousing']
+useCases: ['Entreposage de données']
 products: ['Cloud']
 skillLevel: 'Débutant'
 description: 'Découvrez comment connecter ClickHouse Cloud à votre Data Catalog et interroger des tables Iceberg.'
@@ -51,9 +51,7 @@ Dans ce guide de démarrage rapide, vous allez :
 À la fin, ClickHouse Cloud sera connecté à votre catalogue Iceberg et vous pourrez exécuter des requêtes SQL sur des tables Iceberg sans copier les données.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Créer une connexion DataLakeCatalog
-
+  <Step title="Créer une connexion DataLakeCatalog" id="create-a-datalakecatalog-connection">
     Dans cette étape, vous allez vous connecter à votre Data Lake Catalog dans ClickHouse Cloud.
 
     1. Ouvrez votre service ClickHouse Cloud.
@@ -77,9 +75,7 @@ Dans ce guide de démarrage rapide, vous allez :
     5. Enregistrez le catalogue. Vous devriez maintenant voir le Data Catalog s&#39;afficher dans votre page Data Sources avec le nombre de tables disponibles dans la base de données.
   </Step>
 
-  <Step>
-    ### Interroger une table Iceberg
-
+  <Step title="Interroger une table Iceberg" id="query-iceberg-table">
     Dans cette étape, vous allez interroger une table Iceberg depuis votre Data Catalog.
 
     1. En cliquant soit sur `Show Tables`, soit sur `SQL Console`, vous arriverez dans la console SQL
@@ -94,7 +90,9 @@ Dans ce guide de démarrage rapide, vous allez :
   </Step>
 </Steps>
 
-## Étapes suivantes
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
 Maintenant que vous êtes connecté à votre lac de données, vous pouvez essayer d’écrire une table Iceberg dans ClickHouse.
 

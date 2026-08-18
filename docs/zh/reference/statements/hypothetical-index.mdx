@@ -1,0 +1,154 @@
+---
+description: '关于假设性（what-if）索引的文档'
+sidebarTitle: 'HYPOTHETICAL INDEX'
+slug: /sql-reference/statements/hypothetical-index
+title: '假设索引'
+doc_type: 'reference'
+---
+
+假设索引是虚拟的、会话级的跳过索引，你可以将其附加到 `MergeTree` 家族表，而无需实际构建或存储。它们仅存在于当前会话中，由 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif) 用于估算真实跳过索引对查询的影响——通常包括跳过率 (可跳过的标记占比) 以及以标记数和字节数表示的粗略成本。
+
+使用假设索引，可以先评估候选索引，再决定是否承担在磁盘上将其物化的成本。
+
+<div id="create-hypothetical-index">
+  ## CREATE HYPOTHETICAL INDEX
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
+    ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
+```
+
+该语法与 `ALTER TABLE ... ADD INDEX` 一致，但不会实际构建或写入索引——只会在当前会话中存储索引描述。
+
+* `name` — 索引名称；在此会话中，必须在 `(database, table)` 范围内唯一。
+* `expression` — 要建立索引的列或表达式。
+* `TYPE type` — `minmax`、`set(N)`、`bloom_filter(p)`、`ngrambf_v1(...)`、`tokenbf_v1(...)`。`text` 和 `vector_similarity` 不受支持，并会在 `CREATE` 时被拒绝，因为它们实际的 `ALTER TABLE ... ADD INDEX` 验证依赖表级设置，而仅会话存储无法复现这些设置。
+* `GRANULARITY value` — 每个索引粒度对应的数据粒度数。默认为 1。
+
+目标表必须是 `Atomic` 数据库中的 `MergeTree` 家族表 (即必须具有 UUID) 。没有 UUID 的表——例如旧版 `Ordinary` 数据库中的表，或使用旧语法的 `MergeTree`——都会被拒绝，因为会话存储是按表 UUID 为假设索引建立键的。
+
+**示例**
+
+```sql
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+```
+
+<div id="evaluating-a-hypothetical-index-with-explain-whatif">
+  ## 使用 EXPLAIN WHATIF 评估假设索引
+</div>
+
+单独定义一个假设索引并不会产生任何效果——要了解它会如何影响查询，请对一个具有代表性的 `SELECT` 运行 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)。估算器会报告每个候选索引的适用性、将读取的标记数、最终的跳过比例，以及该估算是如何得出的 (`empirical`、`statistical` 或 `applicability_only`) 。
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+结果：
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       631
+```
+
+`est_bytes` 是根据表的平均行大小估算得出的，因此精确数值会因存储和压缩方式而有所不同。
+
+若要跳过基于内存的经验扫描，改为根据[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)进行估算，请先为相关列定义列统计信息 (默认关闭) ，等待物化变更完成，然后禁用经验估算路径：
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+有关完整的输出 schema 和设置，请参阅 [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif) 参考文档。
+
+<div id="drop-hypothetical-index">
+  ## DROP HYPOTHETICAL INDEX
+</div>
+
+```sql
+DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
+```
+
+从当前会话中删除一个假设索引。
+
+<div id="drop-all-hypothetical-indexes">
+  ## DROP ALL HYPOTHETICAL INDEXES
+</div>
+
+```sql
+DROP ALL HYPOTHETICAL INDEXES
+```
+
+清除当前会话中定义的所有假设索引，不论属于哪个表。
+
+<div id="scope-and-lifetime">
+  ## 作用域和生命周期
+</div>
+
+* 假设索引仅存在于**当前会话**中——对其他会话不可见，并会在会话结束时被丢弃。
+* 定义或删除假设索引都不会构建任何实际索引，也绝不会影响针对该表的常规查询。不过，`EXPLAIN WHATIF` 确实会读取表数据，在内存中构建候选索引，并且该扫描会计入会话的读取限制和配额。
+* 可通过 [`system.hypothetical_indexes`](/zh/reference/system-tables/hypothetical_indexes) 查看当前会话中的假设索引。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+`text` 和 `vector_similarity` 候选项会在 `CREATE HYPOTHETICAL INDEX` 阶段被拒绝，因为它们的实际校验依赖表级设置，而仅限 session 的存储无法复制这些设置。
+
+对于带有 `FINAL` 的查询，`EXPLAIN WHATIF` 会返回 `status: not_applicable` (跳过索引裁剪会与 `PrimaryKeyExpand` 相互影响) ；当查询由投影提供时，则会报 `NOT_IMPLEMENTED` 错误 (父表索引不会在投影 parts 上 materialized) 。
+
+经验性的 `skip_ratio` 是一个**上界**：它会分别统计每个保留下来的粒度，而不会对寻道间隙合并 (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`) 进行建模，也不会对析取 (`OR`) 谓词下候选项与现有跳过索引的组合进行建模。因此，真实的 materialized 索引可能会读取略多一些的数据，或者在估算未体现的情况下实现裁剪。
+
+<div id="required-privileges">
+  ## 所需特权
+</div>
+
+`CREATE HYPOTHETICAL INDEX` 要求对索引表达式中引用的列拥有 `SELECT` 权限——列级 `SELECT` (例如 `GRANT SELECT(b)`) 即可——因为 `EXPLAIN WHATIF` 在进行实际评估时会读取这些列。
+
+`DROP HYPOTHETICAL INDEX` 和 `DROP ALL HYPOTHETICAL INDEXES` 不需要额外特权；它们只会从会话本地存储中移除条目。
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [`EXPLAIN WHATIF`](/zh/reference/statements/explain#explain-whatif)
+* [`system.hypothetical_indexes`](/zh/reference/system-tables/hypothetical_indexes)
+* [数据跳过索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)
