@@ -68,6 +68,20 @@ SELECT count() FROM t1;
 
 DROP TABLE t1;
 
+-- The same `cast_keep_nullable` divergence reached through the `to<T>OrDefault` spelling and through an
+-- `ALTER TABLE ... MODIFY COLUMN ... MODIFY SETTING` boundary, which is the shape `BuzzHouse` reports on
+-- master (STID 3520-704a, `Bad cast from type DB::ColumnVector<unsigned long> to DB::ColumnNullable`).
+-- `toUInt64OrDefault` is a `FunctionCastOrDefault`, so its result type follows `cast_keep_nullable` the
+-- same way `CAST` does, and a column-level settings ALTER recomputes the key just like `MODIFY COMMENT`.
+DROP TABLE IF EXISTS t2;
+SET cast_keep_nullable = 0;
+CREATE TABLE t2 (a Int32, b Nullable(Int32)) ENGINE = MergeTree() ORDER BY (a, toUInt64OrDefault(b)) SETTINGS allow_nullable_key = 1;
+ALTER TABLE t2 MODIFY COLUMN a MODIFY SETTING max_compress_block_size = 16 SETTINGS cast_keep_nullable = 1;
+INSERT INTO t2 VALUES (2, 2);
+SELECT count() FROM t2;
+
+DROP TABLE t2;
+
 -- A CLEAR COLUMN mutation run with the setting on must not abort, and the key stays canonical
 -- (non-nullable), sort order and values remain correct.
 SET cast_keep_nullable = 1;
