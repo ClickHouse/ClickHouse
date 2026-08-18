@@ -44,7 +44,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
+
+/// First query-plan serialization version with the `allow_input_without_aggregated_chunk_info`
+/// flag (bit 64). Gated on both sides so a mixed-version cluster fails at plan time.
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO = 9;
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
@@ -315,6 +320,14 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
     if (allow_input_without_aggregated_chunk_info)
         flags |= 64;
 
+    /// The flag exists only since query plan serialization version 9. Throw rather than send a
+    /// bit the other side would ignore, failing at runtime instead (deserialize checks the same).
+    if ((flags & 64) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Merging aggregated data produced by a non-aggregating operator requires query plan "
+            "serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO);
+
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(params.keys.size(), ctx.out);
@@ -356,6 +369,14 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
     const bool allow_input_without_aggregated_chunk_info = bool(flags & 64);
+
+    /// The flag exists only since query plan serialization version 9; on an older stream the bit
+    /// is garbage, so reject it (serialize checks the same).
+    if (allow_input_without_aggregated_chunk_info
+        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The no-chunk-info merging flag in a version {} query plan stream; it requires version >= {}",
+            ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO);
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);

@@ -121,3 +121,61 @@ Expression ((Project names + Projection))
 7	name_7	50200
 8		50300
 9		50400
+-- 9. duplicate right-side keys: each pushed group is duplicated by the join and merged m times
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        JoinLogical (Local HashJoin )
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_push_dims_multi)
+0	300	148500
+1	300	148800
+2	300	149100
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
+-- 10. mixed condition (equi + non-equi): the pushed side groups by (key, value)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        JoinLogical (Local HashJoin  swapped)
+          BuildRuntimeFilter (Build runtime join filter on __table2.key)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_push_dims_multi)
+          GatherExchange
+            Aggregating
+              Expression
+                ReadFromMergeTree (ParallelRead default.t_push_facts)
+0	237
+1	240
+2	240
+3	50
+4	50
+5	50
+-- 11. the same executions without the distributed planner must match
+0	300	148500
+1	300	148800
+2	300	149100
+3	100	49800
+4	100	49900
+5	100	50000
+6	100	50100
+7	100	50200
+8	100	50300
+9	100	50400
+0	237
+1	240
+2	240
+3	50
+4	50
+5	50

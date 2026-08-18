@@ -21,6 +21,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 /// The join under the matched aggregation, optionally reached through one identity
 /// `ExpressionStep` (e.g. `Expression (Before GROUP BY)`), which the transformation peels.
 struct MatchedJoin
@@ -79,7 +82,7 @@ private:
 /// Only a side the join preserves (never null/default-extends) qualifies, and only with `ALL`
 /// strictness: `ANY`/`SEMI`/`ANTI` pick or filter individual rows, which pre-aggregated groups
 /// would change; `ASOF` resolves the closest match per row.
-static bool isPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
+bool isPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
 {
     if (strictness != JoinStrictness::All)
         return false;
@@ -94,7 +97,7 @@ static bool isPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTabl
 /// logical alternatives (e.g. the swapped join) would only produce duplicate memo groups.
 /// Input links with non-empty required properties carry a stripped `Sort`, which the
 /// transformation would silently drop - such shapes do not match.
-static std::optional<MatchedJoin> resolveJoinUnderAggregation(const GroupExpression & expression, const Memo & memo)
+std::optional<MatchedJoin> resolveJoinUnderAggregation(const GroupExpression & expression, const Memo & memo)
 {
     if (expression.inputs.size() != 1)
         return {};
@@ -161,7 +164,7 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
 
 /// Nullopt when a reachable `INPUT` cannot be attributed to exactly one side or is missing from
 /// that side's header.
-static std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & join_step)
+std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & join_step)
 {
     std::unordered_map<const ActionsDAG::Node *, JoinActionRef> input_refs;
     for (const auto & input : join_step.getInputActions())
@@ -213,7 +216,7 @@ static std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogic
     return result;
 }
 
-static void remapNodes(ActionsDAG::NodeRawConstPtrs & nodes, const ActionsDAG::NodeMapping & node_map)
+void remapNodes(ActionsDAG::NodeRawConstPtrs & nodes, const ActionsDAG::NodeMapping & node_map)
 {
     for (const auto *& node : nodes)
     {
@@ -227,7 +230,7 @@ static void remapNodes(ActionsDAG::NodeRawConstPtrs & nodes, const ActionsDAG::N
 /// is cloned into a fresh DAG over the new input headers; the caller guarantees all its `INPUT`
 /// columns exist there under the same names and types. Returns nullptr when an internal
 /// invariant does not hold - the caller then emits nothing.
-static std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
+std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
     const JoinStepLogical & join_step,
     size_t pushed_input_index,
     const SharedHeader & new_pushed_header,
@@ -377,10 +380,9 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
     auto partial_step = cloneStepAs(agg_step);
     partial_step->setFinal(false);
-    /// The memory-efficient merge expects every input to deliver two-level buckets in ascending
-    /// order (see `TwoStageAggregationTransformation` for the full story).
-    if (memo.getEnvironment().distributed_aggregation_memory_efficient)
-        partial_step->setShouldProduceResultsInBucketOrder(true);
+    /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the
+    /// memory-efficient merge: bucket annotations do not survive the join anyway, and the merge
+    /// treats the join output as single-level data.
     partial_step->rebaseOntoInput(std::move(partial_input_header), pushed_keys);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step.getStepDescription()), 200);
 
@@ -491,6 +493,8 @@ std::vector<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPt
             result.push_back(std::move(merge_expression));
     }
     return result;
+}
+
 }
 
 OptimizationRulePtr createAggregationPushdown() { return std::make_shared<AggregationPushdown>(); }
