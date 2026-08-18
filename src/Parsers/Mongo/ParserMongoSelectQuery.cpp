@@ -75,14 +75,14 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     /// an empty cursor instead of every matching row.
     if (metadata->getLimit() && *metadata->getLimit() != 0)
     {
-        size_t limit_value = *metadata->getLimit();
+        UInt64 limit_value = *metadata->getLimit();
         auto literal = make_intrusive<ASTLiteral>(Field(limit_value));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(literal));
     }
 
     if (metadata->getOffset())
     {
-        size_t offset_value = *metadata->getOffset();
+        UInt64 offset_value = *metadata->getOffset();
         auto literal = make_intrusive<ASTLiteral>(Field(offset_value));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(literal));
     }

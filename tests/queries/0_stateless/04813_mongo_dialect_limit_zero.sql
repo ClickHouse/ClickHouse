@@ -16,6 +16,7 @@ db.docs.find({}).sort({"id" : 1}).limit(0);
 db.docs.find({"id" : {"$gt" : 3}}).sort({"id" : 1}).limit(0);
 db.docs.find({}).sort({"id" : 1}).limit(0).skip(3);
 db.docs.find({}).sort({"id" : 1}).limit(2);
+db.docs.find({}).sort({"id" : 1}).limit(-2);
 
 SET dialect='clickhouse';
 

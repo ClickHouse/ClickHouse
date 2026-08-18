@@ -359,7 +359,7 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begi
     return std::nullopt;
 }
 
-std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, const char * end)
+std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, const char * end)
 {
     auto maybe_start_position = findPosition(begin, end);
     if (!maybe_start_position)
@@ -369,6 +369,12 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, co
     auto start_position = *maybe_start_position;
     std::string str_representation;
     /// The end of the text bounds the walk: an unclosed `(` would otherwise read past it.
+    if (begin + start_position != end && begin[start_position] == '-')
+    {
+        str_representation.push_back(begin[start_position]);
+        ++start_position;
+    }
+
     while (begin + start_position != end && begin[start_position] != ')')
     {
         if (begin[start_position] < '0' || begin[start_position] > '9')
@@ -380,9 +386,16 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, co
     }
     if (begin + start_position == end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
-    if (str_representation.empty())
+    if (str_representation.empty() || str_representation == "-")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' has no argument", pattern);
-    return std::stoi(str_representation);
+    try
+    {
+        return std::stoll(str_representation);
+    }
+    catch (const std::out_of_range &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is out of range", pattern);
+    }
 }
 
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)
