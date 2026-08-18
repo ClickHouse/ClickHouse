@@ -93,6 +93,51 @@ size_t AggregatedDataVariants::size() const
     }
 }
 
+void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
+{
+    chassert(!aggregator);
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            (NAME).reset(); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+    without_key = nullptr;
+    aggregates_pools.clear();
+    aggregates_pool = nullptr;
+    aggregator = nullptr;
+    type = Type::EMPTY;
+}
+
+size_t AggregatedDataVariants::allocatedBytes() const
+{
+    size_t res = 0;
+    for (const auto & pool : aggregates_pools)
+        res += pool->allocatedBytes();
+
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            res += (NAME)->data.getBufferSizeInBytes(); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+    return res;
+}
+
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
 {
     switch (type)
@@ -146,7 +191,12 @@ bool AggregatedDataVariants::isTwoLevel() const
 
 bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 {
-    switch (type)
+    return isConvertibleToTwoLevel(type);
+}
+
+bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
+{
+    switch (type_)
     {
     #define M(NAME) \
         case Type::NAME: \

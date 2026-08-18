@@ -7,6 +7,7 @@
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -190,12 +191,14 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
+    PaddedPODArray<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -315,6 +318,8 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
@@ -546,7 +551,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
