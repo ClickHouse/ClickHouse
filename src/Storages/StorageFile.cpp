@@ -1423,16 +1423,19 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    String archive_member_path_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
     , distributed_processing(distributed_processing_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
+    , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
-    if (!distributed_processing && !archive_info && !files.empty())
+    auto & filter_sources = archive_info ? archive_info->paths_to_archives : files;
+    if (!distributed_processing && (!archive_info || !archive_member_path.empty()) && !filter_sources.empty())
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
 
     if (filter_dag)
@@ -1440,7 +1443,13 @@ StorageFileSource::FilesIterator::FilesIterator(
         if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
         {
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns_, hive_columns_, context_);
+            Strings filter_paths = filter_sources;
+            if (!archive_member_path.empty())
+            {
+                for (auto & path : filter_paths)
+                    path += fmt::format("::{}", archive_member_path);
+            }
+            VirtualColumnUtils::filterByPathOrFile(filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_);
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -1472,10 +1481,13 @@ String StorageFileSource::FilesIterator::next()
         auto path = fs[current_index];
         if (deferred_filter_actions)
         {
-            std::vector<String> filtered_paths({path});
+            std::vector<String> filtered_files({path});
+            std::vector<String> filter_paths({path});
+            if (!archive_member_path.empty())
+                filter_paths.front() += fmt::format("::{}", archive_member_path);
             VirtualColumnUtils::filterByPathOrFile(
-                filtered_paths, filtered_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext());
-            if (filtered_paths.empty())
+                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext());
+            if (filtered_files.empty())
                 continue;
         }
 
@@ -2234,7 +2246,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
-        storage->distributed_processing);
+        storage->distributed_processing,
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

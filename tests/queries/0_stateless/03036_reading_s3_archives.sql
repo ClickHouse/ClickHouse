@@ -4,6 +4,7 @@
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive1.zip :: example1.csv') ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive1.zip :: example1.csv') WHERE _file = 'example1.csv' ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive1.zip :: example1.csv') WHERE _file GLOBAL IN (SELECT 'example1.csv') ORDER BY (id, _file, _path);
+SELECT count() FROM s3(s3_conn, filename='03036_missing_archive.zip :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv');
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive2.zip :: example*.csv') ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example2.csv') ORDER BY (id, _file, _path);
 SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_archive*.zip :: example*') ORDER BY (id, _file, _path);

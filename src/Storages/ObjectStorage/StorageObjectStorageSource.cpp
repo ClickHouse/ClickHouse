@@ -361,10 +361,13 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    /// An archive exposes `_path` and `_file` values for its entries, while this iterator sees
-    /// only the outer archive object. Let the regular filter step evaluate the predicate after
-    /// `ArchiveIterator` has created entry object infos.
-    const auto * path_filter_predicate = is_archive ? nullptr : predicate;
+    /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
+    /// sees only the outer archive object. A known, non-glob archive member is an exception: its
+    /// virtual path is known before opening the archive, so filter it before probing a missing outer
+    /// archive. Other archive forms still need the regular filter step after `ArchiveIterator` has
+    /// created entry object infos.
+    const bool is_explicit_archive_member = is_archive && !reading_path.hasGlobs() && !configuration->isPathInArchiveWithGlobs();
+    const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
@@ -513,6 +516,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
 
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+            }
+
             /// Unlike `GlobIterator`, which applies its filter while listing objects (that is, when the
             /// pipeline runs), the keys are pruned here, while the pipeline is being built. A set can
             /// still be unbuilt at this point: `ReadFromObjectStorageStep::applyFilters` leaves the sets
@@ -535,7 +544,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             }
 
-            paths = keys;
         }
         else
         {
@@ -550,7 +558,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
-            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
 
     if (is_archive)
@@ -1888,7 +1897,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     ExpressionActionsPtr deferred_filter_actions_,
     NamesAndTypesList hive_columns_,
     String object_namespace_,
-    ContextPtr context_)
+    ContextPtr context_,
+    String archive_member_path_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -1900,6 +1910,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , hive_columns(std::move(hive_columns_))
     , object_namespace(std::move(object_namespace_))
     , context(std::move(context_))
+    , archive_member_path(std::move(archive_member_path_))
 {
     if (read_keys_)
     {
@@ -1928,7 +1939,9 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (deferred_filter_actions)
         {
             std::vector<String> filtered_keys({key});
-            const std::vector<String> filter_paths({fs::path(object_namespace) / key});
+            std::vector<String> filter_paths({fs::path(object_namespace) / key});
+            if (!archive_member_path.empty())
+                filter_paths.front() += fmt::format("::{}", archive_member_path);
             VirtualColumnUtils::filterByPathOrFile(filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context);
             if (filtered_keys.empty())
             {

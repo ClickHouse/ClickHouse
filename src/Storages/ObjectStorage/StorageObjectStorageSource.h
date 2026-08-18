@@ -269,7 +269,8 @@ public:
         ExpressionActionsPtr deferred_filter_actions_ = {},
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
-        ContextPtr context_ = {});
+        ContextPtr context_ = {},
+        String archive_member_path_ = {});
 
     ~KeysIterator() override = default;
 
@@ -294,6 +295,9 @@ private:
     const NamesAndTypesList hive_columns;
     const String object_namespace;
     const ContextPtr context;
+    /// A known archive member is part of the user-visible `_path` / `_file` value, although the
+    /// iterator itself must fetch the outer archive object.
+    const String archive_member_path;
 };
 
 /*

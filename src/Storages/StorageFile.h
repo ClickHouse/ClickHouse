@@ -237,7 +237,8 @@ public:
             const NamesAndTypesList & virtual_columns_,
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
-            bool distributed_processing_ = false);
+            bool distributed_processing_ = false,
+            String archive_member_path_ = {});
 
         String next();
 
@@ -272,6 +273,9 @@ private:
         ExpressionActionsPtr deferred_filter_actions;
         NamesAndTypesList virtual_columns;
         NamesAndTypesList hive_columns;
+        /// A known archive member is part of the user-visible `_path` / `_file` value, although
+        /// this iterator must open the outer archive file.
+        const String archive_member_path;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
