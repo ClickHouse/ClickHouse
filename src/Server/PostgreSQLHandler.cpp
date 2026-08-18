@@ -1778,7 +1778,11 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
         return false;
     }
 
-    prepared_statements_manager.addStatement(prepare->as<ASTPreparedStatement>());
+    auto * prepared_statement = prepare->as<ASTPreparedStatement>();
+    ParserQuery statement_parser(prepared_statement->function_body.data() + prepared_statement->function_body.size());
+    parseQuery(statement_parser, prepared_statement->function_body, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    prepared_statements_manager.addStatement(prepared_statement);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query);
@@ -1845,6 +1849,12 @@ void PostgreSQLHandler::processParseQuery()
 
     try
     {
+        /// PostgreSQL rejects an invalid statement at `Parse` time. Validate it
+        /// before registering its name so an invalid parse cannot poison a named
+        /// prepared statement slot.
+        ParserQuery parser(query->sql_query.data() + query->sql_query.size());
+        parseQuery(parser, query->sql_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = query->sql_query;
@@ -2215,7 +2225,7 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// PostgreSQL. `typreceive` is zero for every type because the server does not implement binary
     /// input decoding for bound parameters or `COPY`; advertising a receiver would cause clients to
     /// select an unsupported input path.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull UInt8, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
     (16,   11, 'bool',        0, 0, 'b', 0, 0, 0, 'B'),
@@ -2297,7 +2307,7 @@ SELECT * FROM VALUES(
     identity String,
     oid UInt32
 ) ENGINE = Memory)");
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids SQL SECURITY INVOKER AS
 SELECT
     tables.database AS database,
     tables.name AS name,
@@ -2313,7 +2323,7 @@ FROM
     FROM system.tables
 ) AS tables
 INNER JOIN pg_class_oids_data AS oids ON tables.identity = oids.identity)");
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace_oids AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace_oids SQL SECURITY INVOKER AS
 SELECT
     databases.name AS name,
     oids.oid AS oid
@@ -2332,7 +2342,7 @@ INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)
     /// they cannot shadow user data; when a ClickHouse database carries one of these names (the built-in
     /// `information_schema` always does), the fixed row takes precedence over a generated one, so a
     /// schema name always denotes a single OID.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY INVOKER AS
 SELECT oid, nspname FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
@@ -2361,7 +2371,7 @@ WHERE name NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'pg_temp_1', 
     /// database whose name is covered by a fixed `pg_namespace` row - notably the built-in
     /// `information_schema` - the generated OID is hidden from clients, so relations must reference the
     /// fixed OID or a `pg_namespace.oid -> pg_class.relnamespace` resolution would come up empty.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries SQL SECURITY INVOKER AS
 SELECT
     oids.database AS database,
     oids.name AS name,
@@ -2382,7 +2392,7 @@ INNER JOIN pg_namespace AS ns ON oids.database = ns.nspname)");
     /// branch excludes a user table that would collide with a named row (a ClickHouse database literally
     /// named `pg_catalog` holding a table `pg_type`), so a (namespace, name) pair still denotes one
     /// relation.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
 SELECT oid, relname, relnamespace, relkind FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relkind String',
     (1247, 'pg_type', 11, 'r'),
@@ -2415,7 +2425,7 @@ WHERE NOT (relnamespace = 11 AND name IN (
     /// otherwise drop every emulated type. The names are the ones `pg_catalog` proper uses, and the OIDs are
     /// the synthetic ones chosen for `typreceive`, so the join is closed in both directions - every
     /// advertised receive function has a row here, and none of these rows is an orphan.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, proname String',
     (241, 'int8recv'),
@@ -2465,7 +2475,7 @@ SELECT * FROM VALUES(
     (1116, 'timestamp_out')
 ))");
 
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_range AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_range SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'rngtypid UInt32, rngsubtype UInt32, rngmultitypid UInt32',
     (3904, 23,   3905),
@@ -2484,7 +2494,7 @@ SELECT * FROM VALUES(
     /// PostgreSQL proper, because the emulated view renders them differently: `pg_attribute.attnotnull` is
     /// declared `text` (the view emits the strings 't'/'f', which do not parse as a boolean), and
     /// `pg_attribute.attnum` / `attndims` / `atttypmod` are `int4` (the view emits plain integers).
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute SQL SECURITY INVOKER AS
 SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull, attndims, attgenerated FROM VALUES(
     'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8, atttypmod Int32, attnotnull String, attndims Int32, attgenerated String',
     (26, 1247, 'oid',          1,  0, -1, 't', 0, ''),
@@ -2586,12 +2596,10 @@ SELECT
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
             -1) AS atttypmod,
-    /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
-    /// materializes can be NULL: a `Nullable`/`LowCardinality(Nullable(...))` scalar, or an array whose
-    /// element type is `Nullable(...)` (e.g. `Array(Nullable(Int32))`, whose type does not start with
-    /// `Nullable(`). Otherwise `insertPostgreSQLValue` would rewrite a NULL array element to the element
-    /// type's default and silently corrupt results.
-    if (position(cols.wrappers, 'Nullable(') > 0, 'f', 't') AS attnotnull,
+    /// `attnotnull` describes nullability of the column value, never that of an array element.
+    /// Nullable array elements are represented by PostgreSQL array syntax and do not make the
+    /// `Array` column itself nullable.
+    if (startsWith(cols.type, 'Nullable(') OR startsWith(cols.type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
     cols.ndims AS attndims,
     '' AS attgenerated
 FROM (
@@ -2624,7 +2632,7 @@ FROM (
 ) AS cols
 INNER JOIN pg_class_entries AS oids ON cols.database = oids.database AND cols.table = oids.name)");
 
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, enumtypid UInt32, enumsortorder Float64, enumlabel String',
     (50000, 40000, 1.0, 'sad'),
