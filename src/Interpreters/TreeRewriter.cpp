@@ -32,7 +32,6 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
 
-#include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -349,21 +348,6 @@ bool hasArrayJoin(const ASTPtr & ast)
 
     for (const auto & child : ast->children)
         if (!child->as<ASTSelectQuery>() && hasArrayJoin(child))
-            return true;
-
-    return false;
-}
-
-/// `arrayJoin` also has registered aliases, which carry the canonical name only once
-/// `normalize_function_names` has rewritten them.
-bool hasArrayJoinByAnyName(const ASTPtr & ast)
-{
-    if (const ASTFunction * function = ast->as<ASTFunction>())
-        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
-            return true;
-
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && hasArrayJoinByAnyName(child))
             return true;
 
     return false;
@@ -1575,12 +1559,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.ast_join = select_query->join();
 
-    /// `arrayJoin` in an expression multiplies rows, so the stored row count is not the answer.
     if (result.optimize_trivial_count)
         result.optimize_trivial_count = settings[Setting::optimize_trivial_count_query] && !select_query->groupBy() && !select_query->having()
             && !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final()
-            && (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()))
-            && !hasArrayJoinByAnyName(select_query->select());
+            && (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
     // remove outer braces in order by
     RewriteOrderByVisitor::Data data;
