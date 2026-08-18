@@ -33,14 +33,14 @@ An install from a direct chart reference (`oci://`, a URL, or a local archive or
 
 ### Linux VM {#upgrades-linux-vm}
 
-Download and verify the newer Linux tarball on the host exactly as during [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding), extract it, then re-run the installer and restart the daemons:
+Re-run the installer on the host; it downloads and verifies the newer release the same way it did during [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding), backs up the previous binary, and preserves your live redaction patterns and environment file. Then restart the daemons:
 
 ```bash
-sudo ./install.sh
+curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
 sudo systemctl restart clicklink-scraper clicklink-troubleshooter
 ```
 
-`install.sh` backs up the previous binary and preserves your live redaction patterns and environment file.
+To move to a specific release instead of the latest, append `--version vX.Y.Z` to the installer command.
 
 ## Health {#health}
 
@@ -148,7 +148,7 @@ That is the VM form (root rewrites `/etc/clicklink` and manages the services). O
 
 ### Linux VM {#uninstall-linux-vm}
 
-From the extracted tarball directory:
+`uninstall.sh` ships in the release tarball. If no extracted tarball remains on the host, fetch and extract one as shown in [manual download and verification](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding#manual-download-and-verification), then run it from the extracted directory:
 
 ```bash
 sudo ./uninstall.sh
