@@ -309,10 +309,14 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
         }
     }
 
-    /// Reconcile remove_or_detach_tables with the live remote schema: a table that was
-    /// DETACH'd/DROP'd locally (and thus tracked here) but has since disappeared from the
-    /// remote MySQL server has nothing left to ATTACH, so it should stop being reported by
-    /// system.detached_tables. Mirrors DatabasePostgreSQL::removeOutdatedTables.
+    /// Reconcile remove_or_detach_tables with the live remote schema:
+    /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
+    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
+    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+    ///   explicit ATTACH TABLE — matching the documented behavior.
+    /// Mirrors DatabasePostgreSQL::removeOutdatedTables logic for permanent detach.
     auto db_disk = getDisk();
     for (auto iterator = remove_or_detach_tables.begin(); iterator != remove_or_detach_tables.end();)
     {
@@ -321,12 +325,23 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
         else
         {
             const auto & table_name = *iterator;
-            if (persistent)
+            fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+            bool is_permanent = persistent && db_disk->existsFile(remove_flag);
+
+            /// Only prune non-permanent detach entries when the remote table disappears.
+            /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
+            /// stays hidden until explicit ATTACH TABLE.
+            if (!is_permanent)
             {
-                fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-                db_disk->removeFileIfExists(remove_flag);
+                if (persistent)
+                    db_disk->removeFileIfExists(remove_flag);
+                iterator = remove_or_detach_tables.erase(iterator);
             }
-            iterator = remove_or_detach_tables.erase(iterator);
+            else
+            {
+                /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
+                ++iterator;
+            }
         }
     }
 }
@@ -470,9 +485,13 @@ void DatabaseMySQL::cleanOutdatedTables()
             }
         }
 
-        /// Reconcile remove_or_detach_tables with the live remote schema (mirrors DatabasePostgreSQL::removeOutdatedTables):
-        /// a table that was DETACH'd/DROP'd locally but has since disappeared from the remote MySQL server has nothing left
-        /// to ATTACH, so it should stop being reported by system.detached_tables.
+        /// Background reconciliation: reconcile remove_or_detach_tables with the live remote schema.
+        /// - If a table was only ordinarily DETACH'd (no .remove_flag marker), and the remote table
+        ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+        /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .remove_flag exists),
+        ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+        ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+        ///   explicit ATTACH TABLE — matching the documented behavior.
         /// Skip reconciliation if there are no detached tables to avoid unnecessary network I/O.
         if (!remove_or_detach_tables.empty())
         {
@@ -492,12 +511,23 @@ void DatabaseMySQL::cleanOutdatedTables()
                     if (!tables_on_remote.contains(*iter))
                     {
                         const auto & table_name = *iter;
-                        if (persistent)
+                        fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                        bool is_permanent = persistent && db_disk->existsFile(remove_flag);
+
+                        /// Only prune non-permanent detach entries when the remote table disappears.
+                        /// Permanent detach markers (.remove_flag) are preserved so a recreated remote table
+                        /// stays hidden until explicit ATTACH TABLE.
+                        if (!is_permanent)
                         {
-                            fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-                            db_disk->removeFileIfExists(remove_flag);
+                            if (persistent)
+                                db_disk->removeFileIfExists(remove_flag);
+                            iter = remove_or_detach_tables.erase(iter);
                         }
-                        iter = remove_or_detach_tables.erase(iter);
+                        else
+                        {
+                            /// Permanent detach: preserve the marker and keep the table in remove_or_detach_tables
+                            ++iter;
+                        }
                     }
                     else
                         ++iter;
