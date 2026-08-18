@@ -1,7 +1,5 @@
 #include <Common/JemallocMergeTreeArena.h>
 
-#include "config.h"
-
 #if USE_JEMALLOC
 
 #include <Common/Jemalloc.h>

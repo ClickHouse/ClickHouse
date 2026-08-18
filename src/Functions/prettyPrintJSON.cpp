@@ -18,8 +18,6 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/error/en.h>
 
-#include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
-
 namespace DB
 {
 
@@ -31,13 +29,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// rapidjson types whose internal stacks and output buffer are accounted against the memory
-/// tracker, so a pathological input cannot allocate without bound (see RapidJSONMemoryTrackerAllocator).
-using TrackedStringBuffer = rapidjson::GenericStringBuffer<rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
-using TrackedPrettyWriter
-    = rapidjson::PrettyWriter<TrackedStringBuffer, rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
-using TrackedReader = rapidjson::GenericReader<rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
 
 class FunctionPrettyPrintJSON : public IFunction
 {
@@ -94,23 +85,21 @@ public:
             /// Since RapidJSON uses '\0' as end-of-stream char in its stream abstraction,
             /// we have to default to this check to prevent silent truncation of the input
             /// unescaped '\0' is not valid in JSON strings anyway
-            if (str_view.contains('\0'))
+            if (str_view.find('\0') != std::string_view::npos)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid JSON string in function {}: embedded NULL byte",
                     getName());
 
-            TrackedStringBuffer buffer;
-            TrackedPrettyWriter writer(buffer);
+            rapidjson::StringBuffer buffer;
+            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
             writer.SetIndent(' ', indent_count);
 
             /// Stream JSON directly from Reader to PrettyWriter without building
             /// a DOM. Both Reader (with kParseIterativeFlag) and PrettyWriter use
-            /// heap-allocated stacks, so arbitrarily deep nesting is safe. The stacks and the
-            /// output buffer are accounted against the memory tracker, so an input that would
-            /// produce an enormous output is rejected with MEMORY_LIMIT_EXCEEDED.
+            /// heap-allocated stacks, so arbitrarily deep nesting is safe.
             rapidjson::MemoryStream ms(str_view.data(), str_view.size());
-            TrackedReader reader;
+            rapidjson::Reader reader;
             auto parse_result = reader.Parse(ms, writer);
 
             if (parse_result.IsError())

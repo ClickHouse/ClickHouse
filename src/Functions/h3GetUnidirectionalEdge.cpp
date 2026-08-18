@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdge final : public IFunction
+class FunctionH3GetUnidirectionalEdge : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
@@ -133,8 +133,8 @@ Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin 
         {"origin", "The origin H3 cell index.", {"UInt64"}},
         {"destination", "The destination H3 cell index.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index for adjacent cells, or `0` when both inputs are valid cells that do not form a directed edge. Throws an exception if either input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599)", "1248204388774707199"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686030622195711)", "1248204388774707199"}};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

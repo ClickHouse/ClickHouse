@@ -5,13 +5,9 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
 /// This fuzzer supports its own arguments:
 /// - `-max_parser_depth=N` sets the maximum parser depth (default: 150 for debug/sanitizer, 300 otherwise)
 /// - `-max_parser_backtracks=N` sets the maximum parser backtracks (default: DBMS_DEFAULT_MAX_PARSER_BACKTRACKS)
-/// - `-max_query_size=N` sets the maximum query size in bytes (default: DBMS_DEFAULT_MAX_QUERY_SIZE)
 /// - `-max_ast_depth=N` sets the maximum depth of the AST tree (default: 1000)
 /// - `-max_ast_elements=N` sets the maximum number of elements in AST tree (default: 50000)
 /// These arguments must be passed after `-ignore_remaining_args=1` to avoid interference with libFuzzer options.
@@ -19,18 +15,17 @@ using namespace DB;
 
 
 #if defined(SANITIZER) || !defined(NDEBUG)
-    static size_t max_parser_depth = 150;
+    size_t max_parser_depth = 150;
 #else
-    static size_t max_parser_depth = 300;
+    size_t max_parser_depth = 300;
 #endif
-static size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-static size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
-static size_t max_ast_depth = 1000;
-static size_t max_ast_elements = 50000;
+size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+size_t max_ast_depth = 1000;
+size_t max_ast_elements = 50000;
 
 
 // Helper function to check if this is a merge run
-static bool isMerge(int argc, char ** argv)
+bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -44,7 +39,7 @@ static bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-static std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::unordered_map<std::string, std::string> settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     bool ignore_remaining = false;
@@ -115,7 +110,6 @@ extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv)
 
     parse_setting("max_parser_depth", max_parser_depth);
     parse_setting("max_parser_backtracks", max_parser_backtracks);
-    parse_setting("max_query_size", max_query_size);
     parse_setting("max_ast_depth", max_ast_depth);
     parse_setting("max_ast_elements", max_ast_elements);
 
@@ -130,10 +124,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         DB::ParserCreateQuery parser;
 
-        DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", max_query_size, max_parser_depth, max_parser_backtracks);
+        DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, max_parser_depth, max_parser_backtracks);
 
         ast->checkDepth(max_ast_depth);
         ast->checkSize(max_ast_elements);
+
+        std::cerr << ast->formatWithSecretsOneLine() << std::endl;
     }
     catch (...)
     {

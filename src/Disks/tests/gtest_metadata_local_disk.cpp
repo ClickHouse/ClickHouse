@@ -73,7 +73,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<DB::IDisk>> active_disks;
 };
 
-static void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
+void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
 {
     std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("disk", std::move(cluster_registry));

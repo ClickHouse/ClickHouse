@@ -1,4 +1,3 @@
-#include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperRequestDispatcherOld.h>
 
 #if USE_NURAFT
@@ -84,7 +83,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
-    extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_read_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
@@ -107,8 +106,6 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
-        || request->getOpNum() == Coordination::OpNum::CreateContainer
-        || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -125,8 +122,6 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
-                case Coordination::OpNum::CreateContainer:
-                case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -163,16 +158,12 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 
 }
 
-KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
+KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_)
     : responses_queue(std::numeric_limits<size_t>::max())
     , server(server_)
     , log(getLogger("KeeperRequestDispatcherOld"))
     , keeper_context(server->getKeeperContext())
-    , special_response_router(std::move(special_response_router_))
 {
-    if (!special_response_router)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcherOld requires a special response router");
-
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
@@ -210,7 +201,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
     ///  not sure happens in practice even under too much load.)
     {
         ProfiledMutexLock lock(live_sessions_mutex, ProfileEvents::KeeperLiveSessionsLockWaitMicroseconds);
-        int64_t last_checked_session_id = keeper_internal_get_session_id;
+        int64_t last_checked_session_id = -1;
         bool last_checked_session_live = true;
         std::erase_if(pending_reads, [&](const KeeperRequestForSession & read_request)
         {
@@ -308,20 +299,17 @@ void KeeperRequestDispatcherOld::requestThread()
     {
         const auto handle_opentelemetry_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-            if (session_id != keeper_internal_ttl_garbage_collector_session_id)
-            {
-                request->spans.maybeFinalize(
-                    KeeperSpan::DispatcherRequestsQueue,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                            {"keeper.session_id", session_id},
-                            {"keeper.xid", request->xid},
-                            {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
-                        };
-                    });
-            }
+            request->spans.maybeFinalize(
+                KeeperSpan::DispatcherRequestsQueue,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", session_id},
+                        {"keeper.xid", request->xid},
+                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
+                    };
+                });
         };
 
         KeeperRequestForSession request;
@@ -363,17 +351,13 @@ void KeeperRequestDispatcherOld::requestThread()
             /// Skip stale requests for sessions that are no longer live.
             /// Close must pass through RAFT (ephemeral cleanup, watch cleanup, etc.).
             /// SessionID uses internal IDs (session_id = -1), ignore it just to be safe.
-            int64_t last_checked_session_id = keeper_internal_get_session_id;
+            int64_t last_checked_session_id = -1;
             bool last_checked_session_live = true;
             auto is_stale_session_request = [&](const KeeperRequestForSession & req) -> bool
             {
                 if (req.request->getOpNum() != Coordination::OpNum::Close
                     && req.request->getOpNum() != Coordination::OpNum::SessionID)
                 {
-                    /// Internal sessions (negative IDs, e.g. TTL garbage collector) are always live.
-                    if (req.session_id < 0)
-                        return false;
-
                     /// Small optimization: if we check the same session id multiple times in a row,
                     /// do the lookup once and cache the result.
                     if (req.session_id != last_checked_session_id)
@@ -753,11 +737,9 @@ bool KeeperRequestDispatcherOld::setResponse(int64_t session_id, const Coordinat
 bool KeeperRequestDispatcherOld::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
     if (request->getOpNum() != Coordination::OpNum::Close &&
-        request->getOpNum() != Coordination::OpNum::SessionID &&
-        session_id >= 0)
+        request->getOpNum() != Coordination::OpNum::SessionID)
     {
-        /// If session was already disconnected then we will ignore requests.
-        /// Internal sessions (negative IDs, e.g. TTL garbage collector) don't have a callback registered.
+        /// If session was already disconnected then we will ignore requests
         ProfiledMutexLock lock(session_to_response_callback_mutex, ProfileEvents::KeeperSessionCallbackLockWaitMicroseconds);
         if (!session_to_response_callback.contains(session_id))
             return false;
@@ -941,9 +923,7 @@ void KeeperRequestDispatcherOld::addErrorResponses(const KeeperRequestsForSessio
         response->zxid = 0;
         response->error = error;
         response->enqueue_ts = std::chrono::steady_clock::now();
-        DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
-        if (!special_response_router(response_for_session)
-            && !responses_queue.push(std::move(response_for_session)))
+        if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,

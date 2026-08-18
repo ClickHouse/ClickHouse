@@ -202,7 +202,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
-static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
         .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
@@ -422,7 +422,7 @@ void PocoHTTPClient::makeRequestInternal(
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
-static String getMethod(const Aws::Http::HttpRequest & request)
+String getMethod(const Aws::Http::HttpRequest & request)
 {
     switch (request.GetMethod())
     {
@@ -566,7 +566,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setSuppressKeepAliveHeader(true);
             /** According to RFC-2616, Request-URI is allowed to be encoded.
               * However, there is no clear agreement on which exact symbols must be encoded.
               * Effectively, `Poco::URI` chooses smaller subset of characters to encode,
@@ -861,9 +860,9 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 
-    chassert(!request_token_path.empty());
-    chassert(!metadata_service.empty());
-    chassert(!service_account.empty());
+    assert(!request_token_path.empty());
+    assert(!metadata_service.empty());
+    assert(!service_account.empty());
 
     Poco::URI url;
     url.setScheme("http");

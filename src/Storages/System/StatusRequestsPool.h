@@ -10,14 +10,10 @@
 #include <unordered_map>
 
 #include <Databases/IDatabase.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/StorageID.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/escapeForFileName.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
@@ -39,18 +35,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ABORTED;
 extern const int QUERY_WAS_CANCELLED;
 }
-
-namespace FailPoints
-{
-extern const char system_replicas_schedule_requests_pause[];
-}
-
-/// Defined in StatusRequestsPool.cpp so that this header does not need Interpreters/Context.h.
-StoragePtr resolveStatusRequestTable(const StorageID & storage_id);
-DatabasePtr resolveStatusRequestDatabase(const String & database_name);
 
 template <typename T>
 concept IsHolder = std::derived_from<T, IDatabase> || std::derived_from<T, IStorage>;
@@ -95,16 +81,12 @@ public:
     using TBaseHolderPtr = std::shared_ptr<TBaseHolder>;
     using TFuture = std::shared_future<TStatus>;
 
-    /// The pool must not own the holder: a request abandoned by a killed query would keep
-    /// a dropped table alive, so DROP TABLE SYNC on it would hang until the pool drains.
-    using THolderId = std::conditional_t<std::is_same_v<TBaseHolder, IDatabase>, String, StorageID>;
-
     struct Request
     {
-        UInt64 request_id{};
-        THolderId holder_id = make_empty_holder_id();
+        UInt64 reqiest_id;
+        TBaseHolderPtr base_holder;
         std::shared_ptr<TPromiseStatus> promise;
-        bool with_zk_fields{};
+        bool with_zk_fields;
     };
 
     struct RequestInfo
@@ -115,7 +97,7 @@ public:
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
+    std::unordered_map<TBaseHolderPtr, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
     std::deque<Request> requests_to_schedule TSA_GUARDED_BY(mutex);
     UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
 
@@ -153,22 +135,19 @@ public:
                 std::make_exception_ptr(DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
     }
 
-    RequestInfo addRequest(const TBaseHolderPtr & holder, const bool with_zk_fields)
+    RequestInfo addRequest(const TBaseHolderPtr holder, const bool with_zk_fields)
     {
         std::shared_ptr<TPromiseStatus> promise;
         TFuture future;
         UInt64 this_request_id = 0;
 
-        THolderId holder_id = get_holder_id(holder);
-        String holder_key = get_holder_key(holder_id);
-
         {
             std::lock_guard lock(mutex);
 
-            auto existing_request = current_requests.find(holder_key);
+            auto existing_request = current_requests.find(holder);
             if (existing_request != current_requests.end())
             {
-                LOG_DEBUG(log, "Attaching to existing request for {} {}", get_holder_kind(), get_holder_name(holder_id));
+                LOG_DEBUG(log, "Attaching to existing request for {} {}", get_holder_kind(), get_holder_name(holder));
                 return existing_request->second;
             }
 
@@ -178,11 +157,11 @@ public:
             promise = std::make_shared<TPromiseStatus>();
             future = promise->get_future().share();
 
-            current_requests[holder_key] = {.request_id = this_request_id, .future = future};
+            current_requests[holder] = {.request_id = this_request_id, .future = future};
 
-            LOG_DEBUG(log, "Making new request for {} {}", get_holder_kind(), get_holder_name(holder_id));
+            LOG_DEBUG(log, "Making new request for {} {}", get_holder_kind(), get_holder_name(holder));
 
-            requests_to_schedule.emplace_back(this_request_id, std::move(holder_id), promise, with_zk_fields);
+            requests_to_schedule.emplace_back(this_request_id, holder, promise, with_zk_fields);
         }
 
         return {this_request_id, future};
@@ -192,10 +171,6 @@ public:
     {
         while (true)
         {
-            fiu_do_on(FailPoints::system_replicas_schedule_requests_pause, {
-                FailPointInjection::pauseFailPoint(FailPoints::system_replicas_schedule_requests_pause);
-            });
-
             if (query_status)
                 query_status->checkTimeLimit();
 
@@ -207,7 +182,7 @@ public:
 
                 req = requests_to_schedule.front();
 
-                if (req.request_id > max_request_id)
+                if (req.reqiest_id > max_request_id)
                     break;
 
                 requests_to_schedule.pop_front();
@@ -221,20 +196,14 @@ public:
                 {
                     TStatus status;
 
-                    /// The holder could have been dropped or detached while the request was waiting in the queue.
-                    TBaseHolderPtr base_holder = resolve_holder(req.holder_id);
-                    if (!base_holder)
-                        throw Exception(ErrorCodes::ABORTED, "Cannot get status of {} {}: it does not exist anymore",
-                            get_holder_kind(), get_holder_name(req.holder_id));
-
-                    if (auto * holder = dynamic_cast<THolder *>(base_holder.get()))
+                    if (auto * holder = dynamic_cast<THolder *>(req.base_holder.get()))
                     {
                         holder->getStatus(status, req.with_zk_fields);
                     } else
                     {
                         if (!([&]
                             {
-                            if (auto * var_holder = dynamic_cast<THolders *>(base_holder.get()))
+                            if (auto * var_holder = dynamic_cast<THolders *>(req.base_holder.get()))
                             {
                                 var_holder->getStatus(status, req.with_zk_fields);
                                 return true;
@@ -242,24 +211,18 @@ public:
 
                             return false;
                         }() || ...))
-                            throw Exception(ErrorCodes::ABORTED, "Cannot get status of {} {}: it was replaced by an object of another type",
-                                get_holder_kind(), get_holder_name(req.holder_id));
+                            status = {};
                     }
 
                     req.promise->set_value(std::move(status));
                 }
                 catch (...)
                 {
-                    /// A holder that went away is an expected outcome and the consumers just skip
-                    /// its row, so it is not worth an error in the log.
-                    if (getCurrentExceptionCode() == ErrorCodes::ABORTED)
-                        LOG_DEBUG(log, "Cannot get status for {} {}: {}", get_holder_kind(), get_holder_name(req.holder_id), getCurrentExceptionMessage(false));
-                    else
-                        tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.holder_id));
+                    tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.base_holder));
                     req.promise->set_exception(std::current_exception());
                 }
 
-                completeRequest(req.holder_id);
+                completeRequest(req.base_holder);
             };
 
 
@@ -270,18 +233,18 @@ public:
             catch (...)
             {
                 tryLogCurrentException(
-                    log, "Error scheduling get status task for " + get_holder_kind() + " " + get_holder_name(req.holder_id));
+                    log, "Error scheduling get status task for " + get_holder_kind() + " " + get_holder_name(req.base_holder));
                 req.promise->set_exception(std::current_exception());
-                completeRequest(req.holder_id);
+                completeRequest(req.base_holder);
             }
         }
     }
 
 private:
-    void completeRequest(const THolderId & holder_id)
+    void completeRequest(TBaseHolderPtr base_holder)
     {
         std::lock_guard lock(mutex);
-        current_requests.erase(get_holder_key(holder_id));
+        current_requests.erase(base_holder);
     }
 
     static constexpr std::string get_holder_kind()
@@ -292,47 +255,6 @@ private:
             return "table";
     }
 
-    static THolderId make_empty_holder_id()
-    {
-        if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return String{};
-        else
-            return StorageID::createEmpty();
-    }
-
-    static THolderId get_holder_id(const TBaseHolderPtr & holder)
-    {
-        if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return holder->getDatabaseName();
-        else
-            return holder->getStorageID();
-    }
-
-    /// The deduplication key. Names are escaped because they may contain dots on their own,
-    /// and an escaped name never contains a dash, so it cannot look like a UUID.
-    static String get_holder_key(const THolderId & holder_id)
-    {
-        if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-        {
-            return holder_id;
-        }
-        else
-        {
-            if (holder_id.hasUUID())
-                return toString(holder_id.uuid);
-
-            return escapeForFileName(holder_id.database_name) + "." + escapeForFileName(holder_id.table_name);
-        }
-    }
-
-    static TBaseHolderPtr resolve_holder(const THolderId & holder_id)
-    {
-        if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return resolveStatusRequestDatabase(holder_id);
-        else
-            return resolveStatusRequestTable(holder_id);
-    }
-
     static constexpr auto get_thread_name()
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
@@ -341,12 +263,12 @@ private:
             return ThreadName::SYSTEM_REPLICAS;
     }
 
-    static std::string get_holder_name(const THolderId & holder_id)
+    static std::string get_holder_name(const TBaseHolderPtr & base_holder)
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return holder_id;
+            return base_holder->getDatabaseName();
         else
-            return holder_id.getNameForLogs();
+            return base_holder->getStorageID().getNameForLogs();
     }
 
     static auto create_pool(const size_t max_threads)

@@ -70,7 +70,7 @@ public:
         }
     }
 
-    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
@@ -153,7 +153,6 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 }
 }
 
-void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -162,11 +161,11 @@ If the difference is negative, it is ignored.
 
 :::tip
 The underlying data must be sorted for this function to work properly.
-If you would like to use this function in a [materialized view](/reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/reference/functions/aggregate-functions/deltaSumTimestamp) function instead.
+If you would like to use this function in a [materialized view](/sql-reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/sql-reference/aggregate-functions/reference/deltasumtimestamp) function instead.
 :::
 
 See also:
-- [`runningDifference`](/reference/functions/regular-functions/other-functions#runningDifference)
+- [`runningDifference`](/sql-reference/functions/other-functions#runningDifference)
     )";
     FunctionDocumentation::Syntax syntax = "deltaSum(x1[, x2, ...])";
     FunctionDocumentation::Arguments arguments = {

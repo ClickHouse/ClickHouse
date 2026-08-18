@@ -43,8 +43,7 @@ public:
         AggregatingTransformParamsPtr params_,
         const SortDescription & description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_,
-        size_t limit_hint_ = 0);
+        size_t max_block_size_bytes_);
 
     const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -97,9 +96,6 @@ private:
 
     size_t total_merged_rows = 0;
     size_t total_merged_bytes = 0;
-
-    size_t limit_hint = 0;
-    size_t finalized_group_batches = 0;
 };
 
 }

@@ -27,15 +27,13 @@ private:
 
     /// Propagates the range of a range selector or a subquery up to its parents until we meet a range-vector function
     /// (e.g. avg_over_time) if any, so such function could user a proper window.
-    void propagateRangeToParents(const PrometheusQueryTree::Node * node, Decimal64 range);
+    void propagateRangeToParents(const PQT::Node * node, Decimal64 range);
 
     std::shared_ptr<const PrometheusQueryTree> promql_tree;
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
-    TimestampType query_start_time{};
-    TimestampType query_end_time{};
-    DurationType instant_selector_window{};
-    DurationType default_subquery_step{};
+    DurationType instant_selector_window;
+    DurationType default_subquery_step;
     std::unordered_map<const Node *, NodeEvaluationRange> map;
 };
 

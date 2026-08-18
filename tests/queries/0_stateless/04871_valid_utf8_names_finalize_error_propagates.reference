@@ -1,8 +1,0 @@
---- an injected flush failure propagates as itself while the JSON names are rendered
-the real error is reported: OK
-no out-of-range error: OK
---- the same for the BSON name sanitizer
-the real error is reported: OK
-no out-of-range error: OK
---- without the fault the format works
-"data":

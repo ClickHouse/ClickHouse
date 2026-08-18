@@ -7,7 +7,6 @@
 namespace DB
 {
 
-void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

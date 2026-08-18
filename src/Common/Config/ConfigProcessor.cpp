@@ -2,6 +2,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/YAMLParser.h>
 
+#include <sys/utsname.h>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -439,7 +440,7 @@ void ConfigProcessor::doIncludesRecursive(
             std::string value = node->nodeValue();
 
             bool replace_occurred = false;
-            size_t pos = 0;
+            size_t pos;
             while ((pos = value.find(substitution.first)) != std::string::npos)
             {
                 value.replace(pos, substitution.first.length(), substitution.second);
@@ -673,8 +674,6 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
-    /// `std::string` ordering is lexicographical, so files from each merge directory are processed by name.
-    /// Sorting the complete paths also makes the order deterministic if multiple merge directories are present.
     ::sort(files.begin(), files.end());
 
     return files;
@@ -798,6 +797,12 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
             include_from_path = node->innerText();
         }
+        else
+        {
+            std::string default_path = "/etc/metrika.xml";
+            if (fs::exists(default_path))
+                include_from_path = default_path;
+        }
 
         /// When --try is passed and the include_from file is missing, drop the path so that
         /// processIncludes does not try to parse it. We must still call processIncludes
@@ -887,7 +892,7 @@ void ConfigProcessor::processIncludes(
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
-    bool has_zk_includes = false;
+    bool has_zk_includes;
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
 
     if (has_zk_includes && !allow_zk_includes)
@@ -905,7 +910,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool is_config_changed)
 {
     XMLDocumentPtr config_xml;
-    bool has_zk_includes = false;
+    bool has_zk_includes;
     bool processed_successfully = false;
     try
     {

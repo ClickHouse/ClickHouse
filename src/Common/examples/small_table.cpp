@@ -3,7 +3,6 @@
 #include <Interpreters/AggregationCommon.h>
 
 #include <Common/HashTable/SmallTable.h>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleSmallTable(int, char **)
@@ -16,7 +15,7 @@ int mainEntryExampleSmallTable(int, char **)
         cont.insert(2);
 
         Cont::iterator it;
-        bool inserted = {};
+        bool inserted;
 
         cont.emplace(3, it, inserted);
         std::cerr << inserted << ", " << it->getValue() << std::endl;

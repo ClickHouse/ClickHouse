@@ -29,16 +29,12 @@ void validateSupportedColumns(
     ColumnsDescription & columns,
     const StorageObjectStorageConfiguration & configuration);
 
-/// An empty column name has no identifier to render it with, so it cannot survive analysis.
-void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
-
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings = std::nullopt,
-    bool allow_page_cache = true);
+    const std::optional<ReadSettings> & read_settings = std::nullopt);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);

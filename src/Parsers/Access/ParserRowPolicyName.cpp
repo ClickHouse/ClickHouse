@@ -140,8 +140,8 @@ namespace
             if (allow_on_cluster && res_cluster.empty())
                 parseOnCluster(pos, expected, res_cluster);
 
-            chassert(!short_names.empty());
-            chassert(!database_and_table_names.empty());
+            assert(!short_names.empty());
+            assert(!database_and_table_names.empty());
             full_names.clear();
             for (const String & short_name : short_names)
                 for (const auto & [database, table_name] : database_and_table_names)
@@ -161,7 +161,7 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!parseRowPolicyNamesAroundON(pos, expected, false, false, allow_on_cluster, full_names, cluster))
         return false;
 
-    chassert(full_names.size() == 1);
+    assert(full_names.size() == 1);
     auto result = make_intrusive<ASTRowPolicyName>();
     result->full_name = std::move(full_names.front());
     result->cluster = std::move(cluster);

@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageURL.h>
@@ -91,6 +90,3 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSchemaInferenceCache) }

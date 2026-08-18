@@ -1,19 +1,22 @@
 import logging
 import time
 import uuid
+import random
 from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_queue_common import (
     run_query,
+    random_str,
     generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
 )
-from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -107,7 +110,7 @@ def test_replicated(started_cluster):
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     mv_name = f"{table_name}_mv"
-    db_name = "r"
+    db_name = f"r"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -261,7 +264,7 @@ def test_alter_settings(started_cluster):
     mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 100
+    files_to_generate = 1000
 
     node1.query("DROP DATABASE IF EXISTS r")
     node2.query("DROP DATABASE IF EXISTS r")
@@ -307,14 +310,19 @@ def test_alter_settings(started_cluster):
 
     create_mv(node1, f"r.{table_name}", f"r.{dst_table_name}", mv_name=f"r.{mv_name}")
 
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, r.{dst_table_name})"
+            )
+        )
+
     expected_rows = files_to_generate
-    assert_eq_with_retry(
-        node1,
-        f"SELECT count() FROM clusterAllReplicas(cluster, r.{dst_table_name})",
-        str(expected_rows),
-        retry_count=300,
-        sleep_time=1,
-    )
+    for _ in range(300):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
 
     assert (
         "true"
@@ -419,7 +427,7 @@ def test_alter_settings(started_cluster):
 
     assert 0 == int(
         node1.query(
-            "select alterable from system.s3_queue_settings where name = 'mode'"
+            f"select alterable from system.s3_queue_settings where name = 'mode'"
         )
     )
 

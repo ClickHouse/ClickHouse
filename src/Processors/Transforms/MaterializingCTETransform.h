@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class MaterializingCTETransform final : public IAccumulatingTransform
+class MaterializingCTETransform : public IAccumulatingTransform
 {
 public:
     MaterializingCTETransform(

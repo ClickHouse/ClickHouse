@@ -72,33 +72,6 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
-/// The handled signals that are delivered asynchronously, as opposed to the deadly signals
-/// (`SIGSEGV`, `SIGBUS`, ...) that are raised synchronously by the faulting instruction and therefore
-/// cannot be usefully blocked. Their handlers only write to the signal pipe, so blocking them in every
-/// thread does not lose anything: the signal stays pending for the process and is delivered as soon as
-/// some thread unblocks it again.
-const std::vector<int> & asynchronousHandledSignals();
-
-/// Blocks the given signals in the calling thread and restores the previous signal mask on destruction.
-/// Threads created while the scope is active inherit the mask, which is how the signal listener thread
-/// is kept out of the signal handling path.
-class BlockSignalsScope
-{
-public:
-    explicit BlockSignalsScope(const std::vector<int> & signals);
-    ~BlockSignalsScope();
-
-    BlockSignalsScope(const BlockSignalsScope &) = delete;
-    BlockSignalsScope & operator=(const BlockSignalsScope &) = delete;
-
-private:
-    sigset_t saved_mask{};
-};
-
-/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
-/// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
-void resetHandledSignals();
-
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP, close log files (for new files to be opened later).
@@ -159,16 +132,7 @@ struct HandledSignals
     void setupCommonDeadlySignalHandlers();
     void setupCommonTerminateRequestSignalHandlers();
 
-    /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
-    /// handler is not registered for them.
-    /// `use_alt_stack` requests `SA_ONSTACK`: required for any handler that must still run after the
-    /// faulting thread's stack is exhausted.
-    void addSignalHandler(
-        const std::vector<int> & signals,
-        signal_function handler,
-        bool register_signal,
-        const std::vector<int> & additional_masked_signals = {},
-        bool use_alt_stack = false);
+    void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
 
     void reset(bool close_pipe = true);
 

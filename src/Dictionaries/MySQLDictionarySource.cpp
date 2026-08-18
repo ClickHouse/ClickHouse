@@ -48,7 +48,6 @@ static const size_t default_num_tries_on_connection_loss = 3;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -62,35 +61,10 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
-    "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
-    "enable_local_infile", "opt_reconnect", "enable_compression",
+    "enable_local_infile", "opt_reconnect",
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
 
-#if USE_MYSQL
-/// The source configuration of a dictionary created with a DDL query comes from the query itself, so
-/// it may not name files for the server to open: the server reads them with its own privileges, and a
-/// user who cannot read a certificate and key must not be able to authenticate with them. The
-/// contents can be passed in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem` instead.
-/// Dictionaries defined in server configuration files are written by an operator and keep using paths.
-static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
-{
-    static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
-        = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};
-
-    for (const auto & [key, contents_key] : keys)
-    {
-        if (config.has(prefix + "." + std::string(key)))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`{}` cannot be specified in a dictionary created with a DDL query. "
-                "Pass the contents of the file in `{}` instead",
-                key, contents_key);
-    }
-}
-#endif
-
-void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -102,7 +76,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    const std::string & /* default_database */,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr {
 #if USE_MYSQL
-        MySQLStreamSettings mysql_input_stream_settings(
+        StreamSettings mysql_input_stream_settings(
             global_context->getSettingsRef(),
             config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false),
             false,
@@ -111,11 +85,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
-
-        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
-        /// named collection, so this covers both of the branches below.
-        if (created_from_ddl)
-            checkNoSSLPaths(config, settings_config_prefix);
 
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
@@ -169,7 +138,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
-                    StorageMySQL::getSSLParams(*named_collection),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else
@@ -196,7 +167,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         if (replica_key.starts_with("replica"))
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
-                            checkNoSSLPaths(config, replica_prefix);
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port", 3306)));
@@ -225,14 +195,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source, Documentation{
-        .description = "Reads dictionary data from a table in a MySQL server."
-#if !USE_MYSQL
-            " Currently unavailable, because this ClickHouse build does not include MySQL support."
-#endif
-        ,
-        .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",
-        .related = {"clickhouse", "postgresql"}});
+    factory.registerSource("mysql", create_table_source);
 }
 
 }
@@ -249,7 +212,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Configuration & configuration_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
-    const MySQLStreamSettings & settings_)
+    const StreamSettings & settings_)
     : log(getLogger("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)

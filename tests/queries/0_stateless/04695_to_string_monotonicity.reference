@@ -15,8 +15,5 @@
 2021-11-07 01:59:57
 2021-11-07 01:59:58
 2021-11-07 01:59:59
-12
-│  Prefix sort description: toString(x) ASC, y ASC
-│  Result sort description: toString(x) ASC, y ASC
 │  Prefix sort description: toString(d) ASC, y ASC
 │  Result sort description: toString(d) ASC, y ASC

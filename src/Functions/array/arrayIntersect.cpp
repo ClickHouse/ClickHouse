@@ -18,16 +18,12 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromString.h>
-
-#include <optional>
 
 
 namespace DB
@@ -42,7 +38,7 @@ namespace ErrorCodes
 
 enum class ArraySetMode { Intersect, Union, SymmetricDifference };
 
-class FunctionArrayIntersect final : public IFunction
+class FunctionArrayIntersect : public IFunction
 {
 public:
     FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context)
@@ -91,7 +87,7 @@ private:
 
         };
 
-        VectorWithMemoryTracking<UnpackedArray> args;
+        std::vector<UnpackedArray> args;
         Columns column_holders;
 
         UnpackedArrays() = default;
@@ -115,7 +111,7 @@ private:
     static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data, ArraySetMode mode);
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
-    static void insertElement(typename Map::LookupResult pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, bool use_null_map);
+    static void insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map);
 
     struct NumberExecutor
     {
@@ -532,47 +528,6 @@ void FunctionArrayIntersect::DecimalExecutor::operator()(TypeList<T>)
             result = execute<Container, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()), mode);
 }
 
-/// Returns the counter for `key`, inserting a zero one when `insert` is set and the key is not there
-/// yet. Returns nullptr when the key is absent and must not be inserted.
-template <bool insert, typename Map>
-static ALWAYS_INLINE typename Map::mapped_type * findOrInsert(Map & map, const typename Map::key_type & key)
-{
-    if constexpr (insert)
-        return &map[key];
-    else
-    {
-        typename Map::LookupResult it = map.find(key);
-        return it ? &it->getMapped() : nullptr;
-    }
-}
-
-/// The same for a key that had to be serialized into `arena` first.
-/// A key that the map does not take would stay resident until the arena is reclaimed at the row
-/// boundary - which would make the memory grow with every looked up argument, not just with the
-/// argument that seeds the map. Roll such a key back right away: on the lookup-only path, and on
-/// the filling path when the key was already there.
-template <bool insert, typename Map>
-static ALWAYS_INLINE typename Map::mapped_type * findOrInsertSerialized(Map & map, Arena & arena, std::string_view key)
-{
-    if constexpr (insert)
-    {
-        typename Map::LookupResult it = nullptr;
-        bool inserted = false;
-        map.emplace(key, it, inserted);
-        if (inserted)
-            new (reinterpret_cast<void *>(&it->getMapped())) typename Map::mapped_type();
-        else
-            arena.rollback(key.size());
-        return &it->getMapped();
-    }
-    else
-    {
-        typename Map::LookupResult it = map.find(key);
-        arena.rollback(key.size());
-        return it ? &it->getMapped() : nullptr;
-    }
-}
-
 template <typename Map, typename ColumnType, bool is_numeric_column>
 ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr, ArraySetMode mode)
 {
@@ -582,7 +537,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     bool all_nullable = true;
     bool has_nullable = false;
 
-    VectorWithMemoryTracking<const ColumnType *> columns;
+    std::vector<const ColumnType *> columns;
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
@@ -606,147 +561,56 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     auto null_map_column = ColumnUInt8::create();
     NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
 
-    /// Whether the map keys are values serialized into an arena, as opposed to numbers or strings
-    /// referencing the source column directly.
-    constexpr bool serialized_keys
-        = !is_numeric_column && !std::is_same_v<ColumnType, ColumnString> && !std::is_same_v<ColumnType, ColumnFixedString>;
-
-    /// The arena holding the serialized keys of `map`. `map.clear()` does not free them (a
-    /// `ClearableHashMap` only advances its version), so the arena is recreated at every row
-    /// boundary - otherwise the keys inserted for every previous row would stay resident until the
-    /// end of the block, and the memory would grow with the whole column instead of being bounded
-    /// by one row of the argument that seeds the map. The guard is on `allocatedBytes`, not
-    /// `usedBytes`: probe-side keys are rolled back after the lookup, which returns `usedBytes` to
-    /// zero but keeps the grown chunks resident, and a freshly constructed `Arena` allocates its
-    /// first chunk lazily, so `allocatedBytes` is non-zero exactly when the previous rows left
-    /// anything behind.
-    std::optional<Arena> arena;
-    if constexpr (serialized_keys)
-        arena.emplace();
+    Arena arena;
 
     Map map;
-    VectorWithMemoryTracking<size_t> prev_off(args, 0);
-
-    /// A value missing from any one of the arguments cannot be in the intersection, so it is enough
-    /// to fill the map with the smallest argument and to only look up the rest. This keeps the map
-    /// as small as the smallest argument instead of as large as the union of all of them, which is
-    /// what decides the speed once the map stops fitting in cache.
-    /// Which argument seeds the map does not change the result, so the choice is made once for the
-    /// whole column - doing it per row would cost more than it saves for short arrays.
-    size_t map_arg = 0;
-    if (mode == ArraySetMode::Intersect)
-    {
-        auto average_size = [&](size_t arg_num) -> size_t
-        {
-            const auto & arg = arrays.args[arg_num];
-            const auto & offsets = *arg.offsets;
-            if (offsets.empty())
-                return static_cast<size_t>(0);
-            /// A const array has only one row and is used for every row of the result.
-            return arg.is_const ? offsets[0] : offsets.back() / offsets.size();
-        };
-
-        for (size_t arg_num = 1; arg_num < args; ++arg_num)
-            if (average_size(arg_num) < average_size(map_arg))
-                map_arg = arg_num;
-    }
-
-    /// `map_arg` is processed first, the remaining arguments keep their relative order.
-    auto argument_at = [&](size_t arg_index)
-    {
-        if (arg_index == 0)
-            return map_arg;
-        return arg_index <= map_arg ? arg_index - 1 : arg_index;
-    };
-
+    std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {
         map.clear();
-        if constexpr (serialized_keys)
-        {
-            if (arena->allocatedBytes())
-                arena.emplace();
-        }
 
         bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
         size_t null_count = 0;
 
-        for (size_t arg_index = 0; arg_index < args; ++arg_index)
+        for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
-            const size_t arg_num = argument_at(arg_index);
             const auto & arg = arrays.args[arg_num];
             current_has_nullable = false;
 
-            size_t off = 0;
+            size_t off;
             // const array has only one row
             if (arg.is_const)
                 off = (*arg.offsets)[0];
             else
                 off = (*arg.offsets)[row];
 
-            /// Whether this argument fills the map is the same for all of its elements, so the
-            /// branch is lifted out of the loop over them - it is the hot path of the function.
-            /// Everything the loop needs is read into locals first: the loop must not go through
-            /// the captured references of this lambda on every element.
-            auto process_elements = [&]<bool fill_map>()
+            for (auto i : collections::range(prev_off[arg_num], off))
             {
-                const ColumnType * column = columns[arg_num];
-                const NullMap * arg_null_map = arg.null_map;
-                const NullMap * arg_overflow_mask = arg.overflow_mask;
-                const size_t counter = arg_index;
-                const size_t begin = prev_off[arg_num];
-                const size_t end = off;
-                bool arg_has_nullable = false;
-
-                for (size_t i = begin; i < end; ++i)
+                if (arg.null_map && (*arg.null_map)[i])
+                    current_has_nullable = true;
+                else if (!arg.overflow_mask || (*arg.overflow_mask)[i] == 0)
                 {
-                    if (arg_null_map && (*arg_null_map)[i])
-                    {
-                        arg_has_nullable = true;
-                        continue;
-                    }
-
-                    if (arg_overflow_mask && (*arg_overflow_mask)[i] != 0)
-                        continue;
-
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
                     {
-                        value = findOrInsert<fill_map>(map, column->getElement(i));
+                        value = &map[columns[arg_num]->getElement(i)];
                     }
                     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                        value = findOrInsert<fill_map>(map, column->getDataAt(i));
+                        value = &map[columns[arg_num]->getDataAt(i)];
                     else
                     {
                         const char * data = nullptr;
-                        value = findOrInsertSerialized<fill_map>(map, *arena, column->serializeValueIntoArena(i, *arena, data, nullptr));
+                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr)];
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
-                    /// A value is counted for the argument number `arg_index` only when it was present in
-                    /// every argument processed before it, so a counter equal to the number of arguments
-                    /// means "present everywhere".
-                    if constexpr (fill_map)
-                    {
-                        if (*value == counter)
-                            ++(*value);
-                    }
-                    else if (value && *value == counter)
+                    if (*value <= arg_num)
                         ++(*value);
                 }
-
-                if (arg_has_nullable)
-                    current_has_nullable = true;
-            };
-
-            /// For the intersection only the first processed argument populates the map.
-            if (mode != ArraySetMode::Intersect || arg_index == 0)
-                process_elements.template operator()<true>();
-            else
-                process_elements.template operator()<false>();
+            }
 
             // We update offsets for all the arrays except the first one. Offsets for the first array would be updated later.
             // It is needed to iterate the first array again so that the elements in the result would have fixed order.
@@ -765,9 +629,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
         // We have NULL in output only once if it should be there
         bool null_added = false;
-        bool use_null_map = false;
+        bool use_null_map;
         const auto & arg = arrays.args[0];
-        size_t off = 0;
+        size_t off;
         // const array has only one row
         if (arg.is_const)
             off = (*arg.offsets)[0];
@@ -777,9 +641,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         if (mode == ArraySetMode::Union)
         {
             use_null_map = has_nullable;
-            /// Every key of the map is present in at least one of the arguments.
             for (auto & p : map)
-                insertElement<Map, ColumnType, is_numeric_column>(&p, result_offset, result_data, null_map, use_null_map);
+            {
+                typename Map::LookupResult pair = map.find(p.getKey());
+                if (pair && pair->getMapped() >= 1)
+                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
+            }
             if (null_count > 0 && !null_added)
             {
                 ++result_offset;
@@ -791,10 +658,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         else if (mode == ArraySetMode::SymmetricDifference)
         {
             use_null_map = has_nullable;
-            /// A counter equal to the number of arguments means the key is present in all of them.
             for (auto & p : map)
-                if (p.getMapped() != args)
-                    insertElement<Map, ColumnType, is_numeric_column>(&p, result_offset, result_data, null_map, use_null_map);
+            {
+                typename Map::LookupResult pair = map.find(p.getKey());
+                if (pair && pair->getMapped() >= 1 && pair->getMapped() < args)
+                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
+            }
             if (null_count > 0 && null_count < args && !null_added)
             {
                 ++result_offset;
@@ -832,10 +701,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 else
                 {
                     const char * data = nullptr;
-                    /// Only a lookup - the serialized key is not kept, see `findOrInsertSerialized`.
-                    const std::string_view key = columns[0]->serializeValueIntoArena(i, *arena, data, nullptr);
-                    pair = map.find(key);
-                    arena->rollback(key.size());
+                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data, nullptr));
                 }
 
                 if (!current_has_nullable)
@@ -862,7 +728,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 }
 
 template <typename Map, typename ColumnType, bool is_numeric_column>
-void FunctionArrayIntersect::insertElement(typename Map::LookupResult pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, bool use_null_map)
+void FunctionArrayIntersect::insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map)
 {
     pair->getMapped() = -1;
     ++result_offset;
@@ -888,7 +754,7 @@ REGISTER_FUNCTION(ArrayIntersect)
 {
     FunctionDocumentation::Description intersect_description = "Takes multiple arrays and returns an array with elements which are present in all source arrays. The result contains only unique values.";
     FunctionDocumentation::Syntax intersect_syntax = "arrayIntersect(arr, arr1, ..., arrN)";
-    FunctionDocumentation::Arguments intersect_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};
+    FunctionDocumentation::Arguments intersect_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
     FunctionDocumentation::ReturnedValue intersect_returned_value = {"Returns an array with distinct elements that are present in all N arrays", {"Array(T)"}};    FunctionDocumentation::Examples intersect_example = {{"Usage example",
 R"(SELECT
 arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
@@ -936,7 +802,7 @@ In contrast, function `arraySymmetricDifference` simply returns the set of input
 :::
 )";
     FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
-    FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};
+    FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
     FunctionDocumentation::ReturnedValue symdiff_returned_value = {"Returns an array of distinct elements not present in all source arrays", {"Array(T)"}};    FunctionDocumentation::Examples symdiff_example = {{"Usage example", R"(SELECT
 arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference,
 arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference;

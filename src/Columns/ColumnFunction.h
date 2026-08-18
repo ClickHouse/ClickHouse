@@ -4,6 +4,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
+#include <Common/WeakHash.h>
+
 
 namespace DB
 {
@@ -29,8 +31,7 @@ private:
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
-        bool allow_lazy_replicated_captures_ = false);
+        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -58,7 +59,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce(bool dry_run = false) const;
+    ColumnWithTypeAndName reduce() const;
 
     Field operator[](size_t n) const override;
 
@@ -123,7 +124,7 @@ public:
     }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override
@@ -217,10 +218,6 @@ private:
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;
-
-    /// If true, replicate function wraps captured columns into ColumnReplicated instead of physically copying them.
-    /// Controlled by the setting enable_lazy_columns_replication.
-    bool allow_lazy_replicated_captures = false;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

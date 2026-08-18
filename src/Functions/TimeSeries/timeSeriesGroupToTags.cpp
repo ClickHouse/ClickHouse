@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesGroupToTags(group) returns Array(Tuple(String, String))
 /// containing the names and values of tags associated with a specified group.
-class FunctionTimeSeriesGroupToTags final : public IFunction
+class FunctionTimeSeriesGroupToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesGroupToTags";
@@ -78,7 +78,7 @@ REGISTER_FUNCTION(TimeSeriesGroupToTags)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified group.
-See also function [timeSeriesTagsToGroup()](/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
+See also function [timeSeriesTagsToGroup()](/sql-reference/functions/time-series-functions#timeSeriesTagsToGroup).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesGroupToTags(group)";
     FunctionDocumentation::Arguments arguments = {{"group", "A group of tags.", {"UInt64"}}};

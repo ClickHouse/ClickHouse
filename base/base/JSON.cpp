@@ -606,7 +606,7 @@ std::string JSON::getString() const
                         checkPos(s + 4);
                         std::string hex(s, 4);
                         s += 3;
-                        int unicode = {};
+                        int unicode;
                         try
                         {
                             unicode = Poco::NumberParser::parseHex(hex);

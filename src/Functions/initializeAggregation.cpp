@@ -11,7 +11,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -27,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionInitializeAggregation final : public IFunction, private WithContext
+class FunctionInitializeAggregation : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";
@@ -58,8 +57,8 @@ public:
 
         const size_t num_arguments_columns = arguments.size() - 1;
 
-        VectorWithMemoryTracking<ColumnPtr> materialized_columns(num_arguments_columns);
-        VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+        std::vector<ColumnPtr> materialized_columns(num_arguments_columns);
+        std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
 
         for (size_t i = 0; i < num_arguments_columns; ++i)
         {
@@ -123,7 +122,7 @@ private:
 };
 
 
-class FunctionInitializeAggregationOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FunctionInitializeAggregationOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";
@@ -202,8 +201,8 @@ REGISTER_FUNCTION(InitializeAggregation)
 {
     FunctionDocumentation::Description description = R"(
 Calculates the result of an aggregate function based on a single value.
-This function can be used to initialize aggregate functions with combinator [-State](/reference/functions/aggregate-functions/combinators#-state).
-You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](/reference/data-types/aggregatefunction) or use initialized aggregates as default values.
+This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#-state).
+You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) or use initialized aggregates as default values.
     )";
     FunctionDocumentation::Syntax syntax = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
     FunctionDocumentation::Arguments arguments = {
