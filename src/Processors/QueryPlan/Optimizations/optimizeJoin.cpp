@@ -69,6 +69,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
@@ -359,10 +363,47 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
+        /// Analyze partition and primary-key ranges before estimating the relation so column
+        /// statistics come only from parts that can satisfy the query. Reuse the result for
+        /// the index-based fallback below.
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
+        if (!analyzed_result)
+        {
+            const auto & settings = reading->getContext()->getSettingsRef();
+            const bool has_throwing_row_limit
+                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
+            analyzed_result = has_throwing_row_limit
+                ? reading->selectRangesToReadForEstimation()
+                : reading->selectRangesToRead();
+        }
+
+        /// An exact empty range selection proves that the relation is empty. Other empty
+        /// analysis results can be placeholders for deferred work, so only propagate zero
+        /// when `has_exact_ranges` is set.
+        if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+
+        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
+        /// selected rows but does not mean that the relation is empty.
+        if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
+            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
@@ -381,10 +422,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
-        /// No column statistics: the row count comes from the primary index, or cannot be derived at all.
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
 

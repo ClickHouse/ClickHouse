@@ -28,6 +28,7 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -62,7 +63,11 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
+    /// Return true if the estimator was built from a different ordered sequence of data parts.
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
+    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
+    /// ignored because the estimator contains whole-part statistics.
+    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -101,6 +106,9 @@ public:
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
+
+    UInt64 getTotalRows() const { return total_rows; }
+
 private:
     friend class ColumnStatistics;
 
