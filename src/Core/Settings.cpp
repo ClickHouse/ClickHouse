@@ -1972,7 +1972,7 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
-For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that evicted no keys and skipped less than 10% of input rows. A frozen heap means aggregation continues as if the optimization were disabled.
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
 
 The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
 

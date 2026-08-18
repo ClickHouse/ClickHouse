@@ -134,7 +134,7 @@ public:
             return false;
 
         if (profitability_window && observed_rows >= profitability_window
-            && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1 && evicted_keys == 0
+            && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1 && evicted_keys < k
             && heap_indices.size() >= k)
             return true;
 
