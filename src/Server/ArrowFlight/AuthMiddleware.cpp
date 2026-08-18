@@ -107,7 +107,7 @@ namespace
 
         auto pos = credentials.find(':');
         if (pos == std::string::npos)
-            return {{credentials, ""}};
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Malformed credentials in the 'authorization' header");
 
         return {{credentials.substr(0, pos), credentials.substr(pos+1)}};
     }
