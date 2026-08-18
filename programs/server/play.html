@@ -14722,6 +14722,10 @@ function appendTextareaResizer() {
 
     const start = (e) => {
         if (e.button !== 0) { return; }
+        /// Keep the focus where it is. The grip is a plain div, so pressing it would otherwise
+        /// blur the text area to `<body>` — and in notebook mode losing focus collapses the cell
+        /// (see `collapseEditor`), which would swallow the editor mid-drag.
+        e.preventDefault();
 
         drag_state.offset_y = e.clientY;
         drag_state.offset_height = textarea.offsetHeight;
@@ -16415,6 +16419,10 @@ query_area.addEventListener('blur', () => {
     setTimeout(() => {
         const focused = document.activeElement;
         if (focused && (editorDivEl.contains(focused) || editorParamsEl.contains(focused))) return;
+        /// A pointer still held down on a non-focusable part of the editor's own surface (the
+        /// resize grip) blurs to `<body>` without the user having left the editor. Stay expanded
+        /// and take the focus back, so "expanded" keeps meaning "focused".
+        if (editorPointerDown) { query_area.focus(); return; }
         /// Clicking Run blurs the editor, and the launched run focuses it right back to select the
         /// statement it is executing (`focusEditorForRun`); collapsing in between would flash the
         /// preview for a frame.
@@ -16422,6 +16430,15 @@ query_area.addEventListener('blur', () => {
         collapseEditor();
     }, 0);
 });
+
+/// Set while a pointer is held down inside the editor's surface, so the deferred blur check above
+/// can tell a press on the editor's own chrome from the user moving on to something else.
+let editorPointerDown = false;
+for (const host of [editorDivEl, editorParamsEl]) {
+    host.addEventListener('pointerdown', () => { editorPointerDown = true; });
+}
+window.addEventListener('pointerup', () => { editorPointerDown = false; });
+window.addEventListener('pointercancel', () => { editorPointerDown = false; });
 
 /// Focusing the editor again is what expands it; `focusEditor` covers the programmatic paths,
 /// this covers a genuine click or Tab into the textarea while it is somehow already visible.
