@@ -2430,19 +2430,30 @@ bool StorageMergeTree::optimize(
             /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
             auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
 
-            /// Select partitions concurrently, up to the foreground merge capacity. A helper
-            /// reserves its executor slot only after selection finds a real merge: a no-op
-            /// partition must not wait behind unrelated background activity merely to discover
-            /// that it has nothing to do.
-            const size_t max_parallel_merges = std::min({
+            /// Reserve only slots which are currently free before selecting parts. `merge` marks
+            /// parts as merging and reserves disk space during selection, so sizing the helper
+            /// pool from the configured limit could make waiting helpers hold those resources
+            /// even when the executor is already busy. If no slot is free, wait for exactly one:
+            /// this keeps the sequential fallback within the same capacity limit.
+            const size_t requested_merge_slots = std::min(
                 partition_ids.size(),
-                merge_mutate_executor->getMaxThreads(),
-                merge_mutate_executor->getMaxTasksCount()});
+                std::min(merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()));
+            size_t reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(requested_merge_slots);
+            if (reserved_merge_slots == 0)
+            {
+                reserved_merge_slots = merge_mutate_executor->reserveTaskSlots(1);
+                if (reserved_merge_slots == 0)
+                    throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
+            }
+            SCOPE_EXIT({ merge_mutate_executor->releaseTaskSlots(reserved_merge_slots); });
+
+            /// The acquired slots cover every helper for the duration of the parallel section.
+            /// Thus queued work never starts selection without capacity already reserved.
             ThreadPool pool(
                 CurrentMetrics::OptimizeFinalThreads,
                 CurrentMetrics::OptimizeFinalThreadsActive,
                 CurrentMetrics::OptimizeFinalThreadsScheduled,
-                max_parallel_merges);
+                reserved_merge_slots);
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGE_MUTATE);
 
             for (size_t i = 0; i < partition_ids.size(); ++i)
@@ -2453,23 +2464,11 @@ bool StorageMergeTree::optimize(
                 /// requires callbacks not to reference stack locals). `this` (the storage) and the
                 /// merge inputs outlive any such task.
                 runner.enqueueAndKeepTrack(
-                    [this, i, results, merge_mutate_executor, partition_id = partition_ids[i], deduplicate, deduplicate_by_columns, cleanup, txn,
+                    [this, i, results, partition_id = partition_ids[i], deduplicate, deduplicate_by_columns, cleanup, txn,
                      optimize_skip_merged_partitions]
                     {
-                        size_t reserved_merge_slot = 0;
-                        SCOPE_EXIT({
-                            if (reserved_merge_slot)
-                                merge_mutate_executor->releaseTaskSlots(reserved_merge_slot);
-                        });
-                        const auto reserve_merge_slot = [&]
-                        {
-                            reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
-                            if (reserved_merge_slot == 0)
-                                throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
-                        };
-
                         PreformattedMessage partition_reason;
-                        if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions, reserve_merge_slot))
+                        if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions, {}))
                             (*results)[i] = std::unexpected(std::move(partition_reason));
                     });
             }
