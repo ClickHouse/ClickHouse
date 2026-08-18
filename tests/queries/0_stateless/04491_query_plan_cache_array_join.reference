@@ -6,7 +6,7 @@
 2	30
 2	130
 -- hits: 0
--- second run: arrayJoin query must hit the plan cache
+-- second run: unnest query must hit the plan cache
 1	10
 1	20
 1	110
