@@ -336,7 +336,7 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
     /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
     /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!is_normalized && !list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+    if (!is_normalized && list_of_modes.size() != list_of_selects->children.size() - 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
