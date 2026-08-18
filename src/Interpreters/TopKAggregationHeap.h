@@ -22,11 +22,15 @@
 namespace DB
 {
 
-/** A bounded heap tracking the top-K best keys by the query's `ORDER BY`.
-  * Supports single-column and composite (`ColumnTuple`) keys; the worst kept
-  * key sits at the front of `heap_indices`.  Trimming runs past
-  * `next_trim_size` (~1.5x capacity).  Boundary ties are never evicted, so a
-  * tie-set can grow the heap; past `tie_overflow_limit` the heap freezes.
+/** A bounded set tracking the top-K best keys by the query's `ORDER BY`.
+  * Supports single-column and composite (`ColumnTuple`) keys.
+  *
+  * No heap is maintained: only the boundary (the worst kept key) is ever
+  * consulted, and it cannot change between trims - everything admitted is
+  * strictly better than it - so admission is a plain `push_back` and a trim
+  * is one `nth_element` past `next_trim_size` (~1.5x capacity).  Boundary
+  * ties are never evicted, so a tie-set can grow the set; past
+  * `tie_overflow_limit` it freezes.
   */
 template <typename Key>
 struct TopKAggregationHeap
@@ -38,33 +42,28 @@ struct TopKAggregationHeap
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
 private:
-    /// The heap proper.
-    std::vector<size_t> heap_indices;       /// binary max-heap of row indices into `heap_column`; `front` is the worst kept key, i.e. the skip boundary
+    static constexpr size_t invalid_row = size_t(-1);
+
+    /// The tracked set.
+    std::vector<size_t> heap_indices;       /// row indices into `heap_column`, in no particular order
+    size_t boundary_row = invalid_row;      /// `heap_column` row of the worst kept key, i.e. the skip boundary; fixed between trims
     std::vector<Key> hash_table_keys;       /// per `heap_column` row: the hash-table key captured at admission, for `erase` on eviction
     std::unique_ptr<Arena> key_arena;       /// owned bytes of pointer-bearing keys (`emplaceKey` may return a pointer into the source block); rebuilt from survivors at every trim
-    size_t k = 0;                           /// the query's `LIMIT K`; trims shrink the heap back to it
+    size_t k = 0;                           /// the query's `LIMIT K`; trims shrink the set back to it
 
     /// Ranking configuration.
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
-
-    /// Typed fast paths for a single numeric key, resolved once from the column's `TypeIndex`; null means the virtual `compareAt` path.
-    using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
-    using NumericCmpFn = bool (*)(const TopKAggregationHeap &, size_t, size_t);
-    using FillSkipBitmapFn = void (*)(const TopKAggregationHeap &, const void *, size_t, size_t, UInt8 *);
-    NumericCmpFn numeric_cmp_fn = nullptr;
-    ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
-    FillSkipBitmapFn fill_skip_bitmap_fn = nullptr;
+    TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
 
     /// Growth and trim control.
-    static constexpr size_t max_tie_rows = 1ULL << 20;    /// rows an untrimmable boundary tie-set may add past `k` before the heap freezes
-    size_t trim_slack = 0;                  /// `k / 2` (the 1.5 load factor), at least 1; amortizes the O(heap) compaction
-    size_t next_trim_size = 0;              /// the `needsTrim` threshold; raised when a tie plateau blocks trimming
+    static constexpr size_t max_tie_rows = 1ULL << 16;    /// rows an untrimmable boundary tie-set may add past `k` before the set freezes
+    size_t trim_slack = 0;                  /// `k / 2` (the 1.5 load factor), at least 1; amortizes the O(size) trim
+    size_t next_trim_size = 0;              /// the `needsTrim` threshold; raised when a tie-set blocks trimming
     size_t tie_overflow_limit = 0;          /// `k + max_tie_rows`; growing past it from an untrimmable tie-set sets `tie_overflow`
     bool tie_overflow = false;              /// sticky; makes `shouldFreeze` true regardless of the profitability window
-    size_t tie_scan_size = 0;               /// heap size at the last failed O(heap) plateau scan; suppresses rescans until the heap ~doubles
 
     /// Profitability accounting.
     UInt64 observed_rows = 0;               /// fed by `recordRows`; the skip ratio drives the freeze decision
@@ -112,8 +111,8 @@ public:
             init(heap_cols, query_k, dirs, null_dirs);
         }
 
-        /// The window must cover at least one full fill of the heap plus as
-        /// much again, so the skip rate is judged on a heap that had a chance
+        /// The window must cover at least one full fill of the set plus as
+        /// much again, so the skip rate is judged on a set that had a chance
         /// to establish its boundary.
         profitability_window = observation_rows == 0 ? 0 : std::max<UInt64>(observation_rows, 2 * next_trim_size);
     }
@@ -146,6 +145,7 @@ public:
         frozen = true;
         heap_column = nullptr;
         heap_indices = {};
+        boundary_row = invalid_row;
         hash_table_keys = {};
         key_arena.reset();
         skip_bitmap = {};
@@ -156,19 +156,23 @@ public:
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
-        chassert(!heap_indices.empty());
-        const size_t boundary = heap_indices.front();
+        chassert(boundary_row != invalid_row);
         if (is_composite)
-            return sourceAboveHeapComposite(source_columns, source_row, boundary);
-        return sourceAboveHeap(*source_columns[0], source_row, boundary);
+            return sourceAboveHeapComposite(source_columns, source_row, boundary_row);
+        return sourceAboveHeap(*source_columns[0], source_row, boundary_row);
     }
 
     bool shouldSkipTyped(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
     {
-        if (should_skip_numeric_fn && source_typed_data)
+        if (source_typed_data)
         {
-            chassert(!heap_indices.empty());
-            return should_skip_numeric_fn(*this, source_typed_data, source_row);
+            bool skip = false;
+            const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+            {
+                skip = shouldSkipNumericImpl<T>(*this, source_typed_data, source_row);
+            });
+            if (typed)
+                return skip;
         }
         return shouldSkip(source_columns, source_row);
     }
@@ -176,12 +180,17 @@ public:
     const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
     {
         chassert(!frozen);
-        if (!fill_skip_bitmap_fn || !source_typed_data)
+        if (!source_typed_data)
             return nullptr;
-        chassert(!heap_indices.empty());
-        skip_bitmap.resize(end);
-        fill_skip_bitmap_fn(*this, source_typed_data, begin, end, skip_bitmap.data());
-        return skip_bitmap.data();
+        const UInt8 * result = nullptr;
+        dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+        {
+            chassert(boundary_row != invalid_row);
+            skip_bitmap.resize(end);
+            fillSkipBitmapImpl<T>(*this, source_typed_data, begin, end, skip_bitmap.data());
+            result = skip_bitmap.data();
+        });
+        return result;
     }
 
     void push(const ColumnRawPtrs & source_columns, size_t source_row) { push(source_columns, source_row, Key{}); }
@@ -212,7 +221,11 @@ public:
             hash_table_keys.push_back(hash_table_key);
         heap_indices.push_back(new_idx);
 
-        std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
+        /// Until the set fills, everything is admitted, so the boundary is
+        /// established once, at the fill; from then on every admitted key is
+        /// strictly better than it, so it only moves at trims.
+        if (boundary_row == invalid_row && heap_indices.size() >= k)
+            withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
     }
 
     bool needsTrim() const
@@ -224,58 +237,39 @@ public:
     size_t trimAndCompact(EvictCallback && on_evict)
     {
         size_t evicted_count = 0;
-        const HeapComparator cmp{this};
-        const auto tied = [&](size_t a, size_t b) { return !cmp(a, b) && !cmp(b, a); };
-        while (heap_indices.size() > k)
+
+        if (heap_indices.size() > k)
         {
-            std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
-            const size_t candidate = heap_indices.back();
-
-            if (heap_indices.size() < 2 || !tied(candidate, heap_indices.front()))
+            withComparator([&](auto cmp)
             {
-                heap_indices.pop_back();
-                on_evict(candidate);
-                ++evicted_count;
-                tie_scan_size = 0;
-                continue;
-            }
+                /// The k-th best lands exactly at the boundary position, and
+                /// everything past it is worse-or-tied.  Only the strictly worse
+                /// can go: a key tied with the boundary is not provably outside
+                /// the top-K.
+                std::nth_element(heap_indices.begin(), heap_indices.begin() + k - 1, heap_indices.end(), cmp);
+                boundary_row = heap_indices[k - 1];
 
-            std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
+                const auto tied_with_boundary
+                    = [&](size_t idx) { return !cmp(idx, boundary_row) && !cmp(boundary_row, idx); };
+                const auto evict_begin = std::partition(heap_indices.begin() + k, heap_indices.end(), tied_with_boundary);
 
-            if (tie_scan_size != 0 && heap_indices.size() < 2 * tie_scan_size)
+                for (auto it = evict_begin; it != heap_indices.end(); ++it)
+                {
+                    on_evict(*it);
+                    ++evicted_count;
+                }
+                heap_indices.erase(evict_begin, heap_indices.end());
+            });
+
+            evicted_keys += evicted_count;
+
+            if (heap_indices.size() > next_trim_size)   /// a boundary tie-set blocked the trim
             {
-                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
+                next_trim_size = heap_indices.size() + trim_slack;
                 if (heap_indices.size() > tie_overflow_limit)
                     tie_overflow = true;
-                break;
             }
-
-            const size_t boundary = heap_indices.front();
-            size_t plateau = 0;
-            for (size_t idx : heap_indices)
-                plateau += tied(idx, boundary);
-
-            if (heap_indices.size() - plateau < k)
-            {
-                tie_scan_size = heap_indices.size();
-                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
-                if (heap_indices.size() > tie_overflow_limit)
-                    tie_overflow = true;
-                break;
-            }
-
-            const auto plateau_begin = std::partition(
-                heap_indices.begin(), heap_indices.end(), [&](size_t idx) { return !tied(idx, boundary); });
-            for (auto it = plateau_begin; it != heap_indices.end(); ++it)
-            {
-                on_evict(*it);
-                ++evicted_count;
-            }
-            heap_indices.erase(plateau_begin, heap_indices.end());
-            std::make_heap(heap_indices.begin(), heap_indices.end(), cmp);
-            tie_scan_size = 0;
         }
-        evicted_keys += evicted_count;
 
         const size_t col_size = heap_column->size();
         if (col_size <= heap_indices.size())
@@ -287,38 +281,35 @@ public:
         for (size_t idx : heap_indices)
             trim_filter[idx] = 1;
 
+        /// One survivor pass: the remap table, the in-place key compaction and
+        /// the arena rebuild together (`new_idx <= i` always).
+        std::unique_ptr<Arena> compacted_arena;
+        if constexpr (keys_hold_pointers)
+            compacted_arena = std::make_unique<Arena>();
+
         trim_old_to_new.resize(col_size);
         size_t new_idx = 0;
-
         for (size_t i = 0; i < col_size; ++i)
         {
-            if (trim_filter[i])
-                trim_old_to_new[i] = new_idx++;
+            if (!trim_filter[i])
+                continue;
+            trim_old_to_new[i] = new_idx;
+            if constexpr (keys_hold_pointers)
+                hash_table_keys[new_idx] = persistHashTableKey(hash_table_keys[i], *compacted_arena);
+            else
+                hash_table_keys[new_idx] = hash_table_keys[i];
+            ++new_idx;
         }
+        hash_table_keys.resize(new_idx);
+        if constexpr (keys_hold_pointers)
+            key_arena = std::move(compacted_arena);
 
         heap_column->filter(trim_filter);
         compactDictionaries();
 
-        std::vector<Key> compacted_hash_table_keys;
-        compacted_hash_table_keys.reserve(heap_indices.size());
-        for (size_t i = 0; i < col_size; ++i)
-            if (trim_filter[i])
-                compacted_hash_table_keys.push_back(std::move(hash_table_keys[i]));
-        hash_table_keys = std::move(compacted_hash_table_keys);
-
-        if constexpr (keys_hold_pointers)
-        {
-            if (key_arena)
-            {
-                auto compacted_arena = std::make_unique<Arena>();
-                for (auto & key : hash_table_keys)
-                    key = persistHashTableKey(key, *compacted_arena);
-                key_arena = std::move(compacted_arena);
-            }
-        }
-
         for (auto & idx : heap_indices)
             idx = trim_old_to_new[idx];
+        boundary_row = trim_old_to_new[boundary_row];
 
         return evicted_count;
     }
@@ -329,7 +320,6 @@ public:
     }
 
     const Key & hashTableKeyAt(size_t heap_row) const { return hash_table_keys[heap_row]; }
-
 
 private:
     static constexpr bool keys_hold_pointers
@@ -408,7 +398,6 @@ private:
     void setK(size_t query_k)
     {
         k = query_k;
-        tie_scan_size = 0;
         trim_slack = std::max<size_t>(1, k / 2);
         next_trim_size = k + trim_slack;
         tie_overflow_limit = k + max_tie_rows;
@@ -429,11 +418,14 @@ private:
         heap_column->reserve(reserve_hint);
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        boundary_row = invalid_row;
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
         key_arena.reset();
         findLowCardinalityColumns();
-        initNumericSkipFn();
+
+        const TypeIndex type = heap_column->getDataType();
+        typed_key_type = dispatchNumericKeyType(type, []<typename>() {}) ? type : TypeIndex::Nothing;
     }
 
     void init(
@@ -464,13 +456,12 @@ private:
 
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        boundary_row = invalid_row;
         hash_table_keys.clear();
         hash_table_keys.reserve(reserve_hint);
         key_arena.reset();
         findLowCardinalityColumns();
-        should_skip_numeric_fn = nullptr;
-        numeric_cmp_fn = nullptr;
-        fill_skip_bitmap_fn = nullptr;
+        typed_key_type = TypeIndex::Nothing;
     }
 
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
@@ -509,15 +500,14 @@ private:
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 
-    struct HeapComparator
+    /// "a ranks strictly better than b" over `heap_column` rows, through the
+    /// virtual `compareAt` path.
+    struct GenericComparator
     {
         const TopKAggregationHeap * owner;
 
         bool operator()(size_t a, size_t b) const
         {
-            if (owner->numeric_cmp_fn)
-                return owner->numeric_cmp_fn(*owner, a, b);
-
             if (owner->is_composite)
                 return owner->compareHeapRowsComposite(a, b) < 0;
 
@@ -526,20 +516,72 @@ private:
         }
     };
 
-    template <typename ActualKeyType>
-    static bool shouldSkipNumericImpl(const TopKAggregationHeap & self, const void * source_data, size_t source_row)
+    /// The same, fully inlined for a single numeric key column.
+    template <typename T>
+    struct TypedComparator
     {
-        const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
-        const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
-        const size_t boundary_row = self.heap_indices.front();
-        return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[boundary_row], self.nulls_directions[0]) > 0;
+        const T * data;
+        int direction;
+        int nulls_direction;
+
+        explicit TypedComparator(const TopKAggregationHeap * owner)
+            : data(assert_cast<const ColumnVector<T> &>(*owner->heap_column).getData().data())
+            , direction(owner->directions[0])
+            , nulls_direction(owner->nulls_directions[0])
+        {
+        }
+
+        ALWAYS_INLINE bool operator()(size_t a, size_t b) const
+        {
+            return direction * CompareHelper<T>::compare(data[a], data[b], nulls_direction) < 0;
+        }
+    };
+
+    /// Calls `f.operator()<T>()` for a supported single numeric key type and
+    /// returns true; returns false (without calling `f`) otherwise.  The switch
+    /// is visible to the compiler, so every case inlines - unlike the function
+    /// pointers this replaces.
+    template <typename F>
+    static ALWAYS_INLINE bool dispatchNumericKeyType(TypeIndex type, F && f)
+    {
+        switch (type)
+        {
+            case TypeIndex::UInt8:     f.template operator()<UInt8>(); return true;
+            case TypeIndex::UInt16:    f.template operator()<UInt16>(); return true;
+            case TypeIndex::UInt32:    f.template operator()<UInt32>(); return true;
+            case TypeIndex::UInt64:    f.template operator()<UInt64>(); return true;
+            case TypeIndex::Int8:      f.template operator()<Int8>(); return true;
+            case TypeIndex::Int16:     f.template operator()<Int16>(); return true;
+            case TypeIndex::Int32:     f.template operator()<Int32>(); return true;
+            case TypeIndex::Int64:     f.template operator()<Int64>(); return true;
+            case TypeIndex::Float32:   f.template operator()<Float32>(); return true;
+            case TypeIndex::Float64:   f.template operator()<Float64>(); return true;
+            case TypeIndex::IPv4:      f.template operator()<IPv4>(); return true;
+            default: return false;
+        }
+    }
+
+    /// Runs `f` with the typed comparator when the key is a supported numeric
+    /// type, with the generic one otherwise.  Dispatch once per operation, not
+    /// per comparison.
+    template <typename F>
+    ALWAYS_INLINE void withComparator(F && f) const
+    {
+        const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+        {
+            f(TypedComparator<T>(this));
+        });
+        if (!typed)
+            f(GenericComparator{this});
     }
 
     template <typename ActualKeyType>
-    static bool heapCompareNumericImpl(const TopKAggregationHeap & self, size_t a, size_t b)
+    static bool shouldSkipNumericImpl(const TopKAggregationHeap & self, const void * source_data, size_t source_row)
     {
-        const auto & data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
-        return self.directions[0] * CompareHelper<ActualKeyType>::compare(data[a], data[b], self.nulls_directions[0]) < 0;
+        chassert(self.boundary_row != invalid_row);
+        const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
+        const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
+        return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[self.boundary_row], self.nulls_directions[0]) > 0;
     }
 
     template <typename ActualKeyType>
@@ -547,42 +589,11 @@ private:
     {
         const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
         const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
-        const ActualKeyType boundary = heap_data[self.heap_indices.front()];
+        const ActualKeyType boundary = heap_data[self.boundary_row];
         const int direction = self.directions[0];
         const int nulls_direction = self.nulls_directions[0];
         for (size_t i = begin; i < end; ++i)
             bitmap[i] = direction * CompareHelper<ActualKeyType>::compare(src[i], boundary, nulls_direction) > 0;
-    }
-
-    template <typename ActualKeyType>
-    void resolveNumericFastPath()
-    {
-        should_skip_numeric_fn = &shouldSkipNumericImpl<ActualKeyType>;
-        numeric_cmp_fn = &heapCompareNumericImpl<ActualKeyType>;
-        fill_skip_bitmap_fn = &fillSkipBitmapImpl<ActualKeyType>;
-    }
-
-    void initNumericSkipFn()
-    {
-        should_skip_numeric_fn = nullptr;
-        numeric_cmp_fn = nullptr;
-        fill_skip_bitmap_fn = nullptr;
-
-        switch (heap_column->getDataType())
-        {
-            case TypeIndex::UInt8:     resolveNumericFastPath<UInt8>(); break;
-            case TypeIndex::UInt16:    resolveNumericFastPath<UInt16>(); break;
-            case TypeIndex::UInt32:    resolveNumericFastPath<UInt32>(); break;
-            case TypeIndex::UInt64:    resolveNumericFastPath<UInt64>(); break;
-            case TypeIndex::Int8:      resolveNumericFastPath<Int8>(); break;
-            case TypeIndex::Int16:     resolveNumericFastPath<Int16>(); break;
-            case TypeIndex::Int32:     resolveNumericFastPath<Int32>(); break;
-            case TypeIndex::Int64:     resolveNumericFastPath<Int64>(); break;
-            case TypeIndex::Float32:   resolveNumericFastPath<Float32>(); break;
-            case TypeIndex::Float64:   resolveNumericFastPath<Float64>(); break;
-            case TypeIndex::IPv4:      resolveNumericFastPath<IPv4>(); break;
-            default: break;
-        }
     }
 };
 
