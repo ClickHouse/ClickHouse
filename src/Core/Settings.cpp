@@ -2017,10 +2017,10 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+If statistics are build and materialized for newly inserted parts. Even if disabled, statistics are still be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
 )", 0) \
     DECLARE(UInt64, materialize_statistics_on_insert_max_table_size, 26843545600, R"(
-Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size of active parts on disk (compressed, in bytes), plus the uncompressed in-memory size of the block being written, does not exceed this value. The contract is per written block, not per INSERT: a single INSERT is split into one block per partition (and, for streaming inserts, into several blocks), and each of them is checked against the size of the parts that are already active, because the parts of the ongoing INSERT are not active yet. A single bulk load into an empty table can therefore build statistics for all of its parts even if their total size exceeds the threshold; the limit takes effect for the inserts that follow. Using the uncompressed block size (the compressed size is unknown before the part is written) makes the check deliberately conservative by at most one block. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
+Only build and store column statistics for newly inserted parts (see `materialize_statistics_on_insert`) for tables whose current size plus the block being written, does not exceed this value. `0` means no size limit.
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -3703,7 +3703,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -3766,7 +3766,7 @@ Possible values:
 
  The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
- The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+ The position in the list sets the priority: listed after other algorithms, as in the default value, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -4099,6 +4099,12 @@ Maximum delay in milliseconds between retries during backup and restore operatio
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
 Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
 )", 0) \
+    DECLARE(Bool, resumable_backup_from_snapshot, false, R"(
+Enables resumable `BACKUP FROM SNAPSHOT`: a failed attempt can be rerun without recopying the
+entries of batches that already completed. Only available in ClickHouse Cloud, for directory-style
+`S3` and `AzureBlobStorage` destinations. Enabling it in ClickHouse open-source builds, where
+`BACKUP FROM SNAPSHOT` itself is unavailable, makes `BACKUP` fail with `WRONG_BACKUP_SETTINGS`.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
@@ -4302,8 +4308,8 @@ Possible values:
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+    DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
 When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
@@ -8844,9 +8850,11 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
@@ -8865,6 +8873,7 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
@@ -8880,6 +8889,10 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_cascades_optimizer, false, R"(
+Enable the Cascades cost-based optimizer for distributed query plans.
+Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
