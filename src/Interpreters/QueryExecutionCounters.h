@@ -4,7 +4,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <atomic>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -57,7 +56,7 @@ private:
     std::set<String> used_join_algorithms TSA_GUARDED_BY(mutex);
 
     /// Number of physical joins executed by the query.
-    std::atomic<UInt64> number_of_joins = 0;
+    UInt64 number_of_joins TSA_GUARDED_BY(mutex) = 0;
 
     /// Keeps both elements together, to avoid mis-aligned items
     std::set<std::pair<String, String>> used_joins TSA_GUARDED_BY(mutex);

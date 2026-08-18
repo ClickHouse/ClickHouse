@@ -25,9 +25,10 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
     if (!counters)
         return;
 
-    counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
-
     std::lock_guard lock(counters->mutex);
+
+    ++counters->number_of_joins;
+
     counters->used_joins.emplace(
         toString(kind),
         toString(strictness));
@@ -37,7 +38,8 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
 
 UInt64 QueryExecutionCounters::getNumberOfJoins() const
 {
-    return number_of_joins.load(std::memory_order_relaxed);
+    std::lock_guard lock(mutex);
+    return number_of_joins;
 }
 
 std::vector<String> QueryExecutionCounters::getJoinKinds() const
