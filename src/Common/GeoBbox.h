@@ -22,6 +22,8 @@
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -411,9 +413,30 @@ enum class NodeBboxStatus
 /// is guaranteed to reject at execution time; see the `String` kind's own note there.
 inline std::string geoKindNameOfType(const IDataType & type)
 {
-    if (const auto * custom_name = type.getCustomName())
+    /// A declared geometry kind can sit under a `Nullable`/`LowCardinality` wrapper, which carries no
+    /// custom name of its own -- reading the outer type alone reports no kind at all and fails OPEN.
+    /// That matters most for a WKB `String`: `tryExtractConstGeoField` flattens the non-null value to
+    /// a plain `String` `Field` and `extractBboxFromFieldValue` decodes a perfectly usable bbox from
+    /// it, so every granule gets pruned. Evaluation would have rejected the nested kind --
+    /// `useDefaultImplementationForNulls` strips the `Nullable` first -- but on a fully pruned granule
+    /// it never runs: for nullable inputs on a `0`-row block `IFunction` returns an empty result
+    /// without calling the nested function at all, so the answer is a silent `0` rather than the
+    /// exception the query must surface. Unwrap first, so the kind under the wrapper is the one the
+    /// predicate is asked about.
+    const IDataType * inner = &type;
+    while (true)
+    {
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(inner))
+            inner = low_cardinality_type->getDictionaryType().get();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner))
+            inner = nullable_type->getNestedType().get();
+        else
+            break;
+    }
+
+    if (const auto * custom_name = inner->getCustomName())
         return custom_name->getName();
-    if (WhichDataType(type).isString())
+    if (WhichDataType(*inner).isString())
         return "String";
     return {};
 }
