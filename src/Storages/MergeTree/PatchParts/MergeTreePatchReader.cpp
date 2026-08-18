@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/PatchParts/PatchRangesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -258,39 +259,86 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     return results;
 }
 
-MergeTreePatchReaderMergeOnKey::MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
+MergeTreePatchReaderMergeOnKey::MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchRangesCache * patch_ranges_cache_)
     : MergeTreePatchReader(std::move(patch_part_), std::move(reader_))
+    , patch_ranges_cache(patch_ranges_cache_)
 {
     if (patch_part.mode != PatchMode::MergeOnKey)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode MergeOnKey, got {}", patch_part.mode);
+
+    if (patch_ranges_cache)
+        columns_fingerprint = getColumnsFingerprint();
 }
 
-PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & range)
+UInt128 MergeTreePatchReaderMergeOnKey::getColumnsFingerprint() const
 {
-    MarkRanges ranges_to_read = {range};
-    auto read_result = readPatchRanges(ranges_to_read);
+    auto header = range_reader.getReadSampleBlock().cloneEmpty();
+    if (!patch_part.perform_alter_conversions)
+        fixPatchBlockTypes(header, *reader);
 
-    auto patch_read_result = std::make_shared<PatchMergeOnKeyReadResult>();
+    /// Hash in the sorted order because the order of columns is not deterministic across readers.
+    auto names = header.getNames();
+    std::sort(names.begin(), names.end());
+
+    SipHash hash;
+    for (const auto & name : names)
+    {
+        hash.update(name);
+        hash.update(header.getByName(name).type->getName());
+    }
+
+    hash.update(patch_part.perform_alter_conversions);
+    for (const auto & name : patch_part.sorting_key->column_names)
+        hash.update(name);
+
+    return hash.get128();
+}
+
+Block MergeTreePatchReaderMergeOnKey::readAndPostprocess(MarkRanges ranges)
+{
+    auto read_result = readPatchRanges(std::move(ranges));
+
     const auto & sample_block = range_reader.getReadSampleBlock();
-    patch_read_result->block = sample_block.cloneWithColumns(read_result.columns);
+    auto block = sample_block.cloneWithColumns(read_result.columns);
 
     if (!patch_part.perform_alter_conversions)
-        fixPatchBlockTypes(patch_read_result->block, *reader);
+        fixPatchBlockTypes(block, *reader);
 
     if (read_result.num_rows == 0)
-        return patch_read_result;
+        return block;
 
     /// Materialize the sorting key result columns on the patch block in place
     /// so downstream callers can look them up by name without re-executing the expression.
     if (patch_part.sorting_key->expression)
-        patch_part.sorting_key->expression->execute(patch_read_result->block);
+        patch_part.sorting_key->expression->execute(block);
 
     /// Key comparisons require the same column class on all sides.
     for (const auto & name : patch_part.sorting_key->column_names)
     {
-        auto & column = patch_read_result->block.getByName(name);
+        auto & column = block.getByName(name);
         column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(column.column->convertToFullColumnIfConst()));
         column.type = recursiveRemoveLowCardinality(column.type);
+    }
+
+    return block;
+}
+
+PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & range)
+{
+    auto patch_read_result = std::make_shared<PatchMergeOnKeyReadResult>();
+
+    if (patch_ranges_cache)
+    {
+        patch_read_result->block = patch_ranges_cache->getOrRead(
+            patch_part.part->getPartName(),
+            columns_fingerprint,
+            range,
+            patch_part.part->getIndexGranularity(),
+            [this](const MarkRanges & ranges_to_read) { return readAndPostprocess(ranges_to_read); });
+    }
+    else
+    {
+        patch_read_result->block = readAndPostprocess(MarkRanges{range});
     }
 
     return patch_read_result;
@@ -400,16 +448,20 @@ bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result
     return cmp <= 0;
 }
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)
+MergeTreePatchReaderPtr getPatchReader(
+    PatchPartInfoForReader patch_part,
+    MergeTreeReaderPtr reader,
+    PatchJoinCache * patch_join_cache,
+    PatchRangesCache * patch_ranges_cache)
 {
     switch (patch_part.mode)
     {
         case PatchMode::Merge:
             return std::make_unique<MergeTreePatchReaderMerge>(std::move(patch_part), std::move(reader));
         case PatchMode::Join:
-            return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache);
+            return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), patch_join_cache);
         case PatchMode::MergeOnKey:
-            return std::make_unique<MergeTreePatchReaderMergeOnKey>(std::move(patch_part), std::move(reader));
+            return std::make_unique<MergeTreePatchReaderMergeOnKey>(std::move(patch_part), std::move(reader), patch_ranges_cache);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected patch parts mode {}", patch_part.mode);
