@@ -31,6 +31,7 @@ FROM t_rollup_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
 SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- distributed plan';
-EXPLAIN SELECT k1, k2, sum(v) FROM t_rollup_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY k1, k2;
+-- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.
+EXPLAIN SELECT k1, k2, sum(v) FROM t_rollup_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY k1, k2 SETTINGS distributed_aggregation_memory_efficient = 0;
 
 DROP TABLE t_rollup_dist;

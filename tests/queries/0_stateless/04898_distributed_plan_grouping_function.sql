@@ -66,6 +66,7 @@ GROUP BY k2, g_inner WITH ROLLUP
 ORDER BY ALL;
 
 SELECT '-- distributed plan shows the specialization with its constant arguments';
-EXPLAIN actions = 1 SELECT k1, grouping(k1) AS g, sum(v) FROM t_grouping_dist GROUP BY k1 WITH ROLLUP ORDER BY k1;
+-- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.
+EXPLAIN actions = 1 SELECT k1, grouping(k1) AS g, sum(v) FROM t_grouping_dist GROUP BY k1 WITH ROLLUP ORDER BY k1 SETTINGS distributed_aggregation_memory_efficient = 0;
 
 DROP TABLE t_grouping_dist;
