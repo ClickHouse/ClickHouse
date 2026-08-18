@@ -26,6 +26,9 @@ SELECT __groupingForGroupingSets(materialize(CAST(5 AS UInt64)), 42, CAST([0] AS
 SELECT __groupingForRollup(materialize(CAST(5 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT __groupingForCube(materialize(CAST(8 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST(3 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT __groupingOrdinary(42, CAST(range(64) AS Array(UInt64)), CAST(0 AS UInt8)); -- { serverError TOO_MANY_COLUMNS }
+-- The result carries one bit per argument, so 64 arguments are the maximum and 65 are rejected.
+SELECT __groupingForRollup(materialize(CAST(0 AS UInt64)), 42, CAST(range(64) AS Array(UInt64)), CAST(100 AS UInt64), CAST(0 AS UInt8));
+SELECT __groupingForRollup(materialize(CAST(0 AS UInt64)), 42, CAST(range(65) AS Array(UInt64)), CAST(100 AS UInt64), CAST(0 AS UInt8)); -- { serverError TOO_MANY_COLUMNS }
 
 SELECT '-- a direct call shipped to a remote server stays intact';
 SELECT __groupingForRollup(CAST(0 AS UInt64), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8)) FROM remote('127.0.0.{1,2}', system.one);

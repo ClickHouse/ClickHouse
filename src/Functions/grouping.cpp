@@ -78,6 +78,13 @@ public:
         const auto arguments_indexes = getIndexes(arguments[tail]);
         const bool force_compatibility = getConstant(arguments.back()).safeGet<UInt64>() != 0;
 
+        /// `FunctionGroupingBase::executeImpl` builds the result one bit per argument; without
+        /// this check a wider mask would silently drop the high bits.
+        if (variant != GroupingVariant::Ordinary && arguments_indexes.size() > 8 * sizeof(UInt64))
+            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+                "Too many arguments ({}) for function {}, the maximum is {}",
+                arguments_indexes.size(), name, 8 * sizeof(UInt64));
+
         std::shared_ptr<IFunction> function;
         switch (variant)
         {

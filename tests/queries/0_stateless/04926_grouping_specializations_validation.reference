@@ -39,6 +39,7 @@ b	y	0	2
 -- a well-formed direct call executes
 0
 -- malformed direct calls are rejected
+18446744073709551615
 -- a direct call shipped to a remote server stays intact
 0
 0
