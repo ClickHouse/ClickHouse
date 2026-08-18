@@ -764,7 +764,8 @@ private:
 
     /// Whether all the arithmetic in `bucketIndexForTimestampFast` fits in Int64 for every sample
     /// that passes its range checks. Bounding all grid parameters by 2^61 leaves headroom for the
-    /// sums and products of two such values.
+    /// sums and products of two such values. A single-point grid (`start == end`, `step == 0`,
+    /// see `checkStep`) has nothing to divide and uses the generic path.
     static bool canUseFastBucketMath(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
     {
         constexpr Int128 bound = Int128(1) << 61;
@@ -772,10 +773,8 @@ private:
         const Int128 end_128 = static_cast<Int128>(static_cast<Int64>(end));
         const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step_));
         const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window_));
-        /// `step == 0` is possible only when `start == end` (see `checkStep`): a single-point grid,
-        /// handled by a dedicated branch of `classifySampleFast` with no division at all.
         return (-bound < start_128 && start_128 < bound) && (-bound < end_128 && end_128 < bound)
-            && (0 <= step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
+            && (0 < step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
     }
 
     /// What the batch bucketing kernel (`addSamplesToBucketsImpl`) does with a sample: add it to bucket
@@ -803,11 +802,6 @@ private:
         const Int64 lowest = static_cast<Int64>(start_timestamp) - static_cast<Int64>(window);
         if (ts <= lowest)
             return {NO_BUCKET, std::numeric_limits<Int64>::min(), lowest};
-
-        /// A single-point grid (`step == 0`, possible only when `start == end`, see `checkStep`):
-        /// everything in `(start - window, end]` falls into the only bucket.
-        if (step == 0)
-            return {0, lowest, static_cast<Int64>(end_timestamp)};
 
         const Int64 offset = ts - static_cast<Int64>(start_timestamp);
         const Int64 step_64 = static_cast<Int64>(step);
