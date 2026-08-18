@@ -588,16 +588,14 @@ Right: rows estimated <right_rows>
 ```
 
 - `Cost` — the cost of the whole join subtree under this step, which is the value the optimizer
-  minimizes when it compares candidate join orders. The unit is output rows, not input rows: the
-  cost of a join is the number of rows it is estimated to produce plus the cost of its inputs, so
-  the top join of a subtree accumulates the estimated output rows of every join below it.
+  minimizes when it compares candidate join orders. The cost of a join is its estimated number of
+  matched row pairs, `<selectivity> * <left_rows> * <right_rows>`, plus the cost of its inputs.
 - `Selectivity` — the estimated fraction of the Cartesian product of the two sides that survives
   the join condition. It is derived from the number of distinct values (NDV) of the join keys:
   a key equality keeps about `1 / max(NDV_left, NDV_right)` of the pairs, and the smallest
   fraction over the join conditions is used.
 - `Output rows` — the estimated number of rows the join produces, computed as
-  `<selectivity> * <left_rows> * <right_rows>`. An outer join cannot produce fewer rows than its
-  preserved side(s), so the estimate is floored accordingly.
+  `<selectivity> * <left_rows> * <right_rows>`.
 - `Left` / `Right` — the estimated number of rows entering the join from each side.
 
 A value the optimizer could not estimate is reported as `no stats`. This happens when the
@@ -832,7 +830,7 @@ Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
 Output rows: estimated <rows> · actual <rows> · q-error <ratio>
 ```
 
-- `Cost` — both values count output rows, not input rows. The estimate is the optimizer's cost of the join subtree: the rows this join is estimated to produce plus the cost of its inputs. The actual value is measured the same way — the matched output rows of this join plus the actual cost of every join below it that belongs to the same *reorder cluster* (the group of joins the optimizer reordered together) — so the two numbers are directly comparable.
+- `Cost` — both values count matched output rows. The estimate is the optimizer's cost of the join subtree: `<selectivity> * <left_rows> * <right_rows>` plus the cost of its inputs. The actual value is measured the same way — the matched output rows of this join plus the actual cost of every join below it that belongs to the same reorder cluster.
 - `Selectivity` — the estimate is derived from the number of distinct values of the join keys; the actual value is the measured fraction of the Cartesian product that ended up in the output: `<matched output rows> / (<left rows> * <right rows>)`.
 - `Output rows` — the estimated and the actual number of rows the join produced. When both are non-zero, `q-error` reports `max(estimated / actual, actual / estimated)`, the standard measure of cardinality-estimation quality: `1.00` means a perfect estimate, and a large value means the optimizer picked the join order using a badly wrong cardinality.
 
