@@ -42,8 +42,8 @@ SELECT sum(k) FROM t_qrc_pr WHERE k IN (SELECT k FROM t_qrc_pr WHERE k < 10);
 SET use_query_cache = 0;
 SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_pr WHERE k < 10%';
 
--- `make_distributed_plan` can collapse a plan to an in-process local fragment. Such a fragment is
--- not serialized, so the explicit subquery cache setting must still take effect.
+-- `make_distributed_plan` ships subquery plans to workers, so an explicitly enabled subquery cache
+-- must not add its node-local, non-serializable steps.
 SET enable_parallel_replicas = 0;
 SET make_distributed_plan = 1;
 SET max_rows_to_group_by = 0;
