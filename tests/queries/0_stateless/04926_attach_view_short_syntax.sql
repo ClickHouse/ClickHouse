@@ -31,6 +31,13 @@ SELECT * FROM t;
 
 ATTACH TEMPORARY VIEW tv; -- { serverError SYNTAX_ERROR }
 
+ATTACH OR REPLACE VIEW v; -- { clientError SYNTAX_ERROR }
+ATTACH SQL SECURITY INVOKER VIEW v; -- { clientError SYNTAX_ERROR }
+ATTACH DEFINER = default VIEW v; -- { clientError SYNTAX_ERROR }
+
+SELECT formatQuery('ATTACH MATERIALIZED VIEW mv');
+SELECT formatQuery('ATTACH VIEW v ON CLUSTER test_shard_localhost');
+
 DETACH VIEW v;
 ATTACH TABLE v;
 SELECT * FROM v;

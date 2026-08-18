@@ -19,7 +19,7 @@ Detaching does not delete the data or metadata of a table, a materialized view, 
 Whether a table, a view, a dictionary or a database was detached permanently or not, in both cases you can reattach them using the [ATTACH](/reference/statements/attach) query.
 System log tables can be also attached back (e.g. `query_log`, `text_log`, etc.). Other system tables can't be reattached. On the next server launch the server will recall those tables again.
 
-A detached view can be reattached either with `ATTACH VIEW` or with `ATTACH TABLE`, so `ATTACH TABLE` is also the way to reattach an entity whose kind you do not know.
+A detached view can be reattached either with `ATTACH VIEW` or with `ATTACH TABLE`.
 
 Note that you can not detach permanently the table which is already detached (temporary). But you can attach it back and then detach permanently again.
 

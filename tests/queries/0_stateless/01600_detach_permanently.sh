@@ -97,8 +97,7 @@ clickhouse_local "SELECT if(count() = 20, 'Permanent detach works immediately', 
 clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 20, 'Permanent detach still works after restart', 'Permanent detach reactivated!') from db_ordinary.dst;"
 
-## Quite silly: ATTACH MATERIALIZED VIEW don't work with short syntax (w/o select), but i can attach it using ATTACH TABLE ...
-clickhouse_local "ATTACH TABLE db_ordinary.src2dst_mv_to"
+clickhouse_local "ATTACH MATERIALIZED VIEW db_ordinary.src2dst_mv_to"
 clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 30, 'View can be reattached', 'can not reattach permanently detached view') from db_ordinary.dst;"
 
@@ -115,8 +114,7 @@ clickhouse_local "DETACH VIEW db_ordinary.src_mv_with_inner PERMANENTLY; INSERT 
 clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 0" 2>&1 | grep -c "db_ordinary.src_mv_with_inner does not exist"
 clickhouse_local "SELECT if(count() = 10, 'MV can be detached permanently', 'MV detach failed') FROM db_ordinary.src_mv_with_inner SETTINGS enable_analyzer = 1" 2>&1 | grep -c "Unknown table expression identifier 'db_ordinary.src_mv_with_inner'"
 
-## Quite silly: ATTACH MATERIALIZED VIEW don't work with short syntax (w/o select), but i can attach it using ATTACH TABLE ...
-clickhouse_local "ATTACH TABLE db_ordinary.src_mv_with_inner"
+clickhouse_local "ATTACH MATERIALIZED VIEW db_ordinary.src_mv_with_inner"
 clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 20, 'View can be reattached', 'can not reattach permanently detached view') from db_ordinary.src_mv_with_inner;"
 

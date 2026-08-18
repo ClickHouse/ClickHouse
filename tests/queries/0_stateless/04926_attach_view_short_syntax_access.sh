@@ -19,6 +19,7 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --user "$user" --query "ATTACH TABLE $db.tbl" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "ATTACH VIEW $db.tbl" 2>&1 | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --user "$user" --query "ATTACH MATERIALIZED VIEW $db.tbl" 2>&1 | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 SELECT count() FROM system.tables WHERE database = '$db' AND name = 'tbl';
