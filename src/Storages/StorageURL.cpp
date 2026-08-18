@@ -41,6 +41,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
