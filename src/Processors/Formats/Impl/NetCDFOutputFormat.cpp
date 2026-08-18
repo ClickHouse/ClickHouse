@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/NetCDFOutputFormat.h>
 
+#include "config.h"
+
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -24,6 +26,16 @@
 #include <bit>
 #include <limits>
 #include <unordered_set>
+#include <vector>
+
+#if USE_ICU
+#include <unicode/unorm2.h>
+#include <unicode/ustring.h>
+#include <unicode/utypes.h>
+#endif
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -31,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_NORMALIZE_STRING;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
@@ -46,6 +59,45 @@ constexpr Int32 NC_ATTRIBUTE = 12;
 constexpr std::string_view ROW_DIMENSION_NAME = "row";
 /// The suffix of the name of the dimension that holds the length of the strings of a column.
 constexpr std::string_view STRING_DIMENSION_SUFFIX = "_strlen";
+
+/// Classic NetCDF requires UTF-8 names to be NFC-normalized, so canonically equivalent names
+/// have a unique byte representation in the header.
+void checkNameIsNFC(const String & name)
+{
+    if (std::all_of(name.begin(), name.end(), [](unsigned char c) { return c < 0x80; }))
+        return;
+
+#if USE_ICU
+    UErrorCode error = U_ZERO_ERROR;
+    const UNormalizer2 * normalizer = unorm2_getNFCInstance(&error);
+    if (U_FAILURE(error))
+        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Cannot get the NFC normalizer: {}", u_errorName(error));
+
+    std::vector<UChar> utf16(name.size());
+    int32_t utf16_size = 0;
+    u_strFromUTF8(
+        utf16.data(),
+        static_cast<int32_t>(utf16.size()),
+        &utf16_size,
+        name.data(),
+        static_cast<int32_t>(name.size()),
+        &error);
+    if (U_FAILURE(error))
+        throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Cannot convert a NetCDF name to UTF-16: {}", u_errorName(error));
+
+    if (!unorm2_isNormalized(normalizer, utf16.data(), utf16_size, &error))
+    {
+        if (U_FAILURE(error))
+            throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Cannot normalize a NetCDF name: {}", u_errorName(error));
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store the name {} because it is not NFC-normalized", name);
+    }
+#else
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "The NetCDF format cannot store the non-ASCII name {} because this build has no Unicode normalizer", name);
+#endif
+}
 
 UInt64 alignUpTo4(UInt64 size)
 {
@@ -116,6 +168,8 @@ void checkName(const String & name)
     if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(name.data()), name.size()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The NetCDF format cannot store the name {} because it is not valid UTF-8", name);
+
+    checkNameIsNFC(name);
 
     auto first = static_cast<unsigned char>(name.front());
     if (!isAlphaNumericASCII(name.front()) && first != '_' && first < 0x80)
@@ -743,5 +797,7 @@ void registerOutputFormatNetCDF(FormatFactory & factory)
     factory.markOutputFormatNotTTYFriendly("NetCDF");
     factory.setContentType("NetCDF", "application/x-netcdf");
 }
+
+#pragma clang diagnostic pop
 
 }

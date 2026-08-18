@@ -360,6 +360,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             for (std::string_view attribute_name : {"_FillValue", "missing_value"})
             {
                 const auto * attribute = variable.tryGetAttribute(attribute_name);
+                if (attribute_name == "_FillValue" && variable.type != NetCDFType::Char
+                    && attribute && attribute->type == variable.type && attribute->num_elements != 1)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "The _FillValue attribute of the variable {} must be scalar, but has {} values",
+                        variable.name, attribute->num_elements);
+
                 if (attribute && attribute->type == variable.type && attribute->num_elements != 0
                     && attribute->data.size() == attribute->num_elements * netCDFTypeSize(variable.type))
                 {
