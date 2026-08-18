@@ -259,9 +259,9 @@ ORDER BY
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayJoin>(documentation);
     /// PostgreSQL/SQL-standard alias. `unnest(arr)` in a SELECT clause behaves
-    /// the same as `arrayJoin(arr)` - one row per array element. Note that
-    /// PostgreSQL's `LATERAL`/`CROSS JOIN UNNEST(...)` table-source syntax is
-    /// not supported by this alias and still requires `ARRAY JOIN`.
+    /// the same as `arrayJoin(arr)`: one row per array element.
+    /// Table-source `FROM unnest(...)` and `CROSS JOIN unnest(...)` are provided
+    /// by the `unnest` table function, not by this alias.
     factory.registerAlias("unnest", "arrayJoin", FunctionFactory::Case::Insensitive);
 }
 

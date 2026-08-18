@@ -736,6 +736,7 @@
             "reference/functions/table-functions/timeSeriesSamples",
             "reference/functions/table-functions/timeSeriesSelector",
             "reference/functions/table-functions/timeSeriesTags",
+            "reference/functions/table-functions/unnest",
             "reference/functions/table-functions/url",
             "reference/functions/table-functions/urlCluster",
             "reference/functions/table-functions/values",
