@@ -306,8 +306,10 @@ private:
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
-    ASTPtr makeTextIndexTokenizer();
-    String makeTextTokenizerArgument();
+    /// `pool` restricts which tokenizer names can be picked, for callers that only accept a subset
+    /// (e.g. `hasPhrase`); null means the full text-index tokenizer list.
+    ASTPtr makeTextIndexTokenizer(const Strings * pool = nullptr);
+    String makeTextTokenizerArgument(const Strings * pool = nullptr);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzIndexDeclarationList(ASTExpressionList & indices);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
