@@ -18,6 +18,12 @@ SELECT count() FROM summing_final_subset FINAL SETTINGS do_not_merge_across_part
 SELECT c0, c3 FROM summing_final_subset FINAL ORDER BY c3;
 SELECT sum(c1) FROM summing_final_subset FINAL;
 
+-- A summed column used only by PREWHERE has to survive the PREWHERE projection until
+-- FINAL decides whether the resulting row is all zero. Test both analyzers.
+SELECT count() FROM summing_final_subset FINAL PREWHERE c1 IN (1, 2) SETTINGS enable_analyzer = 0;
+SELECT count() FROM summing_final_subset FINAL PREWHERE c1 IN (1, 2) SETTINGS enable_analyzer = 1;
+SELECT count() FROM summing_final_subset FINAL WHERE c1 IN (1, 2) SETTINGS optimize_move_to_prewhere_if_final = 1;
+
 -- The FINAL read must agree with the state after a real merge.
 SYSTEM START MERGES summing_final_subset;
 OPTIMIZE TABLE summing_final_subset FINAL;

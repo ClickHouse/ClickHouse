@@ -2268,12 +2268,10 @@ static NameSet getColumnsAggregatedForSummingFinal(
     return aggregated_columns;
 }
 
-/// Returns the list of column names required for the transforms in addMergingFinal
-static NameSet getColumnsRequiredForMergingFinal(
-    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
+NameSet getColumnsRequiredForMergingFinal(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
 {
-    NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
-        | std::ranges::to<NameSet>();
+    NameSet required_columns;
     /// The merge always orders by the physical sorting key, so those columns must be read even when
     /// they are not in the query output (e.g. a sorting-key column moved to PREWHERE and pruned from
     /// the output header would otherwise be dropped, leaving the merge without its key column).
@@ -2310,6 +2308,15 @@ static NameSet getColumnsRequiredForMergingFinal(
             break;
     }
     required_columns.erase(""); // remove empty column names
+    return required_columns;
+}
+
+/// Returns the list of column names required for the transforms in addMergingFinal.
+static NameSet getColumnsRequiredForMergingFinal(
+    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
+{
+    NameSet required_columns = getColumnsRequiredForMergingFinal(metadata_snapshot, merging_params);
+    required_columns.insert_range(sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; }));
     return required_columns;
 }
 
