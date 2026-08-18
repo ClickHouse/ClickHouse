@@ -378,8 +378,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(cons
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNormalize(
     const String & s,
     const ColumnsDescription & columns,
-    bool,
-    bool,
+    const IndicesDescription & local_indices,
     ContextPtr context)
 {
     auto result = parseRaw(s);
@@ -396,21 +395,11 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
     bool has_implicit = false;
     for (auto & index : parsed)
     {
-        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
-            continue;
-
-        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-        if (!columns.has(column_name))
-            continue;
-
-        const auto & col_type = columns.get(column_name).type;
-
-        /// A legacy implicit index must be recognized independently of the current settings.
-        /// For example, `ALTER ... MODIFY SETTING add_minmax_index_for_numeric_columns = 0`
-        /// removes it locally while an old serialized `/metadata/indices` value can still carry
-        /// it. The temporal setting was introduced in 26.2 and never wrote implicit indices to
-        /// Keeper metadata.
-        if (isNumber(col_type) || isString(col_type))
+        /// The name is not sufficient to identify an implicit index: users may explicitly create
+        /// an index with the `auto_minmax_index_` prefix while the automatic-index settings are
+        /// disabled. The local metadata preserves the actual origin of every index, so only drop
+        /// a Keeper index when its local counterpart is marked implicit.
+        if (local_indices.has(index.name) && local_indices.getByName(index.name).isImplicitlyCreated())
         {
             index.is_implicitly_created = true;
             has_implicit = true;

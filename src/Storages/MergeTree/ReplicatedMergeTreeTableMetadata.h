@@ -9,6 +9,7 @@ namespace DB
 {
 
 class MergeTreeData;
+struct IndicesDescription;
 class WriteBuffer;
 class ReadBuffer;
 
@@ -54,8 +55,7 @@ struct ReplicatedMergeTreeTableMetadata
     static ReplicatedMergeTreeTableMetadata parseAndNormalize(
         const String & s,
         const ColumnsDescription & columns,
-        bool add_minmax_index_for_numeric_columns,
-        bool add_minmax_index_for_string_columns,
+        const IndicesDescription & local_indices,
         ContextPtr context);
 
     void write(WriteBuffer & out) const;

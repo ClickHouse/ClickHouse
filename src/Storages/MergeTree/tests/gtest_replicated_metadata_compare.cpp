@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -166,6 +167,31 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ImmutableKeyMismatchThrows)
     MetadataFields other_partition;
     other_partition.partition_key = "b";
     EXPECT_ANY_THROW(diffOf(local, other_partition));
+}
+
+TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalOrigin)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    ColumnsDescription columns;
+    columns.add(ColumnDescription("x", std::make_shared<DataTypeUInt64>()));
+
+    MetadataFields fields;
+    fields.indices = "auto_minmax_index_x x TYPE minmax GRANULARITY 1";
+    const auto serialized = makeMetadata(fields).toString();
+    auto local_indices = IndicesDescription::parse(fields.indices, columns, /* escape_index_filenames */ true, getContext().context);
+
+    /// The automatic-index prefix is legal for an explicitly declared index while the setting is
+    /// disabled. It must remain in the Keeper metadata instead of being guessed implicit.
+    auto explicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, local_indices, getContext().context);
+    EXPECT_EQ(explicit_metadata.skip_indices, fields.indices);
+
+    /// An index known to be implicitly created is omitted because current replicas do not store
+    /// implicit indexes in Keeper metadata.
+    local_indices.front().is_implicitly_created = true;
+    auto implicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, local_indices, getContext().context);
+    EXPECT_TRUE(implicit_metadata.skip_indices.empty());
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSignificant)
