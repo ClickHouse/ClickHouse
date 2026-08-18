@@ -66,11 +66,13 @@ TextSearchQuery::TextSearchQuery(
     TextSearchMode search_mode_,
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
+    bool matches_json_all_values_subcolumn_,
     std::vector<OptimizedRegularExpression> patterns_,
     VectorWithMemoryTracking<String> phrase_tokens_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
+    , matches_json_all_values_subcolumn(matches_json_all_values_subcolumn_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
     , phrase_tokens(std::move(phrase_tokens_))
@@ -990,6 +992,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+    bool matches_json_all_values_subcolumn = false;
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
@@ -1003,6 +1006,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
+        matches_json_all_values_subcolumn = true;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
@@ -1069,7 +1073,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
 
             out.function = RPNElement::FUNCTION_EQUALS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
             return true;
         };
 
@@ -1110,7 +1115,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         return true;
     }
     if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
@@ -1138,12 +1144,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasAnyTokens")
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, search_tokens));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, direct_read_mode, search_tokens, matches_json_all_values_subcolumn));
         }
         else
         {
             out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, direct_read_mode, search_tokens, matches_json_all_values_subcolumn));
         }
 
         return true;
@@ -1184,12 +1192,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (function_name == "hasAny")
             {
                 out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, std::move(tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::Any, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
             }
             else
             {
                 out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
             }
         }
         else
@@ -1213,7 +1223,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(element_tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name,
+                    TextSearchMode::All,
+                    TextIndexDirectReadMode::None,
+                    std::move(element_tokens),
+                    matches_json_all_values_subcolumn));
             }
 
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -1270,7 +1285,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         return true;
     }
     if (function_name == "hasPhrase")
@@ -1331,6 +1347,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 TextSearchMode::Phrase,
                 direct_read_mode,
                 std::move(unique_tokens),
+                matches_json_all_values_subcolumn,
                 std::vector<OptimizedRegularExpression>{},
                 std::move(phrase_tokens));
 
@@ -1346,7 +1363,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         return true;
     }
     if (function_name == "startsWith" || function_name == "endsWith")
@@ -1373,7 +1391,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
                         function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        VectorWithMemoryTracking<String>(), matches_json_all_values_subcolumn, std::move(patterns)));
                 return true;
             }
         }
@@ -1383,7 +1401,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto tokens = substringToTokens(value_field, is_prefix, !is_prefix);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
@@ -1415,8 +1434,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, pattern_read_mode,
-                        VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name,
+                        TextSearchMode::Any,
+                        pattern_read_mode,
+                        VectorWithMemoryTracking<String>(),
+                        matches_json_all_values_subcolumn,
+                        std::move(patterns)));
                 return true;
             }
         }
@@ -1428,7 +1451,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         VectorWithMemoryTracking<String> exact_tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens), matches_json_all_values_subcolumn));
         return true;
     }
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
@@ -1451,8 +1475,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, pattern_read_mode,
-                    VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name,
+                    TextSearchMode::Any,
+                    pattern_read_mode,
+                    VectorWithMemoryTracking<String>(),
+                    matches_json_all_values_subcolumn,
+                    std::move(patterns)));
             return true;
         }
         return false;
@@ -1470,7 +1498,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         for (auto & tokens : tokens_for_queries)
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
 
         return true;
     }
@@ -1511,7 +1540,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         }
         return true;
     }
@@ -1561,7 +1591,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
 
             for (auto & tokens : tokens_for_queries)
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         }
         return true;
     }
@@ -1575,7 +1606,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+            function_name, TextSearchMode::All, direct_read_mode, std::move(tokens), matches_json_all_values_subcolumn));
         return true;
     }
 

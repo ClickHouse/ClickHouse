@@ -48,6 +48,7 @@ struct TextSearchQuery
         TextSearchMode search_mode_,
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
+        bool matches_json_all_values_subcolumn_ = false,
         std::vector<OptimizedRegularExpression> patterns_ = {},
         VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
@@ -57,6 +58,7 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
     const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    bool matchesJSONAllValuesSubcolumn() const { return matches_json_all_values_subcolumn; }
     UInt128 getHash() const { return hash; }
 
 private:
@@ -66,6 +68,8 @@ private:
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Match provenance used only by query DAG rewriting; it is not part of the dictionary query identity.
+    bool matches_json_all_values_subcolumn;
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
