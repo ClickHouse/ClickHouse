@@ -155,6 +155,11 @@ public:
         if (*version >= 1)
             DB::readBoolText(this->data(place).init, buf);
         this->data(place).roaring_bitmap_with_small_set.read(buf);
+
+        /// Version 0 did not serialize `init`. A non-empty bitmap was necessarily initialized,
+        /// so restore that invariant before a later merge copies the state.
+        if (*version == 0)
+            this->data(place).init = this->data(place).roaring_bitmap_with_small_set.size() != 0;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

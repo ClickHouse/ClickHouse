@@ -193,7 +193,8 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     const auto version_0_size = serializedStateSize(*aggregate_function, input_column.getData()[0], /*version=*/0);
     const auto default_version_size = serializedStateSize(*aggregate_function, input_column.getData()[0], std::nullopt);
     ASSERT_NE(version_0_size, default_version_size);
-    EXPECT_EQ(result_column.getDataAt(0).size(), version_0_size);
+    const Field serialized_result = result_column[0];
+    EXPECT_EQ(serialized_result.safeGet<AggregateFunctionStateData>().data.size(), version_0_size);
 }
 
 TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
