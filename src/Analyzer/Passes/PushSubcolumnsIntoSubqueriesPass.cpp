@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -202,6 +203,23 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
             return {};
 
         subcolumn_path = "values";
+    }
+    else if (
+        function_name == "arrayElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node)
+            return {};
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        const auto & key_type = map_type.getKeyType();
+        auto key_column = key_type->createColumn();
+        if (!key_column->tryInsert(constant_node->getValue()) || !function_node.getResultType()->equals(*map_type.getValueType()))
+            return {};
+
+        WriteBufferFromOwnString buffer;
+        key_type->getDefaultSerialization()->serializeText(*key_column, 0, buffer, FormatSettings());
+        subcolumn_path = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buffer.str();
     }
     else if (function_name == "isNull" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
     {
@@ -543,35 +561,23 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 /// For a column read from a table, it is a direct reference to the subcolumn. For a column exported
 /// by a deeper subquery, it is a `getSubcolumn` function that is pushed down further when that
 /// subquery is processed.
-/// Unwrap a chain of resolved `getSubcolumn` calls, composing their paths into `subcolumn_path`:
-/// a subcolumn read of a `getSubcolumn` expression is a read of a deeper subcolumn of the same
-/// underlying column, so the paths compose (`a` + `b` -> `a.b`). Returns nullptr when the chain
-/// contains an expression that is not a resolved `getSubcolumn` of a constant path.
+/// Unwrap a chain of resolved subcolumn functions, composing their paths into `subcolumn_path`.
+/// A subcolumn read of another subcolumn read is a read of a deeper subcolumn of the same
+/// underlying column, so the paths compose (`a` + `b` -> `a.b`).
 QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcolumn_path)
 {
     while (const auto * function_node = node->as<FunctionNode>())
     {
-        if (function_node->getFunctionName() != "getSubcolumn" || !function_node->isResolved())
+        auto match = matchCandidate(const_cast<FunctionNode &>(*function_node));
+        if (!match)
             return nullptr;
 
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        if (function_arguments.size() != 2)
-            return nullptr;
-
-        const auto * path_constant = function_arguments[1]->as<ConstantNode>();
-        if (!path_constant)
-            return nullptr;
-
-        auto path_value = path_constant->getValue();
-        if (path_value.getType() != Field::Types::String)
-            return nullptr;
-
-        auto path_prefix = path_value.safeGet<String>();
+        auto path_prefix = std::move(match->subcolumn_path);
         if (path_prefix.empty())
             return nullptr;
 
         subcolumn_path = subcolumn_path.empty() ? path_prefix : path_prefix + "." + subcolumn_path;
-        node = function_arguments[0];
+        node = function_node->getArguments().getNodes()[0];
     }
 
     return node;

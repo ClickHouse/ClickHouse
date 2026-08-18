@@ -13,6 +13,14 @@ Output: m.keys
 Output: m.keys
 ['a','b']
 ['c']
+map element
+Output: m.key_a
+Output: m.key_a
+10
+0
+composed tupleElement
+Output: nested.a.b
+Output: nested.a.b
 isNull
 Output: n.null
 Output: n.null
