@@ -242,6 +242,17 @@ void registerStatementMaskingPolicy(StatementFactory & factory)
 Creates a masking policy, which dynamically transforms or masks the values of columns for specific users or roles when
 they query a table. Masking policies provide column-level data security by transforming sensitive data at query time,
 without modifying the stored data.
+
+**Examples**
+
+**Mask the values of a column for a role**
+
+```sql title="Query"
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+```
 )",
         .syntax = R"(
 CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
@@ -250,12 +261,6 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
     TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
     [PRIORITY priority_number]
 )",
-        .examples = {{"Mask the values of a column for a role", R"(
-CREATE MASKING POLICY mask_high_salaries ON employees
-UPDATE salary = 0
-WHERE salary > 100000
-TO analyst;
-)", ""}},
         .parent = "CREATE",
         .related = {"ALTER MASKING POLICY", "CREATE ROW POLICY", "DROP", "SHOW"},
     });
@@ -264,6 +269,14 @@ TO analyst;
     {
         .description = R"(
 Modifies an existing masking policy. All clauses are optional; only the specified clauses are changed.
+
+**Examples**
+
+**Change the roles a masking policy applies to**
+
+```sql title="Query"
+ALTER MASKING POLICY mask_high_salaries ON employees TO analyst, accountant;
+```
 )",
         .syntax = R"(
 ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
@@ -272,7 +285,6 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
     [PRIORITY priority_number]
 )",
-        .examples = {{"Change the roles a masking policy applies to", "ALTER MASKING POLICY mask_high_salaries ON employees TO analyst, accountant;", ""}},
         .parent = "ALTER",
         .related = {"CREATE MASKING POLICY", "ALTER", "SHOW"},
     });

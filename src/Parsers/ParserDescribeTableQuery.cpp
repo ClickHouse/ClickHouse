@@ -179,11 +179,18 @@ Returns the information about the columns of a table: the name, the type, the ki
 value, the comment, the compression codec, the `TTL` expression and whether the column is a subcolumn.
 
 The argument can also be a subquery or a table function, in which case the structure of its result is described.
+
+**Examples**
+
+**Describe the columns of a table**
+
+```sql title="Query"
+DESCRIBE TABLE describe_example;
+```
 )",
         .syntax = R"(
 DESC|DESCRIBE [TABLE] [db.]table | (subquery) | table_function [INTO OUTFILE filename] [FORMAT format]
 )",
-        .examples = {{"Describe the columns of a table", "DESCRIBE TABLE describe_example;", ""}},
         .related = {"SHOW", "EXISTS", "CREATE TABLE"},
     });
 }

@@ -76,15 +76,25 @@ Terminates the queries or the mutations which match the filter expression. The q
 
 `SYNC` waits until the queries are actually terminated, `ASYNC` returns immediately, and `TEST` only checks the access
 rights and shows the list of the queries which would be terminated.
+
+**Examples**
+
+**Terminate a query by its identifier**
+
+```sql title="Query"
+KILL QUERY WHERE query_id = '2-857d-4a57-9ee0-327da5d60a90';
+```
+
+**Terminate the mutations of a table**
+
+```sql title="Query"
+KILL MUTATION WHERE database = 'default' AND table = 'table';
+```
 )",
         .syntax = R"(
 KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
 KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]
 )",
-        .examples = {
-            {"Terminate a query by its identifier", "KILL QUERY WHERE query_id = '2-857d-4a57-9ee0-327da5d60a90';", ""},
-            {"Terminate the mutations of a table", "KILL MUTATION WHERE database = 'default' AND table = 'table';", ""},
-        },
         .related = {"SYSTEM", "SHOW", "ALTER"},
     });
 }

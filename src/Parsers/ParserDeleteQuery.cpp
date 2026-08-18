@@ -111,11 +111,18 @@ family.
 It is called a lightweight `DELETE` to contrast it with `ALTER TABLE ... DELETE`: the rows are only marked as deleted
 and are filtered out from the results, whereas the data parts are rewritten later by merges or by
 `ALTER TABLE ... APPLY DELETED MASK`.
+
+**Examples**
+
+**Delete the rows matching a condition**
+
+```sql title="Query"
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
 )",
         .syntax = R"(
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr
 )",
-        .examples = {{"Delete the rows matching a condition", "DELETE FROM hits WHERE Title LIKE '%hello%';", ""}},
         .related = {"ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY DELETED MASK", "UPDATE", "TRUNCATE"},
     });
 }

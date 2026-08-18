@@ -393,6 +393,20 @@ result of a `SELECT` query or of a table function.
 
 The list of the columns to insert into can be specified explicitly, or with a column matcher such as `*` and the
 `APPLY`, `EXCEPT` and `REPLACE` modifiers. The columns which are not listed are filled with their default values.
+
+**Examples**
+
+**Insert literal values**
+
+```sql title="Query"
+INSERT INTO test VALUES (1, 'a'), (2, 'b');
+```
+
+**Insert the result of a query**
+
+```sql title="Query"
+INSERT INTO test SELECT number, toString(number) FROM numbers(10);
+```
 )",
         .syntax = R"(
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
@@ -400,10 +414,6 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name 
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 )",
-        .examples = {
-            {"Insert literal values", "INSERT INTO test VALUES (1, 'a'), (2, 'b');", ""},
-            {"Insert the result of a query", "INSERT INTO test SELECT number, toString(number) FROM numbers(10);", ""},
-        },
         .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},
     });
 }

@@ -225,6 +225,20 @@ table, e.g. `SHOW TABLES` reads from `system.tables`, and support the `LIKE`, `N
 `INTO OUTFILE` clauses.
 
 `SHOW CREATE` returns the query which was used to create the object.
+
+**Examples**
+
+**List the tables of a database**
+
+```sql title="Query"
+SHOW TABLES FROM system LIKE 'st%';
+```
+
+**Show how a table was created**
+
+```sql title="Query"
+SHOW CREATE TABLE system.statements;
+```
 )",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -246,10 +260,6 @@ SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
 SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
 SHOW MERGES [[NOT] LIKE|ILIKE '<table_pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 )",
-        .examples = {
-            {"List the tables of a database", "SHOW TABLES FROM system LIKE 'st%';", ""},
-            {"Show how a table was created", "SHOW CREATE TABLE system.statements;", ""},
-        },
         .related = {"DESCRIBE TABLE", "EXISTS", "SELECT", "GRANT"},
     });
 }

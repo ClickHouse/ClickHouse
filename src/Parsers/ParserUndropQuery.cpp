@@ -93,11 +93,18 @@ void registerStatementUndrop(StatementFactory & factory)
 Cancels the dropping of a table. A table of an `Atomic` database can be recovered during the period set by the server
 setting `database_atomic_delay_before_drop_table_sec` after `DROP TABLE` was issued. The tables which can still be
 recovered are listed in `system.dropped_tables`.
+
+**Examples**
+
+**Recover a dropped table**
+
+```sql title="Query"
+UNDROP TABLE tab;
+```
 )",
         .syntax = R"(
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 )",
-        .examples = {{"Recover a dropped table", "UNDROP TABLE tab;", ""}},
         .related = {"DROP", "DETACH", "ATTACH"},
     });
 }

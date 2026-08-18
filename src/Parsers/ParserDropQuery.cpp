@@ -214,6 +214,20 @@ void registerStatementDrop(StatementFactory & factory)
         .description = R"(
 Deletes an existing entity. If the `IF EXISTS` clause is specified, the query does not return an error if the entity
 does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
+
+**Examples**
+
+**Drop a table**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test SYNC;
+```
+
+**Drop a database**
+
+```sql title="Query"
+DROP DATABASE IF EXISTS test;
+```
 )",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -229,10 +243,6 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM 
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 )",
-        .examples = {
-            {"Drop a table", "DROP TABLE IF EXISTS test SYNC;", ""},
-            {"Drop a database", "DROP DATABASE IF EXISTS test;", ""},
-        },
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     });
 
@@ -244,14 +254,24 @@ Makes the server "forget" about the existence of a table, a materialized view, a
 Detaching does not delete the data or the metadata of the entity. If the entity was not detached `PERMANENTLY`, on the
 next server launch the server reads the metadata and recalls the entity again. A permanently detached entity is not
 recalled automatically, but it can be attached back with `ATTACH`.
+
+**Examples**
+
+**Detach a table**
+
+```sql title="Query"
+DETACH TABLE test;
+```
+
+**Detach a table permanently**
+
+```sql title="Query"
+DETACH TABLE test PERMANENTLY;
+```
 )",
         .syntax = R"(
 DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 )",
-        .examples = {
-            {"Detach a table", "DETACH TABLE test;", ""},
-            {"Detach a table permanently", "DETACH TABLE test PERMANENTLY;", ""},
-        },
         .related = {"ATTACH", "DROP"},
     });
 
@@ -259,16 +279,26 @@ DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
     {
         .description = R"(
 Quickly removes all data from a table or from all tables of a database, while preserving their structure.
+
+**Examples**
+
+**Remove all rows of a table**
+
+```sql title="Query"
+TRUNCATE TABLE test;
+```
+
+**Remove all rows of all tables of a database**
+
+```sql title="Query"
+TRUNCATE ALL TABLES FROM test;
+```
 )",
         .syntax = R"(
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 )",
-        .examples = {
-            {"Remove all rows of a table", "TRUNCATE TABLE test;", ""},
-            {"Remove all rows of all tables of a database", "TRUNCATE ALL TABLES FROM test;", ""},
-        },
         .related = {"DROP", "DELETE", "ALTER TABLE ... PARTITION"},
     });
 }

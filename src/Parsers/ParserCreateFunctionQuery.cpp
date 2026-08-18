@@ -400,14 +400,19 @@ void registerStatementCreateFunction(StatementFactory & factory)
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of the parameters of the
 function, constants, operators, or calls of other functions. Recursion and window functions are not allowed, and the
 names of the parameters must be unique and must not collide with the name of an existing function.
+
+**Examples**
+
+**Create a user defined function**
+
+```sql title="Query"
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
+```
 )",
         .syntax = R"(
 CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 )",
-        .examples = {{"Create a user defined function", R"(
-CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
-SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
-)", ""}},
         .parent = "CREATE",
         .related = {"CREATE", "DROP", "SHOW"},
     });

@@ -67,11 +67,18 @@ with a database name.
 
 The statement cannot be used over the HTTP protocol, because there is no concept of a session there; pass the
 `database` parameter instead.
+
+**Examples**
+
+**Switch the current database**
+
+```sql title="Query"
+USE system;
+```
 )",
         .syntax = R"(
 USE [DATABASE] db
 )",
-        .examples = {{"Switch the current database", "USE system;", ""}},
         .related = {"CREATE DATABASE", "SHOW", "SET"},
     });
 }

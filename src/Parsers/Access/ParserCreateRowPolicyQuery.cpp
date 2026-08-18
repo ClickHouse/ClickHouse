@@ -329,6 +329,16 @@ void registerStatementRowPolicy(StatementFactory & factory)
 Creates a row policy, i.e. a filter which determines which rows a user can read from a table. Row policies only make
 sense for users with read-only access: a user who can modify a table or copy partitions between tables can defeat the
 restrictions of a row policy.
+
+**Examples**
+
+**Restrict the visible rows of a table**
+
+```sql title="Query"
+CREATE ROW POLICY pol1 ON table1
+    FOR SELECT USING id = 1
+    TO accountant;
+```
 )",
         .syntax = R"(
 CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
@@ -339,11 +349,6 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 )",
-        .examples = {{"Restrict the visible rows of a table", R"(
-CREATE ROW POLICY pol1 ON table1
-    FOR SELECT USING id = 1
-    TO accountant;
-)", ""}},
         .parent = "CREATE",
         .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
     });
@@ -353,6 +358,14 @@ CREATE ROW POLICY pol1 ON table1
         .description = R"(
 Changes a row policy: renames it and changes its condition, its kind (permissive or restrictive) and the roles and
 users it applies to.
+
+**Examples**
+
+**Rename a row policy**
+
+```sql title="Query"
+ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
+```
 )",
         .syntax = R"(
 ALTER [ROW] POLICY [IF EXISTS] name [, ...]
@@ -364,7 +377,6 @@ ALTER [ROW] POLICY [IF EXISTS] name [, ...]
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
-        .examples = {{"Rename a row policy", "ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;", ""}},
         .parent = "ALTER",
         .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
     });

@@ -2096,6 +2096,14 @@ void registerStatementCreate(StatementFactory & factory)
         .description = R"(
 `CREATE` queries create a new entity, for example a database, a table, a view, a dictionary, a user-defined function,
 or an access entity such as a user or a role.
+
+**Examples**
+
+**Create a table**
+
+```sql title="Query"
+CREATE TABLE test (x UInt64) ENGINE = MergeTree ORDER BY x;
+```
 )",
         .syntax = R"(
 CREATE DATABASE ...
@@ -2106,7 +2114,6 @@ CREATE FUNCTION ...
 CREATE NAMED COLLECTION ...
 CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 )",
-        .examples = {{"Create a table", "CREATE TABLE test (x UInt64) ENGINE = MergeTree ORDER BY x;", ""}},
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
     });
 
@@ -2115,11 +2122,18 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
         .description = R"(
 Creates a new database. The database engine determines how and where the metadata of the tables of the database is
 stored; by default it is `Atomic`.
+
+**Examples**
+
+**Create a database with a comment**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+```
 )",
         .syntax = R"(
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 )",
-        .examples = {{"Create a database with a comment", "CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';", ""}},
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "DROP"},
     });
@@ -2132,6 +2146,20 @@ the table on all servers of a cluster.
 
 The schema of a new table can be given explicitly, copied from another table (`AS other_table`), copied together with
 the data (`CLONE AS other_table`), inferred from a table function, or inferred from a `SELECT` query.
+
+**Examples**
+
+**Create a table with an explicit schema**
+
+```sql title="Query"
+CREATE TABLE test (x UInt64, s String) ENGINE = MergeTree ORDER BY x;
+```
+
+**Create a table from a SELECT query**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+```
 )",
         .syntax = R"(
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -2146,10 +2174,6 @@ CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = eng
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engine AS SELECT ...
 )",
-        .examples = {
-            {"Create a table with an explicit schema", "CREATE TABLE test (x UInt64, s String) ENGINE = MergeTree ORDER BY x;", ""},
-            {"Create a table from a SELECT query", "CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;", ""},
-        },
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TEMPORARY TABLE", "REPLACE TABLE", "CODEC", "ALTER", "DROP"},
     });
@@ -2160,6 +2184,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
 Creates a temporary table, which exists only for the lifetime of the current session and is dropped when the session
 ends. A temporary table is not visible in a database, has no replication and is not shared between sessions. If a
 temporary table has the same name as a normal table, the temporary table takes precedence.
+
+**Examples**
+
+**Create a temporary table**
+
+```sql title="Query"
+CREATE TEMPORARY TABLE test (x UInt64);
+```
 )",
         .syntax = R"(
 CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
@@ -2168,7 +2200,6 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
     name2 [type2] ...
 ) [ENGINE = engine]
 )",
-        .examples = {{"Create a temporary table", "CREATE TEMPORARY TABLE test (x UInt64);", ""}},
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "DROP"},
     });
@@ -2179,11 +2210,18 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 Atomically replaces a table with a new one: the table is created under a temporary name, filled by the query, and then
 exchanged with the target table. `CREATE OR REPLACE TABLE` creates the table if it does not exist yet, whereas
 `REPLACE TABLE` requires it to exist. Atomic replacement is only supported for databases with the `Atomic` engine.
+
+**Examples**
+
+**Replace a table with the result of a query**
+
+```sql title="Query"
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n AS SELECT number FROM numbers(10);
+```
 )",
         .syntax = R"(
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 )",
-        .examples = {{"Replace a table with the result of a query", R"(REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n AS SELECT number FROM numbers(10);)", ""}},
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "EXCHANGE", "RENAME"},
     });
@@ -2196,21 +2234,29 @@ version and `zstd` in ClickHouse Cloud. Codecs can be combined in a pipeline, e.
 `Default` codec references the default compression configured on the server.
 
 See `system.codecs` for the list of available codecs.
-)",
-        .syntax = R"(
-column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
-)",
-        .examples = {
-            {"Specify codecs for columns", R"(
+
+**Examples**
+
+**Specify codecs for columns**
+
+```sql title="Query"
 CREATE TABLE codec_example
 (
     dt Date CODEC(ZSTD),
     value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = MergeTree ORDER BY dt;
-)", ""},
-            {"Reset a column to the default compression", "ALTER TABLE codec_example MODIFY COLUMN value CODEC(Default);", ""},
-        },
+```
+
+**Reset a column to the default compression**
+
+```sql title="Query"
+ALTER TABLE codec_example MODIFY COLUMN value CODEC(Default);
+```
+)",
+        .syntax = R"(
+column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
+)",
         .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "ALTER TABLE ... COLUMN"},
     });
@@ -2222,6 +2268,20 @@ Creates a new view. Views can be normal, parameterized, materialized, refreshabl
 
 A normal view does not store any data, it is just a saved query which is substituted into the query which reads from
 the view. A materialized view stores the result of the query, transforming the rows inserted into the source table.
+
+**Examples**
+
+**Create a normal view**
+
+```sql title="Query"
+CREATE VIEW view AS SELECT * FROM numbers(10);
+```
+
+**Create a materialized view**
+
+```sql title="Query"
+CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY x AS SELECT number AS x FROM source;
+```
 )",
         .syntax = R"(
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
@@ -2235,10 +2295,6 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_nam
 AS SELECT ...
 [COMMENT 'comment']
 )",
-        .examples = {
-            {"Create a normal view", "CREATE VIEW view AS SELECT * FROM numbers(10);", ""},
-            {"Create a materialized view", "CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY x AS SELECT number AS x FROM source;", ""},
-        },
         .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP", "WATCH"},
     });
@@ -2251,6 +2307,18 @@ lists. ClickHouse provides special functions for working with dictionaries, whic
 `JOIN` with a reference table.
 
 See `system.dictionary_sources` and `system.dictionary_layouts` for the available sources and layouts.
+
+**Examples**
+
+**Create a dictionary over a table**
+
+```sql title="Query"
+CREATE DICTIONARY dict (id UInt64, value String)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'source'))
+LAYOUT(FLAT())
+LIFETIME(0);
+```
 )",
         .syntax = R"(
 CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
@@ -2266,13 +2334,6 @@ LIFETIME({MIN min_val MAX max_val | max_val})
 SETTINGS(setting_name = setting_value, ...)
 COMMENT 'Comment'
 )",
-        .examples = {{"Create a dictionary over a table", R"(
-CREATE DICTIONARY dict (id UInt64, value String)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'source'))
-LAYOUT(FLAT())
-LIFETIME(0);
-)", ""}},
         .parent = "CREATE",
         .related = {"CREATE", "DROP", "SYSTEM"},
     });
@@ -2283,12 +2344,19 @@ LIFETIME(0);
 Creates a named collection - a named set of key-value pairs which can be referenced instead of spelling out
 connection parameters and credentials in a query. Values can be marked as `NOT OVERRIDABLE` to forbid overriding them
 at the usage site.
+
+**Examples**
+
+**Create a named collection**
+
+```sql title="Query"
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+```
 )",
         .syntax = R"(
 CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
 )",
-        .examples = {{"Create a named collection", "CREATE NAMED COLLECTION foobar AS a = '1', b = '2';", ""}},
         .parent = "CREATE",
         .related = {"CREATE", "ALTER NAMED COLLECTION", "DROP"},
     });
@@ -2301,6 +2369,20 @@ does not create data on disk, but assumes that the data is already in the approp
 information about the entity to the server.
 
 If an entity was previously detached, its structure is known and the short form of the query can be used.
+
+**Examples**
+
+**Attach a previously detached table**
+
+```sql title="Query"
+ATTACH TABLE test;
+```
+
+**Attach a MergeTree table as ReplicatedMergeTree**
+
+```sql title="Query"
+ATTACH TABLE test AS REPLICATED;
+```
 )",
         .syntax = R"(
 ATTACH TABLE|VIEW|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
@@ -2309,10 +2391,6 @@ ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ATTACH TABLE [db.]name AS [NOT] REPLICATED
 )",
-        .examples = {
-            {"Attach a previously detached table", "ATTACH TABLE test;", ""},
-            {"Attach a MergeTree table as ReplicatedMergeTree", "ATTACH TABLE test AS REPLICATED;", ""},
-        },
         .related = {"DETACH", "CREATE", "DROP"},
     });
 }

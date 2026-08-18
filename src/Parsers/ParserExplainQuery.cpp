@@ -206,6 +206,14 @@ tree (`AST`), the query after the syntax analysis (`SYNTAX`), the query tree (`Q
 the query pipeline (`PIPELINE`), the plan annotated with the actual execution statistics (`ANALYZE`), the estimated
 number of rows and parts to read (`ESTIMATE`), the effective table structure of a table function
 (`TABLE OVERRIDE`), or the effect of a hypothetical index (`WHATIF`).
+
+**Examples**
+
+**Show the plan of a query**
+
+```sql title="Query"
+EXPLAIN SELECT sum(number) FROM numbers(10);
+```
 )",
         .syntax = R"(
 EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
@@ -215,7 +223,6 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
     ]
     [FORMAT ...]
 )",
-        .examples = {{"Show the plan of a query", "EXPLAIN SELECT sum(number) FROM numbers(10);", ""}},
         .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
     });
 }

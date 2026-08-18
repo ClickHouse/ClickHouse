@@ -89,11 +89,18 @@ void registerStatementWatch(StatementFactory & factory)
         .description = R"(
 Returns the successive results of a live view as they change. This statement is deprecated together with live views and
 will be removed in the future.
+
+**Examples**
+
+**Watch a live view**
+
+```sql title="Query"
+WATCH lv EVENTS LIMIT 1;
+```
 )",
         .syntax = R"(
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 )",
-        .examples = {{"Watch a live view", "WATCH lv EVENTS LIMIT 1;", ""}},
         .related = {"CREATE VIEW", "SELECT"},
     });
 }

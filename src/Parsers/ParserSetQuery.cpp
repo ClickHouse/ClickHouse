@@ -427,12 +427,19 @@ Assigns a value to a setting for the current session. Server settings cannot be 
 the setting `profile` applies all the settings of the given settings profile at once.
 
 The settings of a session are shown in `system.settings`.
+
+**Examples**
+
+**Change a setting for the session**
+
+```sql title="Query"
+SET max_threads = 4;
+```
 )",
         .syntax = R"(
 SET param = value
 SET profile = 'profile-name-from-the-settings-file'
 )",
-        .examples = {{"Change a setting for the session", "SET max_threads = 4;", ""}},
         .related = {"SET ROLE", "CREATE SETTINGS PROFILE", "SHOW", "ALTER TABLE ... MODIFY SETTING"},
     });
 }

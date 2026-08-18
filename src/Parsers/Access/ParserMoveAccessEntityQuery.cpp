@@ -105,11 +105,18 @@ void registerStatementMoveAccessEntity(StatementFactory & factory)
         .description = R"(
 Moves an access entity from one access storage to another. The available access storages are `local_directory`,
 `memory`, `replicated`, `users_xml` (read-only) and `ldap` (read-only).
+
+**Examples**
+
+**Move a user to another access storage**
+
+```sql title="Query"
+MOVE USER test TO local_directory;
+```
 )",
         .syntax = R"(
 MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
 )",
-        .examples = {{"Move a user to another access storage", "MOVE USER test TO local_directory;", ""}},
         .related = {"CREATE USER", "CREATE ROLE", "SHOW"},
     });
 }

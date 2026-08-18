@@ -57,15 +57,20 @@ void registerStatementParallelWith(StatementFactory & factory)
         .description = R"(
 Executes several statements in parallel. It can be useful for statements which take a long time and do not depend on
 each other, for example the creation of many tables.
+
+**Examples**
+
+**Create two tables in parallel**
+
+```sql title="Query"
+CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
+```
 )",
         .syntax = R"(
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
 )",
-        .examples = {{"Create two tables in parallel", R"(
-CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
-PARALLEL WITH
-CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
-)", ""}},
         .related = {"CREATE", "DROP", "SELECT"},
     });
 }

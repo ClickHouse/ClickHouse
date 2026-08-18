@@ -16,8 +16,7 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the SQL statement."},
         {"syntax", std::make_shared<DataTypeString>(), "The syntax of the statement."},
-        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the statement does."},
-        {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
+        {"description", std::make_shared<DataTypeString>(), "A description of what the statement does, with usage examples."},
         {"parent_statement", std::make_shared<DataTypeString>(), "The name of the enclosing statement, e.g. SELECT for the WHERE clause. Empty for a top-level statement."},
         {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related statements."},
     };
@@ -35,7 +34,6 @@ void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr,
         res_columns[i++]->insert(name);
         res_columns[i++]->insert(documentation.syntaxAsString());
         res_columns[i++]->insert(documentation.description);
-        res_columns[i++]->insert(documentation.examplesAsString());
         res_columns[i++]->insert(documentation.parent);
 
         Array related;

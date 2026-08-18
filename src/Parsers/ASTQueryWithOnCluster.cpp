@@ -50,13 +50,18 @@ Executes a DDL query on all the servers of a cluster instead of only on the serv
 into the distributed DDL queue (see `system.distributed_ddl_queue`) and is executed by every server of the cluster.
 
 The `CREATE`, `DROP`, `ALTER` and `RENAME` queries support this clause.
+
+**Examples**
+
+**Create a table on every server of a cluster**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits);
+```
 )",
         .syntax = R"(
 CREATE | DROP | ALTER | RENAME ... ON CLUSTER cluster ...
 )",
-        .examples = {{"Create a table on every server of a cluster", R"(
-CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits);
-)", ""}},
         .related = {"CREATE", "DROP", "ALTER", "RENAME", "SYSTEM"},
     });
 }

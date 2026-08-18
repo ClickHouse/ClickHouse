@@ -1270,6 +1270,14 @@ Changes the structure, the settings or the data of a table, of a database, of a 
 Most `ALTER TABLE` queries which change the data are implemented as mutations: they are asynchronous background
 processes which rewrite the affected data parts. Most `ALTER TABLE` queries are supported only for tables of the
 `*MergeTree`, `Merge` and `Distributed` families.
+
+**Examples**
+
+**Add a column**
+
+```sql title="Query"
+ALTER TABLE test ADD COLUMN x UInt64;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]name [ON CLUSTER cluster] action [, action ...]
@@ -1277,7 +1285,6 @@ ALTER DATABASE [db.]name [ON CLUSTER cluster] action
 ALTER NAMED COLLECTION ...
 ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 )",
-        .examples = {{"Add a column", "ALTER TABLE test ADD COLUMN x UInt64;", ""}},
         .related = {
             "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",
             "CREATE", "SYSTEM"},
@@ -1292,6 +1299,20 @@ query can contain a list of comma-separated actions.
 `ADD`, `DROP`, `COMMENT`, `MODIFY` and `ALTER` of a column are lightweight operations which only change metadata or
 remove files, whereas `CLEAR`, `MATERIALIZE` and a `MODIFY` which changes the type of a column are implemented as
 mutations.
+
+**Examples**
+
+**Add a column after another column**
+
+```sql title="Query"
+ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
+```
+
+**Change the type of a column**
+
+```sql title="Query"
+ALTER TABLE alter_test MODIFY COLUMN Added2 UInt64;
+```
 )",
         .syntax = R"(
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
@@ -1305,10 +1326,6 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [A
 MODIFY COLUMN [IF EXISTS] name REMOVE property
 MATERIALIZE COLUMN name [IN PARTITION partition_id]
 )",
-        .examples = {
-            {"Add a column after another column", "ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;", ""},
-            {"Change the type of a column", "ALTER TABLE alter_test MODIFY COLUMN Added2 UInt64;", ""},
-        },
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
     });
@@ -1318,6 +1335,20 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
         .description = R"(
 Manipulates partitions and parts of a table: detaches, drops, attaches, replaces, moves, freezes, unfreezes and
 fetches them, and updates the metadata of a partition.
+
+**Examples**
+
+**Detach a partition**
+
+```sql title="Query"
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+```
+
+**Drop a part**
+
+```sql title="Query"
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
 )",
         .syntax = R"(
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -1336,10 +1367,6 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION partition_expr] 
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr ...
 )",
-        .examples = {
-            {"Detach a partition", "ALTER TABLE mt DETACH PARTITION '2020-11-21';", ""},
-            {"Drop a part", "ALTER TABLE mt DROP PART 'all_4_4_0';", ""},
-        },
         .parent = "ALTER",
         .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
     });
@@ -1350,11 +1377,18 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 Deletes the rows matching the filter expression. Implemented as a mutation: every data part containing matching rows
 is rewritten, therefore this is a heavyweight operation. For deleting a small amount of rows, prefer the lightweight
 `DELETE` statement.
+
+**Examples**
+
+**Delete rows by a condition**
+
+```sql title="Query"
+ALTER TABLE test DELETE WHERE x = 1;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 )",
-        .examples = {{"Delete rows by a condition", "ALTER TABLE test DELETE WHERE x = 1;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
     });
@@ -1365,11 +1399,18 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 Updates the columns of the rows matching the filter expression. Implemented as a mutation: every data part containing
 matching rows is rewritten, therefore this is a heavyweight operation. For updating a small amount of rows, prefer the
 lightweight `UPDATE` statement.
+
+**Examples**
+
+**Update a column by a condition**
+
+```sql title="Query"
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 )",
-        .examples = {{"Update a column by a condition", "ALTER TABLE test UPDATE x = 2 WHERE 1;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
     });
@@ -1380,11 +1421,18 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 Changes the sorting key of the table. The primary key remains the same. The command is lightweight in the sense that
 it only changes metadata, therefore the new sorting key may only extend the existing one with new columns which are
 not in the primary key.
+
+**Examples**
+
+**Extend the sorting key**
+
+```sql title="Query"
+ALTER TABLE test MODIFY ORDER BY (x, y);
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
-        .examples = {{"Extend the sorting key", "ALTER TABLE test MODIFY ORDER BY (x, y);", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
     });
@@ -1394,12 +1442,19 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
         .description = R"(
 Changes or removes the sampling key of the table. The command is lightweight in the sense that it only changes
 metadata; it is the responsibility of the user that the data actually satisfies the new sampling expression.
+
+**Examples**
+
+**Remove the sampling key**
+
+```sql title="Query"
+ALTER TABLE test REMOVE SAMPLE BY;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 )",
-        .examples = {{"Remove the sampling key", "ALTER TABLE test REMOVE SAMPLE BY;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
     });
@@ -1409,12 +1464,19 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
         .description = R"(
 Changes or removes the `TTL` of the table. Removing the `TTL` does not delete the rows which the expired `TTL` rule
 would have removed, it only stops applying the rule.
+
+**Examples**
+
+**Remove the TTL of a table**
+
+```sql title="Query"
+ALTER TABLE table_with_ttl REMOVE TTL;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 )",
-        .examples = {{"Remove the TTL of a table", "ALTER TABLE table_with_ttl REMOVE TTL;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
     });
@@ -1424,12 +1486,19 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
         .description = R"(
 Changes the settings of a table or resets them to their default values. A single query can change several settings at
 once. Modifying a setting which does not exist raises an exception.
+
+**Examples**
+
+**Change a table setting**
+
+```sql title="Query"
+ALTER TABLE test MODIFY SETTING max_part_loading_threads = 8;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [, ...]
 ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 )",
-        .examples = {{"Change a table setting", "ALTER TABLE test MODIFY SETTING max_part_loading_threads = 8;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "SET"},
     });
@@ -1439,13 +1508,20 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
         .description = R"(
 Adds, modifies or drops a constraint of a table. Constraints are only checked for newly inserted rows, the existing
 data is not validated.
+
+**Examples**
+
+**Add a constraint**
+
+```sql title="Query"
+ALTER TABLE test ADD CONSTRAINT c CHECK x > 0;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name
 )",
-        .examples = {{"Add a constraint", "ALTER TABLE test ADD CONSTRAINT c CHECK x > 0;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE"},
     });
@@ -1456,6 +1532,15 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 Adds, drops, materializes or clears a data skipping index of a table. `ADD`, `DROP` and `CLEAR` are lightweight
 operations which only change metadata or remove files, whereas `MATERIALIZE` is implemented as a mutation which
 rebuilds the index for the existing data.
+
+**Examples**
+
+**Add and materialize a skipping index**
+
+```sql title="Query"
+ALTER TABLE test ADD INDEX idx x TYPE minmax GRANULARITY 1;
+ALTER TABLE test MATERIALIZE INDEX idx;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]
@@ -1463,10 +1548,6 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
 )",
-        .examples = {{"Add and materialize a skipping index", R"(
-ALTER TABLE test ADD INDEX idx x TYPE minmax GRANULARITY 1;
-ALTER TABLE test MATERIALIZE INDEX idx;
-)", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     });
@@ -1477,6 +1558,15 @@ ALTER TABLE test MATERIALIZE INDEX idx;
 Adds, drops, materializes or clears a projection of a table. A projection stores the data of the table in another
 order or pre-aggregated, so that queries which do not match the primary key of the table can still be answered
 efficiently.
+
+**Examples**
+
+**Add and materialize a projection**
+
+```sql title="Query"
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (SELECT * ORDER BY user_name);
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] | [GROUP BY] ) [WITH SETTINGS ( setting_name = setting_value, ... )]
@@ -1484,10 +1574,6 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 )",
-        .examples = {{"Add and materialize a projection", R"(
-ALTER TABLE visits_order ADD PROJECTION user_name_projection (SELECT * ORDER BY user_name);
-ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection;
-)", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
     });
@@ -1497,6 +1583,14 @@ ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection;
         .description = R"(
 Adds, modifies, drops, materializes or clears the statistics of the columns of a table. Column statistics help the
 query optimizer to estimate the selectivity of predicates.
+
+**Examples**
+
+**Change the statistics of columns**
+
+```sql title="Query"
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)
@@ -1505,7 +1599,6 @@ ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)
 ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)
 ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
-        .examples = {{"Change the statistics of columns", "ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
     });
@@ -1515,11 +1608,18 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
         .description = R"(
 Adds, modifies or removes the comment of a table, regardless of whether it was set before or not. The comment is
 shown in `system.tables` and in the result of `SHOW CREATE TABLE`.
+
+**Examples**
+
+**Change the comment of a table**
+
+```sql title="Query"
+ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
-        .examples = {{"Change the comment of a table", "ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
     });
@@ -1529,11 +1629,18 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
         .description = R"(
 Adds, modifies or removes the comment of a database, regardless of whether it was set before or not. The comment is
 shown in `system.databases` and in the result of `SHOW CREATE DATABASE`.
+
+**Examples**
+
+**Change the comment of a database**
+
+```sql title="Query"
+ALTER DATABASE database_with_comment MODIFY COMMENT 'new comment on a database';
+```
 )",
         .syntax = R"(
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
-        .examples = {{"Change the comment of a database", "ALTER DATABASE database_with_comment MODIFY COMMENT 'new comment on a database';", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
     });
@@ -1544,16 +1651,21 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 Changes the `SELECT` query of a materialized view without interrupting the ingestion process. The query was specified
 when the materialized view was created. This statement is intended for a materialized view created with the
 `TO [db.]name` clause; it does not change the structure of the target table of the view.
-)",
-        .syntax = R"(
-ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
-)",
-        .examples = {{"Change the query of a materialized view", R"(
+
+**Examples**
+
+**Change the query of a materialized view**
+
+```sql title="Query"
 ALTER TABLE mv MODIFY QUERY
     SELECT toStartOfDay(ts) ts, event_type, count() events_cnt
     FROM events
     GROUP BY ts, event_type;
-)", ""}},
+```
+)",
+        .syntax = R"(
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
+)",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE VIEW"},
     });
@@ -1563,11 +1675,18 @@ ALTER TABLE mv MODIFY QUERY
         .description = R"(
 Applies the mask created by lightweight deletes and forcefully removes the rows marked as deleted from disk. The
 command is a heavyweight mutation; it is semantically equal to `ALTER TABLE [db.]name DELETE WHERE _row_exists = 0`.
+
+**Examples**
+
+**Materialize lightweight deletes**
+
+```sql title="Query"
+ALTER TABLE my_table APPLY DELETED MASK;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 )",
-        .examples = {{"Materialize lightweight deletes", "ALTER TABLE my_table APPLY DELETED MASK;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
     });
@@ -1577,11 +1696,18 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
         .description = R"(
 Manually triggers the materialization of the patch parts created by lightweight `UPDATE` statements. It forcefully
 applies the pending patches to the data parts by rewriting only the affected columns.
+
+**Examples**
+
+**Materialize lightweight updates**
+
+```sql title="Query"
+ALTER TABLE my_table APPLY PATCHES;
+```
 )",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 )",
-        .examples = {{"Materialize lightweight updates", "ALTER TABLE my_table APPLY PATCHES;", ""}},
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
     });

@@ -122,11 +122,18 @@ void registerStatementRename(StatementFactory & factory)
         .description = R"(
 Renames databases, tables or dictionaries. Several entities can be renamed in a single query, but the query is then not
 atomic; to swap the names of two entities atomically, use `EXCHANGE`.
+
+**Examples**
+
+**Rename a table**
+
+```sql title="Query"
+RENAME TABLE table_A TO table_A_new;
+```
 )",
         .syntax = R"(
 RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 )",
-        .examples = {{"Rename a table", "RENAME TABLE table_A TO table_A_new;", ""}},
         .related = {"EXCHANGE", "CREATE", "ALTER"},
     });
 
@@ -136,11 +143,18 @@ RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 Exchanges the names of two tables or two dictionaries atomically. The same can be achieved with a `RENAME` query using
 a temporary name, but that operation is not atomic. `EXCHANGE` is supported by the `Atomic` and `Shared` database
 engines only.
+
+**Examples**
+
+**Swap the names of two tables**
+
+```sql title="Query"
+EXCHANGE TABLES table_A AND table_B;
+```
 )",
         .syntax = R"(
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 )",
-        .examples = {{"Swap the names of two tables", "EXCHANGE TABLES table_A AND table_B;", ""}},
         .related = {"RENAME", "REPLACE TABLE", "CREATE DATABASE"},
     });
 }

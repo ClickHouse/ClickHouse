@@ -419,6 +419,14 @@ void registerStatementQuota(StatementFactory & factory)
         .description = R"(
 Creates a quota, which limits the resource consumption of users and roles over a time interval, for example the number
 of queries, the number of read rows, or the execution time.
+
+**Examples**
+
+**Limit the number of queries of the current user**
+
+```sql title="Query"
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
 )",
         .syntax = R"(
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
@@ -430,7 +438,6 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
         {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
-        .examples = {{"Limit the number of queries of the current user", "CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;", ""}},
         .parent = "CREATE",
         .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
     });
@@ -439,6 +446,14 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     {
         .description = R"(
 Changes a quota: renames it, changes its key, its intervals and limits, and the roles and users it applies to.
+
+**Examples**
+
+**Change the limits of a quota**
+
+```sql title="Query"
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
 )",
         .syntax = R"(
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
@@ -450,7 +465,6 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
         {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
-        .examples = {{"Change the limits of a quota", "ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;", ""}},
         .parent = "ALTER",
         .related = {"CREATE QUOTA", "ALTER", "SHOW"},
     });

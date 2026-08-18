@@ -1,15 +1,15 @@
 -- SQL statements expose their embedded documentation via system.statements.
 
 -- Representative statements must be registered, with a non-empty description and syntax.
-SELECT name, length(description) > 0 AS has_description, length(syntax) > 0 AS has_syntax, length(examples) > 0 AS has_examples
+SELECT name, length(description) > 0 AS has_description, length(syntax) > 0 AS has_syntax
 FROM system.statements
 WHERE name IN ('SELECT', 'INSERT INTO', 'CREATE TABLE', 'DROP', 'ALTER', 'SYSTEM')
 ORDER BY name;
 
--- Every statement must have a description, a syntax and at least one example.
+-- Every statement must have a syntax and a description, and the description must contain usage examples.
 SELECT count() = 0
 FROM system.statements
-WHERE empty(description) OR empty(syntax) OR empty(examples);
+WHERE empty(syntax) OR empty(description) OR position(description, '**Examples**') = 0;
 
 -- The syntax of a statement mentions the statement itself.
 SELECT position(syntax, 'DROP DATABASE') > 0

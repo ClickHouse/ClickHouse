@@ -825,6 +825,20 @@ void registerStatementSelect(StatementFactory & factory)
         .description = R"(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in
 conjunction with `INSERT INTO` it can be forwarded to a different table.
+
+**Examples**
+
+**Select rows of a table**
+
+```sql title="Query"
+SELECT * FROM numbers(3);
+```
+
+```response title="Response"
+0
+1
+2
+```
 )",
         .syntax = R"(
 [WITH expr_list(subquery)]
@@ -847,7 +861,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
 [FORMAT format]
 )",
-        .examples = {{"Select rows of a table", "SELECT * FROM numbers(3);", "0\n1\n2"}},
         .related = {"FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "UNION", "INSERT INTO", "FORMAT"},
     });
 
@@ -857,11 +870,18 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 Removes duplicates from the result: only a single row remains out of all the sets of fully matching rows. The list of
 columns which must have unique values can be specified with `SELECT DISTINCT ON (column1, column2, ...)`; if the
 columns are not specified, all of them are taken into account.
+
+**Examples**
+
+**Remove duplicate rows**
+
+```sql title="Query"
+SELECT DISTINCT * FROM t1;
+```
 )",
         .syntax = R"(
 SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 )",
-        .examples = {{"Remove duplicate rows", "SELECT DISTINCT * FROM t1;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "ALL", "GROUP BY", "LIMIT BY"},
     });
@@ -872,11 +892,22 @@ SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 If there are multiple matching rows in a table, `ALL` returns all of them. `SELECT ALL` is identical to `SELECT`
 without `DISTINCT`; specifying both `ALL` and `DISTINCT` raises an exception. `ALL` can also be specified inside an
 aggregate function, where it has no effect on the result.
+
+**Examples**
+
+**Use ALL inside an aggregate function**
+
+```sql title="Query"
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+```response title="Response"
+45
+```
 )",
         .syntax = R"(
 SELECT ALL expr_list ...
 )",
-        .examples = {{"Use ALL inside an aggregate function", "SELECT sum(ALL number) FROM numbers(10);", "45"}},
         .parent = "SELECT",
         .related = {"SELECT", "DISTINCT"},
     });
@@ -890,13 +921,18 @@ filtering more efficient by reducing the amount of data read.
 
 By default, ClickHouse applies this optimization automatically by moving eligible conditions from `WHERE` to
 `PREWHERE`; specify `PREWHERE` explicitly to control which conditions are applied at this stage.
+
+**Examples**
+
+**Filter before reading the other columns**
+
+```sql title="Query"
+SELECT id, value FROM table_1 PREWHERE id >= 2 ORDER BY id;
+```
 )",
         .syntax = R"(
 SELECT ... PREWHERE expr ...
 )",
-        .examples = {{"Filter before reading the other columns", R"(
-SELECT id, value FROM table_1 PREWHERE id >= 2 ORDER BY id;
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "EXPLAIN"},
     });
@@ -909,11 +945,18 @@ evaluates to `0` are excluded from further transformations and from the result.
 
 If the table has an index, and the condition is compatible with it, then only the parts of the data which can satisfy
 the condition are read.
+
+**Examples**
+
+**Filter rows by a condition**
+
+```sql title="Query"
+SELECT * FROM t_null WHERE y IS NULL;
+```
 )",
         .syntax = R"(
 SELECT ... WHERE expr ...
 )",
-        .examples = {{"Filter rows by a condition", "SELECT * FROM t_null WHERE y IS NULL;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "PREWHERE", "HAVING", "QUALIFY"},
     });
@@ -924,12 +967,19 @@ SELECT ... WHERE expr ...
 Switches the query into aggregation mode: the rows are grouped by the values of the grouping key, and the aggregate
 functions of the query are calculated over each group. The `WITH ROLLUP`, `WITH CUBE` and `WITH TOTALS` modifiers
 additionally produce subtotals.
+
+**Examples**
+
+**Calculate subtotals**
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
+```
 )",
         .syntax = R"(
 SELECT ... GROUP BY expr_list [WITH ROLLUP | WITH CUBE] [WITH TOTALS] ...
 SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS ( ... ) ...
 )",
-        .examples = {{"Calculate subtotals", "SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "HAVING", "DISTINCT", "ORDER BY"},
     });
@@ -940,16 +990,21 @@ SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS ( ... ) 
 Filters the aggregation results produced by `GROUP BY`. It is similar to the `WHERE` clause, but `WHERE` is performed
 before the aggregation, whereas `HAVING` is performed after it. The aggregation results can be referenced by their
 alias from the `SELECT` clause.
-)",
-        .syntax = R"(
-SELECT ... GROUP BY ... HAVING expr ...
-)",
-        .examples = {{"Filter the aggregated rows", R"(
+
+**Examples**
+
+**Filter the aggregated rows**
+
+```sql title="Query"
 SELECT region, sum(amount) AS total_sales
 FROM sales
 GROUP BY region
 HAVING total_sales > 10000;
-)", ""}},
+```
+)",
+        .syntax = R"(
+SELECT ... GROUP BY ... HAVING expr ...
+)",
         .parent = "SELECT",
         .related = {"SELECT", "GROUP BY", "WHERE", "QUALIFY"},
     });
@@ -960,16 +1015,21 @@ HAVING total_sales > 10000;
 Filters the results of window functions. It is similar to the `WHERE` clause, but `WHERE` is performed before the
 window functions are evaluated, whereas `QUALIFY` is performed after it. The results of the window functions can be
 referenced by their alias from the `SELECT` clause.
-)",
-        .syntax = R"(
-SELECT ... QUALIFY expr ...
-)",
-        .examples = {{"Filter by the result of a window function", R"(
+
+**Examples**
+
+**Filter by the result of a window function**
+
+```sql title="Query"
 SELECT number, count() OVER (PARTITION BY number % 3) AS partition_count
 FROM numbers(10)
 QUALIFY partition_count = 4
 ORDER BY number;
-)", ""}},
+```
+)",
+        .syntax = R"(
+SELECT ... QUALIFY expr ...
+)",
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "HAVING"},
     });
@@ -981,12 +1041,19 @@ Sorts the result. The sorting key can be a list of expressions, a list of number
 `SELECT` clause, or `ALL`, which means all columns of the `SELECT` clause. `NULL` values are ordered with
 `NULLS FIRST` or `NULLS LAST`, strings can be compared according to a collation, and gaps in the sorted sequence can
 be filled with `WITH FILL`.
+
+**Examples**
+
+**Sort with a collation**
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
 )",
         .syntax = R"(
 SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'locale'] [, ...]
     [WITH FILL [FROM expr] [TO expr] [STEP expr] [STALENESS expr]] [INTERPOLATE [(expr_list)]] ...
 )",
-        .examples = {{"Sort with a collation", "SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
     });
@@ -999,6 +1066,14 @@ the first `n` rows and return the next `m` rows. `WITH TIES` additionally return
 key as the last returned row.
 
 Without `ORDER BY`, the result is non-deterministic.
+
+**Examples**
+
+**Return the first 10 rows**
+
+```sql title="Query"
+SELECT * FROM numbers(100) LIMIT 10;
+```
 )",
         .syntax = R"(
 SELECT ... LIMIT m [WITH TIES]
@@ -1006,7 +1081,6 @@ SELECT ... LIMIT n, m [WITH TIES]
 SELECT ... LIMIT m OFFSET n [WITH TIES]
 SELECT TOP m ...
 )",
-        .examples = {{"Return the first 10 rows", "SELECT * FROM numbers(100) LIMIT 10;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "OFFSET FETCH", "LIMIT BY", "ORDER BY"},
     });
@@ -1016,12 +1090,19 @@ SELECT TOP m ...
         .description = R"(
 Selects the first `n` rows for each distinct value of the expressions of the clause. `LIMIT BY` is applied before
 `LIMIT`, and can be combined with an offset.
+
+**Examples**
+
+**Take two rows per group**
+
+```sql title="Query"
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+```
 )",
         .syntax = R"(
 SELECT ... LIMIT [offset_value, ]n BY expressions ...
 SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 )",
-        .examples = {{"Take two rows per group", "SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "DISTINCT", "ORDER BY"},
     });
@@ -1032,12 +1113,19 @@ SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 Retrieves the result by portions: skips `offset_row_count` rows and returns the next `fetch_row_count` rows. This is
 the SQL standard spelling of `LIMIT` with an offset. `WITH TIES` additionally returns the rows which have the same
 sorting key as the last returned row.
+
+**Examples**
+
+**Skip one row and fetch three rows**
+
+```sql title="Query"
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+```
 )",
         .syntax = R"(
 SELECT ... [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 SELECT ... [LIMIT [n, ]m] [OFFSET offset_row_count]
 )",
-        .examples = {{"Skip one row and fetch three rows", "SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "ORDER BY"},
     });

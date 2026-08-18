@@ -4104,16 +4104,36 @@ a tuple, the right side is a set of literals, a table, a subquery, or a table fu
 The `GLOBAL IN` and `GLOBAL NOT IN` variants change how the right side is evaluated in a distributed query: the set is
 calculated once on the initiator server and sent to the remote servers, instead of being calculated on every remote
 server.
+
+**Examples**
+
+**Check a single column against a set of literals**
+
+```sql title="Query"
+SELECT number IN (1, 2) FROM numbers(3);
+```
+
+```response title="Response"
+0
+1
+1
+```
+
+**Check a tuple against a subquery**
+
+```sql title="Query"
+SELECT (1, 2) IN (SELECT 1, 2);
+```
+
+```response title="Response"
+1
+```
 )",
         .syntax = R"(
 expr IN (literal [, ...])
 expr IN table | (subquery) | table_function(...)
 expr [GLOBAL] [NOT] IN ...
 )",
-        .examples = {
-            {"Check a single column against a set of literals", "SELECT number IN (1, 2) FROM numbers(3);", "0\n1\n1"},
-            {"Check a tuple against a subquery", "SELECT (1, 2) IN (SELECT 1, 2);", "1"},
-        },
         .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
     });
 }

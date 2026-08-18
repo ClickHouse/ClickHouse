@@ -58,15 +58,20 @@ void registerStatementUnion(StatementFactory & factory)
 Combines the results of several queries. The queries must produce the same number of columns, in the same order and of
 compatible types. `UNION DISTINCT` removes duplicate rows from the result of the union, whereas `UNION ALL` keeps
 them. If neither `ALL` nor `DISTINCT` is specified, the behaviour depends on the setting `union_default_mode`.
+
+**Examples**
+
+**Concatenate the results of two queries**
+
+```sql title="Query"
+SELECT 1 AS x
+UNION ALL
+SELECT 2 AS x;
+```
 )",
         .syntax = R"(
 SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 )",
-        .examples = {{"Concatenate the results of two queries", R"(
-SELECT 1 AS x
-UNION ALL
-SELECT 2 AS x;
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},
     });
@@ -77,17 +82,22 @@ SELECT 2 AS x;
 Returns only the rows which result from both the first and the second query. The queries must produce the same number
 of columns, in the same order and of compatible types. The result can contain duplicate rows; use `INTERSECT DISTINCT`
 if this is not desirable. `INTERSECT` has a higher precedence than `UNION` and `EXCEPT`.
+
+**Examples**
+
+**Intersect the results of two queries**
+
+```sql title="Query"
+SELECT number FROM numbers(10)
+INTERSECT
+SELECT number FROM numbers(5);
+```
 )",
         .syntax = R"(
 SELECT column1 [, column2] FROM table1 [WHERE condition]
 INTERSECT [ALL | DISTINCT]
 SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
-        .examples = {{"Intersect the results of two queries", R"(
-SELECT number FROM numbers(10)
-INTERSECT
-SELECT number FROM numbers(5);
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "EXCEPT", "IN"},
     });
@@ -98,17 +108,22 @@ SELECT number FROM numbers(5);
 Returns only the rows which result from the first query without the second. The queries must produce the same number
 of columns, in the same order and of compatible types. The result can contain duplicate rows; use `EXCEPT DISTINCT` if
 this is not desirable.
+
+**Examples**
+
+**Subtract the result of one query from another**
+
+```sql title="Query"
+SELECT number FROM numbers(10)
+EXCEPT
+SELECT number FROM numbers(5);
+```
 )",
         .syntax = R"(
 SELECT column1 [, column2] FROM table1 [WHERE condition]
 EXCEPT [ALL | DISTINCT]
 SELECT column1 [, column2] FROM table2 [WHERE condition]
 )",
-        .examples = {{"Subtract the result of one query from another", R"(
-SELECT number FROM numbers(10)
-EXCEPT
-SELECT number FROM numbers(5);
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "UNION", "INTERSECT", "EXCEPT modifier"},
     });

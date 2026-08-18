@@ -132,15 +132,20 @@ void registerStatementHypotheticalIndex(StatementFactory & factory)
 Hypothetical indexes are virtual, session-scoped skipping indexes which can be attached to a table of the `MergeTree`
 family without actually building or storing them. They exist only inside the current session and are used by
 `EXPLAIN WHATIF` to estimate how a real skipping index would affect a query.
+
+**Examples**
+
+**Estimate the effect of a skipping index**
+
+```sql title="Query"
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
 )",
         .syntax = R"(
 CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
 DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table_name
 )",
-        .examples = {{"Estimate the effect of a skipping index", R"(
-CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
-EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
-)", ""}},
         .related = {"EXPLAIN", "ALTER TABLE ... INDEX", "CREATE TABLE"},
     });
 }

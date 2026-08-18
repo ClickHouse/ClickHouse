@@ -105,11 +105,18 @@ void registerStatementCheck(StatementFactory & factory)
         .description = R"(
 Performs a validation check on a table or on its partitions or parts. It verifies the checksums and the other internal
 data structures, in particular it compares the actual file sizes with the expected values stored on the server.
+
+**Examples**
+
+**Check a table**
+
+```sql title="Query"
+CHECK TABLE test_table;
+```
 )",
         .syntax = R"(
 CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
 )",
-        .examples = {{"Check a table", "CHECK TABLE test_table;", ""}},
         .related = {"CHECK DATABASE", "SYSTEM", "OPTIMIZE"},
     });
 
@@ -119,11 +126,18 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 Verifies the health of a database. Its primary use is with the `DataLakeCatalog` database engine, where it checks that
 the external catalog backing the database is reachable and that its list of tables can be retrieved. This is a
 lightweight probe: it confirms connectivity and authentication without reading any table data.
+
+**Examples**
+
+**Check a database**
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
 )",
         .syntax = R"(
 CHECK DATABASE database_name
 )",
-        .examples = {{"Check a database", "CHECK DATABASE datalake;", ""}},
         .related = {"CHECK TABLE", "CREATE DATABASE"},
     });
 }

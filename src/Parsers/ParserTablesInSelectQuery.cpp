@@ -407,15 +407,25 @@ modifier makes the query read fully merged data, and the `JOIN` and `ARRAY JOIN`
 further sources.
 
 The `FROM` clause may also be written before the `SELECT` clause.
+
+**Examples**
+
+**Read from a VALUES clause**
+
+```sql title="Query"
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+**Write the FROM clause first**
+
+```sql title="Query"
+FROM numbers(3) SELECT *;
+```
 )",
         .syntax = R"(
 SELECT ... FROM [db.]table | (subquery) | table_function | VALUES (...) [FINAL] [SAMPLE ...] ...
 FROM [db.]table SELECT ...
 )",
-        .examples = {
-            {"Read from a VALUES clause", "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);", ""},
-            {"Write the FROM clause first", "FROM numbers(3) SELECT *;", ""},
-        },
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "ARRAY JOIN", "SAMPLE", "WHERE"},
     });
@@ -426,6 +436,16 @@ FROM [db.]table SELECT ...
 Produces a new table by combining the columns of one or several tables, using the values common to each of them. The
 strictness (`ALL`, `ANY`, `ASOF`) determines how rows with equal join keys are matched, and the type (`INNER`, `LEFT`,
 `RIGHT`, `FULL`, `CROSS`, `SEMI`, `ANTI`, `PASTE`) determines which rows are kept.
+
+**Examples**
+
+**Join two tables**
+
+```sql title="Query"
+SELECT table_1.id, table_2.value
+FROM table_1
+LEFT JOIN table_2 ON table_1.id = table_2.id;
+```
 )",
         .syntax = R"(
 SELECT <expr_list>
@@ -433,11 +453,6 @@ FROM <left_table>
 [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ALL|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 )",
-        .examples = {{"Join two tables", R"(
-SELECT table_1.id, table_2.value
-FROM table_1
-LEFT JOIN table_2 ON table_1.id = table_2.id;
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "ARRAY JOIN", "IN", "UNION"},
     });
@@ -448,6 +463,14 @@ LEFT JOIN table_2 ON table_1.id = table_2.id;
 Unfolds an array column: for every element of the array, a row is produced in which the values of the other columns
 are duplicated. `ARRAY JOIN` skips the rows with an empty array, whereas `LEFT ARRAY JOIN` keeps them with the default
 value of the element type.
+
+**Examples**
+
+**Unfold an array column**
+
+```sql title="Query"
+SELECT s, arr FROM arrays_test ARRAY JOIN arr;
+```
 )",
         .syntax = R"(
 SELECT <expr_list>
@@ -456,7 +479,6 @@ FROM <left_subquery>
 [WHERE|PREWHERE <expr>]
 ...
 )",
-        .examples = {{"Unfold an array column", "SELECT s, arr FROM arrays_test ARRAY JOIN arr;", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "JOIN", "FROM"},
     });
@@ -467,18 +489,23 @@ FROM <left_subquery>
 Enables approximated query processing: the query is executed not over all the data, but only over a fraction of it.
 Sampling requires the table to be created with a sampling expression (`SAMPLE BY`). The `_sample_factor` virtual
 column contains the relative coefficient which the approximated results have to be multiplied by.
+
+**Examples**
+
+**Read a tenth of the data**
+
+```sql title="Query"
+SELECT Title, count() * 10 AS PageViews
+FROM hits_distributed
+SAMPLE 0.1
+GROUP BY Title;
+```
 )",
         .syntax = R"(
 SELECT ... FROM table SAMPLE k
 SELECT ... FROM table SAMPLE n
 SELECT ... FROM table SAMPLE k OFFSET m
 )",
-        .examples = {{"Read a tenth of the data", R"(
-SELECT Title, count() * 10 AS PageViews
-FROM hits_distributed
-SAMPLE 0.1
-GROUP BY Title;
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
     });

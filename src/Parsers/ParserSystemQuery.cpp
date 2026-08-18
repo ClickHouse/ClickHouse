@@ -1146,6 +1146,20 @@ void registerStatementSystem(StatementFactory & factory)
 Performs an administrative operation on the server: reloads the configuration, the users or the dictionaries, drops a
 cache, flushes the system logs, starts or stops a background activity, or manages `Distributed`, `MergeTree`,
 `ReplicatedMergeTree` and refreshable materialized view tables.
+
+**Examples**
+
+**Reload the configuration**
+
+```sql title="Query"
+SYSTEM RELOAD CONFIG;
+```
+
+**Flush the system logs**
+
+```sql title="Query"
+SYSTEM FLUSH LOGS;
+```
 )",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
@@ -1166,10 +1180,6 @@ SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
 )",
-        .examples = {
-            {"Reload the configuration", "SYSTEM RELOAD CONFIG;", ""},
-            {"Flush the system logs", "SYSTEM FLUSH LOGS;", ""},
-        },
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
     });
 }

@@ -147,12 +147,19 @@ part, `DEDUPLICATE` removes the duplicate rows, and `DRY RUN` only reports which
 
 `OPTIMIZE TABLE ... FINAL` is meant for administration rather than for daily operations, and it cannot fix a
 `Too many parts` error.
+
+**Examples**
+
+**Merge the parts of a table**
+
+```sql title="Query"
+OPTIMIZE TABLE test FINAL;
+```
 )",
         .syntax = R"(
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 )",
-        .examples = {{"Merge the parts of a table", "OPTIMIZE TABLE test FINAL;", ""}},
         .related = {"SYSTEM", "ALTER TABLE ... PARTITION", "CHECK TABLE"},
     });
 }

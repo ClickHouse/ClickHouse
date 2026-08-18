@@ -156,11 +156,22 @@ void registerStatementExists(StatementFactory & factory)
         .description = R"(
 Returns a single column of type `UInt8` with a single value: `1` if the table, the dictionary or the database exists,
 and `0` otherwise.
+
+**Examples**
+
+**Check whether a table exists**
+
+```sql title="Query"
+EXISTS TABLE test;
+```
+
+```response title="Response"
+1
+```
 )",
         .syntax = R"(
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 )",
-        .examples = {{"Check whether a table exists", "EXISTS TABLE test;", "1"}},
         .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
     });
 }

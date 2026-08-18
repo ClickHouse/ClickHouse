@@ -41,11 +41,22 @@ void registerStatementCheckGrant(StatementFactory & factory)
         .description = R"(
 Checks whether the current user or role has been granted a specific privilege. Returns `1` if the privilege is granted
 and `0` otherwise. A privilege on a table or a column which does not exist raises an exception.
+
+**Examples**
+
+**Check a privilege on a column**
+
+```sql title="Query"
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```response title="Response"
+1
+```
 )",
         .syntax = R"(
 CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
 )",
-        .examples = {{"Check a privilege on a column", "CHECK GRANT SELECT(col1) ON table_1;", "1"}},
         .related = {"GRANT", "REVOKE", "SHOW"},
     });
 }

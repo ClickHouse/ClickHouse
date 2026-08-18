@@ -90,12 +90,19 @@ void registerStatementExecuteAs(StatementFactory & factory)
 Executes queries on behalf of a different user. The `IMPERSONATE` privilege on the target user is required. Without a
 subquery, the statement switches the current user of the session; with a subquery, only that subquery is executed on
 behalf of the target user.
+
+**Examples**
+
+**Run a query on behalf of another user**
+
+```sql title="Query"
+EXECUTE AS user1 SELECT count() FROM table1;
+```
 )",
         .syntax = R"(
 EXECUTE AS target_user
 EXECUTE AS target_user subquery
 )",
-        .examples = {{"Run a query on behalf of another user", "EXECUTE AS user1 SELECT count() FROM table1;", ""}},
         .related = {"GRANT", "CREATE USER", "SET ROLE"},
     });
 }

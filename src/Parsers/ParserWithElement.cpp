@@ -101,16 +101,21 @@ void registerStatementWith(StatementFactory & factory)
         .description = R"(
 Defines common table expressions (CTE), common scalar expressions and recursive queries, which can be referenced by
 the rest of the query. A `WITH RECURSIVE` clause allows the common table expression to reference itself.
+
+**Examples**
+
+**Define a common table expression**
+
+```sql title="Query"
+WITH t AS (SELECT number AS n FROM numbers(10))
+SELECT sum(n) FROM t;
+```
 )",
         .syntax = R"(
 WITH <expression> AS <identifier>
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 WITH RECURSIVE <identifier> AS <subquery expression>
 )",
-        .examples = {{"Define a common table expression", R"(
-WITH t AS (SELECT number AS n FROM numbers(10))
-SELECT sum(n) FROM t;
-)", ""}},
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
     });
