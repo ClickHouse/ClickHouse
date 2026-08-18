@@ -15,22 +15,6 @@
 #include <mutex>
 
 
-namespace ProfileEvents
-{
-    extern const Event SchedulerIOReadRequests;
-    extern const Event SchedulerIOReadBytes;
-    extern const Event SchedulerIOReadWaitMicroseconds;
-    extern const Event SchedulerIOWriteRequests;
-    extern const Event SchedulerIOWriteBytes;
-    extern const Event SchedulerIOWriteWaitMicroseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric SchedulerIOReadScheduled;
-    extern const Metric SchedulerIOWriteScheduled;
-}
-
 namespace DB
 {
 
@@ -57,27 +41,13 @@ public:
         const ProfileEvents::Event wait_microseconds = ProfileEvents::end();
         const CurrentMetrics::Metric scheduled_count = CurrentMetrics::end();
 
-        static const Metrics * getIORead()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOReadRequests,
-                .cost = ProfileEvents::SchedulerIOReadBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOReadWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOReadScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIORead();
 
-        static const Metrics * getIOWrite()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOWriteRequests,
-                .cost = ProfileEvents::SchedulerIOWriteBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOWriteWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOWriteScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIOWrite();
     };
 
     enum RequestState
@@ -182,14 +152,9 @@ public:
             chassert(state == Finished);
         }
 
-        static Request & local(const Metrics * metrics)
-        {
-            // Since single thread cannot use more than one resource request simultaneously,
-            // we can reuse thread-local request to avoid allocations
-            static thread_local Request instance;
-            instance.metrics = metrics;
-            return instance;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static Request & local(const Metrics * metrics);
 
         const Metrics * metrics = nullptr; // Must be initialized before use
 

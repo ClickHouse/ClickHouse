@@ -152,7 +152,7 @@ para alinhar o comportamento do ClickHouse de forma mais próxima ao SQL padrão
 
 Esta seção descreve quais configurações o driver ODBC modifica e por quê.
 
-**[cast&#95;keep&#95;nullable](/pt-BR/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/pt-BR/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 Por padrão, o ClickHouse não permite converter tipos Nullable em tipos não Nullable. No entanto, muitas ferramentas de BI não
 distinguem entre tipos Nullable e não Nullable ao realizar conversões de tipo. Como resultado, é comum
@@ -163,17 +163,17 @@ SELECT sum(CAST(value, 'Int32'))
 FROM values
 ```
 
-Por padrão, quando a coluna `value` permite NULL, esta consulta falhará com a seguinte mensagem:
+Por padrão, quando a coluna `value` é Nullable, esta consulta falhará com a seguinte mensagem:
 
 ```plaintext
 DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
 'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
 ```
 
-Ativar `cast_keep_nullable` altera o comportamento de `CAST` para preservar a capacidade de seus argumentos aceitarem valores nulos. Isso
+Ativar `cast_keep_nullable` altera o comportamento de `CAST` para preservar a propriedade Nullable de seus argumentos. Isso
 aproxima o comportamento do ClickHouse ao de outros bancos de dados e ao padrão SQL para esse tipo de conversão.
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/pt-BR/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/pt-BR/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 O ClickHouse permite referenciar expressões na mesma lista `SELECT` pelos seus aliases. Por exemplo, esta consulta evita
 repetições e é mais fácil de escrever:

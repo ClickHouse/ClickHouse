@@ -11,6 +11,9 @@
 
 #include <base/sort.h>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -21,6 +24,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -106,6 +110,8 @@ public:
         , odd_bucket_step(bucketStep(true, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_end_time(firstBucketEndTimestamp(start_timestamp_, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_is_clamped(firstBucketIsClamped(first_bucket_end_time, even_bucket_width))
+        , fast_bucket_math(canUseFastBucketMath(start_timestamp, end_timestamp, step, window))
+        , step_divider(static_cast<Int64>(step) > 0 ? static_cast<Int64>(step) : 1)
     {
     }
 
@@ -147,6 +153,51 @@ public:
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
             const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
+        }
+    }
+
+    /// Batch add with a per-row aggregation state. Rows reach the aggregator in storage order, and tables with
+    /// time series data are typically sorted by (series, timestamp) - so rows come in long runs of the same
+    /// state. The batch is split into runs of equal `places[i]` and each run goes through the batch add path,
+    /// with the column casts hoisted out of the per-row loop; the generic implementation instead pays a virtual
+    /// `add` with two `typeid_cast`s per row.
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (array_arguments)
+        {
+            /// A row of arrays holds a whole series, so the generic path's per-row overhead is amortized.
+            Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        const UInt8 * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const TimestampType * timestamp_data = timestamp_column.getData().data();
+        const ValueType * value_data = value_column.getData().data();
+
+        size_t i = row_begin;
+        while (i < row_end)
+        {
+            AggregateDataPtr place = places[i];
+            size_t run_end = i + 1;
+            while (run_end < row_end && places[run_end] == place)
+                ++run_end;
+
+            if (place)
+                addSamples<true>(place + place_offset, timestamp_data, value_data, flags, i, run_end);
+
+            i = run_end;
         }
     }
 
@@ -414,6 +465,11 @@ protected:
     const IntervalType odd_bucket_step{};         /// End-to-end spacing of odd-indexed buckets
     const TimestampType first_bucket_end_time{};  /// End timestamp of bucket #0
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
+
+    /// For grid parameters bounded by 2^61 only.
+    const bool fast_bucket_math{};
+    /// Reciprocal of `step` for the fast path (`step` is fixed at construction).
+    const libdivide::divider<Int64> step_divider{1};
 
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
@@ -706,6 +762,100 @@ private:
         return static_cast<size_t>(bucket_index);
     }
 
+    /// Whether all the arithmetic in `bucketIndexForTimestampFast` fits in Int64 for every sample
+    /// that passes its range checks. Bounding all grid parameters by 2^61 leaves headroom for the
+    /// sums and products of two such values. A single-point grid (`start == end`, `step == 0`,
+    /// see `checkStep`) has nothing to divide and uses the generic path.
+    static bool canUseFastBucketMath(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
+    {
+        constexpr Int128 bound = Int128(1) << 61;
+        const Int128 start_128 = static_cast<Int128>(static_cast<Int64>(start));
+        const Int128 end_128 = static_cast<Int128>(static_cast<Int64>(end));
+        const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step_));
+        const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window_));
+        return (-bound < start_128 && start_128 < bound) && (-bound < end_128 && end_128 < bound)
+            && (0 < step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
+    }
+
+    /// What the batch bucketing kernel (`addSamplesToBucketsImpl`) does with a sample: add it to bucket
+    /// `bucket_index`, or skip it (`bucket_index == NO_BUCKET`). Either way `(lo, hi]` is a timestamp range
+    /// whose samples all share this fate - the bucket's time range for an accepted sample, a range of
+    /// rejected timestamps for a skipped one - so the kernel handles the run of consecutive samples within
+    /// the range in one go.
+    struct SampleClass
+    {
+        size_t bucket_index;
+        Int64 lo;
+        Int64 hi;
+    };
+
+    /// Same as `bucketIndexForTimestamp` with all arithmetic in Int64, plus the `(lo, hi]` range for run
+    /// detection. Requires `fast_bucket_math`, which bounds every expression here away from Int64 overflow.
+    ALWAYS_INLINE SampleClass classifySampleFast(const Int64 ts) const
+    {
+        if (ts > static_cast<Int64>(end_timestamp))
+            return {NO_BUCKET, static_cast<Int64>(end_timestamp), std::numeric_limits<Int64>::max()};
+
+        /// Samples at or below `start - window` are out of window for every grid point. (A sample at
+        /// `INT64_MIN` never falls into the returned skip range - the run scan then returns 0 and the
+        /// kernel consumes the sample by itself.)
+        const Int64 lowest = static_cast<Int64>(start_timestamp) - static_cast<Int64>(window);
+        if (ts <= lowest)
+            return {NO_BUCKET, std::numeric_limits<Int64>::min(), lowest};
+
+        const Int64 offset = ts - static_cast<Int64>(start_timestamp);
+        const Int64 step_64 = static_cast<Int64>(step);
+
+        Int64 unclamped_grid_index = offset / step_divider;
+        if (offset - unclamped_grid_index * step_64 > 0)
+            ++unclamped_grid_index;
+
+        const Int64 grid_index = std::max<Int64>(unclamped_grid_index, 0);
+        const Int64 grid_timestamp = static_cast<Int64>(start_timestamp) + grid_index * step_64;
+
+        /// A sample out of its grid point's window is out of every window (windows of later grid points
+        /// start even higher), and so is everything down to the previous bucket's end - hence the skip range.
+        if (ts + static_cast<Int64>(window) <= grid_timestamp)
+            return {NO_BUCKET, std::max(lowest, grid_timestamp - step_64), grid_timestamp - static_cast<Int64>(window)};
+
+        const Int64 leading_buckets = static_cast<Int64>(buckets_per_first_window);
+        Int64 bucket_index = 0;
+        if (window_remainder == 0)
+        {
+            bucket_index = unclamped_grid_index + leading_buckets - 1;
+        }
+        else
+        {
+            const Int64 remainder = static_cast<Int64>(window_remainder);
+            const bool before_split_point = (offset + remainder) <= (unclamped_grid_index * step_64);
+            bucket_index = 2 * unclamped_grid_index + leading_buckets - 1 - (before_split_point ? 1 : 0);
+        }
+
+        chassert(bucket_index >= 0 && bucket_index < static_cast<Int64>(bucket_count));
+        const auto [lo, hi] = bucketRangeFast(static_cast<size_t>(bucket_index));
+        chassert(ts > lo && ts <= hi);
+        return {static_cast<size_t>(bucket_index), lo, hi};
+    }
+
+    /// `Int64` counterpart of `bucketTimeRange` (as a `(lo, hi]` pair). Requires `fast_bucket_math`.
+    /// For a clamped bucket #0 (possible only for unsigned `DateTime` timestamps) `lo` may fall below zero,
+    /// which over the unsigned domain means the same as "no lower bound".
+    ALWAYS_INLINE std::pair<Int64, Int64> bucketRangeFast(size_t bucket_index) const
+    {
+        const Int64 num_even_buckets = static_cast<Int64>(bucket_index / 2);
+        const Int64 num_odd_buckets = static_cast<Int64>(bucket_index) - num_even_buckets;
+        const Int64 hi = static_cast<Int64>(first_bucket_end_time)
+            + num_odd_buckets * static_cast<Int64>(odd_bucket_step) + num_even_buckets * static_cast<Int64>(even_bucket_step);
+        const Int64 lo = hi - static_cast<Int64>((bucket_index % 2 != 0) ? odd_bucket_width : even_bucket_width);
+        return {lo, hi};
+    }
+
+    size_t ALWAYS_INLINE bucketIndex(const TimestampType timestamp) const
+    {
+        /// The unused range computation of `classifySampleFast` is eliminated after inlining.
+        return fast_bucket_math ? classifySampleFast(static_cast<Int64>(timestamp)).bucket_index : bucketIndexForTimestamp(timestamp);
+    }
+
     /// Returns a half-open range [first, last) of bucket indices that fall in a grid point's window. The range has
     /// `buckets_per_window` buckets, except early windows that are truncated at 0 by the dropped leading buckets.
     std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
@@ -766,7 +916,7 @@ private:
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        const size_t bucket_index = bucketIndexForTimestamp(timestamp);
+        const size_t bucket_index = bucketIndex(timestamp);
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
@@ -774,24 +924,106 @@ private:
         bucket.add(timestamp, value);
     }
 
+    static ALWAYS_INLINE Int64 toInt64(TimestampType timestamp)
+    {
+        return static_cast<Int64>(timestamp);
+    }
+
+    /// Returns the number of leading samples of `timestamps[0, count)` with timestamps in `(lo, hi]`.
+    /// Checked in blocks so that the loop vectorizes; the samples of a partial block are re-checked one by one.
+    static ALWAYS_INLINE size_t scanSamplesInRange(const TimestampType * __restrict timestamps, size_t count, Int64 lo, Int64 hi)
+    {
+        constexpr size_t block_size = 16;
+        size_t scanned = 0;
+        while (scanned + block_size <= count)
+        {
+            UInt8 all_in_range = 1;
+            for (size_t j = 0; j < block_size; ++j)
+            {
+                const Int64 timestamp = toInt64(timestamps[scanned + j]);
+                all_in_range &= static_cast<UInt8>(timestamp > lo) & static_cast<UInt8>(timestamp <= hi);
+            }
+            if (!all_in_range)
+                break;
+            scanned += block_size;
+        }
+        while (scanned < count)
+        {
+            const Int64 timestamp = toInt64(timestamps[scanned]);
+            if (!(timestamp > lo && timestamp <= hi))
+                break;
+            ++scanned;
+        }
+        return scanned;
+    }
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(void NO_INLINE),
+    addSamplesToBucketsImpl,
+    MULTITARGET_FUNCTION_BODY((State * __restrict state,
+        const TimestampType * __restrict timestamps,
+        const ValueType * __restrict values,
+        size_t row_begin,
+        size_t row_end) const /// NOLINT
+    {
+        size_t i = row_begin;
+        while (i < row_end)
+        {
+            const SampleClass sample_class = classifySampleFast(toInt64(timestamps[i]));
+            const size_t run = scanSamplesInRange(timestamps + i, row_end - i, sample_class.lo, sample_class.hi);
+            if (sample_class.bucket_index != NO_BUCKET)
+                state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, run);
+            /// A rejected sample is not always inside its own skip range (see `classifySampleFast`),
+            /// so the scan may return 0 - still consume one sample.
+            i += std::max<size_t>(run, static_cast<size_t>(1));
+        }
+    })
+    )
+
+    /// Entry point of the batch add path; `flags == nullptr` means every sample is included.
+    /// Flagged samples (a NULL map of a `Nullable` value column or a `-If` condition) and grids without the
+    /// Int64 bucket math stay on the plain per-sample path.
+    template <bool flag_value_to_include>
+    void addSamples(AggregateDataPtr __restrict place,
+        const TimestampType * __restrict timestamps,
+        const ValueType * __restrict values,
+        const UInt8 * __restrict flags,
+        size_t row_begin,
+        size_t row_end) const
+    {
+        if (!fast_bucket_math || flags)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (!flags || (flags[i] != 0) == flag_value_to_include)
+                    add(place, timestamps[i], values[i]);
+            return;
+        }
+
+        State * state = data(place);
+
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);
+            return;
+        }
+#endif
+        addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end);
+    }
+
     void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end) const
     {
-        for (size_t i = start; i < end; ++i)
-            add(place, timestamp_ptr[i], value_ptr[i]);
+        addSamples<true>(place, timestamp_ptr, value_ptr, nullptr, start, end);
     }
 
     void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end) const
     {
-        for (size_t i = start; i < end; ++i)
-            if (!null_map[i])
-                add(place, timestamp_ptr[i], value_ptr[i]);
+        addSamples<false>(place, timestamp_ptr, value_ptr, null_map, start, end);
     }
 
     void addManyConditional(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) const
     {
-        for (size_t i = start; i < end; ++i)
-            if (condition_map[i])
-                add(place, timestamp_ptr[i], value_ptr[i]);
+        addSamples<true>(place, timestamp_ptr, value_ptr, condition_map, start, end);
     }
 
     /// `flag_value_to_include` parameter determines which rows are included into result.

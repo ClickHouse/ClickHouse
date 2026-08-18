@@ -86,8 +86,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"async_insert", trueOrFalseSetting},
     {"auto_statistics_types",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq", "basic"}); },
-         {"'tdigest'", "'countmin'", "'minmax'", "'uniq'", "'basic'"},
+         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "uniq", "basic"}); },
+         {"'tdigest'", "'countmin'", "'uniq'", "'basic'"},
          false)},
     {"background_task_preferred_step_execution_time_ms", highRangeSetting},
     {"cache_populated_by_fetch", trueOrFalseSetting},
@@ -112,6 +112,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"concurrent_part_removal_threshold_for_remote_disk",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); }, {}, false)},
+    {"dead_blobs_to_delay_insert", highRangeSetting},
+    {"dead_blobs_to_throw_insert", highRangeSetting},
     {"deduplicate_merge_projection_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -352,6 +354,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"merge_tree_clear_old_parts_interval_seconds", highRangeSetting},
     {"merge_tree_clear_old_temporary_directories_interval_seconds", highRangeSetting},
+    {"merge_use_batch_sorting_queue", trueOrFalseSetting},
     {"merge_with_recompression_ttl_timeout", highRangeSetting},
     {"merge_with_ttl_timeout", highRangeSetting},
     {"min_absolute_delay_to_close", highRangeSetting},
@@ -623,6 +626,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"shared_merge_tree_use_too_many_parts_count_from_virtual_parts", trueOrFalseSetting},
     {"shared_merge_tree_use_zookeeper_connection_pool", trueOrFalseSetting},
     {"shared_merge_tree_virtual_parts_discovery_batch", rowsRangeSetting},
+    {"shared_merge_tree_virtual_parts_partition_atomic_discovery", trueOrFalseSetting},
     {"simultaneous_parts_removal_limit",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
@@ -995,7 +999,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 
     /// marks and primary key codecs are passed to CompressionCodecFactory::get() directly
     /// (no type context), so only block-compression codecs are valid — no transform codecs.
-    static const DB::Strings blockCodecs = {"LZ4", "LZ4HC", "ZSTD", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    static const DB::Strings blockCodecs = {"LZ4", "LZ4HC", "ZSTD", "ZXC", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
     std::unordered_set<String> blockCodecsEscaped;
     for (const auto & codec : blockCodecs)
     {
@@ -1010,6 +1014,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 res += "(" + std::to_string(rg.randomInt<uint32_t>(0, 12)) + ")";
             else if (codec == "ZSTD" && rg.nextBool())
                 res += "(" + std::to_string(rg.randomInt<uint32_t>(1, 22)) + ")";
+            else if (codec == "ZXC" && rg.nextBool())
+                res += "(" + std::to_string(rg.randomInt<uint32_t>(1, 7)) + ")";
             return "'" + res + "'";
         },
         blockCodecsEscaped,
@@ -1156,7 +1162,22 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         logTableSettings.insert({{"disk", disk_setting}});
         dataLakeSettings.insert({{"disk", disk_name_setting}});
         paimonSettings.insert({{"disk", disk_name_setting}});
-        allDatabaseSettings.insert({{"disk", disk_setting}});
+
+        /// A disk-backed database commits table metadata with an atomic rename, so its disk's metadata
+        /// store must support `moveFile`: `Local` and `PlainRewritable` do, `Plain` (and read-only/keeper
+        /// metadata) do not, which would make every `CREATE TABLE` in the database fail with NOT_IMPLEMENTED.
+        DB::Strings database_safe_disks;
+        for (const auto & di : fc.disks)
+            if (di.metadata_type == "Local" || di.metadata_type == "PlainRewritable")
+                database_safe_disks.emplace_back(di.name);
+        if (!database_safe_disks.empty())
+        {
+            const auto & database_disk_setting = CHSetting(
+                [database_safe_disks](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(database_safe_disks) + "'"; },
+                {},
+                false);
+            allDatabaseSettings.insert({{"disk", database_disk_setting}});
+        }
     }
     if (fc.enable_fault_injection_settings)
     {
@@ -1320,6 +1341,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {PaimonLocal, paimonLocalSettings},
          {Merge, {}},
          {Distributed, distributedTableSettings},
+         {Remote, distributedTableSettings},
+         {RemoteSecure, distributedTableSettings},
          {Dictionary, {}},
          {GenerateRandom, {}},
          {AzureBlobStorage, azureBlobStorageSettings},
@@ -1381,6 +1404,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {PaimonLocal, {}},
          {Merge, {}},
          {Distributed, {}},
+         {Remote, {}},
+         {RemoteSecure, {}},
          {Dictionary, {}},
          {GenerateRandom, {}},
          {AzureBlobStorage, {}},
