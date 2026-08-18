@@ -23,6 +23,22 @@ void StatementFactory::registerStatement(const String & name, Documentation docu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement {} is registered twice", name);
 }
 
+std::vector<String> StatementFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+{
+    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    result.reserve(statements.size());
+    for (const auto & [name, _] : statements)
+        result.push_back(name);
+    return result;
+}
+
+Documentation StatementFactory::getDocumentation(const String & name) const
+{
+    if (auto it = statements.find(name); it != statements.end())
+        return it->second;
+    return {};
+}
+
 StatementRegisterMap & StatementRegisterMap::instance()
 {
     static StatementRegisterMap map;

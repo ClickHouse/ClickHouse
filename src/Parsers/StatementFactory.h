@@ -5,6 +5,7 @@
 
 #include <map> // STYLE_CHECK_ALLOW_STD_CONTAINERS
 #include <string_view>
+#include <vector> // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 #include <boost/noncopyable.hpp>
 
@@ -30,11 +31,14 @@ public:
     /// statement. For example, `ALTER TABLE ... UPDATE` is a part of `ALTER`, and `WHERE` is a part of `SELECT`.
     void registerStatement(const String & name, Documentation documentation);
 
-    /// All registered statements, ordered by name.
-    const std::map<String, Documentation> & getAllStatements() const { return statements; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    /// The names of all registered statements, in alphabetical order.
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    /// Returns the embedded documentation of a statement (empty if none was registered).
+    Documentation getDocumentation(const String & name) const;
 
 private:
-    /// An ordered map, so that `system.statements` and the callers of `getAllStatements` see a deterministic order.
+    /// An ordered map, so that `getAllRegisteredNames` returns a deterministic order.
     std::map<String, Documentation> statements; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
