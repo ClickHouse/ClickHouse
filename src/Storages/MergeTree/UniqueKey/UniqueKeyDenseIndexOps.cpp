@@ -124,40 +124,8 @@ DenseIndexSSTStatus classifyDenseIndexSST(
 
 
 /// ============================================================================
-/// Per-storage load lifecycle — orphan sweep + load-time rebuild over parts.
+/// Per-storage load lifecycle - load-time rebuild over parts.
 /// ============================================================================
-
-void UniqueKeyDenseIndexOps::sweepOrphans(const DataPartsLock & /*part_lock*/)
-{
-    /// SST-side sweep only. Delete-bitmap recovery + version GC live in
-    /// the txn commit/recovery protocol, not here.
-    auto & log = data.log;
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
-    const bool table_has_uk = metadata_snapshot && metadata_snapshot->hasUniqueKey();
-
-    size_t removed_stray_ssts = 0;
-
-    for (const auto & part : data.data_parts_by_info)
-    {
-        if (part->getState() != MergeTreeData::DataPartState::Active)
-            continue;
-
-        auto & storage = const_cast<IMergeTreeDataPart &>(*part).getDataPartStorage();
-
-        if (!table_has_uk && storage.existsFile(SSTIndexWriter::FILE_NAME))
-        {
-            LOG_WARNING(log, "loadDataParts: removing stray '{}' from part '{}' (table has no UNIQUE KEY)",
-                        SSTIndexWriter::FILE_NAME, part->name);
-            storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
-            ++removed_stray_ssts;
-        }
-    }
-
-    if (removed_stray_ssts)
-        LOG_INFO(log, "loadDataParts: unique-key SST sweep removed {} stray file(s)",
-                 removed_stray_ssts);
-}
-
 
 void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bool storage_is_writable) const
 {
