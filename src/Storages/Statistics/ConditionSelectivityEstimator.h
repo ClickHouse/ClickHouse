@@ -16,6 +16,8 @@ struct ColumnStats
     /// TODO: Support min max
     /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
+    /// Average uncompressed size of one value; 0 means unknown.
+    Float64 avg_bytes = 0;
 };
 
 struct RelationProfile
