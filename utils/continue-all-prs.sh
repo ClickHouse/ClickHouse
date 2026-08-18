@@ -64,9 +64,9 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers (exported as
-#                         ANTHROPIC_API_KEY or OPENAI_API_KEY according to
-#                         --agent). NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for the workers. `claude` reads
+#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
+#                         `CODEX_HOME`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
 #   --api-key-file FILE   Read the custom API key from FILE (not shown
 #                         in `ps`). Default: whatever API key or login the
@@ -140,6 +140,7 @@ MODEL=""               # model passed to the selected agent (empty -> its config
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
+API_KEY_PROVIDED=0      # whether either custom-key option was supplied
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -166,8 +167,8 @@ while [[ $# -gt 0 ]]; do
         --model)          MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
-        --api-key)        API_KEY="$2"; shift 2 ;;
-        --api-key-file)   API_KEY_FILE="$2"; shift 2 ;;
+        --api-key)        API_KEY="$2"; API_KEY_PROVIDED=1; shift 2 ;;
+        --api-key-file)   API_KEY_FILE="$2"; API_KEY_PROVIDED=1; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -193,23 +194,39 @@ esac
 MAIN_REPO="$(git rev-parse --show-toplevel)"
 [[ -n "$WORKTREE_BASE" ]] || WORKTREE_BASE="${MAIN_REPO}-prworker"
 
+# Install a defense-in-depth pre-push hook for ordinary worker pushes. The hook
+# is applied through command-scope environment configuration, so it also covers
+# branches checked out in linked worktrees without changing the user's repository
+# configuration. `git push --no-verify` bypasses hooks; the worker prompt's
+# explicit prohibition and safety gates remain the authoritative enforcement.
+PUSH_HOOKS_DIR="$(cd "$MAIN_REPO/utils/continue-all-prs-hooks" && pwd -P)"
+[[ -x "$PUSH_HOOKS_DIR/pre-push" ]] \
+    || { echo "${S}Error: missing executable pre-push hook: $PUSH_HOOKS_DIR/pre-push${R}" >&2; exit 1; }
+GIT_CONFIG_SLOT="${GIT_CONFIG_COUNT:-0}"
+[[ "$GIT_CONFIG_SLOT" =~ ^[0-9]+$ ]] \
+    || { echo "${S}Error: GIT_CONFIG_COUNT must be a non-negative integer${R}" >&2; exit 1; }
+printf -v "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" '%s' core.hooksPath
+printf -v "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}" '%s' "$PUSH_HOOKS_DIR"
+export "GIT_CONFIG_KEY_${GIT_CONFIG_SLOT}" "GIT_CONFIG_VALUE_${GIT_CONFIG_SLOT}"
+export GIT_CONFIG_COUNT=$((GIT_CONFIG_SLOT + 1))
+
 # No mode flag given -> select all categories (the default behavior).
 if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for the worker processes. Export the variable used by the
-# selected agent so every worker inherits it.
+# Custom API key for worker processes. `claude` reads its key from the environment.
+# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
+# so it cannot inherit or overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
     API_KEY="$(tr -d ' \t\r\n' < "$API_KEY_FILE")"
 fi
-if [[ -n "$API_KEY" ]]; then
+if (( API_KEY_PROVIDED )); then
+    [[ -n "$API_KEY" ]] || { echo "${S}Error: --api-key must not be empty${R}" >&2; exit 1; }
     if [[ "$AGENT" == "claude" ]]; then
         export ANTHROPIC_API_KEY="$API_KEY"
-    else
-        export OPENAI_API_KEY="$API_KEY"
     fi
     CUSTOM_KEY=1
 else
@@ -222,6 +239,7 @@ fi
 # ChatGPT subscription usage is not billed per token.
 CODEX_INPUT_PRICE=""
 CODEX_CACHED_INPUT_PRICE=""
+CODEX_CACHE_WRITE_INPUT_PRICE=""
 CODEX_OUTPUT_PRICE=""
 CODEX_LONG_CONTEXT_PRICING=0
 
@@ -229,11 +247,13 @@ configure_codex_pricing()
 {
     case "$MODEL" in
         gpt-5.6|gpt-5.6-sol|gpt-5.6-sol-*)
-            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
-        gpt-5.6-terra|gpt-5.6-terra-*|gpt-5.4|gpt-5.4-20*)
-            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=5; CODEX_CACHED_INPUT_PRICE=0.5; CODEX_CACHE_WRITE_INPUT_PRICE=6.25; CODEX_OUTPUT_PRICE=30; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.6-terra|gpt-5.6-terra-*)
+            CODEX_INPUT_PRICE=2; CODEX_CACHED_INPUT_PRICE=0.2; CODEX_CACHE_WRITE_INPUT_PRICE=2.5; CODEX_OUTPUT_PRICE=12; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.6-luna|gpt-5.6-luna-*)
-            CODEX_INPUT_PRICE=1; CODEX_CACHED_INPUT_PRICE=0.1; CODEX_OUTPUT_PRICE=6; CODEX_LONG_CONTEXT_PRICING=1 ;;
+            CODEX_INPUT_PRICE=0.2; CODEX_CACHED_INPUT_PRICE=0.02; CODEX_CACHE_WRITE_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=1.2; CODEX_LONG_CONTEXT_PRICING=1 ;;
+        gpt-5.4|gpt-5.4-20*)
+            CODEX_INPUT_PRICE=2.5; CODEX_CACHED_INPUT_PRICE=0.25; CODEX_OUTPUT_PRICE=15; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5-pro|gpt-5.5-pro-*|gpt-5.4-pro|gpt-5.4-pro-*)
             CODEX_INPUT_PRICE=30; CODEX_CACHED_INPUT_PRICE=30; CODEX_OUTPUT_PRICE=180; CODEX_LONG_CONTEXT_PRICING=1 ;;
         gpt-5.5|gpt-5.5-20*)
@@ -255,17 +275,17 @@ configure_codex_pricing()
 
 estimate_codex_cost()
 {
-    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3"
+    local input_tokens="$1" cached_input_tokens="$2" output_tokens="$3" cache_write_input_tokens="$4"
     [[ -n "$CODEX_INPUT_PRICE" ]] || { printf '0'; return; }
-    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" \
-        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v op="$CODEX_OUTPUT_PRICE" \
+    awk -v i="$input_tokens" -v ci="$cached_input_tokens" -v o="$output_tokens" -v cwi="$cache_write_input_tokens" \
+        -v ip="$CODEX_INPUT_PRICE" -v cip="$CODEX_CACHED_INPUT_PRICE" -v cwip="${CODEX_CACHE_WRITE_INPUT_PRICE:-$CODEX_INPUT_PRICE}" -v op="$CODEX_OUTPUT_PRICE" \
         -v long="$CODEX_LONG_CONTEXT_PRICING" '
         BEGIN {
-            uncached = i - ci;
+            uncached = i - ci - cwi;
             if (uncached < 0) uncached = 0;
             input_multiplier = (long && i > 272000) ? 2 : 1;
             output_multiplier = (long && i > 272000) ? 1.5 : 1;
-            printf "%.9f", ((uncached * ip + ci * cip) * input_multiplier + o * op * output_multiplier) / 1000000;
+            printf "%.9f", ((uncached * ip + ci * cip + cwi * cwip) * input_multiplier + o * op * output_multiplier) / 1000000;
         }'
 }
 
@@ -549,26 +569,31 @@ setup_worktree_submodules()
 }
 
 # Create the worktree for a worker if it does not exist yet, otherwise reuse it.
+# Reusing an arbitrary pre-existing directory would make the worker cleanup
+# sequence operate on state which does not belong to this orchestrator.
 ensure_worktree()
 {
     local wt="$1"
+    local canonical_wt
 
-    if git -C "$MAIN_REPO" worktree list --porcelain | grep -qxF "worktree $wt"; then
-        banner "Reusing existing worktree: $wt"
+    canonical_wt=$(realpath -m "$wt")
+
+    if git -C "$MAIN_REPO" worktree list --porcelain | grep -xF "worktree $canonical_wt" >/dev/null; then
+        banner "Reusing existing worktree: $canonical_wt"
         return 0
     fi
-    if [[ -e "$wt" ]]; then
-        banner "Path exists but is not a registered worktree, reusing as-is: $wt"
-        return 0
+    if [[ -e "$canonical_wt" ]]; then
+        echo "${S}ERROR: path exists but is not a registered worktree: $canonical_wt${R}" >&2
+        return 1
     fi
 
-    banner "Creating worktree: $wt"
-    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$wt" HEAD
+    banner "Creating worktree: $canonical_wt"
+    git -C "$MAIN_REPO" worktree add --no-checkout --detach "$canonical_wt" HEAD
 
     if (( SKIP_SUBMODULES )); then
-        git -C "$wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+        git -C "$canonical_wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
     else
-        setup_worktree_submodules "$wt"
+        setup_worktree_submodules "$canonical_wt"
     fi
 }
 
@@ -585,14 +610,35 @@ STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
 declare -a WORKER_PIDS=()
 
+cleanup_worker_codex_auth()
+{
+    [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]] || return 0
+
+    local wt
+    for wt in "${WT[@]-}"; do
+        rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
+    done
+}
+
 stop_workers()
 {
     local roots own_pgid entry pid pgid
     local -a targets
-    local -A target_groups=()
+    local -a active_workers=() live_jobs=()
+    local -A target_groups=() worker_pid_set=()
 
-    (( ${#WORKER_PIDS[@]} )) || return 0
-    roots="${WORKER_PIDS[*]}"
+    # `WORKER_PIDS` retains exited child PIDs until `wait` completes. Resolve
+    # roots through the shell's live job table so a recycled PID can never be
+    # mistaken for a worker and signalled during interrupt handling.
+    for pid in "${WORKER_PIDS[@]}"; do
+        worker_pid_set["$pid"]=1
+    done
+    mapfile -t live_jobs < <(jobs -pr)
+    for pid in "${live_jobs[@]}"; do
+        [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
+    done
+    (( ${#active_workers[@]} )) || { cleanup_worker_codex_auth; return 0; }
+    roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
 
     # Snapshot the complete descendant tree before sending any signal. Commands
@@ -646,13 +692,10 @@ stop_workers()
         read -r pid pgid <<< "$entry"
         kill -KILL "$pid" 2>/dev/null || true
     done
-    for pid in "${WORKER_PIDS[@]}"; do
-        kill -KILL "$pid" 2>/dev/null || true
-    done
-
-    if (( ${#WORKER_PIDS[@]} )); then
-        wait "${WORKER_PIDS[@]}" 2>/dev/null || true
+    if (( ${#active_workers[@]} )); then
+        wait "${active_workers[@]}" 2>/dev/null || true
     fi
+    cleanup_worker_codex_auth
     WORKER_PIDS=()
 }
 
@@ -674,10 +717,10 @@ DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
 # root cause of merges that were prepared but never pushed: the worker started a
 # build in the background and ended its turn waiting for a notification that
 # never comes in single-shot `--print` mode).
-STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you have access; a contested/reserved/superseded note does not block mechanical conflict resolution. Determine pushability from repository and author ownership before maintainerCanModify: a same-repository PR and any PR authored by the authenticated gh user are pushable regardless of maintainerCanModify; that field only blocks pushing another author's cross-repository fork. If you cannot push (e.g. another author's fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
+STEER_PROMPT="You are running in a non-interactive, single-shot batch session. Do NOT run any commands in the background and do NOT defer work expecting to be notified later - there is no later notification, and any background process is killed when your turn ends. Run builds, tests, and every long-running command synchronously in the foreground so they finish within your turn, and complete ALL work - including pushing your commits with 'git push' - before you end your turn. Preserve the existing remote PR history: only add commits, never rebase, reset onto another base, amend published commits, force-push, use a '+' refspec, bypass hooks with --no-verify, or delete the remote branch. Before committing, inspect the staged name-status and stat, stage only explicit intended paths, and reject unrelated files or mass changes. Before pushing, require the freshly fetched remote PR head to be an ancestor of local HEAD and inspect the complete diff against the base branch; a scope or lineage anomaly is a hard safety stop to report, never something to work around. A passing (green) CI does NOT mean the PR is done: always fetch and address unresolved review comments and reviewer feedback - including automated or bot reviews such as clickhouse-gh[bot], and review threads that are merely COMMENTED rather than blocking - even when every check passes or the PR is already approved. Do not signal done while there are unaddressed review comments, unless addressing them genuinely requires a human decision. If the PR is CONFLICTING, resolve the conflicts (merge the base branch, resolve, and rework to build) and push whenever you have access; a contested/reserved/superseded note does not block mechanical conflict resolution. Determine pushability from repository and author ownership before maintainerCanModify: a same-repository PR and any PR authored by the authenticated gh user are pushable regardless of maintainerCanModify; that field only blocks pushing another author's cross-repository fork. If you cannot push (e.g. another author's fork with maintainer edits disabled), supersede it: open your own PR from the main repo (crediting the author; re-author the commits yourself if the author has not signed the CLA) and close theirs with a comment linking the new PR - unless the change is obsolete, already fixed, or already superseded, in which case say so specifically rather than a bare 'needs attention'. Every GitHub comment you post (PR comments, issue comments, and review-thread replies) MUST begin with the 🕵 symbol followed by a space, so automated comments are identifiable. When, and only when, the PR is fully handled (changes pushed, or you have determined that no change is needed or that it needs a human decision), end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Sent on each resume to nudge the worker to finish.
-NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
+NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. Preserve remote PR history and obey the staged-diff, full-PR-diff, and fast-forward-only safety gates; never force-push or bypass the pre-push hook. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). A same-repository PR or a PR authored by the authenticated gh user is pushable even when maintainerCanModify is false; only use that field for another author's cross-repository fork. Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
@@ -688,7 +731,8 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer prompt usage
+    local sid deadline iter ec now remaining build_steer prompt usage codex_home
+    local -a codex_env
     local u_i u_o u_ci u_co u_cost
     local -a model_args
     sid=""
@@ -706,6 +750,27 @@ run_continue_pr()
     : > "$log"
     iter=0
     ec=0
+
+    # Codex API-key authentication is configured state, not an environment
+    # variable consumed by `codex exec`. Keep that state private to this worker
+    # and remove it after the run, so a requested key cannot fall back to or
+    # modify the caller's ambient Codex login.
+    codex_home=""
+    codex_env=()
+    if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
+        codex_home="$wt/tmp/continue-all-prs/codex-home"
+        codex_env=("CODEX_HOME=$codex_home")
+        mkdir -p "$codex_home"
+        rm -f "$codex_home/auth.json"
+        now=$(date +%s)
+        remaining=$(( deadline - now ))
+        (( remaining > 0 )) || return 124
+        printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
+            ec=$?
+            rm -f "$codex_home/auth.json"
+            return "$ec"
+        }
+    fi
 
     while :; do
         iter=$(( iter + 1 ))
@@ -744,7 +809,7 @@ run_continue_pr()
                 prompt="/continue-pr-auto $url
 
 ${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" && timeout "$remaining" codex exec \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -755,7 +820,7 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && timeout "$remaining" codex exec resume \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
@@ -769,11 +834,11 @@ ${STEER_PROMPT} ${build_steer}"
                     [splits("\n") | fromjson?] as $events
                     | [([$events[] | select(.type == "turn.completed") | (.usage.input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.output_tokens // 0)] | add // 0),
-                     0,
+                     ([$events[] | select(.type == "turn.completed") | (.usage.cache_write_input_tokens // 0)] | add // 0),
                      ([$events[] | select(.type == "turn.completed") | (.usage.cached_input_tokens // 0)] | add // 0),
                      0] | @tsv' "$log.json" 2>/dev/null)
                 IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
-                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}")
+                u_cost=$(estimate_codex_cost "${u_i:-0}" "${u_co:-0}" "${u_o:-0}" "${u_ci:-0}")
                 stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
             fi
             if [[ ! -s "$log.last" ]]; then
@@ -798,6 +863,7 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
+    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
     return "$ec"
 }
 
