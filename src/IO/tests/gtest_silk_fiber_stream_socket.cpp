@@ -93,8 +93,8 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
     };
 
     silk::FiberFuture client_future;
@@ -161,9 +161,9 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
-        std::latch * negative_poll_done;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
+        std::latch * negative_poll_done{};
     };
 
     silk::FiberFuture client_future;
@@ -233,8 +233,8 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
     };
 
     silk::FiberFuture client_future;
@@ -265,8 +265,8 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
     };
 
     silk::FiberFuture client_future;
@@ -322,10 +322,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
-        uint64_t * elapsed_us;
-        DB::SocketState * state;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
+        uint64_t * elapsed_us{};
+        DB::SocketState * state{};
     };
 
     uint64_t elapsed_us = 0;
@@ -398,10 +398,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     struct Params
     {
         DB::SilkFiberJobHeader header;
-        uint16_t port;
-        Poco::Net::StreamSocketImpl * impl;
-        uint64_t * elapsed_us;
-        int * ssl_error;
+        uint16_t port{};
+        Poco::Net::StreamSocketImpl * impl{};
+        uint64_t * elapsed_us{};
+        int * ssl_error{};
     };
 
     uint64_t elapsed_us = 0;
