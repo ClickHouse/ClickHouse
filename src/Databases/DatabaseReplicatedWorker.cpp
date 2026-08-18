@@ -1116,9 +1116,9 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         const String removed_window_views_path = database->replica_path + "/removed_window_views";
         task->ops.emplace_back(zkutil::makeSetRequest(
             removed_window_views_path, serializeRemovedWindowViews(rebound_removed_window_views), -1));
-        task->successful_execution_callback = [this, rebound_removed_window_views = std::move(rebound_removed_window_views)] () mutable
+        task->successful_execution_callback = [this, committed_removed_window_views = std::move(rebound_removed_window_views)] () mutable
         {
-            removed_window_views = std::move(rebound_removed_window_views);
+            removed_window_views = std::move(committed_removed_window_views);
         };
     }
 
