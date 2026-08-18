@@ -1297,26 +1297,37 @@ public:
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
 
-    /// Seeds a batch of two requests with reads parked between them in intermediate_reads, the way
-    /// dispatchThread does through flush_to_intermediate_reads: initialize at the fill site, then
-    /// move the reads into the batch, then activate, which is what classifies the prefix. The
-    /// boundary is 1 because InFlightBatch documents 0 < next_request_idx < requests.size();
-    /// requests.size() is reserved for late_reads.
+    /// Seeds a batch with reads parked at `boundary` in intermediate_reads, the way dispatchThread
+    /// does through flush_to_intermediate_reads: initialize at the fill site, then move the reads
+    /// into the batch, then activate, which is what classifies the prefix.
+    /// InFlightBatch documents 0 < next_request_idx < requests.size(); requests.size() is reserved
+    /// for late_reads.
+    static size_t seedIntermediateReads(
+        KeeperRequestDispatcher & dispatcher,
+        KeeperRequestsForSessions requests,
+        size_t boundary,
+        KeeperRequestsForSessions reads)
+    {
+        chassert(boundary > 0 && boundary < requests.size());
+        size_t batch_idx = dispatcher.tail_idx.load();
+        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
+        batch.requests = std::move(requests);
+        for (const auto & read : reads)
+            KeeperRequestDispatcher::initializeWaitForWriteSpan(read);
+        batch.intermediate_reads.push_back({boundary, std::move(reads)});
+        batch.activate({});
+        dispatcher.tail_idx.store(batch_idx + 1);
+        return batch_idx;
+    }
+
     static size_t seedIntermediateReads(
         KeeperRequestDispatcher & dispatcher,
         const KeeperRequestForSession & request1,
         const KeeperRequestForSession & request2,
         KeeperRequestsForSessions reads)
     {
-        size_t batch_idx = dispatcher.tail_idx.load();
-        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
-        batch.requests = {request1, request2};
-        for (const auto & read : reads)
-            KeeperRequestDispatcher::initializeWaitForWriteSpan(read);
-        batch.intermediate_reads.push_back({1, std::move(reads)});
-        batch.activate({});
-        dispatcher.tail_idx.store(batch_idx + 1);
-        return batch_idx;
+        return seedIntermediateReads(
+            dispatcher, KeeperRequestsForSessions{request1, request2}, /*boundary=*/ 1, std::move(reads));
     }
 
     static bool batchHasWrite(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
@@ -1701,6 +1712,31 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"));
 
         EXPECT_EQ(waitForWriteObservations() - before, 0u) << "retiring the batch observed the read after all";
+        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
+    }
+
+    /// A prefix write need not lead the batch: under quorum_reads the first request can be a read,
+    /// and a write appended after it still precedes the next boundary.
+    {
+        auto before = waitForWriteObservations();
+        size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
+            dispatcher,
+            {makeReadRequest(/*session_id=*/ 10, /*xid=*/ 1, "/"),
+             makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 2, "/nonleading"),
+             makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 4, "/after")},
+            /*boundary=*/ 2,
+            {makeReadRequest(/*session_id=*/ 10, /*xid=*/ 3, "/")});
+
+        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 10, /*xid=*/ 1, "/"));
+        EXPECT_EQ(waitForWriteObservations() - before, 0u)
+            << "the read was observed before the write it waits for committed";
+
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 2, "/nonleading"));
+
+        EXPECT_EQ(waitForWriteObservations() - before, 1u)
+            << "a read waiting for a write at a non-leading prefix index was not observed";
+
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 4, "/after"));
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
