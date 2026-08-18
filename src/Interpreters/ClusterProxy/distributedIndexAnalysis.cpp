@@ -898,6 +898,12 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     /// Disable parallel replicas to avoid O(N^2) spawned queries when the predicate has a subquery,
     /// because each replica would independently spawn parallel replicas for the subquery.
     context_copy->setSetting("enable_parallel_replicas", false);
+    /// Read/result limits belong to the user's query and stay enforced on the initiator (the
+    /// runtime check of the reading); on the analyze queries they would only fire spuriously:
+    /// the rows estimate there covers a single replica subset, and the analysis output itself
+    /// is a query result.
+    for (const auto & setting : {"max_rows_to_read", "max_bytes_to_read", "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "max_result_rows", "max_result_bytes"})
+        context_copy->setSetting(setting, Field(0));
 
     DistributedIndexAnalyzer analyzer(
         storage_id,
