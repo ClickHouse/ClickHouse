@@ -20,5 +20,8 @@ SELECT '-- mergeTreeIndex must not expose primary key values of policy-hidden ro
 SELECT DISTINCT department FROM mergeTreeIndex(currentDatabase(), 't_mt_index_rp') ORDER BY department; -- { serverError ACCESS_DENIED }
 SELECT count() FROM mergeTreeIndex(currentDatabase(), 't_mt_index_rp', with_minmax = true); -- { serverError ACCESS_DENIED }
 
+SELECT '-- mergeTreeAnalyzeIndexes must not answer predicates about policy-hidden rows';
+SELECT ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_mt_index_rp, department = 'finance'); -- { serverError ACCESS_DENIED }
+
 DROP ROW POLICY rp_mt_index ON t_mt_index_rp;
 DROP TABLE t_mt_index_rp;

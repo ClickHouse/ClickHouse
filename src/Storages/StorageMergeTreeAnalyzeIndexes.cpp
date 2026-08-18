@@ -21,6 +21,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
@@ -33,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 ///
@@ -347,7 +349,18 @@ void StorageMergeTreeAnalyzeIndexes::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    context->checkAccess(AccessType::SELECT, source_table->getStorageID());
+    auto source_storage_id = source_table->getStorageID();
+    context->checkAccess(AccessType::SELECT, source_storage_id);
+
+    /// The analysis answers arbitrary predicates with granule ranges, which tells the keys of the rows a policy hides
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeAnalyzeIndexes` because a row policy is applied on table {}. "
+            "Reading the index analysis could violate the row policy",
+            source_storage_id.getNameForLogs());
 
     auto sample = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);

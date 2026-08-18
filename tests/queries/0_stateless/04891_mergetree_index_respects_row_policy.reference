@@ -6,3 +6,4 @@ hr
 1	engineering
 3	engineering
 -- mergeTreeIndex must not expose primary key values of policy-hidden rows
+-- mergeTreeAnalyzeIndexes must not answer predicates about policy-hidden rows
