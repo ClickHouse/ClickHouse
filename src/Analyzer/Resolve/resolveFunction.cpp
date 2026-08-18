@@ -244,7 +244,9 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
     {
         /// The root is the logical function being folded. It is short-circuit by definition,
         /// although it deliberately reports false for lazy execution of itself.
-        if (!is_root)
+        const auto & function_name = function->getFunctionName();
+        const bool is_nested_logical = function_name == "and" || function_name == "or";
+        if (!is_root && !is_nested_logical)
         {
             if (auto function_base = function->getFunction())
             {
