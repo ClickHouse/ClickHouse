@@ -34,6 +34,8 @@ If you're looking for the equivalent endpoint for [ClickHouse Managed Postgres](
 | Service ID       | Endpoint address | uuid (optional)               |
 | filtered_metrics | Query param | boolean (optional) |
 
+Full request and response schemas for these endpoints are available in the [Cloud API reference](/products/cloud/api-reference/prometheus).
+
 ### Authentication {#authentication}
 
 Use your ClickHouse Cloud API key for basic authentication:
@@ -227,7 +229,7 @@ A sample discovery response:
 ]
 ```
 
-Discovered targets scrape with `filtered_metrics=true`. To discover targets that scrape the full metric set, add `?filtered_metrics=false` to the discovery URL.
+Discovered targets scrape with `filtered_metrics=true`. To discover targets that scrape the full metric set, add `?filtered_metrics=false` to the discovery URL. The full endpoint specification is available in the [Cloud API reference](/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 ## Integrating with Grafana {#integrating-with-grafana}
 
