@@ -1,0 +1,13 @@
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+-- ClickHouse aggregate names must not bypass KQL's `summarize` requirement.
+print uniqExact(1); -- { clientError BAD_ARGUMENTS }
+
+SET dialect = 'clickhouse';
+SET interval_output_format = 'kusto';
+
+-- Calendar intervals and sub-tick nanosecond intervals are not KQL timespans.
+SELECT toIntervalMonth(1); -- { serverError BAD_ARGUMENTS }
+SELECT toIntervalNanosecond(1); -- { serverError BAD_ARGUMENTS }
+SELECT toIntervalNanosecond(100);

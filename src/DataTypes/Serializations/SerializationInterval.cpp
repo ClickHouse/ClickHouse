@@ -63,6 +63,12 @@ void serializeTextKusto(IntervalKind interval_kind, const IColumn & column, cons
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected column of underlying type of Interval");
 
     const Int64 value = interval_column->getData()[row];
+    if (!interval_kind.isFixedLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot format a calendar interval in Kusto timespan format");
+
+    if (interval_kind == IntervalKind::Kind::Nanosecond && value % 100)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot format an IntervalNanosecond that is not a multiple of 100 in Kusto timespan format");
+
     Int64 nanoseconds = 0;
     if (common::mulOverflow(interval_kind.toAvgNanoseconds(), value, nanoseconds))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Formatting an interval in Kusto dialect will overflow");

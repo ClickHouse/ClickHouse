@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 #include <Poco/String.h>
@@ -1474,6 +1475,12 @@ ASTPtr translateKQLFunction(const String & name, const String & original_name, c
 
     if (!entry)
     {
+        if (!allow_aggregates && AggregateFunctionFactory::instance().isAggregateFunctionName(original_name))
+        {
+            error = fmt::format("'{}' is an aggregate function, and may only be used in the aggregation of a 'summarize'", name);
+            return nullptr;
+        }
+
         if (isUnsupportedKQLFunction(name))
         {
             error = fmt::format("'{}' is not supported by the KQL dialect", name);
