@@ -72,6 +72,10 @@ public:
     }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
+    /// Re-probe the cache: a block may have been populated by a concurrent query since `resolve`. Any
+    /// resident prefix is adopted and reported as `available` (already committed, served from cache),
+    /// so the executor does not re-read it from the source.
+    Lead claimLeadRole(ByteRange range) override;
 
 private:
     PageCachePtr cache;

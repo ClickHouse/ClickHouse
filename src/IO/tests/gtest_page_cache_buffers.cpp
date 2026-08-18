@@ -479,3 +479,40 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     auto chain = writer.read(ByteRange{0, block_size});
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
+
+/// (k) claimLeadRole re-probes the cache: a block populated by another writer between the openWriter
+/// (a read-only `resolve`) and the claim is adopted and reported as `available` with NO claim, so the
+/// caller serves it from cache instead of re-reading it from the source.
+TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
+{
+    auto cache = makeCache();
+    auto file = makeFile("buffers-claim-recheck");
+    constexpr size_t block_size = 4096;
+    PageCacheProvider provider(
+        cache, file, block_size, /*inject_eviction=*/false,
+        /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
+
+    /// Two writers over the still-uncached block (both saw a miss at resolve).
+    auto view_late = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & late = view_late->misses();
+    ASSERT_EQ(late.size(), 1u);
+    auto view_early = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & early = view_early->misses();
+    ASSERT_EQ(early.size(), 1u);
+
+    /// A concurrent writer populates the block with 'C'.
+    EXPECT_EQ(claimedWrite(*early[0].writer, makeChain(0, block_size, 'C')), block_size);
+
+    /// The late writer's claimLeadRole re-probes: the block is now resident, so it is reported as
+    /// available (the whole block) with no claim to fill.
+    auto & late_writer = *late[0].writer;
+    auto lead = late_writer.claimLeadRole(late_writer.range());
+    EXPECT_EQ(lead.available.offset, 0u);
+    EXPECT_EQ(lead.available.size, block_size);
+    EXPECT_FALSE(static_cast<bool>(lead.claim)) << "nothing left to fill: the block is already committed";
+    EXPECT_TRUE(late_writer.committed().subtract(ByteRange{0, block_size}).empty());
+
+    /// The late writer serves the concurrently-written bytes from cache (adopted its cell).
+    auto chain = late_writer.read(ByteRange{0, block_size});
+    EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'C'));
+}
