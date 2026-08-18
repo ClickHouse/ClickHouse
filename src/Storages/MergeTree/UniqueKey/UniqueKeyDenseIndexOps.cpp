@@ -264,6 +264,17 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
                 part->name, part->rows_count);
 
         const UInt64 rows = accumulated.rows();
+        /// Densify the accumulated UK columns: chunk columns are densified in
+        /// `readUniqueKeyColumns`, but the accumulator is cloned from the
+        /// pipeline header, which may carry a `ColumnSparse`, so the merged
+        /// column can still be sparse. `ColumnSparse` has no comparable
+        /// serialization for the SST encoding. No-op for already dense columns.
+        for (size_t col = 0; col < accumulated.columns(); ++col)
+        {
+            auto & column = accumulated.getByPosition(col);
+            column.column = column.column->convertToFullColumnIfSparse();
+        }
+
         /// `unique_key_max_encoded_size` is an INSERT-time ingestion policy (a
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.

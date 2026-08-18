@@ -29,10 +29,13 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_checksums SELECT 0, number, toS
 
 # Section 1: the SST is written and recorded in checksums.txt (grepped directly
 # since CHECK TABLE is rejected for UNIQUE KEY tables). `a` is all-default and
-# stored sparsely; `id` keeps the compound key unique.
+# stored sparsely; `id` keeps the compound key unique. Read the serialization
+# kind from system.parts_columns rather than comparing on-disk file sizes, so
+# the check is independent of column file naming (e.g. max_file_name_length).
 echo "sparse_uk_column_stored"
+${CLICKHOUSE_CLIENT} --query "SELECT if(serialization_kind = 'Sparse', 'yes', 'no') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active AND column = 'a'"
+
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active")
-[ "$(stat -c%s "${PART_PATH}a.bin")" -lt "$(stat -c%s "${PART_PATH}id.bin")" ] && echo "yes" || echo "no"
 
 echo "sst_present"
 [ -f "${PART_PATH}unique_key_index.sst" ] && echo "yes" || echo "no"
