@@ -50,7 +50,7 @@ grep -q 'TIMEOUT' "$scratch/timeout.log"
 
 worker="${worktree_base}-0"
 submodule="$worker/contrib/FP16"
-git -C "$worker" submodule update --init --checkout --force --no-fetch contrib/FP16
+git clone --quiet --shared "$repo/contrib/FP16" "$submodule"
 printf 'dirty\n' > "$submodule/continue-all-prs-test-untracked"
 [[ -n "$(git -C "$submodule" status --short)" ]]
 

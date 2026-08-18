@@ -932,7 +932,13 @@ stop_workers()
 
 cleanup()
 {
+    local wt
+
     stop_workers
+    for wt in "${WT[@]:-}"; do
+        [[ -n "$wt" && "$wt" == "$WORKTREE_BASE-"* ]] || continue
+        rm -rf -- "$wt/tmp/continue-all-prs/codex-home"
+    done
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
