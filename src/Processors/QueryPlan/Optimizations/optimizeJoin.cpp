@@ -112,12 +112,16 @@ static bool isRowConstant(const ActionsDAG::Node * node)
             continue;
         }
 
-        if (current->type != ActionsDAG::ActionType::FUNCTION || !current->function_base
-            || !current->function_base->isDeterministicInScopeOfQuery())
-            return false;
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+            && current->function_base->isDeterministicInScopeOfQuery())
+        {
+            for (const auto * child : current->children)
+                nodes.push(child);
 
-        for (const auto * child : current->children)
-            nodes.push(child);
+            continue;
+        }
+
+        return false;
     }
 
     return true;
