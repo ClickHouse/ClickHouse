@@ -206,10 +206,9 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
-    /// Adopt the sets the single-node plan already filled. Optimizing this plan runs index analysis
-    /// over its reads, and a `col IN (subquery)` condition makes that analysis build the set on the
-    /// spot (`KeyCondition::tryPrepareSetIndexForIn`). Without this the same subqueries are executed
-    /// a second time just to plan a candidate that is usually thrown away.
+    /// Adopt the sets the single-node plan already filled.
+    /// Without this the same subqueries are executed a second time
+    /// just to plan a candidate that might be thrown away.
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));

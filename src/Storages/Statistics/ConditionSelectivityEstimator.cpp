@@ -461,6 +461,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 if (!set_ranges)
                     return false;
 
+                chassert(is_in_operator);
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 if (func_name == "in")
                     out.column_ranges.emplace(column_name, *set_ranges);

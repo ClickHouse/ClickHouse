@@ -1,20 +1,20 @@
 #pragma once
 
-#include <city.h>
-#include <Parsers/IAST_fwd.h>
-#include <DataTypes/IDataType.h>
-#include <map>
+#include <future>
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include <future>
-#include <Common/callOnce.h>
-#include <Storages/IStorage_fwd.h>
+#include <city.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Storages/IStorage_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/callOnce.h>
 
 namespace DB
 {
@@ -210,13 +210,20 @@ private:
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
+/// Hashes a `FutureSet::Hash` for the unordered containers keyed by it. Declared here rather than
+/// inside `PreparedSets` so `BuiltSetsByHash` below can use it too; `PreparedSets::Hashing` aliases it.
+struct FutureSetHashing
+{
+    UInt64 operator()(const FutureSet::Hash & key) const { return key.low64 ^ key.high64; }
+};
+
 /// Sets that some earlier plan build already filled, keyed by `FutureSet::getHash`. A second plan
 /// build of the same query (automatic parallel replicas builds one to decide whether replicas pay
 /// off) can adopt them instead of re-running the subqueries: `FutureSetFromSubquery::build` and
 /// `buildOrderedSetInplace` both return early once the set is created.
 struct BuiltSetsByHash
 {
-    std::map<FutureSet::Hash, SetAndKeyPtr> sets;
+    UnorderedMapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr, FutureSetHashing> sets;
 };
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
@@ -226,10 +233,7 @@ class PreparedSets
 public:
 
     using Hash = CityHash_v1_0_2::uint128;
-    struct Hashing
-    {
-        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
-    };
+    using Hashing = FutureSetHashing;
 
     using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;

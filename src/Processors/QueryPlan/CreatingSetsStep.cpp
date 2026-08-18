@@ -343,7 +343,11 @@ BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan)
         [&](FutureSetFromSubquery & future_set)
         {
             const auto & set_and_key = future_set.getSetAndKey();
-            if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+            /// Only sets with explicit elements are safe to hand over. `buildOrderedSetInplace` returns the
+            /// set as-is once it exists, so adopting one built without elements would leave the probe plan
+            /// unable to build them from its own source, degrading index and selectivity analysis there.
+            if (set_and_key && set_and_key->set && set_and_key->set->isCreated()
+                && set_and_key->set->hasExplicitSetElements())
                 built->sets.emplace(future_set.getHash(), set_and_key);
         });
     return built;
