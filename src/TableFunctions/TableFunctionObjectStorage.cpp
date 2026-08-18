@@ -1469,7 +1469,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIceberg>(
          {.description = R"DOCS_MD(
-Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
+Provides a table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}
 
