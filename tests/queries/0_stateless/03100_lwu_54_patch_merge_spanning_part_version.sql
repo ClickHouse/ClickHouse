@@ -39,10 +39,7 @@ KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_span' SYNC F
 UPDATE t_lwu_span SET c1 = 300 WHERE id = 3;
 UPDATE t_lwu_span SET c1 = 400 WHERE id = 4;
 
-SELECT DISTINCT partition_id FROM system.parts
-WHERE database = currentDatabase() AND table = 't_lwu_span' AND active AND startsWith(name, 'patch');
-
-OPTIMIZE TABLE t_lwu_span PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL;
+OPTIMIZE TABLE t_lwu_span FINAL;
 
 -- The patch that the mutation has already applied must not be merged with the newer ones, so more
 -- than one patch part is left. A merge of all of them spans the data version of the part, and the
