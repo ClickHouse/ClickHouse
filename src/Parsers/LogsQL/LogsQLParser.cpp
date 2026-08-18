@@ -1606,6 +1606,10 @@ ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const Strin
             literal = make_intrusive<ASTLiteral>(*number);
             is_numeric = true;
         }
+        else
+        {
+            throwSyntaxError(fmt::format("cannot parse {} as a number in a comparison filter", value));
+        }
     }
 
     if (is_numeric)
