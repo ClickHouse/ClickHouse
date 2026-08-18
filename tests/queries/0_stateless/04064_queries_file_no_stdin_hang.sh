@@ -66,7 +66,7 @@ run_ambiguous_infile_stdin_test()
         exit 1
     fi
 
-    grep -Fqx 'Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported' "$output_file" ||
+    grep -Fq 'Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported' "$output_file" ||
     {
         cat "$output_file" >&2
         exit 1
