@@ -115,7 +115,6 @@ namespace DB::Setting
 
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
-static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
 static constexpr size_t MAX_LIST_RETRIES = 5;
 
@@ -340,6 +339,11 @@ void writeMessageToFile(
 static constexpr size_t COMMIT_RECONCILIATION_ATTEMPTS = 4;
 static constexpr uint64_t COMMIT_RECONCILIATION_DELAY_MS = 200;
 
+/// Number of attempts used to converge `version-hint.text` onto the committed version. Only a
+/// failure that a later attempt could survive is retried, so this bound covers a lost hint-write
+/// race and a transient read, both of which resolve within a few tries.
+static constexpr size_t VERSION_HINT_CONVERGENCE_ATTEMPTS = 4;
+
 /// What the object store holds at the commit's target path, relative to what this writer tried to
 /// put there. Only `LostRace` licenses a cleanup: it is the sole outcome that proves the commit did
 /// not happen.
@@ -449,8 +453,10 @@ static void convergeVersionHint(
     const ContextPtr & context,
     bool try_write_version_hint)
 {
-    size_t i = 0;
-    while (i < MAX_TRANSACTION_RETRIES)
+    auto log = getLogger("IcebergVersionHint");
+    std::string last_error;
+
+    for (size_t attempt = 0; attempt < VERSION_HINT_CONVERGENCE_ATTEMPTS; ++attempt)
     {
         try
         {
@@ -469,23 +475,37 @@ static void convergeVersionHint(
             else if (!try_write_version_hint)
             {
                 /// The file does not exist and this writer was not asked to create it.
-                break;
+                return;
             }
 
             Int32 old_version = 0;
             if (!version_hint_value.empty())
             {
-                if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
+                try
                 {
-                    old_version = parseMetadataVersion(version_hint_value, version_hint_value);
+                    if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
+                    {
+                        old_version = parseMetadataVersion(version_hint_value, version_hint_value);
+                    }
+                    else
+                    {
+                        old_version = getMetadataFileAndVersion(version_hint_value).version;
+                    }
                 }
-                else
+                catch (...)
                 {
-                    old_version = getMetadataFileAndVersion(version_hint_value).version;
+                    /// Whether the stored bytes name a version is a property of those bytes, so
+                    /// every further attempt reaches the same verdict.
+                    LOG_WARNING(
+                        log,
+                        "Version hint {} holds '{}', which names no metadata version, so it cannot be advanced to {}. "
+                        "Readers using the hint may observe an older snapshot: {}",
+                        storage_version_hint_path, version_hint_value, committed_version, getCurrentExceptionMessage(false));
+                    return;
                 }
             }
             if (old_version >= committed_version)
-                break;
+                return;
 
             /// Write just the version number for Spark/spec compatibility.
             Iceberg::writeMessageToFile(
@@ -495,14 +515,20 @@ static void convergeVersionHint(
                 context,
                 write_if_none_match,
                 /* write-if-match */ etag);
-            break;
+            return;
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// A lost hint-write race or a transient read; both can resolve on a later attempt.
+            last_error = getCurrentExceptionMessage(false);
+            LOG_DEBUG(log, "Attempt {} to advance version hint {} failed: {}", attempt + 1, storage_version_hint_path, last_error);
         }
-        ++i;
     }
+
+    LOG_WARNING(
+        log,
+        "Version hint {} did not reach version {} in {} attempts. Readers using the hint may observe an older snapshot: {}",
+        storage_version_hint_path, committed_version, VERSION_HINT_CONVERGENCE_ATTEMPTS, last_error);
 }
 
 bool isCommitStateUnknown(const Exception & e)
