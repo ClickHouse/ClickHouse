@@ -2118,7 +2118,7 @@ void Planner::buildPlanForUnionNode()
         settings.tryGet("offset", settings_offset);
         const bool has_order_sensitive_post_distinct_limit = select_query_options.subquery_depth == 0
             && !select_query_options.settings_limit_offset_done
-            && (settings_limit.safeGet<UInt64>() > 0 || settings_offset.safeGet<UInt64>() > 0);
+            && (settings_limit.safeGet<Float64>() > 0 || settings_offset.safeGet<Float64>() > 0);
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
