@@ -1440,6 +1440,56 @@ def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
         )
 
 
+def test_register_existing_delta_table_rejects_column_mapping(started_cluster):
+    """
+    A Spark Delta table with column mapping carries per-field `delta.columnMapping.physicalName` metadata
+    (consumed by the read path) that the raw-schema helper does not serialize, so registering it into Unity
+    would produce a schema differing from the `_delta_log`. Onboarding such a table must be rejected rather
+    than silently register a wrong schema. Regression for review #1 in PR #106011.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_colmap_{test_uuid}"
+    schema_name = f"colmap_schema_{test_uuid}"
+    table_name = f"colmap_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name}",
+            f"CREATE TABLE delta.\\`{location}\\` (id INT, name STRING) USING delta "
+            "TBLPROPERTIES ('delta.columnMapping.mode' = 'name')",
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+    try:
+        # Onboarding a column-mapped table into the catalog must be rejected, not silently registered.
+        error = node1.query_and_get_error(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        assert "column mapping" in error, error
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+
+
 def test_register_existing_delta_table_requires_kernel(started_cluster):
     """
     Attaching an existing Delta table into a Unity `DataLakeCatalog` database reads its schema via the kernel

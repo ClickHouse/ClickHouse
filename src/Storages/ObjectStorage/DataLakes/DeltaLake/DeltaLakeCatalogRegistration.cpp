@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -149,6 +150,12 @@ void registerDeltaTableInCatalog(
         /// cache) exists for this table, so read a one-off snapshot here to get the raw Delta schema.
         auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(
             /* version */ std::nullopt, kernel_helper, object_storage, getLogger("DeltaLakeCatalogRegistration"));
+        /// Column mapping carries per-field metadata that the raw-schema helper drops, so the registered schema would differ from the `_delta_log`.
+        if (!snapshot->getPhysicalNamesMap().empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Registering a DeltaLake table with column mapping into a catalog is not supported "
+                "(its physical-name metadata cannot yet be preserved in the catalog schema)");
         fields = snapshot->getRawDeltaSchemaFields();
     }
 
