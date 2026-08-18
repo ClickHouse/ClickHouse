@@ -68,7 +68,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
   ## 데이터 타입 감지
 </div>
 
-튜플을 즉석에서 생성하면 ClickHouse는 주어진 인수 값을 담을 수 있는 가장 작은 타입으로 튜플 인수의 타입을 추론합니다. 값이 [NULL](/ko/reference/settings/formats#input_format_null_as_default)이면 추론되는 타입은 [널 허용](/ko/reference/data-types/nullable)입니다.
+튜플을 즉석에서 생성하면 ClickHouse는 주어진 인수 값을 담을 수 있는 가장 작은 타입으로 튜플 인수의 타입을 추론합니다. 값이 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default)이면 추론되는 타입은 [널 허용](/ko/reference/data-types/nullable)입니다.
 
 자동 데이터 타입 감지 예시:
 
