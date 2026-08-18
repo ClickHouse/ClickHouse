@@ -732,8 +732,7 @@ void SortingStep::serialize(Serialization & ctx) const
     serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
-    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;

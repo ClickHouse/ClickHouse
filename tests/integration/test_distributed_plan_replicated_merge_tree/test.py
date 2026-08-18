@@ -632,3 +632,97 @@ def test_join_with_aggregation(started_cluster, exchange_kind):
         """,
     )
     assert distributed == baseline
+
+
+def _read_rows_all_nodes(query_id: str) -> int:
+    """Rows read by a query across the whole cluster. The fragments run as secondary queries on the
+    nodes that own the buckets and their reads are not accounted on the initiator, so the initial
+    query alone only shows the rows it received - every node has to be summed by initial_query_id."""
+    for node in NODES:
+        node.query("SYSTEM FLUSH LOGS query_log")
+    total = 0
+    for node in NODES:
+        total += int(
+            node.query(
+                f"""
+                SELECT sum(read_rows) FROM system.query_log
+                WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'
+                """
+            ).strip()
+            or "0"
+        )
+    return total
+
+
+@EXCHANGE_KINDS
+def test_read_in_order(started_cluster, exchange_kind):
+    """ORDER BY the table's sorting key reads each part in key order instead of scanning and sorting.
+    A bucketed read is pinned to the coordinator's marks and cannot re-derive that, so the contract
+    travels with the read; before it did, such a query was rejected outright."""
+    for order in ("ASC", "DESC"):
+        distributed, baseline = _run_both_ways(
+            f"""
+            SELECT id, group_key
+            FROM big
+            ORDER BY id {order}
+            LIMIT 50
+            """,
+            settings_override=_override(exchange_kind),
+        )
+        assert distributed == baseline
+
+    # A window straddling a part boundary: every part holds a disjoint id range, so a stream ordered
+    # only within its own part is wrong here even when the head of the stream is right.
+    distributed, baseline = _run_both_ways(
+        """
+        SELECT id
+        FROM big
+        ORDER BY id
+        LIMIT 20 OFFSET 24990
+        """,
+        settings_override=_override(exchange_kind),
+    )
+    assert distributed == baseline
+
+
+def test_read_in_order_stops_early(started_cluster):
+    """The optimization must actually engage in a distributed plan, not merely return correct rows:
+    reading in key order lets the read stop once the limit is met, so it touches far fewer rows than
+    the same distributed query with the optimization switched off."""
+    query = """
+        SELECT id
+        FROM big
+        ORDER BY id
+        LIMIT 50
+        """
+
+    in_order_id = f"read_in_order_on_{uuid.uuid4().hex}"
+    scan_id = f"read_in_order_off_{uuid.uuid4().hex}"
+
+    # Pin the optimization on rather than relying on its default, so the comparison keeps its meaning
+    # if that default ever changes; the second run turns exactly that one setting off.
+    in_order = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, optimize_read_in_order = 1", query_id=in_order_id
+    )
+    scan = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, optimize_read_in_order = 0", query_id=scan_id
+    )
+
+    # Same answer either way; only the amount of data read differs.
+    assert in_order == scan
+    assert in_order == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    in_order_rows = _read_rows_all_nodes(in_order_id)
+    scan_rows = _read_rows_all_nodes(scan_id)
+    logging.info("read_rows in order: %s, scanning: %s", in_order_rows, scan_rows)
+
+    # The table holds 100_000 rows, so a scan must account for far more than the 50 returned. A value
+    # near the result size means the fragments' reads were not captured and the comparison is void.
+    assert scan_rows > 10_000, (
+        f"only {scan_rows} rows accounted for a full scan, so the measurement is not capturing the "
+        f"fragment reads and the comparison below would be meaningless"
+    )
+    assert in_order_rows < scan_rows, (
+        f"read-in-order did not reduce the rows read in a distributed plan "
+        f"(in order {in_order_rows}, scanning {scan_rows})"
+    )
