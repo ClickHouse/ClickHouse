@@ -568,3 +568,30 @@ INSERT INTO t_mat_mixed_subcolumn_compact (a, t) VALUES (1, (10, 100));
 ALTER TABLE t_mat_mixed_subcolumn_compact UPDATE t = tuple(20, 200) WHERE 1, MATERIALIZE COLUMN m SETTINGS mutations_sync = 2;
 SELECT t, m FROM t_mat_mixed_subcolumn_compact;
 DROP TABLE t_mat_mixed_subcolumn_compact;
+
+-- Case 46: A part inserted before ADD PROJECTION has no projection data to preserve. Materializing
+-- a column used by that projection's sorting key must be allowed; MATERIALIZE PROJECTION can build
+-- the projection later from the rewritten part.
+DROP TABLE IF EXISTS t_mat_projection_added_late;
+CREATE TABLE t_mat_projection_added_late
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_projection_added_late (a) VALUES (5);
+ALTER TABLE t_mat_projection_added_late ADD PROJECTION p (SELECT * ORDER BY metroHash64(c2));
+ALTER TABLE t_mat_projection_added_late MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_projection_added_late MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT c2 FROM t_mat_projection_added_late;
+DROP TABLE t_mat_projection_added_late;
+
+-- Case 47: Likewise, a part inserted before ADD INDEX has no index files. A subcolumn index that
+-- was added later must not reject materializing its parent column.
+DROP TABLE IF EXISTS t_mat_index_added_late;
+CREATE TABLE t_mat_index_added_late
+    (a UInt64, t Tuple(k UInt64) MATERIALIZED tuple(a * 10))
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_index_added_late (a) VALUES (5);
+ALTER TABLE t_mat_index_added_late ADD INDEX idx_tk t.k TYPE minmax GRANULARITY 1;
+ALTER TABLE t_mat_index_added_late MODIFY COLUMN t Tuple(k UInt64) MATERIALIZED tuple(a * 10 + 1000);
+ALTER TABLE t_mat_index_added_late MATERIALIZE COLUMN t SETTINGS mutations_sync = 2;
+SELECT t.k FROM t_mat_index_added_late;
+DROP TABLE t_mat_index_added_late;

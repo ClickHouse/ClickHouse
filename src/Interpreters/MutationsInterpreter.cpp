@@ -1292,7 +1292,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             for (const auto & projection : projections_desc)
             {
-                if (projection.metadata && column_used_in_sorting_key(command.column_name, projection.metadata))
+                if (source.hasProjection(projection.name)
+                    && projection.metadata
+                    && column_used_in_sorting_key(command.column_name, projection.metadata))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                         "Refused to materialize column {} because it is used in the sorting key expression "
@@ -1364,7 +1366,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 for (const auto & projection : projections_desc)
                 {
-                    if (projection.metadata && column_used_in_sorting_key(dependent_name, projection.metadata))
+                    if (source.hasProjection(projection.name)
+                        && projection.metadata
+                        && column_used_in_sorting_key(dependent_name, projection.metadata))
                     {
                         throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                             "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
@@ -1517,13 +1521,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// pre-existing limitation of the shared mutation machinery (`ALTER TABLE ... UPDATE` of
             /// the parent column leaves such an index equally stale), so, following the fail-close
             /// approach used below for subcolumn TTL bounds, refuse the command rather than silently
-            /// producing a stale index. Refuse based on the table metadata (not a specific part's
-            /// materialized indices), so the command is rejected up front rather than depending on
-            /// the part state, matching the other refusals in this block. (Projections cannot contain
-            /// individual subcolumns, and statistics exist only for whole columns, so only skip
-            /// indices are affected.)
+            /// producing a stale index. Parts created before ADD INDEX do not carry the index yet,
+            /// so they are safe to rewrite; MATERIALIZE INDEX can build it afterwards. (Projections
+            /// cannot contain individual subcolumns, and statistics exist only for whole columns, so
+            /// only skip indices are affected.)
             for (const auto & index : indices_desc)
             {
+                if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                    continue;
+
                 for (const auto & required_column : index.expression->getRequiredColumns())
                 {
                     auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
@@ -1679,11 +1685,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// afterwards, as they run over the already-reset part.)
             if (!ttl_target_columns.empty())
             {
-                /// Refuse based on the table metadata (not a specific part's materialized indices),
-                /// so the command is rejected up front rather than failing mid-mutation, matching the
-                /// other refusals in this block.
                 for (const auto & index : indices_desc)
                 {
+                    if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                        continue;
+
                     for (const auto & required_column : index.expression->getRequiredColumns())
                     {
                         auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
