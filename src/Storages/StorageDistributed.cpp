@@ -461,17 +461,10 @@ StorageDistributed::StorageDistributed(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
-    /// Only a definition loaded from validated metadata reaches here with no columns; the creators
-    /// infer an omitted structure themselves, under the user's context.
-    if (columns_.empty())
-    {
-        StorageID id = StorageID::createEmpty();
-        id.table_name = remote_table;
-        id.database_name = remote_database;
-        storage_metadata.setColumns(getStructureOfRemoteTable(*getCluster(), id, getContext(), remote_table_function_ptr));
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by the caller (the engine creators and `TableFunctionRemote`)
+    /// under the user's context, so the remote structure is never inferred here under the global
+    /// context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -2305,19 +2298,21 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
-        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
-        /// local shard is not made against the global context the constructor holds. Skipped when the
-        /// definition comes from already-validated metadata, which has no user to check against.
+        /// Infer an omitted structure here, so a fresh definition resolves under the user's context
+        /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
+        /// metadata (including a short `ATTACH`) has no user, so it keeps the global context.
         ColumnsDescription columns = args.columns;
-        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        if (columns.empty())
         {
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? context : local_context;
             /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
             /// database's implicit cluster is found by the expanded name only.
-            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
+            const String expanded_cluster_name = structure_context->getMacros()->expand(cluster_name);
             columns = getStructureOfRemoteTable(
-                *local_context->getCluster(expanded_cluster_name),
+                *structure_context->getCluster(expanded_cluster_name),
                 StorageID{remote_database, remote_table},
-                local_context,
+                structure_context,
                 /* table_func_ptr = */ nullptr);
         }
 
