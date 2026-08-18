@@ -33,8 +33,8 @@ FileRenamer::FileRenamer(const String & renaming_rule)
 String FileRenamer::generateNewFilename(const String & filename) const
 {
     // Split filename and extension
-    String file_base = pathToString(fs::path(filename).stem());
-    String file_ext = pathToString(fs::path(filename).extension());
+    String file_base = pathToString(pathFromString(filename).stem());
+    String file_ext = pathToString(pathFromString(filename).extension());
 
     // Get current timestamp in microseconds
     String timestamp;

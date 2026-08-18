@@ -570,7 +570,7 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != stat(current_path.c_str(), &file_stat))
+        if (0 != platformStat(current_path, file_stat))
             throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", current_path);
     }
 
@@ -769,7 +769,7 @@ namespace
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
-                    if (0 != stat(path.c_str(), &file_stat))
+                    if (0 != platformStat(path, file_stat))
                         return std::nullopt;
 
                     return file_stat.st_mtime;
@@ -1029,7 +1029,7 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(context);
             auto get_last_mod_time = [&]() -> std::optional<time_t>
             {
-                if (0 != stat(archive_path.c_str(), &file_stat))
+                if (0 != platformStat(archive_path, file_stat))
                     return std::nullopt;
 
                 return file_stat.st_mtime;
@@ -2685,7 +2685,7 @@ void StorageFile::truncate(
             if (!fs::exists(pathFromString(path)))
                 continue;
 
-            if (0 != ::truncate(path.c_str(), 0))
+            if (0 != platformTruncate(path, 0))
                 ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
         }
     }
