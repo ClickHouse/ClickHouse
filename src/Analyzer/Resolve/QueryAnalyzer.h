@@ -161,14 +161,6 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    /** The missing-alias validation of a join operand needs the columns of the sibling table expressions to tell
-      * a real ambiguity from a harmless missing alias, but resolving a sibling can have side effects
-      * (`resolveTableFunction` executes the table function). It therefore takes the siblings that are resolved
-      * so far (`resolved_sibling_table_expressions`, which may include `table_expression_node` itself and is
-      * empty before any sibling is resolved) instead of the whole join: adding siblings can only add collisions,
-      * never remove one, so a verdict reached from a subset of them is final and the operand is rejected as
-      * early as the historical fail-fast order did.
-      */
     void validateJoinTableExpressionWithoutAlias(
         const QueryTreeNodePtr & join_node,
         const QueryTreeNodePtr & table_expression_node,

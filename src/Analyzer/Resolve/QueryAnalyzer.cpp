@@ -892,19 +892,17 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
-/// Which virtual columns of a table expression take part in the join-alias collision check.
+/// Policy for handling virtual columns when retrieving columns of a table expression.
 enum class JoinVirtualColumnsPolicy
 {
     Exclude,          /// Only real (physical / projection) columns and their subcolumns.
     Include,          /// Also every virtual column the table expression exposes.
-    ExcludeUniversal, /// Also virtual columns, except `_table` / `_database`: these are exposed by
-                      /// essentially every table expression, so a collision on them never signals a
-                      /// genuine ambiguity that adding an alias would resolve.
+    ExcludeUniversal, /// Also virtual columns, except universal virtual columns (`_table` and `_database`).
 };
 
-/// `_table` / `_database` are present on virtually every table expression (plain tables, `numbers`,
+/// `_table` and `_database` are present on virtually every table expression (plain tables, `numbers`,
 /// file-like table functions, ...), so including them as virtual columns of the unaliased expression
-/// itself would make it collide with every sibling and force a spurious alias.
+/// itself would make it collide with every sibling.
 static bool isUniversalVirtualColumn(std::string_view column_name)
 {
     return column_name == "_table" || column_name == "_database";
@@ -934,16 +932,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
     if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
         return;
 
-    /** A join operand can be a derived table wrapped in `ARRAY JOIN`: in an explicit join the
-      * `ARRAY JOIN` binds to the preceding table expression, as in `(SELECT [1] AS arr, 2 AS x)
-      * ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true`. The `ARRAY JOIN` carries the inner
-      * columns through to the enclosing join, so the unaliased inner subquery / table function
-      * introduces the same kind of unreachable-column ambiguity as a bare one and needs the same
-      * validation. Unwrap the (possibly nested) `ARRAY JOIN` chain to find the node that would have to
-      * carry the alias; the collision set of this side stays the outer `ARRAY JOIN`'s exposed columns
-      * (inner columns plus the `ARRAY JOIN` output columns). (In a comma join the `ARRAY JOIN` instead
-      * wraps the whole cross join, and the enclosing-`ARRAY JOIN` handling above applies.)
-      */
+    /// A join operand can be wrapped in `ARRAY JOIN`. A missing alias on the inner subquery / table function
+    /// can lead to unreachable columns. Unwrap the (possibly nested) `ARRAY JOIN` chain to find the node that
+    /// needs validation (e.g. (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true).
     QueryTreeNodePtr unaliased_expression_node = table_expression_node;
     while (auto * array_join_node = unaliased_expression_node->as<ArrayJoinNode>())
     {
@@ -959,21 +950,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
 
     auto table_expression_node_type = unaliased_expression_node->getNodeType();
 
-    /** A join operand can itself be a join: `FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs
-      * ON true` nests the comma join under the explicit `JOIN`. The nested join's own resolution has already
-      * validated its operands against each other, but a descendant unaliased subquery can still collide with
-      * a sibling of an *enclosing* join (here `rhs`), which makes its column just as unreachable as in the
-      * flat case. Descend into nested join operands and validate them against the enclosing siblings; the
-      * descendant subtree must not count as its own sibling (its columns include the descendant's), so it is
-      * filtered out of the sibling set. A `PASTE JOIN` never required operand aliases, and the strict
-      * pre-relaxation validation never descended into it either, so recursing into one would reject queries
-      * that have always worked; keep its operands exempt.
-      */
+    /// A join operand can itself be a join. The nested join's operands must be validated against siblings of the
+    /// enclosing join since they can collide (e.g. FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true).
     if (table_expression_node_type == QueryTreeNodeType::JOIN || table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
     {
+        /// `PASTE JOIN` does not require operand aliases.
         if (const auto * nested_join = unaliased_expression_node->as<const JoinNode>(); nested_join && nested_join->getKind() == JoinKind::Paste)
             return;
 
+        /// Remove the table expression itself from the siblings list.
         QueryTreeNodes enclosing_sibling_table_expressions;
         for (const auto & sibling : resolved_sibling_table_expressions)
             if (sibling.get() != table_expression_node.get() && sibling.get() != unaliased_expression_node.get())
@@ -1001,66 +986,13 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         table_expression_node_type != QueryTreeNodeType::UNION)
         return;
 
-    /** An alias is only strictly required when the unaliased subquery or table function exposes a column whose
-      * name also occurs in another table expression of the same join: only then is an unqualified reference
-      * ambiguous with no way to qualify it. When there is no such collision every column can be referenced
-      * unambiguously by its name, so the missing alias is harmless and we allow it.
+    /** An alias is required only when the unaliased subquery or table function exposes a column name that
+      * something else in scope also binds.
       *
-      * Virtual columns participate on both sides, because a bare identifier can bind to a virtual column
-      * too: `SELECT _part FROM mt, (SELECT '' AS _part)` and `SELECT _path FROM file(...), (SELECT '' AS
-      * _path) AS rhs` are both genuinely ambiguous and must force the alias. The ubiquitous `_table` /
-      * `_database` virtuals need special handling: they are exposed by essentially every table expression,
-      * so counting a virtual-vs-virtual collision on them would make an unaliased table function collide
-      * with every sibling (`SELECT number FROM t, numbers(3)`). But dropping them from the unaliased side
-      * entirely would miss the genuine ambiguity with a sibling's *non-virtual* column of the same name:
-      * in `SELECT _table FROM (SELECT '' AS _table) AS rhs, merge(...)` the merge storage's meaningful
-      * `_table` virtual is shadowed by the sibling's real column, and only an alias on the table function
-      * makes it reachable again (the aliased sibling itself exits this validation early, so this
-      * orientation is the only one that can catch it). The unaliased side's `_table` / `_database`
-      * virtuals therefore collide only with sibling non-virtual columns; a sibling's virtuals of those
-      * names (which every sibling has) do not count. A *real* column of the unaliased expression that
-      * happens to be named `_table` / `_database` participates fully, like any other column.
-      *
-      * Sibling table expressions are not the only bare-identifier binders: in-scope expression aliases
-      * (`WITH` and projection aliases, pre-registered before the join tree is resolved) shadow join-tree
-      * columns by default (`prefer_column_name_to_alias = 0`). In `WITH 1 AS x SELECT x FROM numbers(1),
-      * (SELECT 2 AS x)` the bare `x` binds to the scope alias, so the subquery output is unreachable
-      * unless the subquery gets an alias to qualify it with. A collision with a scope alias therefore
-      * requires the table expression alias just like a sibling-column collision does. With
-      * `prefer_column_name_to_alias = 1` the shadowing goes the other way -- the bare identifier binds to
-      * the join-tree column and the scope alias does not make it unreachable -- so in that mode a scope
-      * alias collision does not require the table expression alias. A self alias (`SELECT x AS x`) is not
-      * a collision in either mode: it resolves back to the joined column itself, see
-      * `scope_alias_shadows_column` below.
-      *
-      * An enclosing `ARRAY JOIN` introduces the same kind of shadowing binders. In `SELECT a FROM numbers(1),
-      * (SELECT 2 AS a) ARRAY JOIN [30] AS a` the bare `a` binds to the `ARRAY JOIN` alias, so the subquery
-      * column is only reachable if the subquery is aliased. The `ARRAY JOIN` aliases are registered in the
-      * scope only after its inner join tree is validated, so they are tracked separately in
-      * `enclosing_array_join_alias_names_stack` and consulted here alongside the scope aliases. When an
-      * enclosing `ARRAY JOIN` exposes names that cannot be determined before resolution (e.g. a
-      * `COLUMNS(...)` matcher), the strict behavior is kept, as for unknown table expression columns.
-      *
-      * A sibling table expression can itself be wrapped in an `ARRAY JOIN` (e.g. `(...) AS lhs ARRAY JOIN
-      * [1] AS elem JOIN (SELECT 1 AS x) ON 1`). Such a sibling exposes the columns of its inner table
-      * expression plus the `ARRAY JOIN` output columns; both sets are already resolved by the time this
-      * validation runs, so they participate in the collision check like any other sibling columns instead
-      * of forcing the conservative fallback (`collect_array_join_columns` in
-      * `getColumnsFromTableExpression`).
-      *
-      * Table functions contribute their full column set (`GetColumnsOptions::All`, i.e. also `ALIAS` /
-      * `EPHEMERAL` columns, matching `initializeTableExpressionData`), not just physical ones, so the
-      * collision check sees every name a bare identifier can bind to. Table functions such as `merge`
-      * forward the `ALIAS` columns of their source tables, so `SELECT z FROM merge(...), (SELECT 1 AS z)`
-      * where `z` is such an alias is a genuine ambiguity that must still require an alias. This widened
-      * set is local to this check: other callers of `getColumnsFromTableExpression` (e.g. the
-      * `NATURAL JOIN` synthesis) keep the physical-only set they have always used.
-      *
-      * Only the siblings resolved so far (`resolved_sibling_table_expressions`) take part in the collision set;
-      * before any of them is resolved just the sibling-independent binders decide. Adding sibling columns can only
-      * add collisions, never remove one, so a verdict reached from a subset of the siblings is final and it is
-      * sound (and matches the historical fail-fast order) to throw already at that point; everything else is
-      * deferred to a later call, once more siblings are resolved.
+      * Three kinds of binder compete for a bare name:
+      *   - columns of the sibling table expressions. Virtual columns are also taken into account.
+      *   - in-scope `WITH` / projection aliases, handled by `scope_alias_shadows_column`
+      *   - enclosing `ARRAY JOIN` outputs, handled by `collides_with_enclosing_array_join_alias`
       */
     NameSet table_expression_columns;
     NameSet table_expression_columns_with_universal_virtuals;
@@ -1085,11 +1017,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
     }
 
-    /// An `ARRAY JOIN` alias shadows bare identifiers only inside the query that contains the `ARRAY JOIN`.
-    /// The stack stays populated while the `ARRAY JOIN`'s table expression subtree -- including any nested
-    /// subqueries with joins of their own -- is resolved, so entries pushed by an *outer* query must not leak
-    /// into the validation of an inner query's join, where the outer alias is not visible: only the entries
-    /// whose query scope is the one being validated take part.
+    /// An `ARRAY JOIN` alias shadows bare identifiers only inside the same query scope. Stack entries from an
+    /// outer query should be skipped when validating a subquery.
     for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
         if (array_join_alias_names.query_scope == &scope)
             columns_are_known &= array_join_alias_names.all_names_known;
@@ -1110,13 +1039,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
                 if (dot_pos == String::npos || column_name.substr(0, dot_pos) != name)
                     continue;
 
-                /// A dotted identifier is shadowed only when the ARRAY JOIN output can bind the nested
-                /// path. For example, `ARRAY JOIN [30] AS a` does not shadow a sibling column named
-                /// `a.x`: `a` is a scalar after ARRAY JOIN, so `a.x` falls back to the join tree.
-                /// The ARRAY JOIN expression is collected before the join tree is resolved. Its result
-                /// type is consequently unavailable for an identifier such as `ARRAY JOIN arr AS a`.
-                /// Keep the strict behavior rather than probing an unresolved node and throwing an
-                /// unrelated `UNSUPPORTED_METHOD` exception.
+                /// Matching the first part of the dotted name is not enough, the rest of the path must be a
+                /// subcolumn of the ARRAY JOIN output type (e.g. `ARRAY JOIN [30] AS a` gives a scalar `a`,
+                /// so `a.x` will not be shadowed).
+
+                /// Assume collision when the type cannot be resolved yet.
                 if (const auto * function_node = expression->as<FunctionNode>(); function_node && !function_node->isResolved())
                     return true;
                 if (expression->as<IdentifierNode>())
@@ -1133,15 +1060,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         return false;
     };
 
-    /// With `prefer_column_name_to_alias = 1` a join-tree column wins over a scope alias of the same name,
-    /// so the alias does not shadow the column and does not force the table expression alias.
+    /// Skip scope alias check if join-tree column name is preferred to the alias.
     const bool check_scope_aliases = !scope.context->getSettingsRef()[Setting::prefer_column_name_to_alias];
 
-    /// A self alias -- an expression alias whose body is the bare identifier of the same name, e.g. the
-    /// projection `x AS x` -- does not shadow a joined column: an alias is skipped while its own body is
-    /// resolved (see `tryResolveIdentifierFromAliases`), so the body binds to the join-tree column and every
-    /// bare reference to the name reaches that column through the alias. No table expression alias is needed
-    /// to qualify it, hence a self alias does not count as a collision.
     auto scope_alias_shadows_column = [&](const String & column_name)
     {
         const auto dot_pos = column_name.find('.');
@@ -1154,10 +1075,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         if (dot_pos != String::npos)
         {
             /// Join-tree validation runs before the projection and `WITH` expressions are resolved.
-            /// In particular, an alias may be an unresolved function, subquery, union, or a
-            /// transitive unresolved identifier alias. Probing either one for a nested path would
-            /// throw `UNSUPPORTED_METHOD`. Keep the strict behavior until the absence of a collision
-            /// can be proved.
+            /// Assume collision when the alias might be unresolved.
             if (const auto * function_node = it->second->as<FunctionNode>(); function_node && !function_node->isResolved())
                 return true;
             if (const auto * alias_query_node = it->second->as<QueryNode>(); alias_query_node && !alias_query_node->isResolved())
@@ -1172,6 +1090,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
                 identifier, 1 /*identifier_bind_size*/, it->second, {} /* compound_expression_source */,
                 scope, true /* can_be_not_found */) != nullptr;
         }
+
+        /// A self alias is skipped while its own body is resolved and cannot cause a collision.
         if (const auto * identifier_node = it->second->as<IdentifierNode>())
             return identifier_node->getIdentifier().getFullName() != column_name;
         return true;
@@ -1183,10 +1103,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         bool has_name_collision = false;
         for (const auto & column_name : table_expression_columns)
         {
-            /// Dotted names participate too: a compound identifier binds to a `Nested` column (`n.x`), a
-            /// sub-column (`x.size0`) or a `Tuple` element just like a bare identifier binds to an ordinary
-            /// column, so `SELECT n.x FROM t2, (SELECT n.x FROM t)` is genuinely ambiguous when both sides
-            /// expose `n.x` and must force the alias.
+            /// Dotted names participate too: `Nested` columns, sub-columns and `Tuple` elements all bind through a
+            /// compound identifier.
             if (sibling_columns.contains(column_name)
                 || (check_scope_aliases && scope_alias_shadows_column(column_name))
                 || collides_with_enclosing_array_join_alias(column_name))
@@ -1196,10 +1114,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             }
         }
 
-        /// The `_table` / `_database` virtuals of the unaliased expression collide only with sibling
-        /// non-virtual columns (see the explanation above).
         if (!has_name_collision)
         {
+            /// Universal virtuals collide only with sibling non-virtual columns.
             for (const auto & column_name : table_expression_columns_with_universal_virtuals)
             {
                 if (table_expression_columns.contains(column_name))
@@ -5312,17 +5229,8 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 {
     auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
 
-    /// Collect the names this `ARRAY JOIN` binds (explicit `AS` aliases and bare identifier expressions) before
-    /// resolving the inner join tree, so that `validateJoinTableExpressionWithoutAlias` can treat a joined
-    /// subquery/table function column colliding with one of them as requiring an alias. The names are registered
-    /// in the scope proper only after this point, so they must be threaded down separately.
-    /// An expression that is neither aliased nor a plain identifier (e.g. a `COLUMNS('arr.*')` matcher) exposes
-    /// names that are only known after resolution, so mark the set as incomplete and let the validation fall
-    /// back to the strict behavior for join expressions under this `ARRAY JOIN`.
+    /// Collect the names this `ARRAY JOIN` binds. This is needed for alias validation when resolving an inner join table expression.
     EnclosingArrayJoinNames array_join_alias_names;
-    /// The aliases shadow bare identifiers only inside the query containing this `ARRAY JOIN`; the join tree of
-    /// that query is resolved with this very scope, so recording it lets the validation skip the entry when it
-    /// runs inside a nested subquery (a different scope), where these aliases are not visible.
     array_join_alias_names.query_scope = &scope;
     for (const auto & array_join_expression : array_join_node_typed.getJoinExpressions().getNodes())
     {
@@ -5353,6 +5261,8 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             }
         }
         else
+            /// An expression that is neither aliased nor a plain identifier (e.g. a `COLUMNS('arr.*')` matcher) exposes
+            /// names that are only known after resolution.
             array_join_alias_names.all_names_known = false;
     }
 
@@ -5543,11 +5453,6 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     auto & cross_join_node_typed = cross_join_node->as<CrossJoinNode &>();
     auto & expressions = cross_join_node_typed.getTableExpressions();
 
-    /// Validate every operand resolved so far against the operands resolved so far, before resolving the next
-    /// one, which can execute a table function: an operand that already collides with an earlier sibling is
-    /// rejected without resolving the remaining ones, because later siblings can only add collisions, never
-    /// remove the one that is already there. The last iteration validates every operand against all of them,
-    /// so it is also the full check.
     QueryTreeNodes resolved_table_expressions;
     resolved_table_expressions.reserve(expressions.size());
     for (auto & expr : expressions)
@@ -5555,6 +5460,7 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
         resolved_table_expressions.push_back(expr);
 
+        /// Validate the operands resolved so far. An operand that already collides is rejected without resolving the remaining ones.
         for (const auto & resolved_expr : resolved_table_expressions)
             validateJoinTableExpressionWithoutAlias(cross_join_node, resolved_expr, resolved_table_expressions, scope);
     }
@@ -5568,10 +5474,6 @@ static bool getColumnsFromTableExpression(
     bool collect_array_join_columns,
     bool collect_projection_subcolumns)
 {
-    /// A projection column of a derived table contributes its sub-column names too when the caller asks
-    /// for them: a compound identifier can bind to a `Tuple` element or an `Array` sub-column of a
-    /// subquery output (`n.x` for a projected `n Tuple(x UInt8)`), so the join-alias validation needs
-    /// those names in its collision set. Other callers keep the historical plain-name set.
     auto collect_projection_column = [&](const NameAndTypePair & column)
     {
         existing_columns.insert(column.name);
@@ -5580,9 +5482,7 @@ static bool getColumnsFromTableExpression(
                 existing_columns.insert(column.name + "." + subcolumn_name);
     };
 
-    /// Insert the storage's real columns (per `base_options`) and, unless virtuals are excluded, its virtual
-    /// columns on top. Real columns are collected first so a real column that happens to be named like a
-    /// universal virtual (`_table`) is kept even when `ExcludeUniversal` drops the virtual of the same name.
+    /// Real columns are collected first so a real column that happens to be named like a virtual is kept even if virtuals are excluded.
     auto collect_storage_columns = [&](const StorageSnapshotPtr & storage_snapshot, const GetColumnsOptions & base_options)
     {
         for (const auto & column : storage_snapshot->getColumns(base_options))
@@ -5625,11 +5525,8 @@ static bool getColumnsFromTableExpression(
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                /// The default (`AllPhysical`) preserves the historical behavior of the `NATURAL JOIN` synthesis
-                /// and of the `USING` projection-column name check. The join-alias validation passes
-                /// `GetColumnsOptions::All` (i.e. also `ALIAS` / `EPHEMERAL` columns, matching
-                /// `initializeTableExpressionData`) so that its collision check sees every name a bare
-                /// identifier can bind to (see `validateJoinTableExpressionWithoutAlias`).
+                /// The join-alias validation passes `All` so the check sees every bindable name, including `ALIAS`
+                /// columns that `merge` forwards. Other callers keep `AllPhysical`.
                 collect_storage_columns(
                     table_function_node->getStorageSnapshot(), GetColumnsOptions(table_function_columns_kind).withSubcolumns());
 
@@ -5673,20 +5570,13 @@ static bool getColumnsFromTableExpression(
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                /// Treating an `ARRAY JOIN` as an unknown column set (`return false`) is the historical
-                /// behavior of every caller except the join-alias validation, which opts in via
-                /// `collect_array_join_columns` so that a sibling wrapped in `ARRAY JOIN` does not force
-                /// its conservative fallback.
                 if (!collect_array_join_columns)
                     return false;
 
                 const auto * array_join_node = table_expression->as<ArrayJoinNode>();
                 chassert(array_join_node);
 
-                /// A resolved `ARRAY JOIN` exposes the columns of its inner table expression plus its own
-                /// output columns, which `resolveArrayJoin` has rewritten into `ColumnNode`s carrying the
-                /// output names (the explicit alias or the source column name). A join expression that is
-                /// not a `ColumnNode` means the node is not resolved yet and its exposed names are unknown.
+                /// A resolved `ARRAY JOIN` exposes the columns of its inner table expression plus its own output columns.
                 for (const auto & array_join_column : array_join_node->getJoinExpressions().getNodes())
                 {
                     const auto * column_node = array_join_column->as<ColumnNode>();
@@ -5792,9 +5682,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
 
-    /// Check the left operand against the sibling-independent binders before resolving the right
-    /// table expression, which can execute a table function. Any collision found here is final;
-    /// resolving the right side can only add collisions, never remove one.
+    /// Check the left operand before resolving the right table expression to ensure validation issues are surfaced first.
+    /// Re-checking with later siblings can only add collisions.
     QueryTreeNodes resolved_left_table_expression{join_node_typed.getLeftTableExpressionNode()};
     validateJoinTableExpressionWithoutAlias(
         join_node, join_node_typed.getLeftTableExpressionNode(), resolved_left_table_expression, scope);
