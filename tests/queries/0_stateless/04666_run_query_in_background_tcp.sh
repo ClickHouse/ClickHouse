@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t SETTINGS run_query_in_background = 1, impli
 
 echo '--- the SETTINGS clause of a CREATE with a storage definition is rejected synchronously'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_create_settings (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS run_query_in_background = 1" 2>&1 \
-    | grep -o -m1 "run_query_in_background cannot be enabled in the SETTINGS clause of this particular query"
+    | grep -o -m1 "run_query_in_background cannot be changed in the SETTINGS clause of this particular query"
 
 echo '--- a secondary query is rejected synchronously'
 $CLICKHOUSE_CLIENT --query_kind secondary_query --run_query_in_background 1 -q "SELECT 1" 2>&1 \

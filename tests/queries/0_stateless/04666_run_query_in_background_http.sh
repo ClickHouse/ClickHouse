@@ -52,6 +52,12 @@ foreground_id="foreground_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&run_query_in_background=1&profile=${foreground}&query_id=${foreground_id}" -d "SELECT 2"
 wait_for_query_log "$(finished_in_query_log "$foreground_id")"
 
+echo '--- a profile in the SETTINGS clause of the query is rejected synchronously'
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&run_query_in_background=1" -d "SELECT 3 SETTINGS profile = '${foreground}'" \
+    | grep -o -m1 "run_query_in_background cannot be changed in the SETTINGS clause of the query over HTTP"
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d "SELECT 3 SETTINGS profile = '${background}'" \
+    | grep -o -m1 "run_query_in_background cannot be changed in the SETTINGS clause of the query over HTTP"
+
 $CLICKHOUSE_CLIENT -q "
     DROP SETTINGS PROFILE ${background};
     DROP SETTINGS PROFILE ${foreground};

@@ -36,3 +36,6 @@ BAD_ARGUMENTS
 no output
 --- a profile in the URL disables the setting
 2
+--- a profile in the SETTINGS clause of the query is rejected synchronously
+run_query_in_background cannot be changed in the SETTINGS clause of the query over HTTP
+run_query_in_background cannot be changed in the SETTINGS clause of the query over HTTP
