@@ -35,13 +35,22 @@ bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeO
     if (lhs.getSchemaFormat() != rhs.getSchemaFormat())
         return false;
 
-    /// For nested subcolumn reads the compatibility is path-local: the stored value is converted
-    /// to the requested type before the requested subcolumn is extracted from it, so the declared
-    /// (typed/skipped) path sets don't have to match. E.g. a request `d.JSON.a` must also see rows
-    /// stored as `JSON(a UInt64)` or `JSON(a UInt64, b String)`; a path missing in the stored
-    /// value is simply read as absent.
+    /// For nested subcolumn reads the compatibility is path-local: missing or extra declared paths
+    /// don't affect the requested subcolumn. E.g. a request `d.JSON.a` must also see rows stored as
+    /// `JSON(a UInt64)` or `JSON(a UInt64, b String)`; a path missing in the stored value is simply
+    /// read as absent. A path declared by both types must still have compatible types, because the
+    /// stored value is cast to the requested type before the requested subcolumn is extracted.
     if (for_read)
+    {
+        for (const auto & [path, lhs_type] : lhs.getTypedPaths())
+        {
+            auto it = rhs.getTypedPaths().find(path);
+            if (it != rhs.getTypedPaths().end() && !areDynamicSubcolumnTypesCompatibleImpl(*lhs_type, *it->second, for_read))
+                return false;
+        }
+
         return true;
+    }
 
     if (lhs.getTypedPaths().size() != rhs.getTypedPaths().size())
         return false;
