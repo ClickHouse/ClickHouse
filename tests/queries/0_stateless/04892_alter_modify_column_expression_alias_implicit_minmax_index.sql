@@ -29,7 +29,7 @@ SELECT 'physical values', count() FROM t_04892 WHERE expr_alias = 0;
 -- An unrelated settings-only ALTER must not rehydrate the deliberately absent index: its files
 -- still hold the alias-expression values until a rewrite creates replacement files.
 SELECT 'unrelated setting alter';
-ALTER TABLE t_04892 MODIFY SETTING max_parts_in_total = 100000;
+ALTER TABLE t_04892 MODIFY SETTING enable_block_number_column = 1;
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_04892' ORDER BY name;
 SELECT 'physical values after unrelated setting alter', count() FROM t_04892 WHERE expr_alias = 0;
 

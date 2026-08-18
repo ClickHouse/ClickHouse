@@ -1192,6 +1192,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                     || change.name == "enable_block_offset_column";
             };
 
+            const auto changes_column_implicit_index_policy = [](const SettingChange & change)
+            {
+                return change.name == "add_minmax_index_for_numeric_columns"
+                    || change.name == "add_minmax_index_for_string_columns"
+                    || change.name == "add_minmax_index_for_temporal_columns";
+            };
+
             if (!std::ranges::any_of(settings_changes, changes_implicit_index_policy))
                 return;
 
@@ -1211,10 +1218,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
             metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
 
-            for (const auto & column : metadata.columns)
+            /// A settings-only ALTER that changes only virtual-column settings must not rebuild
+            /// physical-column indices. A preceding MODIFY COLUMN may have deliberately removed
+            /// an implicit index because its files were built for the previous column definition.
+            if (std::ranges::any_of(settings_changes, changes_column_implicit_index_policy))
             {
-                metadata.dropImplicitIndicesForColumn(column.name);
-                metadata.addImplicitIndicesForColumn(column, context);
+                for (const auto & column : metadata.columns)
+                {
+                    metadata.dropImplicitIndicesForColumn(column.name);
+                    metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
             metadata.dropImplicitIndicesForVirtualColumns();
             metadata.addImplicitIndicesForVirtualColumns(context);
