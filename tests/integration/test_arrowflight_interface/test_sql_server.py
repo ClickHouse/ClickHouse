@@ -228,6 +228,75 @@ def test_get_sql_info_filtered():
     assert table.num_rows == 2
 
 
+def test_get_xdbc_type_info():
+    """CommandGetXdbcTypeInfo returns ODBC type metadata for ClickHouse types."""
+    client = get_client()
+    flight_info = client.get_xdbc_type_info()
+    reader = client.do_get(flight_info.endpoints[0].ticket)
+    table = reader.read_all()
+
+    expected_columns = [
+        "type_name",
+        "data_type",
+        "column_size",
+        "literal_prefix",
+        "literal_suffix",
+        "create_params",
+        "nullable",
+        "case_sensitive",
+        "searchable",
+        "unsigned_attribute",
+        "fixed_prec_scale",
+        "auto_increment",
+        "local_type_name",
+        "minimum_scale",
+        "maximum_scale",
+        "sql_data_type",
+        "datetime_subcode",
+        "num_prec_radix",
+        "interval_precision",
+    ]
+    assert table.num_columns == 19
+    assert table.column_names == expected_columns
+    assert table.schema.field("type_name").type == pa.utf8()
+    assert table.schema.field("data_type").type == pa.int32()
+    assert table.schema.field("case_sensitive").type == pa.bool_()
+    assert table.schema.field("create_params").type == pa.list_(pa.field("item", pa.utf8(), nullable=False))
+    assert table.num_rows >= 24
+
+    type_names = [table.column("type_name")[i].as_py() for i in range(table.num_rows)]
+    assert "Int32" in type_names
+    assert "String" in type_names
+    assert "UUID" in type_names
+
+    # Protocol requires ordering by (data_type, type_name).
+    order_keys = [
+        (table.column("data_type")[i].as_py(), table.column("type_name")[i].as_py())
+        for i in range(table.num_rows)
+    ]
+    assert order_keys == sorted(order_keys)
+
+
+def test_get_xdbc_type_info_filtered():
+    """CommandGetXdbcTypeInfo with data_type filter returns matching rows only."""
+    client = get_client()
+    # SQL_INTEGER = 4 -> Int32 / UInt32
+    flight_info = client.get_xdbc_type_info(data_type=4)
+    reader = client.do_get(flight_info.endpoints[0].ticket)
+    table = reader.read_all()
+
+    type_names = sorted(table.column("type_name")[i].as_py() for i in range(table.num_rows))
+    assert type_names == ["Int32", "UInt32"]
+    assert all(table.column("data_type")[i].as_py() == 4 for i in range(table.num_rows))
+
+    # Unknown ODBC code -> empty table with full schema.
+    flight_info = client.get_xdbc_type_info(data_type=999)
+    reader = client.do_get(flight_info.endpoints[0].ticket)
+    empty = reader.read_all()
+    assert empty.num_rows == 0
+    assert empty.num_columns == 19
+
+
 def test_get_catalogs():
     """CommandGetCatalogs returns empty result (ClickHouse has no catalogs)."""
     client = get_client()

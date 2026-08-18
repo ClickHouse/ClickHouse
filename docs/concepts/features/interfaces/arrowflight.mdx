@@ -325,6 +325,7 @@ When a `CMD` descriptor contains a serialized [Flight SQL protobuf](https://arro
 |---|---|
 | `CommandStatementQuery` | Execute an arbitrary SQL query. `transaction_id` is not supported. |
 | `CommandGetSqlInfo` | Retrieve server metadata (name, version, Arrow version, capabilities). |
+| `CommandGetXdbcTypeInfo` | Retrieve ODBC/JDBC type metadata for supported ClickHouse types. Supports optional `data_type` filter. |
 | `CommandGetCatalogs` | List catalogs. Returns an empty result (ClickHouse does not use catalogs). |
 | `CommandGetDbSchemas` | List databases. Supports optional `db_schema_filter_pattern` (SQL `LIKE` pattern). |
 | `CommandGetTables` | List tables. Supports filters for schema, table name, table types, and optional schema inclusion. |

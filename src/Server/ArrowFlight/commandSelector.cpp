@@ -21,6 +21,9 @@
 #include <arrow/array/builder_primitive.h>
 #include <arrow/array/builder_union.h>
 #include <arrow/flight/sql/protocol_internal.h>
+#include <arrow/flight/sql/server.h>
+
+#include <string_view>
 
 namespace DB
 {
@@ -165,6 +168,263 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arro
     ARROW_RETURN_NOT_OK(value);
 
     return arrow::Table::Make(table_schema, {info_name.ValueUnsafe(), value.ValueUnsafe()});
+}
+
+/// ODBC SQL type codes used by CommandGetXdbcTypeInfo.
+static constexpr int32_t SQL_GUID = -11;
+static constexpr int32_t SQL_BIT = -7;
+static constexpr int32_t SQL_TINYINT = -6;
+static constexpr int32_t SQL_BIGINT = -5;
+static constexpr int32_t SQL_BINARY = -2;
+static constexpr int32_t SQL_NUMERIC = 2;
+static constexpr int32_t SQL_DECIMAL = 3;
+static constexpr int32_t SQL_INTEGER = 4;
+static constexpr int32_t SQL_SMALLINT = 5;
+static constexpr int32_t SQL_REAL = 7;
+static constexpr int32_t SQL_DOUBLE = 8;
+static constexpr int32_t SQL_VARCHAR = 12;
+static constexpr int32_t SQL_TYPE_DATE = 91;
+static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
+
+static constexpr int32_t SQL_NULLABLE = 1;
+static constexpr int32_t SQL_SEARCHABLE = 3;
+
+/// One row of GetXdbcTypeInfo. Rows must be ordered by (data_type, type_name)
+/// per Flight SQL protocol (SQL_GUID=-11 is first).
+struct XdbcTypeInfoRow
+{
+    std::string_view type_name;
+    int32_t data_type = 0;
+    int32_t column_size = 0;
+    const char * literal_prefix = nullptr;
+    const char * literal_suffix = nullptr;
+    bool case_sensitive = false;
+    bool unsigned_attribute = false;
+    bool fixed_prec_scale = false;
+    int32_t minimum_scale = -1; /// -1 means NULL
+    int32_t maximum_scale = -1;
+    int32_t num_prec_radix = -1;
+
+    static constexpr XdbcTypeInfoRow make(
+        std::string_view type_name_,
+        int32_t data_type_,
+        int32_t column_size_,
+        bool case_sensitive_ = false,
+        bool unsigned_attribute_ = false,
+        bool fixed_prec_scale_ = false,
+        int32_t num_prec_radix_ = -1,
+        int32_t minimum_scale_ = -1,
+        int32_t maximum_scale_ = -1,
+        const char * literal_prefix_ = nullptr,
+        const char * literal_suffix_ = nullptr)
+    {
+        return XdbcTypeInfoRow{
+            type_name_,
+            data_type_,
+            column_size_,
+            literal_prefix_,
+            literal_suffix_,
+            case_sensitive_,
+            unsigned_attribute_,
+            fixed_prec_scale_,
+            minimum_scale_,
+            maximum_scale_,
+            num_prec_radix_,
+        };
+    }
+};
+
+static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
+    const arrow::flight::protocol::sql::CommandGetXdbcTypeInfo & command,
+    bool schema_only)
+{
+    // Ordered by data_type ascending, then type_name (protocol requirement).
+    static constexpr XdbcTypeInfoRow kTypeInfoRows[] = {
+        // UUID
+        XdbcTypeInfoRow::make("UUID", SQL_GUID, 36),
+        // Bool
+        XdbcTypeInfoRow::make("Bool", SQL_BIT, 1),
+        // Int8 / UInt8
+        XdbcTypeInfoRow::make("Int8", SQL_TINYINT, 4),
+        XdbcTypeInfoRow::make("UInt8", SQL_TINYINT, 3, false, true),
+        // Int64 / UInt64 (SQL_BIGINT = -5; must sort between TINYINT and BINARY)
+        XdbcTypeInfoRow::make("Int64", SQL_BIGINT, 19),
+        XdbcTypeInfoRow::make("UInt64", SQL_BIGINT, 20, false, true),
+        // FixedString
+        XdbcTypeInfoRow::make("FixedString", SQL_BINARY, 65536, true),
+        // Wide integers as NUMERIC
+        XdbcTypeInfoRow::make("Int128", SQL_NUMERIC, 38, false, false, false, 10),
+        XdbcTypeInfoRow::make("Int256", SQL_NUMERIC, 76, false, false, false, 10),
+        XdbcTypeInfoRow::make("UInt128", SQL_NUMERIC, 38, false, true, false, 10),
+        XdbcTypeInfoRow::make("UInt256", SQL_NUMERIC, 76, false, true, false, 10),
+        // Decimal
+        XdbcTypeInfoRow::make("Decimal", SQL_DECIMAL, 76, false, false, true, 10, 0, 76),
+        // Int32 / UInt32
+        XdbcTypeInfoRow::make("Int32", SQL_INTEGER, 10),
+        XdbcTypeInfoRow::make("UInt32", SQL_INTEGER, 10, false, true),
+        // Int16 / UInt16
+        XdbcTypeInfoRow::make("Int16", SQL_SMALLINT, 6),
+        XdbcTypeInfoRow::make("UInt16", SQL_SMALLINT, 5, false, true),
+        // Floats
+        XdbcTypeInfoRow::make("Float32", SQL_REAL, 24, false, false, false, 2),
+        XdbcTypeInfoRow::make("Float64", SQL_DOUBLE, 53, false, false, false, 2),
+        // Enums / String as VARCHAR
+        XdbcTypeInfoRow::make("Enum16", SQL_VARCHAR, 65536),
+        XdbcTypeInfoRow::make("Enum8", SQL_VARCHAR, 65536),
+        XdbcTypeInfoRow::make("String", SQL_VARCHAR, 65536, true, false, false, -1, -1, -1, "'", "'"),
+        // Dates
+        XdbcTypeInfoRow::make("Date", SQL_TYPE_DATE, 10),
+        XdbcTypeInfoRow::make("Date32", SQL_TYPE_DATE, 10),
+        // DateTime / DateTime64
+        XdbcTypeInfoRow::make("DateTime", SQL_TYPE_TIMESTAMP, 19),
+        XdbcTypeInfoRow::make("DateTime64", SQL_TYPE_TIMESTAMP, 29, false, false, false, -1, 0, 9),
+    };
+
+    auto schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
+    arrow::MemoryPool * pool = arrow::default_memory_pool();
+
+    arrow::StringBuilder type_name_builder(pool);
+    arrow::Int32Builder data_type_builder(pool);
+    arrow::Int32Builder column_size_builder(pool);
+    arrow::StringBuilder literal_prefix_builder(pool);
+    arrow::StringBuilder literal_suffix_builder(pool);
+    auto create_params_value_builder = std::make_shared<arrow::StringBuilder>(pool);
+    arrow::ListBuilder create_params_builder(
+        pool, create_params_value_builder, schema->field(5)->type());
+    arrow::Int32Builder nullable_builder(pool);
+    arrow::BooleanBuilder case_sensitive_builder(pool);
+    arrow::Int32Builder searchable_builder(pool);
+    arrow::BooleanBuilder unsigned_attribute_builder(pool);
+    arrow::BooleanBuilder fixed_prec_scale_builder(pool);
+    arrow::BooleanBuilder auto_increment_builder(pool);
+    arrow::StringBuilder local_type_name_builder(pool);
+    arrow::Int32Builder minimum_scale_builder(pool);
+    arrow::Int32Builder maximum_scale_builder(pool);
+    arrow::Int32Builder sql_data_type_builder(pool);
+    arrow::Int32Builder datetime_subcode_builder(pool);
+    arrow::Int32Builder num_prec_radix_builder(pool);
+    arrow::Int32Builder interval_precision_builder(pool);
+
+    if (!schema_only)
+    {
+        const bool filter = command.has_data_type();
+        const int32_t filter_data_type = filter ? command.data_type() : 0;
+
+        for (const auto & row : kTypeInfoRows)
+        {
+            if (filter && row.data_type != filter_data_type)
+                continue;
+
+            ARROW_RETURN_NOT_OK(type_name_builder.Append(std::string(row.type_name)));
+            ARROW_RETURN_NOT_OK(data_type_builder.Append(row.data_type));
+            ARROW_RETURN_NOT_OK(column_size_builder.Append(row.column_size));
+
+            if (row.literal_prefix)
+                ARROW_RETURN_NOT_OK(literal_prefix_builder.Append(row.literal_prefix));
+            else
+                ARROW_RETURN_NOT_OK(literal_prefix_builder.AppendNull());
+
+            if (row.literal_suffix)
+                ARROW_RETURN_NOT_OK(literal_suffix_builder.Append(row.literal_suffix));
+            else
+                ARROW_RETURN_NOT_OK(literal_suffix_builder.AppendNull());
+
+            // Empty create_params list (items would be NOT NULL strings).
+            ARROW_RETURN_NOT_OK(create_params_builder.Append());
+
+            ARROW_RETURN_NOT_OK(nullable_builder.Append(SQL_NULLABLE));
+            ARROW_RETURN_NOT_OK(case_sensitive_builder.Append(row.case_sensitive));
+            ARROW_RETURN_NOT_OK(searchable_builder.Append(SQL_SEARCHABLE));
+            ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Append(row.unsigned_attribute));
+            ARROW_RETURN_NOT_OK(fixed_prec_scale_builder.Append(row.fixed_prec_scale));
+            ARROW_RETURN_NOT_OK(auto_increment_builder.Append(false));
+            ARROW_RETURN_NOT_OK(local_type_name_builder.Append(std::string(row.type_name)));
+
+            if (row.minimum_scale >= 0)
+                ARROW_RETURN_NOT_OK(minimum_scale_builder.Append(row.minimum_scale));
+            else
+                ARROW_RETURN_NOT_OK(minimum_scale_builder.AppendNull());
+
+            if (row.maximum_scale >= 0)
+                ARROW_RETURN_NOT_OK(maximum_scale_builder.Append(row.maximum_scale));
+            else
+                ARROW_RETURN_NOT_OK(maximum_scale_builder.AppendNull());
+
+            ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(row.data_type));
+            ARROW_RETURN_NOT_OK(datetime_subcode_builder.AppendNull());
+
+            if (row.num_prec_radix >= 0)
+                ARROW_RETURN_NOT_OK(num_prec_radix_builder.Append(row.num_prec_radix));
+            else
+                ARROW_RETURN_NOT_OK(num_prec_radix_builder.AppendNull());
+
+            ARROW_RETURN_NOT_OK(interval_precision_builder.AppendNull());
+        }
+    }
+
+    std::shared_ptr<arrow::Array> type_name;
+    std::shared_ptr<arrow::Array> data_type;
+    std::shared_ptr<arrow::Array> column_size;
+    std::shared_ptr<arrow::Array> literal_prefix;
+    std::shared_ptr<arrow::Array> literal_suffix;
+    std::shared_ptr<arrow::Array> create_params;
+    std::shared_ptr<arrow::Array> nullable;
+    std::shared_ptr<arrow::Array> case_sensitive;
+    std::shared_ptr<arrow::Array> searchable;
+    std::shared_ptr<arrow::Array> unsigned_attribute;
+    std::shared_ptr<arrow::Array> fixed_prec_scale;
+    std::shared_ptr<arrow::Array> auto_increment;
+    std::shared_ptr<arrow::Array> local_type_name;
+    std::shared_ptr<arrow::Array> minimum_scale;
+    std::shared_ptr<arrow::Array> maximum_scale;
+    std::shared_ptr<arrow::Array> sql_data_type;
+    std::shared_ptr<arrow::Array> datetime_subcode;
+    std::shared_ptr<arrow::Array> num_prec_radix;
+    std::shared_ptr<arrow::Array> interval_precision;
+
+    ARROW_RETURN_NOT_OK(type_name_builder.Finish(&type_name));
+    ARROW_RETURN_NOT_OK(data_type_builder.Finish(&data_type));
+    ARROW_RETURN_NOT_OK(column_size_builder.Finish(&column_size));
+    ARROW_RETURN_NOT_OK(literal_prefix_builder.Finish(&literal_prefix));
+    ARROW_RETURN_NOT_OK(literal_suffix_builder.Finish(&literal_suffix));
+    ARROW_RETURN_NOT_OK(create_params_builder.Finish(&create_params));
+    ARROW_RETURN_NOT_OK(nullable_builder.Finish(&nullable));
+    ARROW_RETURN_NOT_OK(case_sensitive_builder.Finish(&case_sensitive));
+    ARROW_RETURN_NOT_OK(searchable_builder.Finish(&searchable));
+    ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Finish(&unsigned_attribute));
+    ARROW_RETURN_NOT_OK(fixed_prec_scale_builder.Finish(&fixed_prec_scale));
+    ARROW_RETURN_NOT_OK(auto_increment_builder.Finish(&auto_increment));
+    ARROW_RETURN_NOT_OK(local_type_name_builder.Finish(&local_type_name));
+    ARROW_RETURN_NOT_OK(minimum_scale_builder.Finish(&minimum_scale));
+    ARROW_RETURN_NOT_OK(maximum_scale_builder.Finish(&maximum_scale));
+    ARROW_RETURN_NOT_OK(sql_data_type_builder.Finish(&sql_data_type));
+    ARROW_RETURN_NOT_OK(datetime_subcode_builder.Finish(&datetime_subcode));
+    ARROW_RETURN_NOT_OK(num_prec_radix_builder.Finish(&num_prec_radix));
+    ARROW_RETURN_NOT_OK(interval_precision_builder.Finish(&interval_precision));
+
+    return arrow::Table::Make(
+        schema,
+        {
+            type_name,
+            data_type,
+            column_size,
+            literal_prefix,
+            literal_suffix,
+            create_params,
+            nullable,
+            case_sensitive,
+            searchable,
+            unsigned_attribute,
+            fixed_prec_scale,
+            auto_increment,
+            local_type_name,
+            minimum_scale,
+            maximum_scale,
+            sql_data_type,
+            datetime_subcode,
+            num_prec_radix,
+            interval_precision,
+        });
 }
 
 static SQLSet commandGetCatalogs()
@@ -632,6 +892,13 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
         if (!any_msg.UnpackTo(&command))
             return arrow::Status::SerializationError("Deserialization of sql::CommandGetSqlInfo failed.");
         return commandGetSqlInfo(command, schema_only);
+    }
+    else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetXdbcTypeInfo>())
+    {
+        arrow::flight::protocol::sql::CommandGetXdbcTypeInfo command;
+        if (!any_msg.UnpackTo(&command))
+            return arrow::Status::SerializationError("Deserialization of sql::CommandGetXdbcTypeInfo failed.");
+        return commandGetXdbcTypeInfo(command, schema_only);
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandGetCrossReference>())
     {
