@@ -508,9 +508,9 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
-    static bool usePreparedKeys(const Sizes & key_sizes)
+    static bool usePreparedKeys(const Sizes & key_sizes, bool enable_prepared_keys_256)
     {
-        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > (enable_prepared_keys_256_ ? 32 : 16))
+        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > (enable_prepared_keys_256 ? 32 : 16))
             return false;
 
         for (auto size : key_sizes)
@@ -518,6 +518,15 @@ struct HashMethodKeysFixed
                 return false;
 
         return true;
+    }
+
+    static bool enablePreparedKeys256(const HashMethodContextPtr & context)
+    {
+        if constexpr (!enable_prepared_keys_256_)
+            return false;
+
+        const auto * settings_context = context ? typeid_cast<const HashMethodSettingsContext *>(context.get()) : nullptr;
+        return settings_context && settings_context->settings.enable_fixed_key_prefetch;
     }
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr & context)
@@ -541,7 +550,7 @@ struct HashMethodKeysFixed
             }
         }
 
-        if (usePreparedKeys(key_sizes))
+        if (usePreparedKeys(key_sizes, enablePreparedKeys256(context)))
         {
             packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
         }
@@ -672,7 +681,7 @@ struct HashMethodKeysFixed
 
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
-        if (!usePreparedKeys(key_sizes))
+        if (!usePreparedKeys(key_sizes, enable_prepared_keys_256_))
             return {};
 
         std::vector<IColumn *> new_columns;
