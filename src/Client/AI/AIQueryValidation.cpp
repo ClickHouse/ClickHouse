@@ -186,7 +186,7 @@ bool isDeniedScalarFunction(const String & name)
 bool isAllowedNamedTable(const ASTTableIdentifier & table)
 {
     /// `system.zookeeper` reaches Keeper, rather than reading metadata local to the server.
-    return table.getDatabaseName() == "system" && table.getTableName() != "zookeeper";
+    return table.getDatabaseName() == "system" && table.shortName() != "zookeeper";
 }
 
 /// Whether the function is a builtin known to the client. This validation runs on the raw
