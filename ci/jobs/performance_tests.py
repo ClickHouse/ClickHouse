@@ -646,6 +646,42 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
+def build_check_results_children(tests_result, check_name_pattern):
+    """Per-query rows for "Check Results": one row per slower/unstable query.
+
+    Rows carry compare.sh's verdict, which the report renderer classifies
+    natively. They cannot affect the job status: the caller passes "Check
+    Results" an explicit status, and `Result.create_from` aggregates children
+    only when no status is given.
+    """
+    # compare.sh emits a row per side, but a truncated ci-checks.tsv can leave a
+    # query with either side alone, so group by query name and represent each
+    # group by its candidate side when it survived.
+    side_priority = {"::new": 0, "": 1, "::old": 2}
+    chosen = {}
+    for tr in tests_result.results:
+        if tr.status not in ("slower", "unstable"):
+            continue
+        side = next((s for s in ("::new", "::old") if tr.name.endswith(s)), "")
+        base = tr.name[: len(tr.name) - len(side)]
+        previous = chosen.get(base)
+        if previous is None or side_priority[side] < side_priority[previous[0]]:
+            chosen[base] = (side, tr)
+
+    children = []
+    for base, (_, tr) in chosen.items():
+        sub = Result(name=base, status=tr.status, duration=tr.duration)
+        sub.set_label(
+            "query history",
+            # The represented row's own name: CIDB's test_name keeps the side
+            # suffix, and the link filters on an exact match.
+            link=build_perf_query_history_link(tr.name, check_name_pattern),
+            hint="Performance history for this query on master",
+        )
+        children.append(sub)
+    return children
+
+
 def get_insert_metadata(info, compare_against_release):
     return {
         "ARCH": escape_sql_string(get_perf_arch()),
@@ -1901,23 +1937,9 @@ def main():
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
             arch = get_perf_arch()
-            check_name_pattern = f"%Performance%{arch}%master_head%"
-            for tr in tests_result.results:
-                if tr.status in ("slower", "unstable"):
-                    sub = Result(
-                        name=tr.name,
-                        status=Result.Status.FAIL,
-                        info=tr.status,
-                        duration=tr.duration,
-                    )
-                    sub.set_label(
-                        "query history",
-                        link=build_perf_query_history_link(
-                            tr.name, check_name_pattern
-                        ),
-                        hint="Performance history for this query on master",
-                    )
-                    check_sub_results.append(sub)
+            check_sub_results = build_check_results_children(
+                tests_result, f"%Performance%{arch}%master_head%"
+            )
 
         results.append(
             Result(
