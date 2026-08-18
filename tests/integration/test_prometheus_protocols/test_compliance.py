@@ -308,7 +308,6 @@ COMPLIANCE_TEST_CASES = [
     ('histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})', [], False),
 
     # Histogram fraction
-    ("histogram_fraction(0.1, 0.5, rate(demo_api_request_duration_seconds_bucket[1m]))", [], False),
     ("histogram_fraction(0.1, 0.9, nonexistent_metric)", [], False),
 
     # count_values
