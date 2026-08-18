@@ -415,8 +415,7 @@ void StorageMergeTreeIndex::readImpl(
     auto source_storage_id = source_table->getStorageID();
     context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
 
-    /// The index is dumped per granule, so a row policy cannot be applied to it,
-    /// while primary key and minmax values of the rows hidden by the policy would be exposed.
+    /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
     auto row_policy_filter = context->getRowPolicyFilter(
         source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
