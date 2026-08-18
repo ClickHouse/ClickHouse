@@ -5,15 +5,17 @@
 
 #include <base/scope_guard.h>
 
+#include <Common/Exception.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/IAST.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/Scheduler/MemoryReservation.h>
-#include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
 
@@ -116,5 +118,22 @@ TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
                     << " ms early";
             }
         }
+    }
+}
+
+TEST(ExecutionSpeedLimits, FormatsFractionalMaxExecutionTime)
+{
+    ExecutionSpeedLimits limits;
+    limits.max_execution_time = Poco::Timespan{1'000'900};
+
+    try
+    {
+        limits.checkTimeLimit(1'000'901'000, OverflowMode::THROW);
+        FAIL() << "Expected `TIMEOUT_EXCEEDED` exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::TIMEOUT_EXCEEDED);
+        EXPECT_EQ(e.message(), "Timeout exceeded: elapsed 1000.901 ms, maximum: 1000.900 ms");
     }
 }
