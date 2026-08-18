@@ -8,6 +8,8 @@
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
+#include <exception>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -392,7 +394,16 @@ bool decompressGNUDebugData(const Elf::Section & section, std::vector<char> & de
     if (!valid_index)
         return false;
 
-    decompressed.resize(static_cast<size_t>(uncompressed_size));
+    constexpr size_t max_expansion_ratio = 1024;
+    /// MiniDebugInfo normally expands about 20 times; this bound rejects corrupt indexes before allocation.
+    const size_t max_uncompressed_size = section.size() > std::numeric_limits<size_t>::max() / max_expansion_ratio
+        ? std::numeric_limits<size_t>::max()
+        : section.size() * max_expansion_ratio;
+    const size_t decompressed_size = static_cast<size_t>(uncompressed_size);
+    if (decompressed_size > max_uncompressed_size)
+        return false;
+
+    decompressed.resize(decompressed_size);
 
     uint64_t decoder_memory_limit = memory_limit;
     size_t input_position = 0;
@@ -445,7 +456,7 @@ void searchAndCollectSymbolsFromGNUDebugData(SymbolIndex::Object & object, std::
             object.gnu_debugdata_elf = std::move(gnu_debugdata_elf);
         }
     }
-    catch (const Exception &)
+    catch (const std::exception &) // Ok: MiniDebugInfo lookup is best-effort, not critical
     {
         symbols.resize(initial_symbol_count);
     }

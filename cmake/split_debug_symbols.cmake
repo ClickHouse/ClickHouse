@@ -22,7 +22,7 @@ macro(clickhouse_split_debug_symbols)
        set(MINI_DEBUGINFO_PATH "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.mini_debuginfo")
        list(APPEND GNU_DEBUGDATA_COMMANDS
            COMMAND "${OBJCOPY_PATH}" --strip-debug "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${MINI_DEBUGINFO_PATH}"
-           COMMAND "${XZ_PATH}" -9 -T0 -f "${MINI_DEBUGINFO_PATH}"
+           COMMAND "${XZ_PATH}" -9 -T1 -f "${MINI_DEBUGINFO_PATH}"
            COMMAND "${OBJCOPY_PATH}" --add-section ".gnu_debugdata=${MINI_DEBUGINFO_PATH}.xz" --remove-section=.symtab --remove-section=.strtab "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
            COMMAND "${CMAKE_COMMAND}" -E rm -f "${MINI_DEBUGINFO_PATH}" "${MINI_DEBUGINFO_PATH}.xz"
        )
