@@ -5351,7 +5351,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const bool session_allows = settings[Setting::allow_experimental_codecs];
         const bool default_profile_allows
-            = local_context->getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
+            = local_context->getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
         std::unique_ptr<MergeTreeSettings> default_settings;
         for (const auto & command : commands)
         {

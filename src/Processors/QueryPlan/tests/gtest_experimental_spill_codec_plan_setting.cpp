@@ -187,6 +187,19 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;
     EXPECT_TRUE(joinCarriesSetting(ratio_hash, keyed_inner.join_operator));
 
+    /// `prefer_partial_merge` chooses `MergeJoin` before considering the hash fallback. When every
+    /// merge limit is disabled, `MergeJoin` fails before it can spill, so an external hash threshold
+    /// must not claim the codec is reachable. `auto` still starts with the hash branch and can spill.
+    auto prefer_partial_merge_without_limits = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PREFER_PARTIAL_MERGE});
+    prefer_partial_merge_without_limits.max_bytes_before_external_join = 1_MiB;
+    prefer_partial_merge_without_limits.default_max_bytes_in_join = 0;
+    EXPECT_FALSE(joinCarriesSetting(prefer_partial_merge_without_limits, keyed_inner.join_operator));
+
+    auto auto_without_merge_limits = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::AUTO});
+    auto_without_merge_limits.max_bytes_before_external_join = 1_MiB;
+    auto_without_merge_limits.default_max_bytes_in_join = 0;
+    EXPECT_TRUE(joinCarriesSetting(auto_without_merge_limits, keyed_inner.join_operator));
+
     /// Only the algorithms that build a hash join consult the external-join thresholds; the others never
     /// look at them, so the threshold alone must not put the opt-in on the wire.
     for (auto algorithm : {JoinAlgorithm::DIRECT, JoinAlgorithm::FULL_SORTING_MERGE,

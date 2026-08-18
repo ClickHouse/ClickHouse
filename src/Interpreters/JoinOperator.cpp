@@ -392,6 +392,7 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
         if (external_join_threshold_is_set
             && temporary_storage_available
             && spilling_hash_join_is_possible
+            && (algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE || !merge_join_is_possible)
             && joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
             return true;
 
