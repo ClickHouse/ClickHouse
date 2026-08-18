@@ -416,16 +416,24 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
-        for (const auto & output : expression.getOutputs())
+        /// Remove the distance-sort output from a copy of the projection DAG before checking
+        /// inputs. Apart from the distance expression itself, every remaining dependency must
+        /// be satisfiable from the reader header after the rewrite. In particular, a projection
+        /// such as `length(vec)` needs the physical vector column even though `vec` is not an
+        /// output node of the DAG.
+        if (optimize_plan)
         {
-            /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
-            /// Multiple forms of analyzer nodes to handle.
-            if (output->result_name == search_column ||
-                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column) ||
-                (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
+            auto pruned_projection_expression = expression.clone();
+            pruned_projection_expression.removeUnusedResult(sort_column);
+            pruned_projection_expression.removeUnusedActions();
+
+            for (const auto * input : pruned_projection_expression.getInputs())
             {
-                optimize_plan = false;
-                break;
+                if (input->result_name == search_column)
+                {
+                    optimize_plan = false;
+                    break;
+                }
             }
         }
 
