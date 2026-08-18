@@ -37,6 +37,13 @@ run "SELECT" "${query}"
 run "EXPLAIN SYNTAX" "EXPLAIN SYNTAX ${query}"
 run "EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${query}"
 
+# Each CTE is declared before its use, and the access walker must keep
+# scanning newly discovered dependencies until it reaches the view.
+chained_query="WITH b AS (SELECT a FROM v), a AS (SELECT a FROM b), z AS (SELECT a FROM a) SELECT a FROM z"
+run "Chained SELECT" "${chained_query}"
+run "Chained EXPLAIN SYNTAX" "EXPLAIN SYNTAX ${chained_query}"
+run "Chained EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${chained_query}"
+
 ${CLICKHOUSE_CLIENT} --query "
 DROP VIEW ${CLICKHOUSE_DATABASE}.v;
 DROP TABLE ${CLICKHOUSE_DATABASE}.base;
