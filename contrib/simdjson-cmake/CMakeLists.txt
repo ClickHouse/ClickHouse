@@ -17,6 +17,25 @@ if(ARCH_AMD64)
     target_compile_options(_simdjson PRIVATE -mno-avx -mno-avx2)
 endif()
 
+# Enable the scalar fallback implementation. Binaries may run on CPUs that do
+# not support all compiled-in SIMD paths; without the fallback, simdjson
+# returns UNSUPPORTED_ARCHITECTURE.  For x86-64-v3+ the Haswell (AVX2)
+# implementation is always available, so the fallback is unnecessary.
+if (NOT (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3))
+    target_compile_options(_simdjson PRIVATE -DSIMDJSON_IMPLEMENTATION_FALLBACK=1)
+endif()
+
+# On LoongArch, simdjson's CPU dispatch reads the HWCAP_LOONGARCH_LSX / HWCAP_LOONGARCH_LASX
+# bits (see contrib/simdjson/src/internal/isadetection.h). These are kernel UAPI macros defined
+# in <asm/hwcap.h>, but simdjson only includes <sys/auxv.h>, which pulls in glibc's <bits/hwcap.h>.
+# The glibc in our LoongArch sysroot is old enough that its <bits/hwcap.h> defines no bits for this
+# architecture ("No bits defined for this architecture."), so the macros are unreachable and the
+# build fails. Force-include the kernel header so the macros are always available. The header has an
+# include guard and its values match glibc's, so this is a benign no-op once the sysroot is updated.
+if(ARCH_LOONGARCH64)
+    target_compile_options(_simdjson PRIVATE -include asm/hwcap.h)
+endif()
+
 # On ppc64le, ClickHouse globally defines __SSE2__ to enable SSE-to-AltiVec emulation.
 # This causes simdjson's experimental json_string_builder to activate its SSE2 code path,
 # which fails to compile due to __m128i vs __m128i_u type mismatch in the PPC SSE wrappers.

@@ -122,9 +122,7 @@ bool SplitFileCachePriority::modifySizeLimits(
     double size_ratio_,
     const CacheStateGuard::Lock & lock)
 {
-    if (max_size == max_size_
-        && max_elements == max_elements_
-        && system_segment_size_ratio == size_ratio_)
+    if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
     max_data_segment_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
@@ -175,6 +173,19 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     const auto type = getPriorityType(key_metadata->origin.segment_type);
     return priorities_holder.at(type)->add(
         key_metadata, offset, size, write_lock, state_lock, is_initial_load);
+}
+
+IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLINT
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    QueueEntryType original_queue_type,
+    const CachePriorityGuard::WriteLock & write_lock,
+    const CacheStateGuard::Lock * state_lock)
+{
+    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    return priorities_holder.at(type)->addForRestore(
+        key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
 
 bool SplitFileCachePriority::canFit( /// NOLINT

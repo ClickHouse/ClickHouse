@@ -264,7 +264,7 @@
             filter: contrast(125%);
         }
 
-        #add, #reload, #edit, #search {
+        #add, #add-metrics, #reload, #edit, #search {
             padding: 0.25rem 0.5rem;
             text-align: center;
             font-weight: bold;
@@ -279,7 +279,7 @@
             height: 3ex;
         }
 
-        #add:hover, #reload:hover, #edit:hover, #search:hover {
+        #add:hover, #add-metrics:hover, #reload:hover, #edit:hover, #search:hover {
             background: var(--button-background-color);
         }
 
@@ -441,6 +441,34 @@
             color: var(--global-error-color);
         }
 
+        #metrics-editor {
+            display: none;
+            grid-template-columns: auto fit-content(10%) fit-content(10%);
+            grid-template-rows: auto fit-content(10%);
+            row-gap: 1rem;
+            column-gap: 1rem;
+        }
+
+        #metrics-editor-textarea {
+            width: 100%;
+            height: 100%;
+            grid-row: 1;
+            grid-column: 1 / span 3;
+        }
+
+        #metrics-editor input[type="submit"] {
+            padding: 0.5rem;
+        }
+
+        #metrics-editor input[type="submit"]:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        #metrics-editor-message {
+            color: var(--text-color);
+        }
+
         #charts > div:only-child .display-only-if-more-than-one-chart {
             display: none;
         }
@@ -475,6 +503,7 @@
         <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
             <input id="edit" type="button" value="✎" style="display: none;">
+            <input id="add-metrics" type="button" value="Add charts from metrics" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
             <span id="search-span" class="nowrap" style="display: none;"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse. Either select dashboard name or write your own query"><input id="search-query" name="search" list="search-options" type="text" spellcheck="false"><datalist id="search-options"></datalist></span>
@@ -489,6 +518,12 @@
     <span id="mass-editor-message">&nbsp;</span>
     <input type="submit" id="mass-editor-cancel" class="edit-cancel" value="Cancel">
     <input type="submit" id="mass-editor-confirm" class="edit-confirm" value="Apply">
+</div>
+<div id="metrics-editor">
+    <textarea id="metrics-editor-textarea" spellcheck="false" data-gramm="false" placeholder="Paste C++ code or documentation with profile events, current metrics or asynchronous metrics, for example:&#10;&#10;extern const Event RejectedInserts;&#10;extern const Metric DelayedInserts;&#10;M(FreezePartThreads, &quot;Number of threads in the threadpool for freezing data parts.&quot;)&#10;M(DelayedInsertsMilliseconds, &quot;Total number of milliseconds spent while the INSERT was throttled.&quot;, ValueType::Milliseconds)&#10;ClickHouseAsyncMetrics_KeeperPacketsSent 67&#10;&#10;One chart is added per metric, with matching charts of the dashboard as query templates."></textarea>
+    <span id="metrics-editor-message">&nbsp;</span>
+    <input type="submit" id="metrics-editor-cancel" class="edit-cancel" value="Cancel">
+    <input type="submit" id="metrics-editor-confirm" class="edit-confirm" value="Add charts" disabled>
 </div>
 <script>
 
@@ -985,6 +1020,9 @@ document.getElementById('search').addEventListener('click', e => {
 let mass_editor_active = false;
 
 function showMassEditor() {
+    if (metrics_editor_active) {
+        hideMetricsEditor();
+    }
     document.getElementById('charts').style.display = 'none';
 
     let editor_div = document.getElementById('mass-editor');
@@ -1042,6 +1080,229 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
     }
 });
 
+let metrics_editor_active = false;
+const metric_column_regex = /\b(?:ProfileEvent|CurrentMetric)_[A-Za-z0-9_]+\b/;
+const async_metric_condition_regex = /\bmetric\s*(?:=|LIKE)\s*'[^']+'/;
+
+/// Extracts an ordered list of {kind, name} from a pasted text, ignoring unrecognized lines. Accepted lines:
+///     extern const Event RejectedInserts;
+///     extern const Metric DelayedInserts;
+///     M(RejectedInserts, "description", ValueType::Number)
+///     M(DelayedInserts, "description")
+///     ClickHouseAsyncMetrics_KeeperPacketsSent 67    (the Prometheus endpoint format)
+function parseMetricsInput(text) {
+    const extern_regex = /\bextern\s+const\s+(Event|Metric)\s+([A-Za-z_][A-Za-z0-9_]*)/;
+    const macro_regex = /\bM\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/;
+    const async_regex = /\bClickHouseAsyncMetrics_([A-Za-z0-9_]+)/;
+
+    let result = [];
+    let seen = new Set();
+    for (let line of text.split('\n')) {
+        line = line.replace(/\/\/.*$/, '').replace(/\\\s*$/, '').trim();
+
+        let kind = null;
+        let name = null;
+        let match = null;
+
+        if (match === null && (match = line.match(extern_regex))) {
+            kind = match[1] == 'Event' ? 'ProfileEvent' : 'CurrentMetric';
+            name = match[2];
+        }
+
+        if (match === null && (match = line.match(macro_regex))) {
+            kind = line.includes('ValueType::') ? 'ProfileEvent' : 'CurrentMetric';
+            name = match[1];
+        }
+
+        if (match === null && (match = line.match(async_regex))) {
+            kind = 'AsyncMetric';
+            name = match[1];
+        }
+
+        if (match !== null) {
+            const key = `${kind}_${name}`;
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            result.push({kind: kind, name: name});
+        }
+    }
+
+    return result;
+}
+
+/// Templates for the generated charts, taken from the current dashboard, by metric kind
+function metricChartTemplates() {
+    let templates = {ProfileEvent: null, CurrentMetric: null, AsyncMetric: null};
+
+    for (const q of queries) {
+        if (!q.query) {
+            continue;
+        }
+
+        if (templates.ProfileEvent === null && q.query.includes('metric_log') && metric_column_regex.test(q.query)) {
+            templates.ProfileEvent = q.query;
+            templates.CurrentMetric = q.query;
+        }
+
+        if (templates.AsyncMetric === null && q.query.includes('asynchronous_metric_log') && async_metric_condition_regex.test(q.query)) {
+            templates.AsyncMetric = q.query;
+        }
+    }
+
+    return templates;
+}
+
+function buildQueryFromTemplate(template, kind, name) {
+    if (kind == 'AsyncMetric') {
+        const token = template.match(async_metric_condition_regex)[0];
+        const escaped_name = name.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+        return template.replaceAll(token, `metric LIKE '${escaped_name}'`);
+    }
+
+    const token = template.match(metric_column_regex)[0];
+    return template.replaceAll(token, `${kind}_${name}`);
+}
+
+function metricsEditorParse() {
+    const empty = {new_charts: [], skipped: 0, events: 0, metrics: 0, asyncs: 0, error: null};
+    const parsed = parseMetricsInput(document.getElementById('metrics-editor-textarea').value);
+    if (parsed.length == 0) {
+        return empty;
+    }
+
+    const templates = metricChartTemplates();
+    let missing = [];
+    if (parsed.some(m => m.kind != 'AsyncMetric') && templates.ProfileEvent === null) {
+        missing.push('with a ProfileEvent_* or CurrentMetric_* column over metric_log (for profile events and current metrics)');
+    }
+    if (parsed.some(m => m.kind == 'AsyncMetric') && templates.AsyncMetric === null) {
+        missing.push("with a metric = '...' condition over asynchronous_metric_log (for asynchronous metrics)");
+    }
+    if (missing.length > 0) {
+        return {...empty, error: `No chart to use as a template: the dashboard needs a chart ${missing.join(' and a chart ')}.`};
+    }
+
+    const existing = new Set(queries.map(q => q.query));
+    let new_charts = [];
+    let skipped = 0;
+    let events = 0;
+    let metrics = 0;
+    let asyncs = 0;
+    for (const metric of parsed) {
+        const query = buildQueryFromTemplate(templates[metric.kind], metric.kind, metric.name);
+        if (existing.has(query)) {
+            ++skipped;
+            continue;
+        }
+
+        existing.add(query);
+        if (metric.kind == 'ProfileEvent') { ++events; }
+        else if (metric.kind == 'CurrentMetric') { ++metrics; }
+        else { ++asyncs; }
+
+        new_charts.push({title: metric.name, query: query});
+    }
+
+    return {new_charts: new_charts, skipped: skipped, events: events, metrics: metrics, asyncs: asyncs, error: null};
+}
+
+function metricsEditorUpdateMessage() {
+    const message_span = document.getElementById('metrics-editor-message');
+    const confirm = document.getElementById('metrics-editor-confirm');
+    const text = document.getElementById('metrics-editor-textarea').value;
+    const {new_charts, skipped, events, metrics, asyncs, error} = metricsEditorParse();
+
+    confirm.disabled = new_charts.length == 0;
+    confirm.value = new_charts.length > 0 ? `Add ${new_charts.length} chart${new_charts.length > 1 ? 's' : ''}` : 'Add charts';
+
+    message_span.style.color = error ? 'var(--global-error-color)' : 'var(--text-color)';
+    if (error) {
+        message_span.firstChild.data = error;
+    } else if (text.trim() == '') {
+        message_span.firstChild.data = '\xa0';
+    } else if (new_charts.length == 0 && skipped == 0) {
+        message_span.firstChild.data = 'Found no profile events, current metrics or asynchronous metrics.';
+    } else {
+        const plural = (n, word) => `${n} ${word}${n == 1 ? '' : 's'}`;
+        let parts = [];
+        if (events) { parts.push(plural(events, 'profile event')); }
+        if (metrics) { parts.push(plural(metrics, 'current metric')); }
+        if (asyncs) { parts.push(plural(asyncs, 'asynchronous metric')); }
+        const listing = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
+        let note = parts.length ? `Found ${listing}.` : '';
+        if (skipped) { note += ` ${plural(skipped, 'chart')} already on the dashboard, skipped.`; }
+        message_span.firstChild.data = note.trim();
+    }
+}
+
+function showMetricsEditor() {
+    if (mass_editor_active) {
+        hideMassEditor();
+    }
+    document.getElementById('charts').style.display = 'none';
+    document.getElementById('metrics-editor').style.display = 'grid';
+    metrics_editor_active = true;
+    metricsEditorUpdateMessage();
+    document.getElementById('metrics-editor-textarea').focus();
+}
+
+function hideMetricsEditor() {
+    document.getElementById('metrics-editor').style.display = 'none';
+    document.getElementById('metrics-editor-textarea').value = '';
+    document.getElementById('charts').style.display = 'flex';
+    metrics_editor_active = false;
+}
+
+function metricsEditorApplyChanges() {
+    const {new_charts} = metricsEditorParse();
+    if (new_charts.length == 0) {
+        return;
+    }
+    queries.unshift(...new_charts);
+    hideMetricsEditor();
+    regenerate();
+    refreshCustomized(true);
+    saveState();
+    drawAll();
+    const chart_divs = charts.querySelectorAll('.chart');
+    if (chart_divs[0]) {
+        chart_divs[0].scrollIntoView();
+    }
+}
+
+document.getElementById('add-metrics').addEventListener('click', e => {
+    if (metrics_editor_active) {
+        hideMetricsEditor();
+    } else {
+        showMetricsEditor();
+    }
+});
+
+document.getElementById('metrics-editor-confirm').addEventListener('click', e => {
+    metricsEditorApplyChanges();
+});
+
+document.getElementById('metrics-editor-cancel').addEventListener('click', e => {
+    hideMetricsEditor();
+});
+
+document.getElementById('metrics-editor-textarea').addEventListener('input', e => {
+    metricsEditorUpdateMessage();
+});
+
+document.getElementById('metrics-editor').addEventListener('keydown', event => {
+    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+        metricsEditorApplyChanges();
+    }
+});
+
+document.getElementById('metrics-editor').addEventListener('keyup', e => {
+    if (e.key == 'Escape') {
+        hideMetricsEditor();
+    }
+});
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
@@ -1385,6 +1646,7 @@ function showError(message) {
     charts.style.height = '0px';
     charts.style.opacity = '0';
     document.getElementById('add').style.display = 'none';
+    document.getElementById('add-metrics').style.display = 'none';
     document.getElementById('edit').style.display = 'none';
 
     const error = document.getElementById('global-error');
@@ -1436,6 +1698,7 @@ async function drawAll() {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
             document.getElementById('add').style.display = 'inline-block';
+            document.getElementById('add-metrics').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
         }

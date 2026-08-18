@@ -152,12 +152,23 @@ public:
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
+    /// Get the original queue type of a candidate saved during removeQueueEntries.
+    /// Returns None if not found (e.g., if removeQueueEntries was not called).
+    FileCacheQueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
+    {
+        auto it = original_queue_types.find(candidate);
+        return it != original_queue_types.end() ? it->second : FileCacheQueueEntryType::None;
+    }
+
 private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
     size_t candidates_bytes = 0;
     FailedCandidates failed_candidates;
+
+    /// Saved original queue type per candidate, populated in removeQueueEntries.
+    std::unordered_map<const FileSegmentMetadata *, FileCacheQueueEntryType> original_queue_types;
 
     AfterEvictWriteFunc after_evict_write_func;
     AfterEvictStateFunc after_evict_state_func;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -71,8 +72,13 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
+/// Ordered map to ensure deterministic iteration order.
+/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
+/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
+/// `std::unordered_map` does not guarantee the same iteration order after copy,
+/// which leads to mismatched prewhere readers and actions.
+using IndexReadTasks = std::map<String, IndexReadTask>;
+using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -202,6 +208,12 @@ public:
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
     bool readersChainCanSkipMarksBeforePrewhere() const;
+
+    /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
+    bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 

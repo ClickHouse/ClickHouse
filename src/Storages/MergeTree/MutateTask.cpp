@@ -111,6 +111,12 @@ enum class ExecuteTTLType : uint8_t
 namespace MutationHelpers
 {
 
+/// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
+/// later by the mutation and is therefore not yet present in the part. It is not a real stream and
+/// must never be resolved against the source part's checksums (a part may happen to contain a real
+/// column whose name collides with this sentinel).
+static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
+
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
     for (const auto & command : commands)
@@ -128,6 +134,36 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
+    }
+
+    return false;
+}
+
+/// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
+/// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
+/// the variant element streams, ...) are not recorded anywhere we can enumerate without a
+/// deserialization state. State-less `serialization->enumerateStreams` stops after `dynamic_structure`
+/// for such a column (see `getStreamCounts`), so a partial mutation cannot account for all of its
+/// streams and could leave one neither rewritten nor hardlinked into the new part. To stay safe we
+/// rewrite the whole part in that case (the resulting part gets a `columns_substreams.txt`, so later
+/// mutations can take the partial path again). The file is also discarded when found corrupted, which
+/// lands here too.
+///
+/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
+/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
+/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
+/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
+/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
+static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
+{
+    if (!isWidePart(data_part))
+        return false;
+
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
+    for (const auto & column : data_part->getColumns())
+    {
+        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
+            return true;
     }
 
     return false;
@@ -191,7 +227,8 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -702,7 +739,7 @@ getColumnsForNewDataPart(
             if (fill_columns_substreams)
             {
                 new_columns_substreams.addColumn(it->name);
-                new_columns_substreams.addSubstreamToLastColumn("dummy");
+                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
             }
 
             ++it;
@@ -856,9 +893,31 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
     {
+        /// When columns_substreams.txt is available, prefer its recorded substreams over
+        /// enumerateStreams. The file is the ground truth of what streams exist on disk, and
+        /// for columns with a data-dependent dynamic structure (Dynamic, JSON) a state-less
+        /// enumerateStreams is incomplete: it stops after `dynamic_structure` and never reports
+        /// data-dependent substreams like `variant_discr`.
+        const auto * recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
+
+        /// A not-yet-written column in a new part carries only a single placeholder substream
+        /// (see getColumnsForNewDataPart). It has no real streams on disk yet, so we fall back
+        /// to enumerateStreams to preserve correct shared-stream accounting for regular columns
+        /// (e.g. Nested array sizes).
+        if (recorded_substreams && !(recorded_substreams->size() == 1 && (*recorded_substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+        {
+            for (const auto & substream : *recorded_substreams)
+            {
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                    ++stream_counts[*stream_name];
+            }
+            continue;
+        }
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -1034,31 +1093,63 @@ static NameToNameVector collectFilesForRenames(
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
 
-                String escaped_name_from = escapeForFileName(command.column_name);
-                String escaped_name_to = escapeForFileName(command.rename_to);
-
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(command.column_name);
+                if (substreams)
                 {
+                    /// Use columns_substreams.txt as the source of truth for substream file names.
+                    /// This way the file renames stay consistent with the new columns_substreams.txt
+                    /// produced by addRenamedColumnToColumnsSubstreams (both use getFileNameForRenamedColumnStream
+                    /// on the same source names).
                     auto storage_settings = source_part->storage.getSettings();
-
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                    String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
-
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
-                    if (!stream_from)
-                        return;
-
-                    String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
-
-                    if (stream_from != stream_to)
+                    for (const auto & substream : *substreams)
                     {
-                        add_rename(*stream_from + ".bin", stream_to + ".bin");
-                        add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
-                    }
-                };
+                        auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part->checksums);
+                        if (!stream_from)
+                            continue;
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                    serialization->enumerateStreams(callback);
+                        String renamed = ISerialization::getFileNameForRenamedColumnStream(
+                            command.column_name, command.rename_to, substream);
+                        String stream_to = replaceFileNameToHashIfNeeded(
+                            renamed, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    }
+                }
+                else
+                {
+                    /// Fallback for parts without columns_substreams.txt (discarded due to corruption or old parts).
+                    /// Use getStreamNameForColumn with bidirectional fallback to find the actual file
+                    /// regardless of whether the part was written with a different escape_variant_subcolumn_filenames value.
+                    String escaped_name_from = escapeForFileName(command.column_name);
+                    String escaped_name_to = escapeForFileName(command.rename_to);
+
+                    ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        auto storage_settings = source_part->storage.getSettings();
+
+                        String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                        String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
+
+                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, storage_settings);
+                        if (!stream_from)
+                            return;
+
+                        String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    };
+
+                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                        serialization->enumerateStreams(callback);
+                }
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
@@ -1672,6 +1763,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
@@ -2922,6 +3014,7 @@ bool MutateTask::prepare()
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
     if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
         || !isWidePart(ctx->source_part)
         || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))

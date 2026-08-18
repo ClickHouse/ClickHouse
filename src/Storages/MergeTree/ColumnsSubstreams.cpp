@@ -71,20 +71,32 @@ size_t ColumnsSubstreams::getSubstreamPosition(
     const ISerialization::SubstreamPath & substream_path,
     const MergeTreeSettingsPtr & storage_settings) const
 {
+    if (auto position = tryGetSubstreamPosition(column_position, name_and_type, substream_path, storage_settings))
+        return *position;
+
+    auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, name_and_type.name, column_position);
+}
+
+std::optional<size_t> ColumnsSubstreams::tryGetSubstreamPosition(
+    size_t column_position,
+    const NameAndTypePair & name_and_type,
+    const ISerialization::SubstreamPath & substream_path,
+    const MergeTreeSettingsPtr & storage_settings) const
+{
     ISerialization::StreamFileNameSettings stream_file_name_settings(*storage_settings);
     auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
     if (auto position = tryGetSubstreamPosition(column_position, substream))
-        return *position;
+        return position;
 
     /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
         substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
-        if (auto position = tryGetSubstreamPosition(column_position, substream))
-            return *position;
+        return tryGetSubstreamPosition(column_position, substream);
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, name_and_type.name, column_position);
+    return std::nullopt;
 }
 
 
@@ -128,6 +140,16 @@ const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(size_t column
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get substreams: column position {} is invalid, there are only {} columns", column_position, columns_substreams.size());
 
     return columns_substreams[column_position].second;
+}
+
+const std::vector<String> * ColumnsSubstreams::tryGetColumnSubstreams(const String & column_name) const
+{
+    for (const auto & [name, substreams] : columns_substreams)
+    {
+        if (name == column_name)
+            return &substreams;
+    }
+    return nullptr;
 }
 
 ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order)

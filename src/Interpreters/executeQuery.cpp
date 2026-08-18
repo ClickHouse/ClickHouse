@@ -2106,7 +2106,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
+    std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)

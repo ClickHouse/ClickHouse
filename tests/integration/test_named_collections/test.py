@@ -508,6 +508,59 @@ def test_config_reload(cluster):
     )
 
 
+def test_storage_type_does_not_change_on_config_reload(cluster):
+    node = cluster.instances["node"]
+
+    def get_storage_type_state(instance):
+        return instance.query(
+            """
+            SELECT name, value, default, changed, type, changeable_without_restart,
+                getServerSetting('named_collections_storage_type')
+            FROM system.server_settings
+            WHERE name = 'named_collections_storage.type'
+            """
+        ).strip()
+
+    assert (
+        "named_collections_storage.type\tlocal\tlocal\t0\tString\tNo\tlocal"
+        == get_storage_type_state(node)
+    )
+    assert (
+        "named_collections_storage.type\tzookeeper\tlocal\t1\tString\tNo\tzookeeper"
+        == get_storage_type_state(cluster.instances["node_with_keeper"])
+    )
+
+    config = """
+<clickhouse>
+  <named_collections_storage>
+    <type>keeper</type>
+    <path>/named_collections_reload_test</path>
+  </named_collections_storage>
+</clickhouse>
+"""
+
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert (
+            "named_collections_storage.type\tlocal\tlocal\t1\tString\tNo\tlocal"
+            == get_storage_type_state(node)
+        )
+
+        node.query("CREATE NAMED COLLECTION storage_type_reload_test AS value = 1")
+        assert "1" == node.query(
+            """
+            SELECT collection['value']
+            FROM system.named_collections
+            WHERE name = 'storage_type_reload_test'
+            """
+        ).strip()
+        node.query("DROP NAMED COLLECTION storage_type_reload_test")
+
+
 @pytest.mark.parametrize("with_keeper", [False, True])
 def test_sql_commands(cluster, with_keeper):
     zk = None

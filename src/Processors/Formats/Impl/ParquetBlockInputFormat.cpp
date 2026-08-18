@@ -1093,7 +1093,10 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         chassert(row_group_batch.record_batch_reader);
         auto batch = row_group_batch.record_batch_reader->Next();
         if (!batch.ok())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+            throw Exception(
+                batch.status().IsOutOfMemory() ? ErrorCodes::MEMORY_LIMIT_EXCEEDED : ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Error while reading Parquet data: {}",
+                batch.status().ToString());
         return batch;
     };
 

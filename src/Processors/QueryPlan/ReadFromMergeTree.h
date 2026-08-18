@@ -362,6 +362,9 @@ public:
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
+    /// Direct reads from a text index (see `createReadTasksForTextIndex`).
+    const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
 

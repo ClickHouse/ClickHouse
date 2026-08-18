@@ -1685,8 +1685,11 @@ namespace ErrorCodes
     Name of storage disk. Can be specified instead of storage policy.
     )", 0) \
     DECLARE(Bool, table_disk, false, R"(
-    This is table disk, the path/endpoint should point to the table data, not to
-    the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+    This is table disk: the path/endpoint points to the table data, not the database data.
+    Supported for object-storage disks whose metadata lives on the object storage itself
+    (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
+    variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
+    over the read-only web / web_index disks.
     )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
@@ -2193,7 +2196,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
@@ -2203,16 +2206,24 @@ static void validateTableDisk(const DiskPtr & disk)
 {
     if (!disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!disk_object_storage)
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
 }
 
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
@@ -2235,7 +2246,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
@@ -2255,7 +2266,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
-                if (!is_attach && found_disk_setting && found_storage_policy_setting)
+                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2591,9 +2602,9 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->loadFromQuery(storage_def, context, is_attach);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

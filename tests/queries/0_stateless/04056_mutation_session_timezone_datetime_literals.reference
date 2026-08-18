@@ -15,4 +15,8 @@ after delete lc	1	2000-01-01 01:02:03
 before delete nullable dt64	1	2000-01-01 01:02:03.123
 before delete nullable dt64	2	2000-01-01 04:05:06.456
 after delete nullable dt64	1	2000-01-01 01:02:03.123
+update set dt	1	946735200
+update set dt	2	946735200
+update set dt64	1	946735200
+update set dt64	2	946735200
 explicit tz	1	2000-01-01 01:02:03

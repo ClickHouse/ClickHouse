@@ -13,6 +13,7 @@ using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"nats_password", DEFAULT_MASKING_RULE},
+    {"nats_token", DEFAULT_MASKING_RULE},
     {"nats_credential_file", DEFAULT_MASKING_RULE},
     {"nats_url", [](const DB::Field & value)
     {

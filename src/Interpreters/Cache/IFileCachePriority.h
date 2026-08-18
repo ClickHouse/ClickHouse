@@ -232,6 +232,21 @@ public:
         const CacheStateGuard::Lock *,
         bool is_initial_load = false) = 0;
 
+    /// Restore a previously removed entry back to the queue it came from.
+    /// `original_queue_type` is the `QueueEntryType` the entry had before removal.
+    /// Default implementation ignores the hint and delegates to `add`.
+    /// SLRU overrides this to route protected entries back to the protected queue.
+    virtual IteratorPtr addForRestore( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        QueueEntryType /* original_queue_type */,
+        const CachePriorityGuard::WriteLock & lock,
+        const CacheStateGuard::Lock * state_lock)
+    {
+        return add(key_metadata, offset, size, lock, state_lock, false);
+    }
+
     /// `reservee` is the entry for which are reserving now.
     /// It does not exist, if it is the first space reservation attempt
     /// for the corresponding file segment.

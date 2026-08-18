@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -324,6 +325,9 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (string_size < serialize_string_with_zero_byte)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
@@ -732,7 +736,12 @@ void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     size_t chars_begin = offsetAt(begin);
     size_t chars_end = offsetAt(end);
     hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
-    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = offsets[i] - chars_begin;
+        hash.update(relative_offset);
+    }
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

@@ -184,8 +184,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -908,6 +906,20 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+            /// Publish the query status before interpreting the query, not just around the pipeline executor
+            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                execution.executing_query_status = process_list_entry->getQueryStatus();
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(execution.executor_mutex);
+                execution.executing_query_status = nullptr;
+            });
+
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);
@@ -1150,18 +1162,11 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
-    }
+    /// Do separate requests just to add watches.
+    zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
@@ -1247,14 +1252,26 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
 void RefreshTask::interruptExecution()
 {
     chassert(!mutex.try_lock());
-    std::unique_lock lock(execution.executor_mutex);
-    if (execution.interrupt_execution.exchange(true))
-        return;
-    if (execution.executor)
+    std::shared_ptr<QueryStatus> query_status;
     {
-        execution.executor->cancel();
-        LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        std::unique_lock lock(execution.executor_mutex);
+        if (execution.interrupt_execution.exchange(true))
+            return;
+        query_status = execution.executing_query_status;
+        if (execution.executor)
+        {
+            execution.executor->cancel();
+            LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        }
     }
+
+    /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
+    /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
+    /// running, so shutdown()'s deactivate() — and any DROP driving it, including SharedCatalog
+    /// state apply — would block until the I/O returned on its own. Done outside executor_mutex
+    /// because cancelQuery() cancels registered executors, which take their own locks.
+    if (query_status)
+        query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)

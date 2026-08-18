@@ -99,6 +99,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
@@ -201,6 +202,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
     , write_cache_per_user_directory(settings[FileCacheSetting::write_cache_per_user_id_directory])
     , allow_dynamic_cache_resize(settings[FileCacheSetting::allow_dynamic_cache_resize])
+    , dynamic_resize_lock_wait_ms(settings[FileCacheSetting::dynamic_resize_lock_wait_ms])
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
@@ -1048,6 +1050,11 @@ KeyMetadata::iterator FileCache::addFileSegment(
 
 bool FileCache::tryIncreasePriority(FileSegment & file_segment)
 {
+    std::shared_lock lock(dynamic_resize_lock, std::try_to_lock);
+    /// Skip priority increase if cache resize is currently in progress.
+    /// We cannot do queue moves during dynamic resize.
+    if (!lock.owns_lock())
+        return false;
     return main_priority->tryIncreasePriority(
         *file_segment.getQueueIterator(), file_segment.isCompleted(), cache_guard, cache_state_guard);
 }
@@ -1066,9 +1073,10 @@ bool FileCache::tryReserve(
 
     assertInitialized();
 
-    /// Non-atomic optimization for dynamic cache resize, which can be made in parallel,
-    /// but helps to avoid taking a mutex in some cases.
-    if (cache_is_being_resized.load(std::memory_order_relaxed))
+    /// Skip space reservation if dynamic cache resize is currently in progress.
+    /// We cannot do both at the same time.
+    std::shared_lock resize_shared_lock(dynamic_resize_lock, std::try_to_lock);
+    if (!resize_shared_lock.owns_lock())
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
         failure_reason = "cache is being resized";
@@ -2230,17 +2238,17 @@ FileCache::SizeLimits FileCache::doDynamicResize(const SizeLimits & prev_limits,
     if (prev_limits.slru_size_ratio != desired_limits.slru_size_ratio)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic resize of size ratio is not allowed");
 
-    struct ResizeHolder
+    std::unique_lock resize_lock(dynamic_resize_lock, std::defer_lock);
+    if (!resize_lock.try_lock_for(std::chrono::milliseconds(dynamic_resize_lock_wait_ms)))
     {
-        std::atomic_bool & hold;
-        explicit ResizeHolder(std::atomic_bool & hold_) : hold(hold_) { hold.store(true, std::memory_order_relaxed); }
-        ~ResizeHolder() { hold.store(false, std::memory_order_relaxed); }
-    };
+        LOG_WARNING(log, "Dynamic resize skipped: could not acquire resize lock within {}ms",
+                    dynamic_resize_lock_wait_ms);
+        return prev_limits;
+    }
 
     SizeLimits result_limits;
     bool modified_size_limit = false;
     {
-        ResizeHolder hold(cache_is_being_resized);
         auto cache_lock = cache_state_guard.lock();
 
         if (prev_limits.max_size != main_priority->getSizeLimit(cache_lock))
@@ -2423,13 +2431,14 @@ bool FileCache::doDynamicResizeImpl(
         return true;
     }
 
-    result_limits.max_size = std::min(
-        prev_limits.max_size,
-        desired_limits.max_size + failed_candidates.total_cache_size);
-
-    result_limits.max_elements = std::min(
-        prev_limits.max_elements,
-        desired_limits.max_elements + failed_candidates.total_cache_elements);
+    /// Restore to previous limits. Using prev_limits is safe because
+    /// the entries existed under those limits before the resize attempt,
+    /// so each sub-queue had enough room. Computing a tighter bound
+    /// (desired + failed) would be incorrect for SLRU: when all failed
+    /// entries belong to one sub-queue (e.g. protected with ratio 0.6),
+    /// the total might not translate into enough per-sub-queue space
+    /// after the ratio split.
+    result_limits = prev_limits;
 
     LOG_INFO(
         log, "Having {} failed candidates with total size {}. "
@@ -2479,13 +2488,15 @@ bool FileCache::doDynamicResizeImpl(
                 log, "Adding back file segment after failed eviction: {}:{}, size: {}",
                 file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
 
-            auto main_priority_iterator = main_priority->add(
+            auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
+
+            auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
                 file_segment->getDownloadedSize(),
+                original_queue_type,
                 cache_write_lock,
-                &state_lock,
-                false);
+                &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
             file_segment->setQueueIterator(main_priority_iterator);
