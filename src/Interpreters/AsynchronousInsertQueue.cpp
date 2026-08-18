@@ -1315,7 +1315,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// For diagnostics only: if parsing an entry fails, explain a possible structure mismatch between
     /// the data being inserted and the destination. The data is fed per entry below, so the provider
     /// looks at the entry currently being parsed.
-    const String & insert_format = key.query->as<const ASTInsertQuery &>().format;
+    const String insert_format = getInputFormatNameFromASTInsertQuery(key.query, insert_context);
     std::string_view current_entry_data;
     format->setParseErrorDiagnosticProvider(
         [&current_entry_data, insert_format, &header, insert_context](std::optional<size_t> rows_reached_by_parser) -> String

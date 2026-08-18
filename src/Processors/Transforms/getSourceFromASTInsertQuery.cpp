@@ -1427,10 +1427,14 @@ size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context)
 }
 
 void setInsertSchemaMismatchDiagnostic(
-    IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context)
+    IInputFormat & format,
+    const ASTPtr & ast,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context)
 {
     format.setParseErrorDiagnosticProvider(
-        [ast, expected_header, context](std::optional<size_t> rows_reached_by_parser) -> String
+        [ast, format_name, expected_header, context](std::optional<size_t> rows_reached_by_parser) -> String
         {
             /// Only the inline part of the query can be re-read here. The streamed tail (network /
             /// HTTP body) is consumed while parsing and cannot be inspected a second time.
@@ -1439,7 +1443,7 @@ void setInsertSchemaMismatchDiagnostic(
                 return {};
             return getInsertDataSchemaMismatchDescription(
                 std::string_view(insert->data, insert->end - insert->data),
-                insert->format,
+                format_name,
                 expected_header,
                 context,
                 rows_reached_by_parser);
@@ -1492,6 +1496,20 @@ bool PrefixCapturingReadBuffer::poll(size_t timeout_microseconds)
     return in.poll(timeout_microseconds);
 }
 
+String getInputFormatNameFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context)
+{
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
+    if (!ast_insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query requires data to insert, but it is not INSERT query");
+
+    const Settings & settings = context->getSettingsRef();
+    if (!settings[Setting::input_format].value.empty())
+        return settings[Setting::input_format].value;
+    if (!settings[Setting::format].value.empty())
+        return settings[Setting::format].value;
+    return ast_insert_query->format;
+}
+
 InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
     bool with_buffers,
@@ -1509,13 +1527,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
     const Settings & settings = context->getSettingsRef();
-
-    /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.
-    String resolved_format = ast_insert_query->format;
-    if (!settings[Setting::input_format].value.empty())
-        resolved_format = settings[Setting::input_format].value;
-    else if (!settings[Setting::format].value.empty())
-        resolved_format = settings[Setting::format].value;
+    const String resolved_format = getInputFormatNameFromASTInsertQuery(ast, context);
 
     if (resolved_format.empty())
     {

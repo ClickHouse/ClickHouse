@@ -17,6 +17,9 @@ namespace DB
 
 class Pipe;
 
+/// Resolves the input format for an INSERT query, including `input_format` / `format` setting overrides.
+String getInputFormatNameFromASTInsertQuery(const ASTPtr & ast, const ContextPtr & context);
+
 /// Prepares a input format, which produce data containing in INSERT query.
 InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
@@ -102,7 +105,11 @@ size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context);
 /// reads the inline data of an INSERT query: if parsing fails with a parse error, the resulting
 /// explanation (if any) is appended to the exception message.
 void setInsertSchemaMismatchDiagnostic(
-    IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context);
+    IInputFormat & format,
+    const ASTPtr & ast,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context);
 
 /// A read buffer decorator that additionally captures a bounded prefix of the bytes read through it.
 /// Used to make the parse-error diagnostic above available for data that comes from a source which

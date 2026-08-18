@@ -2688,7 +2688,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     /// If parsing of the data fails, explain a possible structure mismatch between the data and the
     /// destination (for diagnostics only).
     if (data_is_inline)
-        setInsertSchemaMismatchDiagnostic(*source, parsed_query, sample, client_context);
+        setInsertSchemaMismatchDiagnostic(*source, parsed_query, current_format, sample, client_context);
     else
         source->setParseErrorDiagnosticProvider(
             [&capturing_buf, current_format, expected_header = sample, context = client_context](
