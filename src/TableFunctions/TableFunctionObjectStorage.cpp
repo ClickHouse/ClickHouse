@@ -1469,7 +1469,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionIceberg>(
          {.description = R"DOCS_MD(
-Provides a table-like interface to existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or local storage. It supports reading from all of these backends and inserting into tables on writable backends. The table function does not create Iceberg metadata for a new table.
+Provides a table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}
 
@@ -1794,7 +1794,7 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 <BetaBadge/>
 
-Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends. Iceberg tables in HDFS are read-only.
+Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends.
 
 Iceberg writes are in Beta. To enable them:
 
