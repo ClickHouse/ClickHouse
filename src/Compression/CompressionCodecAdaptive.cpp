@@ -65,6 +65,39 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecAdaptive must not be invoked directly: it never appears on disk");
 }
 
+/// Hands out destinations for candidate compressions over two buffers: the external one and a lazily allocated scratch.
+/// The buffer holding the current best is pinned: `takeWriteDestination` never hands it out.
+class CompressionDestinationMultiplexer
+{
+public:
+    CompressionDestinationMultiplexer(char * external_destination_, UInt32 internal_reserve_)
+        : external_destination(external_destination_)
+        , internal_reserve(internal_reserve_)
+    {
+    }
+
+    char * takeWriteDestination()
+    {
+        if (best_destination != external_destination)
+            return external_destination;
+
+        scratch.resize_exact(internal_reserve);
+        return scratch.data();
+    }
+
+    void recordCompression(char * to) { best_destination = to; }
+    void discardRecordedCompression() { best_destination = nullptr; }
+
+    /// nullptr: the best was measured only, never materialized.
+    char * getBestDestination() const { return best_destination; }
+
+private:
+    char * external_destination;
+    char * best_destination = nullptr;
+    UInt32 internal_reserve;
+    PODArray<char> scratch;
+};
+
 }
 
 Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
@@ -110,13 +143,11 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const
 {
     /// A single pass over the pool. A candidate that reports its compressed size cheaply is measured without compressing.
-    /// Otherwise, compress into `dest` if it is free, else into a lazily allocated scratch buffer.
     /// After the pass the winner reaches `dest` in one of three ways: a measured-only winner is compressed into it,
     /// a winner already there needs nothing, and a winner in scratch is copied over.
     chassert(dest != nullptr);
-    PODArray<char> scratch;
+    CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
     const ICompressionCodec * best_codec = nullptr;
-    char * best_compressed = nullptr;
     UInt32 best_size = std::numeric_limits<UInt32>::max();
 
     for (const auto & codec : pool)
@@ -128,26 +159,23 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
             {
                 best_size = size;
                 best_codec = codec.get();
-                best_compressed = nullptr;
+                multiplexer.discardRecordedCompression();
             }
         }
         else
         {
-            char * target = dest;
-            if (best_compressed == dest)
-            {
-                scratch.resize_exact(getMaxCompressedDataSize(source_size));
-                target = scratch.data();
-            }
+            char * target = multiplexer.takeWriteDestination();
             const UInt32 size = codec->compress(source, source_size, target);
             if (size < best_size)
             {
                 best_size = size;
                 best_codec = codec.get();
-                best_compressed = target;
+                multiplexer.recordCompression(target);
             }
         }
     }
+
+    char * best_compressed = multiplexer.getBestDestination();
 
     if (!best_compressed)
     {
