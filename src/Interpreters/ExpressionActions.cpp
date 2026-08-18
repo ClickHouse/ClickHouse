@@ -1376,7 +1376,10 @@ void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, s
 
             visited[parent_action_index] = true;
             action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
-            if (shouldExecuteLazily(parent_action_index))
+            /// `ALIAS` actions do not execute lazily themselves, but they are transparent wrappers in the actions DAG.
+            /// Continue through them so a lazy ancestor includes the cost of an eager descendant.
+            const bool is_transparent_alias = actions[parent_action_index].node->type == ActionsDAG::ActionType::ALIAS;
+            if (shouldExecuteLazily(parent_action_index) || is_transparent_alias)
                 self(self, parent_action_index);
         }
     };

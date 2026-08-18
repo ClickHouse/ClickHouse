@@ -12,4 +12,10 @@ SET max_block_size = 10000;
 WITH intDiv(1, number % 2) AS x
 SELECT sum(and(number % 2 != 0, if(1, x, 0)))
 FROM numbers(100000);
+
+-- Propagate the profile of an eagerly executed lazy descendant through `x` to its lazy ancestors.
+WITH arraySum(arrayMap(x -> x * x, range(number % 100))) AS x
+SELECT count()
+FROM numbers(50000)
+WHERE and(number % 2 != 0, if(number % 3 != 0, x > 0, 0));
 EOF
