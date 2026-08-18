@@ -205,6 +205,16 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
 
         if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
         {
+            /// The old interpreter plans read-in-order before the query plan is optimized (with
+            /// query_plan_read_in_order = 0), building a FinishSorting this pass never revisits:
+            /// optimizeReadInOrder only converts a Type::Full sorting, so the exchange-safety check in
+            /// findReadingStep cannot see it, and the scatter placed under it may survive and feed it rows
+            /// that are no longer sorted. Reject such a plan instead of returning rows in the wrong order.
+            /// A read this optimizer asks for in order is requested later and has no order set here yet.
+            if (read->getQueryInfo().input_order_info)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a read-in-order distributed read");
+
             if (read->hasPinnedBlockNumbers())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "make_distributed_plan does not support a distributed read with a pinned block-number "
