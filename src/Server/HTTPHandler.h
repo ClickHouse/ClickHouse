@@ -7,6 +7,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTPPathHints.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
@@ -49,7 +50,7 @@ struct HTTPHandlerConnectionConfig
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_ = "", HTTPPathHintsPtr path_hints_ = nullptr);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -58,6 +59,10 @@ public:
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+
+    /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
+    /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
+    virtual bool parsesHTTPPath() const { return false; }
 
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
@@ -113,6 +118,9 @@ private:
         std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
         /// If HTTP compression is enabled holds compression wrapper over original response buffer
         std::shared_ptr<WriteBuffer> wrap_compressed_holder;
+        /// If `compression` setting (or URL path file extension) is set, holds the generic compression wrapper.
+        /// Sits between the HTTP-encoding wrapper and the internal compression wrapper in the chain.
+        std::shared_ptr<WriteBuffer> generic_compression_holder;
         /// Points either to out_holder or to wrap_compressed_holder
         std::shared_ptr<WriteBuffer> out;
 
@@ -174,6 +182,16 @@ private:
     /// Overrides for response headers.
     HTTPResponseHeaderSetup http_response_headers_override;
 
+    /// URL path prefix under which this handler is registered. When set, the prefix is stripped from
+    /// `request.getURI()` before parsing the URL path for database/table/format/compression/filters.
+    /// Empty by default (handler is at the URL root).
+    std::string url_prefix;
+
+    /// Optional registry of known HTTP handler paths. Used to enrich UNKNOWN_DATABASE / UNKNOWN_TABLE
+    /// exceptions thrown during path resolution with a "Maybe you meant /dashboard?"-style hint,
+    /// alongside the database/table name hint computed by the catalog.
+    HTTPPathHintsPtr path_hints;
+
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
 
@@ -220,11 +238,15 @@ public:
         IServer & server_,
         const HTTPHandlerConnectionConfig & connection_config,
         const std::string & param_name_ = "query",
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
+        const std::string & url_prefix_ = "",
+        HTTPPathHintsPtr path_hints_ = nullptr);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+
+    bool parsesHTTPPath() const override { return true; }
 };
 
 class PredefinedQueryHandler : public HTTPHandler
