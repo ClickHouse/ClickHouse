@@ -4986,7 +4986,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         for (const auto & ranges : result.parts_with_ranges)
         {
-            read_ranges.emplace(ranges.part_index_in_query, ranges);
+            read_ranges.emplace(
+                ranges.part_index_in_query,
+                SkipIndexReadInput{ranges.ranges, ranges.read_hints, ranges.part_starting_offset_in_query});
             part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
         }
 

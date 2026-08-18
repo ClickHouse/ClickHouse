@@ -14,6 +14,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -204,13 +205,13 @@ bool hasSameMeaning(const IDataType & from, const IDataType & to)
 ///
 /// Returns null when the part's own list answers neither way. For a subcolumn that is a
 /// DIFFERENCE, not an unknown, so the caller must not fall back to the cached description there.
-DataTypePtr tryGetPartOwnType(const IMergeTreeDataPart & part, const NameAndTypePair & required)
+DataTypePtr tryGetPartOwnType(const IMergeTreeDataPartInfoForReader & part_info, const NameAndTypePair & required)
 {
-    if (auto own = part.getColumns().tryGetByName(required.name))
+    if (auto own = part_info.getColumns().tryGetByName(required.name))
         return own->type;
 
     if (required.isSubcolumn())
-        if (auto parent = part.getColumns().tryGetByName(required.getNameInStorage()))
+        if (auto parent = part_info.getColumns().tryGetByName(required.getNameInStorage()))
             return parent->type->tryGetSubcolumnType(required.getSubcolumnName());
 
     return nullptr;
@@ -273,15 +274,15 @@ bool isSerializationDefinedSubcolumn(
 
 }
 
-bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) const
+bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const
 {
     const auto & metadata_columns = metadata_snapshot->getColumns();
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
-    const auto & part_columns = part.getColumns();
+    const auto & part_columns = part_info.getColumns();
 
     for (const auto & [column, metadata_type] : getColumnsWithTypesRequiredForIndexCalc())
     {
-        auto part_column = part.tryGetColumn(column);
+        auto part_column = part_info.tryGetColumn(column);
 
         /// The column is in the metadata but not in this part's column list, so there is no
         /// part-side type to compare against. That does NOT mean the part holds no granule: a part
@@ -302,7 +303,7 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
         /// Prefer the part's own uncached list; see tryGetPartOwnType() for why the cached one cannot
         /// answer this question. tryGetColumn() above stays the EXISTENCE test: its nullopt is what
         /// drives the refusal right above, and it is what splits a subcolumn's name.
-        auto part_type = tryGetPartOwnType(part, *part_column);
+        auto part_type = tryGetPartOwnType(part_info, *part_column);
         if (!part_type)
         {
             /// The part's own parent type does not offer this subcolumn at all (its element was
@@ -346,34 +347,55 @@ bool IMergeTreeIndex::isPartTypeCompatible(const IMergeTreeDataPart & part) cons
     return true;
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+namespace
+{
+
+LoadedMergeTreeDataPartInfoForReader makeInfoForReader(const IMergeTreeDataPart & part)
+{
+    static const AlterConversionsPtr no_alter_conversions = std::make_shared<AlterConversions>();
+    return LoadedMergeTreeDataPartInfoForReader(part.shared_from_this(), no_alter_conversions);
+}
+
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const
 {
     for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
+        if (part_info.isSystemColumnInvalidated(column))
             return {0 /*unknown*/, {}};
 
     /// Discover what is on disk first: a part that does not have this index at all cannot
     /// mis-decode anything, and asking the type question only about parts that DO have it lets the
     /// check refuse outright when the part records no type for a required column.
-    auto format = getPhysicalFormat(part, relative_path_prefix);
+    auto format = getPhysicalFormat(part_info, relative_path_prefix);
     if (!format)
         return format;
 
     /// The part's granules were written with types the metadata no longer declares, so decoding them
     /// under the new types reads garbage. Report the index as not materialized in this part; the
     /// query then answers correctly without it.
-    if (!isPartTypeCompatible(part))
+    if (!isPartTypeCompatible(part_info))
         return {0 /*unknown*/, {}};
 
     return format;
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+    return getDeserializedFormat(makeInfoForReader(part), relative_path_prefix);
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const
+{
+    if (indexFileExistsInChecksums(part_info.getChecksums(), relative_path_prefix, ".idx", part_info.getDataPartStorage().get()))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
+    return getPhysicalFormat(makeInfoForReader(part), relative_path_prefix);
 }
 
 MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
