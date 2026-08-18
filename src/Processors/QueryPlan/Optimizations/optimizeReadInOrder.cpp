@@ -124,8 +124,37 @@ struct FindReadingStepContext
     bool read_in_order_through_join;
     bool read_in_order_through_spilling_join;
 
+    /// Set while descending a keyless scatter whose pair was verified to collapse, so the gather half
+    /// below it may be descended too. A gather reached any other way is a real boundary.
+    bool inside_collapsing_exchange_pair = false;
+
     std::list<JoinStep *> joins_to_keep_in_order = {};
 };
+
+/// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
+/// the steps findReadingStep itself descends.
+GatherExchangeStep * findGatherOverRead(QueryPlan::Node & node, FindReadingStepContext & data)
+{
+    QueryPlan::Node * current = &node;
+    while (current->children.size() == 1)
+    {
+        current = current->children.front();
+        IQueryPlanStep * step = current->step.get();
+
+        if (auto * gather = typeid_cast<GatherExchangeStep *>(step))
+        {
+            if (!gather->getMaintainSortDescription().has_value() && current->children.size() == 1
+                && checkSupportedReadingStep(current->children.front()->step.get(), data.allow_existing_order) != nullptr)
+                return gather;
+            return nullptr;
+        }
+
+        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step)
+            && !typeid_cast<ArrayJoinStep *>(step))
+            return nullptr;
+    }
+    return nullptr;
+}
 
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext & data)
 {
@@ -139,16 +168,21 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
         return findReadingStep(*node.children.front(), data);
 
-    /// An "any" scatter (no keys) only splits the stream, so the read below it can still read in order.
+    /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
+    /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
     if (auto * scatter = typeid_cast<ScatterExchangeStep *>(step); scatter && scatter->getKeys().empty())
-        return findReadingStep(*node.children.front(), data);
+    {
+        auto * gather = findGatherOverRead(node, data);
+        if (gather && scatter->getResultBucketCount() == gather->getSourceBucketCount())
+        {
+            data.inside_collapsing_exchange_pair = true;
+            return findReadingStep(*node.children.front(), data);
+        }
+    }
 
-    /// `tryMakeDistributedRead` puts a plain gather directly over the read it just made distributed, and
-    /// `optimizeExchanges` later folds that scatter/gather pair into a single shuffle. It is not a real
-    /// boundary yet, so look through it; a gather that maintains a sort description, or one over anything
-    /// other than the read itself, is left alone.
+    /// The gather half of a pair the scatter branch above already verified collapses.
     if (auto * gather = typeid_cast<GatherExchangeStep *>(step);
-        gather && !gather->getMaintainSortDescription().has_value() && node.children.size() == 1
+        gather && data.inside_collapsing_exchange_pair && node.children.size() == 1
         && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 

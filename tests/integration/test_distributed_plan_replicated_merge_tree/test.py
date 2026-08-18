@@ -685,6 +685,63 @@ def test_read_in_order(started_cluster, exchange_kind):
     assert distributed == baseline
 
 
+def test_read_in_order_without_distributed_read(started_cluster):
+    """Same ordered read, but with the table under distributed_plan_max_rows_to_broadcast, so the read is
+    never made distributed and the fragment deserializes with distributed_read_bucket_count == 0. The order
+    contract still has to be reapplied there; while it was applied only for bucketed reads, this fragment
+    fed scan-order rows into a gather that expects them sorted."""
+    # Above the 100k rows of `big`, so tryMakeDistributedRead leaves the read alone. Last value wins over
+    # the 0 in DISTRIBUTED_SETTINGS.
+    no_distributed_read = "distributed_plan_max_rows_to_broadcast = 1000000"
+
+    # A ScatterExchange (rather than the ShuffleExchange a bucketed read's gather collapses into) is what
+    # says the read was left non-distributed, so the case cannot quietly go back to testing the bucketed
+    # path if that threshold ever stops applying.
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN SELECT id FROM big ORDER BY id LIMIT 5 "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, {no_distributed_read}"
+    )
+    assert "ScatterExchange" in plan and "ShuffleExchange" not in plan, plan
+
+    for order in ("ASC", "DESC"):
+        # OFFSET lands the window across a part boundary, where a stream ordered only within its own
+        # part is wrong even though the head of the stream looks right.
+        distributed, baseline = _run_both_ways(
+            f"""
+            SELECT id
+            FROM big
+            ORDER BY id {order}
+            LIMIT 20 OFFSET 24990
+            """,
+            settings_override=no_distributed_read,
+        )
+        assert distributed == baseline
+
+
+def test_read_in_order_across_surviving_exchange(started_cluster):
+    """An ordered read may only skip the sort when nothing separates it from the sorting step. With the
+    reader bucket count different from the scatter's, the fused exchange is a real redistribution that
+    stays in the plan and delivers each partition its rows in arrival order, so the sorting has to keep
+    sorting. While the read was asked to read in order here anyway, the query returned rows from the
+    wrong part of the table - intermittently, hence the repeats."""
+    query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
+    baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # 2 reader buckets against the 3 scatter partitions of DISTRIBUTED_SETTINGS: the shuffle they fuse
+    # into is not an identity, so optimizeExchanges keeps it.
+    mismatched_buckets = "distributed_plan_default_reader_bucket_count = 2"
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+    )
+    assert "ShuffleExchange" in plan, plan
+
+    for _ in range(5):
+        distributed = INITIATOR.query(
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+        )
+        assert distributed == baseline
+
+
 def test_read_in_order_stops_early(started_cluster):
     """The optimization must actually engage in a distributed plan, not merely return correct rows:
     reading in key order lets the read stop once the limit is met, so it touches far fewer rows than
