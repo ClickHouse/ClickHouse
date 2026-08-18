@@ -8,7 +8,7 @@ INSERT INTO TESTTABLE values (0,'0',['1']), (1,'1',['1']);
 
 SET max_threads = 1;
 
--- There is a bug which is fixed in the analyzer.
+-- There is a bug which is fixed in new analyzer.
 SET max_bytes_before_external_sort = 0;
 SET max_bytes_ratio_before_external_sort = 0;
 

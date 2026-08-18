@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -26,7 +25,7 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
+    bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
     bool canBePromoted() const override { return true; }
@@ -36,9 +35,9 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    SerializationPtr doGetDefaultSerialization() const override
     {
-        return SerializationNumber<T>::create();
+        return std::make_shared<SerializationNumber<T>>();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.

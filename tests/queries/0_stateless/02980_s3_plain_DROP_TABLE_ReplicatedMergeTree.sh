@@ -26,8 +26,8 @@ $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_read;
     drop table if exists data_write;
 
-    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
-    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
+    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key settings write_marks_for_substreams_in_compact_parts=1;
+    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key settings write_marks_for_substreams_in_compact_parts=1;
 
     insert into data_write values (1);
     system sync replica data_read;
@@ -49,9 +49,9 @@ $CLICKHOUSE_CLIENT -m -q "
             secret_access_key='testtest');
     select 'data after ATTACH', count() from data_read;
 
-    insert into data_read values (1); -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
-    optimize table data_read final; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
-    system sync replica data_read; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+    insert into data_read values (1); -- { serverError TABLE_IS_READ_ONLY }
+    optimize table data_read final; -- { serverError TABLE_IS_READ_ONLY }
+    system sync replica data_read; -- { serverError TABLE_IS_READ_ONLY }
 "
 
 path=$($CLICKHOUSE_CLIENT -q "SELECT replace(data_paths[1], 's3_plain', '') FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'data_read'")

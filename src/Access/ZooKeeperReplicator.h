@@ -10,7 +10,6 @@
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Access/IAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 
@@ -28,8 +27,7 @@ public:
         const String & zookeeper_path_,
         zkutil::GetZooKeeper get_zookeeper_,
         AccessChangesNotifier & changes_notifier_,
-        MemoryAccessStorage & memory_storage_,
-        bool throw_on_invalid_entities_);
+        MemoryAccessStorage & memory_storage_);
 
     ~ZooKeeperReplicator();
 
@@ -73,11 +71,8 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
 
-    Coordination::WatchCallbackPtr watch_entities_list;
-
     MemoryAccessStorage & memory_storage TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
-    const bool throw_on_invalid_entities;
 
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);

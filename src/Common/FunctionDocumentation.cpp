@@ -1,7 +1,6 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Common/Exception.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
@@ -15,9 +14,10 @@ namespace ErrorCodes
 
 namespace
 {
+VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
-/// Example output string: [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float)
+/// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const FunctionDocumentation::Syntax & syntax)
 {
     String result;
@@ -35,99 +35,85 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             type = type.substr(6); // Remove "const " prefix
 
         if (type == "NULL")
-            result += "`](/reference/syntax#null)";
+            result += "`](/sql-reference/syntax#null)";
         else if (type == "Any")
-            result += "`](/reference/data-types)";
+            result += "`](/sql-reference/data-types)";
         else if (type == "String" || type == "String literal")
-            result += "`](/reference/data-types/string)";
+            result += "`](/sql-reference/data-types/string)";
         else if (type.starts_with("FixedString"))
-            result += "`](/reference/data-types/fixedstring)";
+            result += "`](/sql-reference/data-types/fixedstring)";
         else if (type.starts_with("Int") || type.starts_with("UInt") || type.starts_with("(U)Int")) /// "Int8", "Int16", ... || "UInt8", "UInt16", ... || "(U)Int*", "(U)Int8", "(U)Int16", ...
-            result += "`](/reference/data-types/int-uint)";
+            result += "`](/sql-reference/data-types/int-uint)";
         else if (type.starts_with("Float") || type == "BFloat16") /// "Float32", "Float64", "BFloat16"
-            result += "`](/reference/data-types/float)";
+            result += "`](/sql-reference/data-types/float)";
         else if (type.starts_with("Decimal")) /// "Decimal(P, S)", "Decimal32", "Decimal64", ...
-            result += "`](/reference/data-types/decimal)";
+            result += "`](/sql-reference/data-types/decimal)";
         else if (type == "Date")
-            result += "`](/reference/data-types/date)";
+            result += "`](/sql-reference/data-types/date)";
         else if (type == "Date32")
-            result += "`](/reference/data-types/date32)";
+            result += "`](/sql-reference/data-types/date32)";
         else if (type == "DateTime")
-            result += "`](/reference/data-types/datetime)";
+            result += "`](/sql-reference/data-types/datetime)";
         else if (type.starts_with("DateTime64")) /// "DateTime64(P)", "DateTime64(3)", "DateTime64(6)", ...
-            result += "`](/reference/data-types/datetime64)";
-        else if (type == "Time")
-            result += "`](/reference/data-types/time)";
-        else if (type.starts_with("Time64")) //// "Time64(P)", "Time64(3)", ...
-            result += "`](/reference/data-types/time64)";
+            result += "`](/sql-reference/data-types/datetime64)";
         else if (type == "Enum")
-            result += "`](/reference/data-types/enum)";
+            result += "`](/sql-reference/data-types/enum)";
         else if (type == "UUID")
-            result += "`](/reference/data-types/uuid)";
+            result += "`](/sql-reference/data-types/uuid)";
         else if (type == "Object")
-            result += "`](/reference/data-types/newjson)";
+            result += "`](/sql-reference/data-types/object-data-type)";
         else if (type == "IPv4")
-            result += "`](/reference/data-types/ipv4)";
+            result += "`](/sql-reference/data-types/ipv4)";
         else if (type == "IPv6")
-            result += "`](/reference/data-types/ipv6)";
+            result += "`](/sql-reference/data-types/ipv6)";
         else if (type.starts_with("Array")) /// "Array(T)", "Array(UInt8)", "Array(String)", ...
-            result += "`](/reference/data-types/array)";
+            result += "`](/sql-reference/data-types/array)";
         else if (type == "Bool")
-            result += "`](/reference/data-types/boolean)";
+            result += "`](/sql-reference/data-types/boolean)";
         else if (type.starts_with("Tuple")) /// "Tuple(T1, T2)", "Tuple(UInt8, String)", ...
-            result += "`](/reference/data-types/tuple)";
+            result += "`](/sql-reference/data-types/tuple)";
         else if (type.starts_with("Map")) /// "Map(K, V)"
-            result += "`](/reference/data-types/map)";
+            result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
-            result += "`](/reference/data-types/variant)";
-        else if (type.starts_with("Geometry"))
-            result += "`](/reference/data-types/geo)";
+            result += "`](/sql-reference/data-types/variant)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
-            result += "`](/reference/data-types/lowcardinality)";
+            result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
-            result += "`](/reference/data-types/nullable)";
+            result += "`](/sql-reference/data-types/nullable)";
         else if (type.starts_with("AggregateFunction")) /// "AggregateFunction(agg_func, T)", "AggregateFunction(any, UInt8)", ...
-            result += "`](/reference/data-types/aggregatefunction)";
+            result += "`](/sql-reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
-            result += "`](/reference/data-types/simpleaggregatefunction)";
-        else if (type == "Geo")
-            result += "`](/reference/data-types/geo)";
+            result += "`](/sql-reference/data-types/simpleaggregatefunction)";
         else if (type == "Point")
-            result += "`](/reference/data-types/geo#point)";
-        else if (type == "MultiPoint")
-            result += "`](/reference/data-types/geo#multipoint)";
+            result += "`](/sql-reference/data-types/geo#point)";
         else if (type == "Ring")
-            result += "`](/reference/data-types/geo#ring)";
+            result += "`](/sql-reference/data-types/geo#ring)";
         else if (type == "LineString")
-            result += "`](/reference/data-types/geo#linestring)";
+            result += "`](/sql-reference/data-types/geo#linestring)";
         else if (type == "MultiLineString")
-            result += "`](/reference/data-types/geo#multilinestring)";
+            result += "`](/sql-reference/data-types/geo#multilinestring)";
         else if (type == "Polygon")
-            result += "`](/reference/data-types/geo#polygon)";
+            result += "`](/sql-reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
-            result += "`](/reference/data-types/geo#multipolygon)";
-        else if (type == "numericIndexedVector")
-            result += "`](/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)";
+            result += "`](/sql-reference/data-types/geo#multipolygon)";
         else if (type == "Expression")
-            result += "`](/reference/data-types/special-data-types/expression)";
+            result += "`](/sql-reference/data-types/special-data-types/expression)";
         else if (type == "Set")
-            result += "`](/reference/data-types/special-data-types/set)";
+            result += "`](/sql-reference/data-types/special-data-types/set)";
         else if (type == "Nothing")
-            result += "`](/reference/data-types/special-data-types/nothing)";
+            result += "`](/sql-reference/data-types/special-data-types/nothing)";
         else if (type == "Interval")
-            result += "`](/reference/data-types/special-data-types/interval)";
+            result += "`](/sql-reference/data-types/special-data-types/interval)";
         else if (type.starts_with("Nested")) /// "Nested(N1 T1, N2 T2, ...)", ...
-            result += "`](/reference/data-types/nested-data-structures)";
+            result += "`](/sql-reference/data-types/nested-data-structures/nested)";
         else if (type == "Dynamic")
-            result += "`](/reference/data-types/dynamic)";
+            result += "`](/sql-reference/data-types/dynamic)";
         else if (type == "JSON")
-            result += "`](/reference/data-types/newjson)";
+            result += "`](/sql-reference/data-types/newjson)";
         else if (type == "Lambda function")
-            result += "`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)";
+            result += "`](/sql-reference/functions/overview#arrow-operator-and-lambda)";
         else if (type == "NULL")
-            result += "`](/reference/syntax#null)";
-        else if (type.starts_with("QBit")) /// "QBit(T, UInt64)", "QBit(Float64, UInt64)", ...
-            result += "`](/reference/data-types/qbit)";
+            result += "`](/sql-reference/syntax#null)";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }
@@ -136,11 +122,10 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
 }
 }
 
-template <typename Type>
-String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
+String FunctionDocumentation::argumentsAsString() const
 {
     String result;
-    for (const auto & [name, description_, types] : arguments_or_parameters)
+    for (const auto & [name, description_, types] : arguments)
     {
         result += "- `" + name + "` — " + description_ + " ";
 
@@ -150,16 +135,6 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
             result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
-}
-
-String FunctionDocumentation::argumentsAsString() const
-{
-    return argumentsOrParametersAsString(arguments, syntax);
-}
-
-String FunctionDocumentation::parametersAsString() const
-{
-    return argumentsOrParametersAsString(parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -172,17 +147,7 @@ String FunctionDocumentation::parametersAsString() const
 
 String FunctionDocumentation::syntaxAsString() const
 {
-    String trimmed_syntax = boost::algorithm::trim_copy(syntax);
-
-    /// It is tempting to write 'SELECT someFunction(arg1, arg2)' in the syntax field but we
-    /// really want 'someFunction(arg1, arg2)'.
-    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT "))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not start with 'SELECT': {}", syntax);
-
-    if (syntax.ends_with(";"))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not end with ';': {}", syntax);
-
-    return trimmed_syntax;
+    return boost::algorithm::trim_copy(syntax);
 }
 
 String FunctionDocumentation::returnedValueAsString() const
@@ -202,16 +167,13 @@ String FunctionDocumentation::examplesAsString() const
     for (const auto & [name, query, result] : examples)
     {
         res += "**" + name + "**" + "\n\n";
-
-        const String trimmed_query = boost::algorithm::trim_copy(query);
-        if (!trimmed_query.empty())
-            res += "```sql title=""Query""\n" + trimmed_query + "\n```\n\n";
-
-        /// Only emit the response block when there is a response; otherwise an empty example
-        /// (e.g. for some internal functions) would render as an empty code box.
-        const String trimmed_result = boost::algorithm::trim_copy(result);
-        if (!trimmed_result.empty())
-            res += "```response title=""Response""\n" + trimmed_result + "\n```\n\n";
+        res += "```sql title=""Query""\n";
+        res += boost::algorithm::trim_copy(query) + "\n";
+        res += "```\n\n";
+        res += "```response title=""Response""\n";
+        res += boost::algorithm::trim_copy(result) + "\n";
+        res += "```";
+        res += "\n\n";
     }
     return res;
 }
@@ -229,8 +191,6 @@ String FunctionDocumentation::categoryAsString() const
     static const std::unordered_map<Category, std::string> category_to_string =
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
-
-        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
@@ -238,14 +198,13 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Comparison, "Comparison"},
         {Category::Conditional, "Conditional"},
         {Category::DateAndTime, "Dates and Times"},
-        {Category::Decimal, "Decimal"},
         {Category::Dictionary, "Dictionary"},
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
-        {Category::GeoPolygon, "Geo Polygon"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
+        {Category::File, "File"},
         {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},
@@ -259,7 +218,6 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Null, "Null"},
         {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
-        {Category::QBit, "QBit"},
         {Category::RandomNumber, "Random Number"},
         {Category::Rounding, "Rounding"},
         {Category::StringReplacement, "String Replacement"},
@@ -274,10 +232,6 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
-
-        {Category::Internal, "Internal"},
-
-        {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 
@@ -286,7 +240,5 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
-
-FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"This function is used internally by ClickHouse (for example by the query planner or by other functions) and is not part of the public interface. It should not be used directly and may change or be removed at any time.", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
 
 }

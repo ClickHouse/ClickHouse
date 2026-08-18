@@ -32,7 +32,7 @@ protected:
 
 ASTPtr ASTDeclareIndex::clone() const
 {
-    auto res = make_intrusive<ASTDeclareIndex>(*this);
+    auto res = std::make_shared<ASTDeclareIndex>(*this);
     res->children.clear();
 
     if (index_columns)
@@ -211,7 +211,7 @@ bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    auto declare_index = make_intrusive<ASTDeclareIndex>();
+    auto declare_index = std::make_shared<ASTDeclareIndex>();
     declare_index->index_name = index_name;
     declare_index->index_type = index_type;
     declare_index->index_columns = index_columns;

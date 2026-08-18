@@ -1,5 +1,4 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Common/Exception.h>
 
 namespace DB
 {

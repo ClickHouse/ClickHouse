@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
@@ -33,6 +33,7 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
+    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(
@@ -136,7 +137,7 @@ void StorageFromMergeTreeProjection::read(
             projection->name, parent_storage_id.getNameForLogs());
 
     RangesInDataParts projection_parts;
-    for (const auto & part : *parts)
+    for (const auto & part : parts)
     {
         const auto & created_projections = part.data_part->getProjectionParts();
         auto it = created_projections.find(projection->name);
@@ -147,9 +148,9 @@ void StorageFromMergeTreeProjection::read(
         }
     }
 
-    auto step = MergeTreeDataSelectExecutor(merge_tree, projection)
+    auto step = MergeTreeDataSelectExecutor(merge_tree)
                     .readFromParts(
-                        std::make_shared<RangesInDataParts>(projection_parts),
+                        std::move(projection_parts),
                         snapshot_data.mutations_snapshot->cloneEmpty(),
                         read_column_names,
                         storage_snapshot,
@@ -164,9 +165,10 @@ void StorageFromMergeTreeProjection::read(
     }
     else
     {
-        auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(projection->sample_block));
-        read_nothing->setStepDescription("Read from NullSource (Projection)");
-        query_plan.addStep(std::move(read_nothing));
+        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(projection->sample_block)));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Projection)");
+        query_plan.addStep(std::move(read_from_pipe));
     }
 }
 
@@ -177,11 +179,10 @@ StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & me
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
 
     auto data = std::make_unique<MergeTreeData::SnapshotData>();
-    data->storage = parent_snapshot_data.storage;
     data->parts = parent_snapshot_data.parts;
     data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(data));
 }
 
 }

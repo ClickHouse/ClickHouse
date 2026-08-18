@@ -109,4 +109,9 @@ void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, size_t bytes, co
     copyDataImpl(from, to, true, bytes, &is_cancelled, throttler);
 }
 
+void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook, ThrottlerPtr throttler)
+{
+    copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), cancellation_hook, throttler);
+}
+
 }

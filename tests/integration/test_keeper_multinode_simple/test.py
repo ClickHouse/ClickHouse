@@ -7,8 +7,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
-import uuid
-
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
@@ -58,9 +56,8 @@ def test_read_write_multinode(started_cluster):
         node3_zk = get_fake_zk("node3")
 
         # Cleanup
-        for i in range(1, 4):
-            if node1_zk.exists(f"/test_read_write_multinode_node{i}") != None:
-                node1_zk.delete(f"/test_read_write_multinode_node{i}")
+        if node1_zk.exists("/test_read_write_multinode_node1") != None:
+            node1_zk.delete("/test_read_write_multinode_node1")
 
         node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
         node2_zk.create("/test_read_write_multinode_node2", b"somedata2")
@@ -115,8 +112,6 @@ def test_watch_on_follower(started_cluster):
         node1_data = None
 
         def node1_callback(event):
-            if not keeper_utils.is_znode_watch_event(event):
-                return
             print("node1 data watch called")
             nonlocal node1_data
             node1_data = event
@@ -126,8 +121,6 @@ def test_watch_on_follower(started_cluster):
         node2_data = None
 
         def node2_callback(event):
-            if not keeper_utils.is_znode_watch_event(event):
-                return
             print("node2 data watch called")
             nonlocal node2_data
             node2_data = event
@@ -137,8 +130,6 @@ def test_watch_on_follower(started_cluster):
         node3_data = None
 
         def node3_callback(event):
-            if not keeper_utils.is_znode_watch_event(event):
-                return
             print("node3 data watch called")
             nonlocal node3_data
             node3_data = event
@@ -183,30 +174,17 @@ def test_session_expiration(started_cluster):
             pm.partition_instances(node3, node1)
             node3_zk.stop()
             node3_zk.close()
-
-            # Wait for the ephemeral node to disappear after session expiration.
-            # Use a wall-clock timeout instead of a fixed iteration count,
-            # because under sanitizers (especially MSan) everything is much slower.
-            # session_timeout_ms is 10s; give extra time for sanitizer builds.
-            start = time.time()
-            while time.time() - start < 120:
-                time.sleep(2)
-                try:
-                    node1_exists = node1_zk.exists("/test_ephemeral_node")
-                    node2_exists = node2_zk.exists("/test_ephemeral_node")
-                except Exception as e:
-                    print("Exception checking existence:", e)
-                    continue
-
-                if node1_exists is None and node2_exists is None:
+            for _ in range(100):
+                if (
+                    node1_zk.exists("/test_ephemeral_node") is None
+                    and node2_zk.exists("/test_ephemeral_node") is None
+                ):
                     break
-
-                print("Node1 exists", node1_exists)
-                print("Node2 exists", node2_exists)
-            else:
-                raise Exception(
-                    "Ephemeral node was not deleted after session expiration"
-                )
+                print("Node1 exists", node1_zk.exists("/test_ephemeral_node"))
+                print("Node2 exists", node2_zk.exists("/test_ephemeral_node"))
+                time.sleep(0.1)
+                node1_zk.sync("/")
+                node2_zk.sync("/")
 
         assert node1_zk.exists("/test_ephemeral_node") is None
         assert node2_zk.exists("/test_ephemeral_node") is None
@@ -256,19 +234,18 @@ def test_follower_restart(started_cluster):
 
 def test_simple_replicated_table(started_cluster):
     wait_nodes()
-    test_name = f"test_simple_replicated_table_{uuid.uuid4().hex}"
 
     for i, node in enumerate([node1, node2, node3]):
-        node.query(f"DROP TABLE IF EXISTS {test_name} SYNC")
+        node.query("DROP TABLE IF EXISTS t SYNC")
         node.query(
-            f"CREATE TABLE {test_name} (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/{test_name}', '{i + 1}') ORDER BY tuple()"
+            f"CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{i + 1}') ORDER BY tuple()"
         )
 
-    node2.query(f"INSERT INTO {test_name} SELECT number FROM numbers(10)")
+    node2.query("INSERT INTO t SELECT number FROM numbers(10)")
 
-    node1.query(f"SYSTEM SYNC REPLICA {test_name}", timeout=10)
-    node3.query(f"SYSTEM SYNC REPLICA {test_name}", timeout=10)
+    node1.query("SYSTEM SYNC REPLICA t", timeout=10)
+    node3.query("SYSTEM SYNC REPLICA t", timeout=10)
 
-    assert_eq_with_retry(node1, f"SELECT COUNT() FROM {test_name}", "10")
-    assert_eq_with_retry(node2, f"SELECT COUNT() FROM {test_name}", "10")
-    assert_eq_with_retry(node3, f"SELECT COUNT() FROM {test_name}", "10")
+    assert_eq_with_retry(node1, "SELECT COUNT() FROM t", "10")
+    assert_eq_with_retry(node2, "SELECT COUNT() FROM t", "10")
+    assert_eq_with_retry(node3, "SELECT COUNT() FROM t", "10")

@@ -2,7 +2,6 @@
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- no-shared-merge-tree: depend on tricks with quorum inserts for replicated mt
 
-
 DROP TABLE IF EXISTS r1 SYNC;
 DROP TABLE IF EXISTS r2 SYNC;
 

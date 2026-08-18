@@ -65,15 +65,13 @@ function test_distributed_push_down_limit_with_query_log()
         "$@"
     )
 
-    # Check the returned row count: the LIMIT always emits exactly 10 rows, while the
-    # exact key values can race across shards (see test_distributed_push_down_limit_1).
-    $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from $table group by key limit $offset, 10" | wc -l
+    $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from $table group by key limit $offset, 10"
 
     $CLICKHOUSE_CLIENT -m -q "
         system flush logs query_log;
         select read_rows from system.query_log
             where
-                event_date >= yesterday() AND event_time >= now() - 600
+                event_date >= yesterday()
                 and query_kind = 'Select' /* exclude DESC TABLE */
                 and type = 'QueryFinish'
                 and initial_query_id = '$query_id' and initial_query_id != query_id;
@@ -99,8 +97,6 @@ function test_distributed_push_down_limit_1()
         --optimize_skip_unused_shards 1
         --optimize_distributed_group_by_sharding_key 1
     )
-    # The exact keys race across shards (overlapping data + no cross-shard dedup under
-    # optimize_distributed_group_by_sharding_key=1), so assert the row count (10), not the keys.
     test_distributed_push_down_limit_with_query_log "${args[@]}"
 }
 
@@ -121,7 +117,7 @@ function main()
     trap cleanup EXIT
 
     echo 'distributed_push_down_limit=0'
-    test_distributed_push_down_limit_0
+    test_distributed_push_down_limit_0 --format Null
 
     #
     # The following tests (tests with distributed_push_down_limit=1) requires
@@ -145,9 +141,7 @@ function main()
     for ((i = 0; i < max_tries; ++i)); do
         out=$(test_distributed_push_down_limit_1)
         out_lines=( $out )
-        # Output is the row count (10) followed by the xargs'd `read_rows` (40 per shard).
-        # Retry until both shards read 40 rows (the LIMIT may cancel one shard early, see above).
-        if [[ ${#out_lines[@]} -eq 3 ]] && [[ ${out_lines[0]} = 10 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
+        if [[ ${#out_lines[@]} -gt 2 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
             break
         fi
     done

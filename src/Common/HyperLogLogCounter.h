@@ -8,10 +8,12 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cmath>
 #include <string>
+
 
 namespace DB
 {
@@ -37,7 +39,7 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
-    LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
+    LogLUT()
     {
         log_table[0] = 0.0;
         for (size_t i = 1; i <= M; ++i)
@@ -54,7 +56,7 @@ struct LogLUT
 private:
     static constexpr size_t M = 1 << ((static_cast<unsigned int>(K) <= 12) ? K : 12);
 
-    double log_table[M + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    double log_table[M + 1];
 };
 
 template <UInt8 K> struct MinCounterTypeHelper;
@@ -182,7 +184,7 @@ public:
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0L;
+            val /= 2.0;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
@@ -326,16 +328,12 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        auto rank_state = rank_store.getSerializableState();
-        in.readStrict(reinterpret_cast<char *>(rank_state.data()), rank_state.size());
-
         if constexpr (std::endian::native == std::endian::little)
-        {
-            in.readStrict(reinterpret_cast<char *>(&denominator), sizeof(DenominatorCalculatorType));
-            in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
-        }
+            in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
         else
         {
+            in.readStrict(reinterpret_cast<char *>(&rank_store), sizeof(RankStore));
+
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             in.readStrict(denominator_copy.data(), denom_size);
@@ -354,21 +352,17 @@ public:
 
     static void skip(DB::ReadBuffer & in)
     {
-        in.ignore(RankStore::serializedSize() + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
+        in.ignore(sizeof(RankStore) + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
     }
 
     void write(DB::WriteBuffer & out) const
     {
-        auto rank_state = rank_store.getSerializableState();
-        out.write(reinterpret_cast<const char *>(rank_state.data()), rank_state.size());
+       if constexpr (std::endian::native == std::endian::little)
+            out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       else
+       {
+            out.write(reinterpret_cast<const char *>(&rank_store), sizeof(RankStore));
 
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            out.write(reinterpret_cast<const char *>(&denominator), sizeof(DenominatorCalculatorType));
-            out.write(reinterpret_cast<const char *>(&zeros), sizeof(ZerosCounterType));
-        }
-        else
-        {
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
             memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
@@ -383,7 +377,7 @@ public:
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
             out.write(reinterpret_cast<const char *>(&zeros_copy), sizeof(ZerosCounterType));
-        }
+       }
     }
 
     /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).
@@ -404,7 +398,7 @@ public:
 
     static void skipText(DB::ReadBuffer & in)
     {
-        UInt8 dummy = 0;
+        UInt8 dummy;
         for (size_t i = 0; i < RankStore::size(); ++i)
         {
             if (i != 0)
@@ -436,7 +430,7 @@ private:
         if (unlikely(zeros_plus_one) > max_rank)
             return max_rank;
 
-        return static_cast<UInt8>(zeros_plus_one);
+        return zeros_plus_one;
     }
 
     HashValueType getHash(Value key) const
@@ -450,14 +444,15 @@ private:
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
-        UInt8 cur_rank = rank_store.get(bucket);
+        typename RankStore::Locus content = rank_store[bucket];
+        UInt8 cur_rank = static_cast<UInt8>(content);
 
         if (rank > cur_rank)
         {
             if (cur_rank == 0)
                 --zeros;
             denominator.update(cur_rank, rank);
-            rank_store.set(bucket, rank);
+            content = rank;
         }
     }
 
@@ -473,7 +468,7 @@ private:
         {
             static constexpr double pow2_32 = 4294967296.0;
 
-            double fixed_estimate = 0;
+            double fixed_estimate;
 
             if (raw_estimate > (pow2_32 / 30.0))
                 fixed_estimate = raw_estimate;
@@ -487,7 +482,7 @@ private:
 
     double applyCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (BiasEstimator::isTrivial())
         {
@@ -516,7 +511,7 @@ private:
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
     double applyBiasCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (raw_estimate <= (5 * bucket_count))
             fixed_estimate = raw_estimate - BiasEstimator::getBias(raw_estimate);
@@ -531,7 +526,7 @@ private:
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
     double applyLinearCorrection(double raw_estimate) const
     {
-        double fixed_estimate = 0;
+        double fixed_estimate;
 
         if (zeros != 0)
             fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));

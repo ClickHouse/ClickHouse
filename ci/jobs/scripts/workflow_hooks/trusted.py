@@ -1,14 +1,17 @@
-import json
 import sys
-from pathlib import Path
 
 from praktika.info import Info
 from praktika.utils import Shell
 
-TRUSTED_CONTRIBUTORS_CONFIG = Path(__file__).parents[3] / "defs" / "trusted_contributors.json"
 TRUSTED_CONTRIBUTORS = {
-    login.lower()
-    for login in json.loads(TRUSTED_CONTRIBUTORS_CONFIG.read_text(encoding="utf-8"))
+    e.lower()
+    for e in [
+        "amosbird",
+        "den-crane",  # Documentation contributor
+        "taiyang-li",
+        "ucasFL",  # Amos Bird's friend
+        "canhld94",
+    ]
 }
 
 CAN_BE_TESTED = "can be tested"
@@ -23,7 +26,7 @@ def user_in_trusted_org(user_name: str) -> bool:
     return user_name in [line.strip() for line in lines.splitlines() if line.strip()]
 
 
-def can_be_tested():
+def can_be_trusted():
     info = Info()
     if info.repo_name == Info().fork_name:
         print("It's an internal contributor")
@@ -45,5 +48,5 @@ def can_be_tested():
 
 
 if __name__ == "__main__":
-    if can_be_tested() != "":
+    if can_be_trusted() != "":
         sys.exit(1)

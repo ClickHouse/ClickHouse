@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
@@ -28,7 +27,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
@@ -89,7 +88,7 @@ static ASTPtr tryMakeUsingColumnASTWithAlias(const QueryTreeNodePtr & node)
     if (lhs_column_node->getColumnName() == rhs_column_node->getColumnName())
         return nullptr;
 
-    auto node_ast = make_intrusive<ASTIdentifier>(lhs_column_node->getColumnName());
+    auto node_ast = std::make_shared<ASTIdentifier>(lhs_column_node->getColumnName());
     node_ast->setAlias(rhs_column_node->getColumnName());
     return node_ast;
 }
@@ -98,7 +97,7 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
 {
     const auto & list_node = node->as<ListNode &>();
 
-    auto expr_list = make_intrusive<ASTExpressionList>();
+    auto expr_list = std::make_shared<ASTExpressionList>();
     expr_list->children.reserve(list_node.getNodes().size());
 
     for (const auto & child : list_node.getNodes())
@@ -116,11 +115,10 @@ static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
 
 ASTPtr JoinNode::toASTTableJoin() const
 {
-    auto join_ast = make_intrusive<ASTTableJoin>();
+    auto join_ast = std::make_shared<ASTTableJoin>();
     join_ast->locality = locality;
     join_ast->strictness = strictness;
     join_ast->kind = kind;
-    join_ast->is_natural = is_natural && !hasJoinExpression();
 
     if (children[join_expression_child_index])
     {
@@ -151,13 +149,11 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", kind: " << toString(kind);
 
-    /// Use the raw node accessors: in an unresolved tree (e.g. EXPLAIN QUERY TREE
-    /// with run_passes = 0) the children are still identifiers, not table expressions.
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
-    getLeftTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
-    getRightTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
@@ -170,8 +166,7 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
-        is_using_join_expression == rhs_typed.is_using_join_expression &&
-        is_natural == rhs_typed.is_natural;
+        is_using_join_expression == rhs_typed.is_using_join_expression;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -180,23 +175,18 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(strictness);
     state.update(kind);
     state.update(is_using_join_expression);
-    state.update(is_natural);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
-    auto clone = std::make_shared<JoinNode>(
-        getLeftTableExpressionNode(),
-        getRightTableExpressionNode(),
-        getJoinExpression(),
+    return std::make_shared<JoinNode>(
+        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
-    clone->is_natural = is_natural;
-    return clone;
 }
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index], options);
 
@@ -229,13 +219,13 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
-    : ITableExpressionNode(1)
+    : IQueryTreeNode(1)
 {
     children = {std::move(table_expression)};
 }
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
-    : ITableExpressionNode(table_expressions.size())
+    : IQueryTreeNode(table_expressions.size())
     , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);
@@ -294,7 +284,7 @@ QueryTreeNodePtr CrossJoinNode::cloneImpl() const
 
 ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 
     for (size_t i = 0; i < children.size(); ++i)
     {
@@ -304,7 +294,7 @@ ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 
         if (i > 0)
         {
-            auto join_ast = make_intrusive<ASTTableJoin>();
+            auto join_ast = std::make_shared<ASTTableJoin>();
             join_ast->locality = join_types[i - 1].locality;
             join_ast->strictness = JoinStrictness::Unspecified;
             join_ast->kind = join_types[i - 1].is_comma ? JoinKind::Comma : JoinKind::Cross;

@@ -2,7 +2,7 @@
 
 #include <atomic>
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
 
@@ -14,7 +14,7 @@ struct DictionaryStructure;
 class TableFunctionDictionary;
 class IDictionary;
 
-class StorageDictionary final : public StorageWithCommonVirtualColumns, public WithContext
+class StorageDictionary final : public IStorage, public WithContext
 {
 friend class TableFunctionDictionary;
 
@@ -60,21 +60,17 @@ public:
 
     std::string getName() const override { return "Dictionary"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
     ~StorageDictionary() override;
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
 
-    using StorageWithCommonVirtualColumns::read;
-
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum /*processed_stage*/,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t threads) override;
 
@@ -87,8 +83,6 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
     bool isDictionary() const override { return true; }
-    bool supportsTruncate() const override { return false; }
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
     void shutdown(bool is_drop) override;
     void startup() override;
 

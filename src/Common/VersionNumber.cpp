@@ -2,7 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -13,13 +13,12 @@ VersionNumber::VersionNumber(std::string version_string)
         return;
 
     ReadBufferFromString rb(version_string);
-    Int64 * components[] = {&version_major, &version_minor, &version_patch};
-    for (auto * component : components)
+    while (!rb.eof())
     {
-        if (rb.eof())
+        Int64 value;
+        if (!tryReadIntText(value, rb))
             break;
-        if (!tryReadIntText(*component, rb))
-            break;
+        components.push_back(value);
         if (!checkChar('.', rb))
             break;
     }
@@ -27,17 +26,29 @@ VersionNumber::VersionNumber(std::string version_string)
 
 std::string VersionNumber::toString() const
 {
-    return fmt::format("{}.{}.{}", version_major, version_minor, version_patch);
+    return fmt::format("{}", fmt::join(components, "."));
 }
 
 int VersionNumber::compare(const VersionNumber & rhs) const
 {
-    if (version_major != rhs.version_major)
-        return version_major > rhs.version_major ? 1 : -1;
-    if (version_minor != rhs.version_minor)
-        return version_minor > rhs.version_minor ? 1 : -1;
-    if (version_patch != rhs.version_patch)
-        return version_patch > rhs.version_patch ? 1 : -1;
+    size_t min = std::min(components.size(), rhs.components.size());
+
+    for (size_t i = 0; i < min; ++i)
+    {
+        if (auto d = components[i] - rhs.components[i])
+            return d > 0 ? 1 : -1;
+    }
+
+    if (components.size() > min)
+    {
+        return components[min] >= 0 ? 1 : -1;
+    }
+
+    if (rhs.components.size() > min)
+    {
+        return -rhs.components[min] > 0 ? 1 : -1;
+    }
+
     return 0;
 }
 

@@ -1,4 +1,0 @@
-1	A
-2	B
-1
-CREATE TEMPORARY VIEW tview_basic\n(\n    `id` UInt32,\n    `u` String\n)\nAS SELECT\n    id,\n    upper(val) AS u\nFROM t_src\nWHERE id <= 2

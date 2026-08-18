@@ -4,7 +4,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
-#include <Analyzer/Passes/tests/gtest_analyzer_utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Common/tests/gtest_global_context.h>
@@ -15,68 +14,89 @@
 
 using namespace DB;
 
+QueryTreeNodePtr resolve_everything(QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+    {
+        auto * identifier_node = node->as<IdentifierNode>();
+        /// it is a column
+        if (identifier_node)
+        {
+            String col_name = identifier_node->getIdentifier().getFullName();
+            auto it = resolved_map.find(col_name);
+            if (it != resolved_map.end())
+                return it->second;
+            DataTypePtr type = DataTypePtr(new DataTypeInt32());
+            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), node);
+            resolved_map[col_name] = column;
+            return column;
+        }
+        /// it is constant
+        return node;
+    }
+    QueryTreeNodes new_args;
+    for (const auto & argument : function_node->getArguments())
+    {
+        auto arg = resolve_everything(argument, resolved_map, context);
+        new_args.push_back(arg);
+    }
+    function_node->getArguments().getNodes() = std::move(new_args);
+    resolveOrdinaryFunctionNodeByName(*function_node, function_node->getFunctionName(), context);
+    return node;
+};
+
 TEST(OptimizeAndCompareChain, compare)
 {
     tryRegisterFunctions();
+    std::map<String, QueryTreeNodePtr> resolved_map;
     auto test_f = [&](const String & cond, const String & expected)
     {
-        testPassOnCondition(
-            QueryTreePassPtr(new LogicalExpressionOptimizerPass()), DataTypePtr(new DataTypeInt32()), 
-            cond, expected);
+        ContextPtr context = getContext().context;
+        ParserExpressionWithOptionalAlias exp_elem(false);
+        ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
+        QueryTreeNodePtr node = buildQueryTree(query, context);
+
+        node = resolve_everything(node, resolved_map, context);
+        LogicalExpressionOptimizerPass pass;
+        pass.run(node, context);
+        EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);
     };
 
     // constant is large
-    test_f("a < b AND b < c AND c < 5", "(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("b > a AND c > b AND 5 > c", "(b > a) AND (c > b) AND (5 > c) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("a <= b AND b <= c AND c <= 5", "(a <= b) AND (b <= c) AND (c <= 5) AND indexHint(b <= 5) AND indexHint(a <= 5)");
-    test_f("a < b AND b < c AND c <= 5", "(a < b) AND (b < c) AND (c <= 5) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("a < b AND b <= c AND c < 5", "(a < b) AND (b <= c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("b >= a AND c >= b AND 5 >= c", "(b >= a) AND (c >= b) AND (5 >= c) AND indexHint(b <= 5) AND indexHint(a <= 5)");
-    test_f("b > a AND c > b AND 5 >= c", "(b > a) AND (c > b) AND (5 >= c) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("b > a AND c >= b AND 5 > c", "(b > a) AND (c >= b) AND (5 > c) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("a = b AND b = c AND c < 5", "(a = b) AND (b = c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)");
-    test_f("a < b AND b = c AND c <= 5", "(a < b) AND (b = c) AND (c <= 5) AND indexHint(b <= 5) AND indexHint(a < 5)");
-    test_f("a < b AND b = c AND c = 5", "(a < b) AND (b = c) AND (c = 5) AND indexHint(b = 5) AND indexHint(a < 5)");
-    test_f("a > b AND b > c AND c > a AND a < 5", "(a > b) AND (b > c) AND (c > a) AND (a < 5) AND indexHint(b < 5) AND indexHint(c < 5)");
-    test_f("a < 3 AND b < a AND c < b AND c < a", "(a < 3) AND (b < a) AND (c < b) AND (c < a) AND indexHint(b < 3) AND indexHint(c < 3)");
+    test_f("a < b AND b < c AND c < 5", "(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)");
+    test_f("b > a AND c > b AND 5 > c", "(b > a) AND (c > b) AND (5 > c) AND (b < 5) AND (a < 5)");
+    test_f("a <= b AND b <= c AND c <= 5", "(a <= b) AND (b <= c) AND (c <= 5) AND (b <= 5) AND (a <= 5)");
+    test_f("a < b AND b < c AND c <= 5", "(a < b) AND (b < c) AND (c <= 5) AND (b < 5) AND (a < 5)");
+    test_f("a < b AND b <= c AND c < 5", "(a < b) AND (b <= c) AND (c < 5) AND (b < 5) AND (a < 5)");
+    test_f("b >= a AND c >= b AND 5 >= c", "(b >= a) AND (c >= b) AND (5 >= c) AND (b <= 5) AND (a <= 5)");
+    test_f("b > a AND c > b AND 5 >= c", "(b > a) AND (c > b) AND (5 >= c) AND (b < 5) AND (a < 5)");
+    test_f("b > a AND c >= b AND 5 > c", "(b > a) AND (c >= b) AND (5 > c) AND (b < 5) AND (a < 5)");
+    test_f("a = b AND b = c AND c < 5", "(a = b) AND (b = c) AND (c < 5) AND (b < 5) AND (a < 5)");
+    test_f("a < b AND b = c AND c <= 5", "(a < b) AND (b = c) AND (c <= 5) AND (b <= 5) AND (a < 5)");
+    test_f("a < b AND b = c AND c = 5", "(a < b) AND (b = c) AND (c = 5) AND (b = 5) AND (a < 5)");
+    test_f("a > b AND b > c AND c > a AND a < 5", "(a > b) AND (b > c) AND (c > a) AND (a < 5) AND (b < 5) AND (c < 5)");
+    test_f("a < 3 AND b < a AND c < b AND c < a", "(a < 3) AND (b < a) AND (c < b) AND (c < a) AND (b < 3) AND (c < 3)");
 
     // constant is small
-    test_f("a > b AND b > c AND c > 5", "(a > b) AND (b > c) AND (c > 5) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("b < a AND c < b AND 5 < c", "(b < a) AND (c < b) AND (5 < c) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("a >= b AND b >= c AND c >= 5", "(a >= b) AND (b >= c) AND (c >= 5) AND indexHint(b >= 5) AND indexHint(a >= 5)");
-    test_f("a > b AND b > c AND c >= 5", "(a > b) AND (b > c) AND (c >= 5) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("a > b AND b >= c AND c > 5", "(a > b) AND (b >= c) AND (c > 5) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("b <= a AND c <= b AND 5 <= c", "(b <= a) AND (c <= b) AND (5 <= c) AND indexHint(b >= 5) AND indexHint(a >= 5)");
-    test_f("b < a AND c < b AND 5 <= c", "(b < a) AND (c < b) AND (5 <= c) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("b < a AND c <= b AND 5 < c", "(b < a) AND (c <= b) AND (5 < c) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("a = b AND b = c AND c > 5", "(a = b) AND (b = c) AND (c > 5) AND indexHint(b > 5) AND indexHint(a > 5)");
-    test_f("a > b AND b = c AND c >= 5", "(a > b) AND (b = c) AND (c >= 5) AND indexHint(b >= 5) AND indexHint(a > 5)");
-    test_f("a > b AND b = c AND c = 5", "(a > b) AND (b = c) AND (c = 5) AND indexHint(b = 5) AND indexHint(a > 5)");
-    test_f("a < b AND b < c AND c < a AND a > 5", "(a < b) AND (b < c) AND (c < a) AND (a > 5) AND indexHint(b > 5) AND indexHint(c > 5)");
-    test_f("a > 3 AND b > a AND c > b AND c > a", "(a > 3) AND (b > a) AND (c > b) AND (c > a) AND indexHint(b > 3) AND indexHint(c > 3)");
+    test_f("a > b AND b > c AND c > 5", "(a > b) AND (b > c) AND (c > 5) AND (b > 5) AND (a > 5)");
+    test_f("b < a AND c < b AND 5 < c", "(b < a) AND (c < b) AND (5 < c) AND (b > 5) AND (a > 5)");
+    test_f("a >= b AND b >= c AND c >= 5", "(a >= b) AND (b >= c) AND (c >= 5) AND (b >= 5) AND (a >= 5)");
+    test_f("a > b AND b > c AND c >= 5", "(a > b) AND (b > c) AND (c >= 5) AND (b > 5) AND (a > 5)");
+    test_f("a > b AND b >= c AND c > 5", "(a > b) AND (b >= c) AND (c > 5) AND (b > 5) AND (a > 5)");
+    test_f("b <= a AND c <= b AND 5 <= c", "(b <= a) AND (c <= b) AND (5 <= c) AND (b >= 5) AND (a >= 5)");
+    test_f("b < a AND c < b AND 5 <= c", "(b < a) AND (c < b) AND (5 <= c) AND (b > 5) AND (a > 5)");
+    test_f("b < a AND c <= b AND 5 < c", "(b < a) AND (c <= b) AND (5 < c) AND (b > 5) AND (a > 5)");
+    test_f("a = b AND b = c AND c > 5", "(a = b) AND (b = c) AND (c > 5) AND (b > 5) AND (a > 5)");
+    test_f("a > b AND b = c AND c >= 5", "(a > b) AND (b = c) AND (c >= 5) AND (b >= 5) AND (a > 5)");
+    test_f("a > b AND b = c AND c = 5", "(a > b) AND (b = c) AND (c = 5) AND (b = 5) AND (a > 5)");
+    test_f("a < b AND b < c AND c < a AND a > 5", "(a < b) AND (b < c) AND (c < a) AND (a > 5) AND (b > 5) AND (c > 5)");
+    test_f("a > 3 AND b > a AND c > b AND c > a", "(a > 3) AND (b > a) AND (c > b) AND (c > a) AND (b > 3) AND (c > 3)");
 
     // miscellaneous
     test_f("c > 0 AND c < 5", "(c > 0) AND (c < 5)");
-    test_f("a = b AND b = c AND c = 5", "(a = b) AND (b = c) AND (c = 5) AND indexHint(b = 5) AND indexHint(a = 5)");
-    /// The redundant weaker hint stays: the pruning pass does not look inside `indexHint`.
-    test_f("c < b AND a < 5 AND b < 6 AND b < 5", "(c < b) AND (a < 5) AND (b < 5) AND indexHint(c < 6) AND indexHint(c < 5)");
-    /// A hint does not imply `b > 0` away, unlike the plain derived `b > 3` before.
-    test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND indexHint(b > 3)");
-    test_f("(3 < a AND a < 5) AND b < a AND c > a", "((3 < a) AND (a < 5)) AND (b < a) AND (c > a) AND indexHint(b < 5) AND indexHint(c > 3)");
-
-    /// A contradicting derived comparison is added plain, so the AND still folds to `false`.
-    test_f("a < b AND b < 5 AND a > 10", "0");
-    /// `notEquals` seeds the conflict map too: a derived equality contradicting it stays plain.
-    test_f("a = b AND b = 5 AND a != 5", "0");
-    /// A non-contradicting `notEquals` seed does not block the derivation.
-    test_f("a = b AND b = 5 AND a != 3", "(a = b) AND (b = 5) AND (a != 3) AND indexHint(a = 5)");
-
-    /// Derived across sources -> stays executable (pushable below the join); the qualifier
-    /// picks the source, the printed name is the bare column.
-    test_f("t1.a < t2.b AND t2.b < 5", "(a < b) AND (b < 5) AND (a < 5)");
-    test_f("t1.a < t1.b AND t1.b < 5", "(a < b) AND (b < 5) AND indexHint(a < 5)");
-    /// Only the conjunct derived through the crossing edge itself stays executable.
-    test_f(
-        "t1.a < t1.b AND t1.b < t2.c AND t2.c < 5",
-        "(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND indexHint(a < 5)");
+    test_f("a = b AND b = c AND c = 5", "(a = b) AND (b = c) AND (c = 5) AND (b = 5) AND (a = 5)");
+    test_f("c < b AND a < 5 AND b < 6 AND b < 5", "(c < b) AND (a < 5) AND (b < 6) AND (b < 5) AND (c < 6) AND (c < 5)");
+    test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND (a > 0) AND (b > 3)");
+    test_f("(3 < a AND a < 5) AND b < a AND c > a", "((3 < a) AND (a < 5)) AND (b < a) AND (c > a) AND (b < 5) AND (c > 3)");
 }

@@ -1,39 +1,26 @@
 #pragma once
 
 #include <memory>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
 {
 
 class Context;
-template <typename T, typename ...Ts>
-class StatusRequestsPools;
-class StorageReplicatedMergeTree;
-#if CLICKHOUSE_CLOUD
-class StorageSharedMergeTree;
-#endif
+class StorageSystemReplicasImpl;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public StorageWithCommonVirtualColumns
+class StorageSystemReplicas final : public IStorage
 {
 public:
-#if CLICKHOUSE_CLOUD
-    using TPools = StatusRequestsPools<StorageReplicatedMergeTree, StorageSharedMergeTree>;
-#else
-    using TPools = StatusRequestsPools<StorageReplicatedMergeTree>;
-#endif
-
     explicit StorageSystemReplicas(const StorageID & table_id_);
     ~StorageSystemReplicas() override;
 
     std::string getName() const override { return "SystemReplicas"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -46,7 +33,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 private:
-    std::shared_ptr<TPools> pools;
+    std::shared_ptr<StorageSystemReplicasImpl> impl;
 };
 
 }

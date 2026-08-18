@@ -10,8 +10,6 @@
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
 
-#include <mutex>
-
 
 namespace DB
 {
@@ -43,34 +41,21 @@ protected:
 
     Chunk generate() override;
 
-    void onCancel() noexcept override;
-
     void onStart();
 
 private:
     void init(const Block & sample_block);
 
-    void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
-
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
 
-    std::atomic<bool> started{false};
-    /// Asks the read to stop. A signal only: it never takes the teardown from whoever owes it.
-    std::atomic<bool> stop_requested{false};
-    /// Claimed once by whoever tears the connection down: prepare() on an uncancelled finish, else
-    /// the destructor. onCancel()'s interrupt does not claim it - it cannot close the stream.
-    std::atomic<bool> finalized{false};
-
-    /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
-    std::mutex tx_mutex;
-    /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
-    std::mutex cancel_mutex;
+    bool started = false;
+    bool is_completed = false;
 
     postgres::ConnectionHolderPtr connection_holder;
 
-    UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
+    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 
 protected:
     String query_str;
@@ -82,7 +67,7 @@ protected:
 
 /// Passes transaction object into PostgreSQLSource and does not close transaction after read is finished.
 template <typename T>
-class PostgreSQLTransactionSource final : public PostgreSQLSource<T>
+class PostgreSQLTransactionSource : public PostgreSQLSource<T>
 {
 public:
     using Base = PostgreSQLSource<T>;

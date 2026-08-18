@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-azure-blob-storage
-# ^ The test counts `StorageConnectionsCreated` + `StorageConnectionsReused`,
-# which on the `azure` test configuration is also bumped by background HTTP
-# activity against the Azure backend, making the totals non-deterministic.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -54,7 +50,7 @@ select
     ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] + ProfileEvents['WriteBufferFromHTTPRequestsSent'] as HTTPRequests,
     ProfileEvents['StorageConnectionsCreated'] + ProfileEvents['StorageConnectionsReused'] as HTTPConnections
 from system.query_log
-where event_date >= yesterday() AND event_time >= now() - 600 AND
+where
     current_database = currentDatabase() and
     type = 'QueryFinish' and
     query_kind = 'Insert'

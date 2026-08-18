@@ -29,7 +29,6 @@ const char * toString(JoinKind kind);
 
 constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
 constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
-constexpr bool isLeftOrRight(JoinKind kind)  { return kind == JoinKind::Left || kind == JoinKind::Right; }
 constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
 constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
 constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
@@ -128,8 +127,6 @@ enum class JoinAlgorithm : uint8_t
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
-    IE_JOIN,
-    PARALLEL_FULL_SORTING_MERGE,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);
@@ -142,20 +139,4 @@ enum class JoinTableSide : uint8_t
 
 const char * toString(JoinTableSide join_table_side);
 
-enum class JoinOrderAlgorithm : uint8_t
-{
-    GREEDY = 0,
-    DPSIZE,
-    DPSUB,
-    DPHYP
-};
-
-const char * toString(JoinOrderAlgorithm join_order_algorithm);
-
-enum class JoinAnalyzeMode : uint8_t
-{
-    None = 0,
-    Derived,
-    Exact,
-};
 }

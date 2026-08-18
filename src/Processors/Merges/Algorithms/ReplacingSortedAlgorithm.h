@@ -7,8 +7,6 @@
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Chunk.h>
 
-#include <queue>
-
 namespace Poco
 {
 class Logger;

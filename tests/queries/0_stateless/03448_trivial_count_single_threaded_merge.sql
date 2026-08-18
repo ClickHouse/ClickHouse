@@ -3,9 +3,6 @@
 
 SET enable_analyzer = 1;
 SET max_threads=4;
-SET optimize_trivial_count_query = 1;
-SET optimize_use_projections = 1;
-SET optimize_use_implicit_projections = 1;
 
 DROP TABLE IF EXISTS trivial_count;
 CREATE TABLE trivial_count ENGINE = MergeTree() ORDER BY number AS Select * from numbers(10) ;

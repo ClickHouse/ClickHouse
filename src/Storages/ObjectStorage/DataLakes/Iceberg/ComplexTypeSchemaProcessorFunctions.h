@@ -4,6 +4,7 @@
 #include <variant>
 #include <vector>
 
+#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -14,8 +15,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
-
-#include <mutex>
 
 namespace DB::Iceberg
 {

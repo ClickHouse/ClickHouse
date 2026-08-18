@@ -13,13 +13,6 @@
 
 #include <Poco/Message.h>
 
-#include <base/sleep.h>
-#include <base/scope_guard.h>
-
-#if defined(MEMORY_SANITIZER)
-#include <sanitizer/msan_interface.h>
-#endif
-
 
 namespace ProfileEvents
 {
@@ -53,14 +46,6 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
 void OwnSplitChannel::log(Poco::Message && msg)
 {
-#if defined(MEMORY_SANITIZER)
-    {
-        auto fmt = msg.getFormatString();
-        __msan_check_mem_is_initialized(&fmt, sizeof(fmt));
-        if (fmt.data())
-            __msan_check_mem_is_initialized(fmt.data(), fmt.size());
-    }
-#endif
     if (stop_logging)
         return;
 
@@ -71,7 +56,7 @@ void OwnSplitChannel::log(Poco::Message && msg)
     if (const auto & masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
-        auto matches = masker->wipeSensitiveDataThrow(message_text);
+        auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
             msg.setText(message_text);
@@ -85,22 +70,6 @@ void OwnSplitChannel::log(Poco::Message && msg)
 
 namespace
 {
-
-/// Sleep between polls of an empty queue (consumers poll instead of futex-waiting, keeping pushes cheap).
-constexpr size_t sleep_on_empty_queue_ms = 10;
-
-/// Pops one message for a flush (null if empty), waiting out a head slot still being written so it isn't skipped.
-AsyncLogMessagePtr dequeueMessageForFlush(NonblockingBoundedQueue<AsyncLogMessagePtr> & messages)
-{
-    AsyncLogMessagePtr message;
-    while (!messages.tryPop(message))
-    {
-        if (messages.size() == 0)
-            return nullptr;
-        sleepForMilliseconds(10);
-    }
-    return message;
-}
 
 void pushExtendedMessageToInternalTCPTextLogQueue(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
@@ -124,11 +93,11 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    ThreadName msg_thread_name)
+    const std::string & msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
-    text_log_locked->add([&](TextLogElement & elem)
-    {
+    TextLogElement elem;
+
     elem.event_time = msg_ext.time_seconds;
     elem.event_time_microseconds = msg_ext.time_in_microseconds;
 
@@ -161,12 +130,13 @@ void logToSystemTextLogQueue(
     SET_VALUE_IF_EXISTS(10);
 
 #undef SET_VALUE_IF_EXISTS
-    });
+
+    text_log_locked->push(std::move(elem));
 }
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -262,49 +232,48 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
-    /// If a thread fails to start, reset its pointer before tearing down: close() joins every thread it
-    /// sees, and joining a never-started Poco::Thread waits forever on a completion event nobody sets.
-    auto start_thread = [](std::unique_ptr<Poco::Thread> & thread, const std::string & name, Poco::Runnable & runnable)
-    {
-        thread = std::make_unique<Poco::Thread>(name);
-        try
-        {
-            thread->start(runnable);
-        }
-        catch (...)
-        {
-            thread.reset();
-            throw;
-        }
-    };
-
     is_open = true;
-    try
+    if (text_log_max_priority && !text_log_thread)
     {
-        if (text_log_max_priority && !text_log_thread)
-            start_thread(text_log_thread, "AsyncTextLog", *text_log_runnable);
-
-        for (size_t i = 0; i < channels.size(); i++)
-        {
-            if (!threads[i])
-                start_thread(threads[i], "AsyncLog", *runnables[i]);
-        }
+        text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
+        text_log_thread->start(*text_log_runnable);
     }
-    catch (...)
+
+    for (size_t i = 0; i < channels.size(); i++)
     {
-        /// Fail closed: a partially opened channel would keep accepting messages into queues that no
-        /// consumer drains, silently losing diagnostics. A failed join must also propagate: unwinding
-        /// with a live async logger could overlap static destruction.
-        closeAndJoinThreads();
-        throw;
+        if (!threads[i])
+        {
+            threads[i] = std::make_unique<Poco::Thread>("AsyncLog");
+            threads[i]->start(*runnables[i]);
+        }
     }
 }
 
 void OwnAsyncSplitChannel::close()
 {
+    is_open = false;
     try
     {
-        closeAndJoinThreads();
+        if (text_log_thread)
+        {
+            do
+            {
+                text_log_queue.wakeUp();
+            } while (!text_log_thread->tryJoin(100));
+            text_log_thread.reset();
+        }
+
+        for (size_t i = 0; i < channels.size(); i++)
+        {
+            if (threads[i])
+            {
+                do
+                {
+                    queues[i]->wakeUp();
+                } while (!threads[i]->tryJoin(100));
+            }
+            threads[i].reset();
+        }
     }
     catch (...)
     {
@@ -312,56 +281,7 @@ void OwnAsyncSplitChannel::close()
         writeRetry(STDERR_FILENO, "Cannot close OwnAsyncSplitChannel: ");
         writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
         writeRetry(STDERR_FILENO, "\n");
-
-        /// A thread whose join failed would never serve a waiting flusher, so release them here too.
-        releaseWaitingFlushers();
     }
-}
-
-void OwnAsyncSplitChannel::closeAndJoinThreads()
-{
-    is_open = false;
-
-    waitForActiveAsyncLoggers();
-
-    /// The polling consumers see is_open == false on their own, wait for the same barrier before
-    /// their final drain, and exit.
-    if (text_log_thread)
-    {
-        text_log_thread->join();
-        text_log_thread.reset();
-    }
-
-    for (size_t i = 0; i < channels.size(); i++)
-    {
-        if (threads[i])
-            threads[i]->join();
-        threads[i].reset();
-    }
-
-    releaseWaitingFlushers();
-}
-
-void OwnAsyncSplitChannel::waitForActiveAsyncLoggers()
-{
-    /// A producer that already saw `is_open` needs to recheck it after registering here. Wait for
-    /// every producer which passed that recheck before the consumers take their final drain.
-    /// Producers arriving after `is_open` became false deliver synchronously instead.
-    size_t active = active_async_loggers.load(std::memory_order_seq_cst);
-    while (active != 0)
-    {
-        active_async_loggers.wait(active, std::memory_order_seq_cst);
-        active = active_async_loggers.load(std::memory_order_seq_cst);
-    }
-}
-
-void OwnAsyncSplitChannel::releaseWaitingFlushers()
-{
-    /// Release any flusher still waiting: the thread that would serve it has exited. Records the final
-    /// drain did not take stay queued and are drained when the channel reopens (e.g. after remapExecutable),
-    /// the same as for a flush that arrives while the channel is closed.
-    text_log_flush_completed.store(text_log_flush_requested.load(std::memory_order_seq_cst), std::memory_order_release);
-    text_log_flush_completed.notify_all();
 }
 
 class AsyncLogMessage
@@ -375,7 +295,7 @@ public:
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
             auto message_text = msg.getText();
-            auto matches = masker->wipeSensitiveDataThrow(message_text);
+            auto matches = masker->wipeSensitiveData(message_text);
             if (matches > 0)
                 msg.setText(message_text);
         }
@@ -383,36 +303,86 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    ThreadName msg_thread_name;
+    std::string msg_thread_name;
 };
 
 
-namespace
+AsyncLogMessageQueue::AsyncLogMessageQueue(
+    size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_)
+    : event_on_passed_message(event_on_passed_message_)
+    , event_on_drop_message(event_on_drop_message_)
+    , max_size(max_size_)
 {
-
-/// Builds the "dropped N messages" warning, reported in the channel that dropped them.
-AsyncLogMessagePtr makeDroppedMessagesWarning(size_t dropped)
-{
-    auto warning = std::make_shared<AsyncLogMessage>(Poco::Message(
-        "AsyncLogger",
-        fmt::format("We've dropped {} log messages in this channel due to queue overflow", dropped),
-        Poco::Message::PRIO_WARNING));
-    warning->msg_ext.query_id.clear();
-    return warning;
+    if (max_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Asynchronous log message queue cannot have zero size");
 }
 
-}
-
-void OwnAsyncSplitChannel::enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message)
+void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
 {
-    ProfileEvents::incrementNoTrace(queue.event_on_passed_message);
-
-    if (unlikely(!queue.messages.tryPush(message)))
+    ProfileEvents::incrementNoTrace(event_on_passed_message);
+    std::unique_lock lock(mutex);
+    size_t current_size = message_queue.size();
+    if (unlikely(current_size >= max_size || (dropped_messages && current_size > max_size / 2)))
     {
-        /// Queue full: drop the message and count it; the consumer warns about drops once it catches up.
-        queue.dropped_messages.fetch_add(1, std::memory_order_relaxed);
-        ProfileEvents::incrementNoTrace(queue.event_on_dropped_message);
+        /// If the queue is full we start dropping messages until it's less than half of the max size
+        /// in order to give the thread a change to recover and to reduce the amount of warning messages (about dropped messages)
+        /// which would contribute to fill the queue even more
+        dropped_messages++;
+        lock.unlock();
+        ProfileEvents::incrementNoTrace(event_on_drop_message);
+        return;
     }
+
+    if (unlikely(dropped_messages))
+    {
+        String log = "We've dropped " + toString(dropped_messages) + " log messages in this channel due to queue overflow";
+        auto async_message = std::make_shared<AsyncLogMessage>(Poco::Message("AsyncLogMessageQueue", log, Poco::Message::PRIO_WARNING));
+        async_message->msg_ext.query_id.clear();
+        message_queue.push_back(async_message);
+        dropped_messages = 0;
+    }
+
+    message_queue.push_back(std::move(message));
+    condition.notify_one();
+}
+
+AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
+{
+    std::unique_lock lock(mutex);
+    if (!message_queue.empty())
+    {
+        auto notification = message_queue.front();
+        message_queue.pop_front();
+        return notification;
+    }
+
+    condition.wait(lock);
+    if (message_queue.empty())
+        return nullptr;
+
+    auto notification = message_queue.front();
+    message_queue.pop_front();
+    return notification;
+}
+
+AsyncLogMessageQueue::Queue AsyncLogMessageQueue::getCurrentQueueAndClear()
+{
+    std::unique_lock lock(mutex);
+    Queue new_queue;
+    std::swap(message_queue, new_queue);
+    return new_queue;
+}
+
+void AsyncLogMessageQueue::wakeUp()
+{
+    std::unique_lock lock(mutex);
+    condition.notify_one();
+}
+
+size_t AsyncLogMessageQueue::getCurrentMessageSize()
+{
+    std::unique_lock lock(mutex);
+    return message_queue.size();
 }
 
 void OwnAsyncSplitChannel::log(const Poco::Message & msg)
@@ -424,16 +394,8 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
 {
     try
     {
-#if defined(MEMORY_SANITIZER)
-        /// Catch which LOG call produces uninitialized format string bytes (STID 1478-2063: arm_msan use-of-uninitialized-value in TextLog).
-        {
-            auto fmt = msg.getFormatString();
-            __msan_check_mem_is_initialized(&fmt, sizeof(fmt));
-            if (fmt.data())
-                __msan_check_mem_is_initialized(fmt.data(), fmt.size());
-        }
-#endif
-        /// logger_useful.h skips this when the message isn't needed, so creating the AsyncLogMessage here is free.
+        /// Based on logger_useful.h this won't be called if the message is not needed
+        /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
@@ -447,58 +409,14 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        auto log_synchronously = [&]
-        {
-            for (const auto & channel : channels)
-            {
-                if (channel->getPriority() >= msg_priority)
-                    channel->logExtended(notification->msg_ext);
-            }
-
-            if (text_log_max_priority_loaded >= msg_priority)
-            {
-                if (const auto text_log_locked = text_log.lock())
-                    logToSystemTextLogQueue(text_log_locked, notification->msg_ext, notification->msg_thread_name);
-            }
-        };
-
-        /// While the channel is stopped (before open, during the quiesce window around `remapExecutable`,
-        /// after close) there is no consumer thread, so deliver synchronously, as `OwnSplitChannel` does.
-        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
-        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
-        /// unwinding out of `Server::main` is logged into queues that nobody will ever drain.
-        ///
-        /// Register before the second load so `closeAndJoinThreads` cannot drain and join between that load
-        /// and an async enqueue. If closing wins the race, the second load redirects this message to the
-        /// synchronous path; if this producer wins, closing waits for it before the final drain.
-        if (!is_open)
-        {
-            log_synchronously();
-            return;
-        }
-
-        active_async_loggers.fetch_add(1, std::memory_order_seq_cst);
-        if (!is_open)
-        {
-            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
-                active_async_loggers.notify_all();
-            log_synchronously();
-            return;
-        }
-
-        SCOPE_EXIT({
-            if (active_async_loggers.fetch_sub(1, std::memory_order_seq_cst) == 1)
-                active_async_loggers.notify_all();
-        });
+        if (text_log_max_priority_loaded >= msg_priority)
+            text_log_queue.enqueueMessage(notification);
 
         for (size_t i = 0; i < queues.size(); i++)
         {
             if (channels[i]->getPriority() >= msg_priority)
-                enqueueMessage(*queues[i], notification);
+                queues[i]->enqueueMessage(notification);
         }
-
-        if (text_log_max_priority_loaded >= msg_priority)
-            enqueueMessage(text_log_queue, std::move(notification));
     }
     catch (...)
     {
@@ -517,31 +435,18 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// The async text-log thread services this handshake. It is disabled when text_log.level is none, and is
-    /// not running while logging is stopped around
-    /// remapExecutable (where the only caller is the fatal signal handler; the server accepts no connections
-    /// yet) nor after shutdown, so return instead of waiting forever for a flag nobody will clear. Anything
-    /// queued meanwhile is drained when the thread (re)starts.
-    if (!text_log_max_priority || !is_open)
-        return;
+    /// If there is a query flushing already we must wait until it's done. Otherwise we will receive the notification to wake up
+    /// once the previous flush is finished, which is not what we need
+    /// This is not ideal and we could use some kind of flush id to wait only until the point when you entered this function
+    /// But notice that even if you call in many threads, they will all wait and be processed together in the same block once this is unlocked
+    flush_text_logs.wait(true, std::memory_order_seq_cst);
 
-    /// Take a request number and wait until the async thread reports it as served. The thread checks the
-    /// request counter between messages and after each empty-queue sleep. A flush already in progress does
-    /// not release this caller: it has an older request number, and its drain boundary was sampled before
-    /// this increment, so it may not cover this caller's records.
-    const UInt64 my_request = text_log_flush_requested.fetch_add(1, std::memory_order_seq_cst) + 1;
+    /// We need to send an empty notification to wake up the thread if necessary
+    flush_text_logs = true;
+    text_log_queue.wakeUp();
 
-    UInt64 completed = text_log_flush_completed.load(std::memory_order_acquire);
-    while (completed < my_request)
-    {
-        /// The consumer thread may have exited (shutdown or remapExecutable) after the is_open check above.
-        /// Its final drain flushes everything queued and publishes the requests it observed; bail out
-        /// instead of waiting forever for a request nobody will serve.
-        if (!is_open)
-            return;
-        text_log_flush_completed.wait(completed, std::memory_order_acquire);
-        completed = text_log_flush_completed.load(std::memory_order_acquire);
-    }
+    /// Now we simply wait for the async thread to notify it has finished flushing
+    flush_text_logs.wait(true, std::memory_order_seq_cst);
 }
 
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
@@ -553,76 +458,39 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
         {
             if (channels[i] == channel.get())
             {
-                metrics.push_back({name, queues[i]->messages.size()});
+                metrics.push_back({name, queues[i]->getCurrentMessageSize()});
                 break;
             }
         }
     }
 
     if (text_log.lock())
-        metrics.push_back({"TextLog", text_log_queue.messages.size()});
+        metrics.push_back({"TextLog", text_log_queue.getCurrentMessageSize()});
 
     return metrics;
 }
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    DB::setThreadName(ThreadName::ASYNC_LOGGER);
+    setThreadName("AsyncLog");
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    LogQueue & queue = *queues[i];
+    auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
 
-    auto report_dropped_messages = [&]()
+    auto log_notification = [&](auto & async_message)
     {
-        if (likely(queue.dropped_messages.load(std::memory_order_relaxed) == 0))
+        if (!async_message)
             return;
-
-        size_t dropped = queue.dropped_messages.exchange(0, std::memory_order_relaxed);
-        try
-        {
-            extended_channel->logExtended(makeDroppedMessagesWarning(dropped)->msg_ext);
-        }
-        catch (...)
-        {
-            /// Don't lose the count if we failed to report it
-            queue.dropped_messages.fetch_add(dropped, std::memory_order_relaxed);
-            throw;
-        }
-    };
-
-    auto flush_queue = [&]()
-    {
-        /// Exact, bounded flush boundary: drain every message enqueued before close() flipped is_open
-        /// (pushes happen-before this thread's read of is_open == false) and no later arrival, so producers
-        /// can't prolong the flush; dequeueMessageForFlush waits out any slot still being published.
-        const size_t target = queue.messages.enqueuePosition();
-        while (queue.messages.dequeuePosition() < target)
-        {
-            auto notif = dequeueMessageForFlush(queue.messages);
-            if (!notif)
-                break;
-            extended_channel->logExtended(notif->msg_ext);
-        }
+        if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(async_message.get()))
+            extended_channel->logExtended(own_notification->msg_ext);
     };
 
     while (is_open)
     {
         try
         {
-            AsyncLogMessagePtr message;
-            if (queue.messages.tryPop(message))
-            {
-                extended_channel->logExtended(message->msg_ext);
-            }
-            else
-            {
-                /// Empty queue: sleep, then report overflow drops here. tryPop can also fail while a producer
-                /// holds an unpublished slot, so only warn once the queue is truly drained (size()==0), else
-                /// the warning could overtake real messages still being enqueued.
-                sleepForMilliseconds(sleep_on_empty_queue_ms);
-                if (queue.messages.size() == 0)
-                    report_dropped_messages();
-            }
+            log_notification(notification);
+            notification = queues[i]->waitDequeueMessage();
         }
         catch (...)
         {
@@ -635,14 +503,17 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     try
     {
-        /// A producer can have passed the second `is_open` check before close flipped the flag.
-        /// Do not sample the final queue boundary until all such producers have published, or its
-        /// message could be enqueued after this consumer exits.
-        waitForActiveAsyncLoggers();
+        /// Flush everything before closing
+        log_notification(notification);
 
-        /// Flush everything before closing and report the drops which were not reported yet.
-        flush_queue();
-        report_dropped_messages();
+        /// We want to process only what's currently in the queue and not block other logging
+        auto queue = queues[i]->getCurrentQueueAndClear();
+        while (!queue.empty())
+        {
+            notification = queue.front();
+            queue.pop_front();
+            log_notification(notification);
+        }
     }
     catch (...)
     {
@@ -655,82 +526,55 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
+    setThreadName("AsyncTextLog", true);
 
-    auto report_dropped_messages = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
+    auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        if (likely(text_log_queue.dropped_messages.load(std::memory_order_relaxed) == 0))
-            return;
-
-        size_t dropped = text_log_queue.dropped_messages.exchange(0, std::memory_order_relaxed);
-        try
-        {
-            const auto warning = makeDroppedMessagesWarning(dropped);
-            logToSystemTextLogQueue(text_log_locked, warning->msg_ext, warning->msg_thread_name);
-        }
-        catch (...)
-        {
-            /// Don't lose the count if we failed to report it
-            text_log_queue.dropped_messages.fetch_add(dropped, std::memory_order_relaxed);
-            throw;
-        }
+        if (const auto * own_notification = dynamic_cast<const AsyncLogMessage *>(message.get()))
+            logToSystemTextLogQueue(text_log_locked, own_notification->msg_ext, own_notification->msg_thread_name);
     };
 
     auto flush_queue = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        /// Exact, bounded flush boundary: SYSTEM FLUSH LOGS relies on every record accepted before the
-        /// request reaching text_log before flushImpl samples the last index. This position is sampled
-        /// after the request counter is loaded, so it covers every record enqueued before a served request
-        /// (see the handshake comment in the header); size() would be imprecise while producers run.
-        /// Drain up to it, waiting out any slot still being published. Later arrivals aren't included,
-        /// so producers can't prolong the flush.
-        const size_t target = text_log_queue.messages.enqueuePosition();
-        while (text_log_queue.messages.dequeuePosition() < target)
+        /// We want to process only what's currently in the queue and not block other logging
+        auto queue = text_log_queue.getCurrentQueueAndClear();
+        while (!queue.empty())
         {
-            auto notif = dequeueMessageForFlush(text_log_queue.messages);
-            if (!notif)
-                break;
-            logToSystemTextLogQueue(text_log_locked, notif->msg_ext, notif->msg_thread_name);
+            auto notif = queue.front();
+            queue.pop_front();
+            if (notif)
+                log_notification(notif, text_log_locked);
         }
     };
 
+    auto notification = text_log_queue.waitDequeueMessage();
     while (is_open)
     {
         try
         {
-            auto text_log_locked = text_log.lock();
-            if (!text_log_locked)
-                return;
-
-            /// Load the request counter before sampling the queue position in flush_queue, so the drain
-            /// boundary covers every record enqueued before the requests served here (see the header).
-            /// text_log_flush_completed is only written by this thread, so a relaxed read is exact.
-            const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
-            if (text_log_flush_completed.load(std::memory_order_relaxed) < flush_requested)
+            if (flush_text_logs)
             {
+                auto text_log_locked = text_log.lock();
+                if (!text_log_locked)
+                    return;
+
+                if (notification)
+                    log_notification(notification, text_log_locked);
+
                 flush_queue(text_log_locked);
-                /// Emit the drop warning as part of the flush, before releasing the waiters, so SYSTEM FLUSH
-                /// LOGS / shutdown can't miss the only record that tells users messages were dropped.
-                report_dropped_messages(text_log_locked);
-                text_log_flush_completed.store(flush_requested, std::memory_order_release);
-                text_log_flush_completed.notify_all();
-                continue;
+
+                flush_text_logs = false;
+                flush_text_logs.notify_all();
+            }
+            else if (notification)
+            {
+                auto text_log_locked = text_log.lock();
+                if (!text_log_locked)
+                    return;
+                log_notification(notification, text_log_locked);
             }
 
-            AsyncLogMessagePtr message;
-            if (text_log_queue.messages.tryPop(message))
-            {
-                logToSystemTextLogQueue(text_log_locked, message->msg_ext, message->msg_thread_name);
-            }
-            else
-            {
-                /// Empty queue: sleep, then report overflow drops here. tryPop can also fail while a producer
-                /// holds an unpublished slot, so only warn once the queue is truly drained (size()==0), else
-                /// the warning could overtake real messages still being enqueued.
-                sleepForMilliseconds(sleep_on_empty_queue_ms);
-                if (text_log_queue.messages.size() == 0)
-                    report_dropped_messages(text_log_locked);
-            }
+            notification = text_log_queue.waitDequeueMessage();
         }
         catch (...)
         {
@@ -743,22 +587,14 @@ void OwnAsyncSplitChannel::runTextLog()
 
     try
     {
-        /// Flush everything still queued before closing, and report any drops not yet reported.
+        /// We want to flush everything already in the queue before closing so all messages are logged
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)
             return;
 
-        /// See `runChannel`: the final queue boundary must be sampled only after every producer
-        /// which entered the asynchronous path before close has finished publishing.
-        waitForActiveAsyncLoggers();
-
-        const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
+        if (notification)
+            log_notification(notification, text_log_locked);
         flush_queue(text_log_locked);
-        report_dropped_messages(text_log_locked);
-        /// Release flushers racing with shutdown: this drain took everything they enqueued (their remaining
-        /// recourse is the is_open check, close() publishes once more after the join for the late ones).
-        text_log_flush_completed.store(flush_requested, std::memory_order_release);
-        text_log_flush_completed.notify_all();
     }
     catch (...)
     {
@@ -791,7 +627,7 @@ void OwnAsyncSplitChannel::addChannel(
     channel->setLevel(level);
 
     channels.emplace_back(element.first->second.get());
-    queues.emplace_back(std::make_unique<LogQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_));
+    queues.emplace_back(std::make_unique<AsyncLogMessageQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_));
     threads.emplace_back(nullptr);
     const size_t i = threads.size() - 1;
     runnables.emplace_back(new OwnRunnableForChannel(*this, i));
