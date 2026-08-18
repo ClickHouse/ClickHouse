@@ -348,7 +348,18 @@ public:
             if (!result_chunk)
                 result_chunk = std::move(chunk);
             else if (chunk)
+            {
+                // `Chunk::append` concatenates with `insertRangeFrom`, which is not const-safe, and
+                // `COLUMNAR_V1` preserves top-level const, so a multi-frame result can legitimately
+                // contain const chunks. A const destination would only grow its row count and repeat
+                // the first frame's value for every later frame; a const source would reach
+                // `insertRangeFrom`'s `assert_cast`, which is a plain `static_cast` in release
+                // builds. Materialize both sides before concatenating. The single-chunk case above
+                // is untouched, so a result that is const end to end still stays const.
+                convertToFullIfConst(result_chunk);
+                convertToFullIfConst(chunk);
                 result_chunk.append(chunk);
+            }
 
             if (!has_data)
                 break;

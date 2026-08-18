@@ -7,6 +7,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
@@ -93,6 +94,29 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     // Layout pass: build descriptors (compute offsets and total size).
     const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES;
     uint64_t cursor = hdr_desc_size;
+
+    // `expectMaterializedColumns` returns false for this format so that a top-level
+    // `ColumnConst` survives into `COL_IS_CONST`, but that also skips the pipeline's
+    // `MaterializingTransform` entirely, so `ColumnSparse` and `ColumnReplicated` wrappers reach
+    // the writer unchanged. `buildColDescriptor` has no notion of them: a sparse `UInt64` falls
+    // through to the fixed-width path, whose `writeColData` calls `IColumn::getRawData`, and that
+    // throws `NOT_IMPLEMENTED` for `ColumnSparse`. Strip those wrappers here - recursively, so
+    // nested columns inside `Tuple` / `Array` are covered too - while keeping the const wrapper.
+    {
+        auto columns = chunk.detachColumns();
+        for (auto & col : columns)
+        {
+            if (const auto * const_col = typeid_cast<const ColumnConst *>(col.get()))
+            {
+                auto data = removeSpecialRepresentations(const_col->getDataColumnPtr());
+                if (data.get() != const_col->getDataColumnPtr().get())
+                    col = ColumnConst::create(std::move(data), const_col->size());
+            }
+            else
+                col = removeSpecialRepresentations(col);
+        }
+        chunk.setColumns(std::move(columns), num_rows);
+    }
 
     std::vector<ColumnarV1::ColDescriptor> descs(num_cols);
     for (uint32_t i = 0; i < num_cols; ++i)
