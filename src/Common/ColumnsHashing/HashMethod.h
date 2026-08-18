@@ -525,6 +525,9 @@ struct HashMethodKeysFixed
         if constexpr (!enable_prepared_keys_256_)
             return false;
 
+        /// The `keys256` aggregation method shares this state type with `LIMIT BY`.
+        /// Only aggregation supplies this opt-in context, so one-pass users keep
+        /// the previous per-row packing path.
         const auto * settings_context = context ? typeid_cast<const HashMethodSettingsContext *>(context.get()) : nullptr;
         return settings_context && settings_context->settings.enable_fixed_key_prefetch;
     }
