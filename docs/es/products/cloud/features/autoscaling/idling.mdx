@@ -25,7 +25,7 @@ En la página de **Configuración**, también puedes elegir si quieres permitir 
 
 ClickHouse Cloud implementa la inactividad adaptativa para evitar interrupciones y, al mismo tiempo, optimizar los costos. El sistema evalúa varias condiciones antes de que un servicio entre en inactividad. La inactividad adaptativa prevalece sobre la configuración de la duración de la inactividad cuando se cumple cualquiera de las condiciones que se indican a continuación:
 
-* Cuando el número de partes supera el umbral máximo de partes para la inactividad (predeterminado: 10.000), el servicio no entra en inactividad para que el mantenimiento en segundo plano pueda continuar
+* Cuando el número de partes supera el umbral máximo de partes activas (predeterminado: 10.000), el servicio no entra en inactividad para que el mantenimiento en segundo plano pueda continuar
 * Cuando hay operaciones de merge en curso, el servicio no entra en inactividad hasta que esos merges finalicen, para evitar interrumpir la consolidación crítica de datos
 * Además, el servicio también ajusta los tiempos de espera antes de entrar en inactividad en función del tiempo de inicialización del servidor:
   * Si el tiempo de inicialización del servidor es inferior a 15 minutos, no se aplica ningún tiempo de espera adaptativo y se usa el tiempo de espera de inactividad predeterminado configurado por el cliente
