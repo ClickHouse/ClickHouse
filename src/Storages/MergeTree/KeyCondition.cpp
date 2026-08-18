@@ -2650,6 +2650,59 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+/// `has` compares array elements as raw Fields, whereas `MergeTreeSetIndex` converts them to the
+/// key type. Only use a set atom when those two representations have the same equality semantics.
+/// In particular, a String array element does not equal an Enum key even if the String can be cast
+/// to that Enum's name. Native integer Fields are the one cross-type case with compatible equality.
+static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
+{
+    const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
+    const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
+
+    return set_type->equals(*key_type) || (isNativeInteger(set_type) && isNativeInteger(key_type));
+}
+
+static bool areSetAndKeyTypesCompatibleForHas(
+    DataTypes set_types,
+    size_t key_args_count,
+    const DataTypes & key_types,
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+{
+    while (set_types.size() < key_args_count)
+    {
+        DataTypes unpacked_set_types;
+        bool has_tuple = false;
+
+        for (const auto & set_type : set_types)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get()))
+            {
+                has_tuple = true;
+                const auto & tuple_elements = tuple_type->getElements();
+                unpacked_set_types.insert(unpacked_set_types.end(), tuple_elements.begin(), tuple_elements.end());
+            }
+            else
+            {
+                unpacked_set_types.push_back(set_type);
+            }
+        }
+
+        if (!has_tuple)
+            return false;
+
+        set_types = std::move(unpacked_set_types);
+    }
+
+    for (size_t index = 0; index < indexes_mapping.size(); ++index)
+    {
+        const auto set_element_index = indexes_mapping[index].tuple_index;
+        if (set_element_index >= set_types.size() || !areTypesCompatibleForHasSetIndex(set_types[set_element_index], key_types[index]))
+            return false;
+    }
+
+    return true;
+}
+
 bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2787,6 +2840,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const auto * array_col = assert_cast<const ColumnArray *>(const_column->getDataColumnPtr().get());
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
+
+    if (!areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, indexes_mapping))
+        return false;
 
     /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
     /// keys with ColumnVector::compareAt. In particular, `has([nan], nan)` is false but the set index
