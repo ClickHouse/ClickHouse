@@ -21,3 +21,7 @@ ${CLICKHOUSE_CURL} -sS "${URL}/play" | grep -cE "setProperty\('--progress', *'[^
 # the check above cannot pass merely because the assignments were spelled in some other way.
 ${CLICKHOUSE_CURL} -sS "${URL}/play" | grep -oF 'clearBar' | head -n1
 ${CLICKHOUSE_CURL} -sS "${URL}/play" | grep -oE "setProperty\('--progress', '0%'\)" | head -n1
+
+# `updateProgress` uses a multiline conditional expression, which the literal assignment check
+# above intentionally does not match. Check its zero-progress fallback separately.
+${CLICKHOUSE_CURL} -sS "${URL}/play" | grep -zqE "this\.style\.setProperty\('--progress',[[:space:]]*rows && total_rows \? \(100 \* rows / total_rows\) \+ '%' : '0%'\);"
