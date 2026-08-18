@@ -3837,19 +3837,19 @@ try
         /// with dynamic clusters frozen forever.
         global_context->startClusterDiscovery();
 
-#if defined(OS_LINUX)
-        /// Tell the service manager that service startup is finished.
-        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'.
-        systemdNotify("READY=1\n");
-#endif
-
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
                 global_context->getConfigRef(), graphite_key, *async_metrics));
         }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
+        systemdNotify("READY=1\n");
+#endif
 
         waitForTerminationRequest();
     }
