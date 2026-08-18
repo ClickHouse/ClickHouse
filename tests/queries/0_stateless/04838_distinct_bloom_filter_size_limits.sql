@@ -4,7 +4,9 @@
 
 SET distinct_set_limit_for_enabling_bloom_filter = 100;
 SET distinct_pass_ratio_threshold_for_disabling_bloom_filter = 0.1;
-SET max_threads = 4, max_block_size = 1024;
+-- Every pre-DISTINCT stream must process more than one block: Bloom-filter allocation starts
+-- at the beginning of the block after the exact set crosses the activation threshold.
+SET max_threads = 4, max_block_size = 128;
 SET max_bytes_in_distinct = 200000;
 
 -- The hash sets alone stay below the limit: with a small filter the query goes through.
