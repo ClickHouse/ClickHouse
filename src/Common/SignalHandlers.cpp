@@ -421,6 +421,10 @@ void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
 
+    /// Constructed outside the signal handling below: it resolves a logger, and the logger registry
+    /// mutex can be held by the faulting thread for as long as it waits for the report.
+    ThreadStatus thread_status;
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
@@ -588,8 +592,6 @@ void SignalListener::onFault(
     size_t exception_trace_size) const
 try
 {
-    ThreadStatus thread_status;
-
     /// First log those fields that are safe to access and that should not cause new fault.
     /// That way we will have some duplicated info in the log but we don't loose important info
     /// in case of double fault.
