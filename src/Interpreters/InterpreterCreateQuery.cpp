@@ -1702,7 +1702,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    /// A stub ATTACH carries no definition of its own: the stored metadata owns it.
+    const bool is_short_attach = create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+
+    if (!is_short_attach && !create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
@@ -1711,7 +1714,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (is_short_attach)
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -1809,6 +1812,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.is_dictionary && !create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot ATTACH DICTIONARY {}.{}, it is a Table",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        /// The VIEW spelling is authorized with CREATE_VIEW, which CREATE_TABLE implies, so it must
+        /// not reach a non-view. The TABLE spelling needs no such check: it requires CREATE_TABLE.
+        if (create.isView() && !create_query.isView())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH VIEW {}.{}, it is a Table",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
         create = create_query; // Copy the saved create query, but use ATTACH instead of CREATE

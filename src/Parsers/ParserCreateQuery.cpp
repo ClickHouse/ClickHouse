@@ -1653,6 +1653,35 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
+    /// A shortcut for ATTACH a previously detached view. OR REPLACE and a SQL SECURITY clause are
+    /// excluded: the stored metadata owns the definition, so such a clause would be dropped here.
+    if (attach && !replace_view && !sql_security && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+    {
+        auto query = make_intrusive<ASTCreateQuery>();
+        node = query;
+
+        query->attach = attach;
+        query->if_not_exists = if_not_exists;
+        query->is_ordinary_view = is_ordinary_view;
+        query->is_materialized_view = is_materialized_view;
+        query->cluster = cluster_str;
+        query->setIsTemporary(is_temporary);
+
+        auto * short_attach_table_id = table->as<ASTTableIdentifier>();
+        query->database = short_attach_table_id->getDatabase();
+        query->table = short_attach_table_id->getTable();
+        query->uuid = short_attach_table_id->uuid;
+        query->has_uuid = short_attach_table_id->uuid != UUIDHelpers::Nil;
+        query->has_uuid_clause = short_attach_table_id->has_uuid;
+
+        if (query->database)
+            query->children.push_back(query->database);
+        if (query->table)
+            query->children.push_back(query->table);
+
+        return true;
+    }
+
     if (ParserKeyword{Keyword::REFRESH}.ignore(pos, expected))
     {
         // REFRESH only with materialized views
