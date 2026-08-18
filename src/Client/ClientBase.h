@@ -603,6 +603,10 @@ protected:
     /// client, unlike the settings of the handshake, so the value of `readonly` - and with it the
     /// promise that the marker was accepted - cannot be proven any more.
     bool ai_query_log_access_permanently_disabled = false;
+    /// A settings profile is applied on the server without its constituent settings being sent
+    /// back to the client. Once one is used, always pin internal and agent queries to the
+    /// ClickHouse dialect instead of trusting the stale local dialect value.
+    bool ai_dialect_may_be_changed_by_profile = false;
     /// The line reader of the interactive loop while it is running, so the queries the agent runs
     /// can be added to its history like typed ones. Not owned; cleared when the loop returns.
     LineReader * ai_line_reader = nullptr;

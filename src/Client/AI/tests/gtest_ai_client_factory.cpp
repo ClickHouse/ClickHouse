@@ -318,6 +318,29 @@ TEST(AIClientFactory, UnsupportedProvider)
 #endif
 }
 
+TEST(AIClientFactory, EnvironmentFallbackSkipsUnsupportedProvider)
+{
+#if !defined(AI_SDK_HAS_OPENAI) && defined(AI_SDK_HAS_ANTHROPIC)
+    ScopedEnvironment openai_key("OPENAI_API_KEY", "unused-openai-key");
+    ScopedEnvironment anthropic_key("ANTHROPIC_API_KEY", "anthropic-key");
+
+    auto result = AIClientFactory::createClient({});
+    EXPECT_TRUE(result.client.has_value());
+    EXPECT_EQ(result.provider, "anthropic");
+    EXPECT_TRUE(result.inferred_from_env);
+#elif defined(AI_SDK_HAS_OPENAI) && !defined(AI_SDK_HAS_ANTHROPIC)
+    ScopedEnvironment openai_key("OPENAI_API_KEY", "openai-key");
+    ScopedEnvironment anthropic_key("ANTHROPIC_API_KEY", "unused-anthropic-key");
+
+    auto result = AIClientFactory::createClient({});
+    EXPECT_TRUE(result.client.has_value());
+    EXPECT_EQ(result.provider, "openai");
+    EXPECT_TRUE(result.inferred_from_env);
+#else
+    GTEST_SKIP() << "The fallback requires a build with exactly one provider";
+#endif
+}
+
 /// Test provider case sensitivity
 TEST(AIClientFactory, ProviderCaseSensitivity)
 {

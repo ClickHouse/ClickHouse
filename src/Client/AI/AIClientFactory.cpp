@@ -40,20 +40,28 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
         LOG_DEBUG(logger, "No AI provider specified, trying environment-based fallbacks");
         if (const char * openai_key = getKeyFromEnvironment("OPENAI_API_KEY"))
         {
+#if defined(AI_SDK_HAS_OPENAI)
             result.client = ai::openai::create_client(openai_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "openai";
             if (getKeyFromEnvironment("ANTHROPIC_API_KEY"))
                 result.unused_environment_key = "ANTHROPIC_API_KEY";
             return result;
+#else
+            LOG_DEBUG(logger, "Ignoring OPENAI_API_KEY because OpenAI support is not compiled in");
+#endif
         }
 
         if (const char * anthropic_key = getKeyFromEnvironment("ANTHROPIC_API_KEY"))
         {
+#if defined(AI_SDK_HAS_ANTHROPIC)
             result.client = ai::anthropic::create_client(anthropic_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "anthropic";
             return result;
+#else
+            LOG_DEBUG(logger, "Ignoring ANTHROPIC_API_KEY because Anthropic support is not compiled in");
+#endif
         }
 
         result.no_configuration_found = true;

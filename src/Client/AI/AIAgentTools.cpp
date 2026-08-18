@@ -182,7 +182,7 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         });
 
     tools["run_readonly_query"] = makeTool(
-        "Run a single read-only SQL statement (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, CHECK) on the user's connection, "
+        "Run a single read-only SQL statement (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS) on the user's connection, "
         "without confirmation. The query and its complete result are displayed in the user's terminal exactly as if "
         "the user ran it; you receive a summary truncated to the first and last rows. "
         "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
