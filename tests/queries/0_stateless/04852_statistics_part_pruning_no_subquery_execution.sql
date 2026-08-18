@@ -1,5 +1,3 @@
--- Tags: shard
-
 SET explain_query_plan_default = 'legacy';
 SET allow_experimental_statistics = 1;
 SET allow_statistics = 1;
@@ -77,39 +75,30 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1
 
 DROP TABLE t_stats_prune_in_pk;
 
-DROP TABLE IF EXISTS t_stats_prune_in_remote;
+DROP TABLE IF EXISTS t_stats_prune_in_throwing;
 
--- A remote subquery has no clonable plan, so building its set consumes the plan. When such a
--- subquery throws, pruning must not leave the set unbuilt: the query has to report the subquery's
--- own error, not `Not-ready Set is passed as the second argument for function 'globalNullIn'`.
-CREATE TABLE t_stats_prune_in_remote (a String, c UInt64)
+-- A nested `IN` makes the subquery's source plan non-clonable, so building its set consumes the
+-- plan. When the subquery then throws, the query must report the subquery's own error rather than
+-- `Not-ready Set is passed as the second argument`.
+CREATE TABLE t_stats_prune_in_throwing (a String, c UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS auto_statistics_types = 'basic', index_granularity = 1;
 
-SYSTEM STOP MERGES t_stats_prune_in_remote;
+INSERT INTO t_stats_prune_in_throwing VALUES ('a', 1), ('a', 100), ('a', 200);
 
-INSERT INTO t_stats_prune_in_remote VALUES ('a', 1);
-INSERT INTO t_stats_prune_in_remote VALUES ('a', 100);
-INSERT INTO t_stats_prune_in_remote VALUES ('a', 200);
-
--- `prefer_localhost_replica = 0` is required: a locally executed subquery keeps a clonable plan.
 -- Routing the outer query through parallel replicas reshapes it so the subquery is no longer the
--- consumed set source, so the parallel-replica settings are pinned off rather than randomized.
-SELECT count() FROM t_stats_prune_in_remote
-WHERE globalNullIn(c, (
-    SELECT c FROM cluster('test_cluster_one_shard_two_replicas', currentDatabase(), 't_stats_prune_in_remote')
-    WHERE throwIf(a = 'a', 'subquery failed on purpose')))
+-- consumed set source, so those settings are pinned off rather than randomized.
+SELECT count() FROM t_stats_prune_in_throwing
+WHERE c IN (SELECT c FROM t_stats_prune_in_throwing WHERE throwIf(a = 'a') AND c IN (SELECT 1))
 SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1,
-         prefer_localhost_replica = 0, enable_parallel_replicas = 0,
+         enable_parallel_replicas = 0,
          automatic_parallel_replicas_mode = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
--- Same query with pruning off, so the error above is attributable to statistics part pruning rather
--- than to the `globalNullIn` spelling or the remote read.
-SELECT count() FROM t_stats_prune_in_remote
-WHERE globalNullIn(c, (
-    SELECT c FROM cluster('test_cluster_one_shard_two_replicas', currentDatabase(), 't_stats_prune_in_remote')
-    WHERE throwIf(a = 'a', 'subquery failed on purpose')))
+-- Same query with pruning off, so the error above is attributable to statistics part pruning.
+SELECT count() FROM t_stats_prune_in_throwing
+WHERE c IN (SELECT c FROM t_stats_prune_in_throwing WHERE throwIf(a = 'a') AND c IN (SELECT 1))
 SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 0,
-         prefer_localhost_replica = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+         enable_parallel_replicas = 0,
+         automatic_parallel_replicas_mode = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
-DROP TABLE t_stats_prune_in_remote;
+DROP TABLE t_stats_prune_in_throwing;
