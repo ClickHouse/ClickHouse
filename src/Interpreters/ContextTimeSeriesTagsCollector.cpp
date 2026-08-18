@@ -1551,43 +1551,89 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
 {
     chassert(groups1.size() == groups2.size());
 
-    auto tags_vector1 = getTagsByGroup(groups1);
-    auto tags_vector2 = getTagsByGroup(groups2);
-    chassert(tags_vector1.size() == groups1.size());
-    chassert(tags_vector2.size() == groups2.size());
+    size_t num_unique_pairs = 0;
 
-    std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
-    size_t num_new_tags = 0;
+    VectorWithMemoryTracking<Group> res;
+    res.resize(groups1.size());
 
-    for (size_t i = 0; i != groups1.size(); ++i)
     {
-        Group group1 = groups1[i];
-        Group group2 = groups2[i];
-        auto it = indices_in_result_vector.find(std::make_pair(group1, group2));
-        if (it == indices_in_result_vector.end())
+        std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
+
+        for (size_t i = 0; i != groups1.size(); ++i)
         {
-            const auto & tags1 = tags_vector1[i];
-            const auto & tags2 = tags_vector2[i];
-            auto new_tags = transform_func(tags1, tags2);
-            indices_in_result_vector[std::make_pair(group1, group2)] = num_new_tags;
-            tags_vector1[num_new_tags++] = new_tags;
+            auto [it, inserted] = indices_in_result_vector.try_emplace(std::make_pair(groups1[i], groups2[i]), num_unique_pairs);
+            if (inserted)
+                ++num_unique_pairs;
+            res[i] = it->second;
         }
     }
 
-    tags_vector1.resize(num_new_tags);
+    if (num_unique_pairs == groups1.size())
+    {
+        auto tags_vector1 = getTagsByGroup(groups1);
+        auto tags_vector2 = getTagsByGroup(groups2);
+        chassert(tags_vector1.size() == groups1.size());
+        chassert(tags_vector2.size() == groups2.size());
 
-    auto new_groups = getGroupForTags(tags_vector1);
+        for (size_t i = 0; i != groups1.size(); ++i)
+            tags_vector1[i] = transform_func(tags_vector1[i], tags_vector2[i]);
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(groups1.size());
+        auto new_groups = getGroupForTags(tags_vector1);
+        for (auto & index : res)
+            index = new_groups.at(index);
+        return res;
+    }
 
+    VectorWithMemoryTracking<std::pair<Group, Group>> unique_pairs;
+    unique_pairs.reserve(num_unique_pairs);
+
+    size_t next_pair_index = 0;
     for (size_t i = 0; i != groups1.size(); ++i)
     {
-        Group group1 = groups1[i];
-        Group group2 = groups2[i];
-        auto new_group = new_groups.at(indices_in_result_vector.at(std::make_pair(group1, group2)));
-        res.push_back(new_group);
+        if (res[i] == next_pair_index)
+        {
+            unique_pairs.emplace_back(groups1[i], groups2[i]);
+            ++next_pair_index;
+        }
     }
+    chassert(unique_pairs.size() == num_unique_pairs);
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> new_tags_vector;
+    {
+        VectorWithMemoryTracking<Group> unique_groups1;
+        VectorWithMemoryTracking<Group> unique_groups2;
+        std::unordered_map<Group, size_t> indices_by_group1;
+        std::unordered_map<Group, size_t> indices_by_group2;
+
+        for (auto & [group1, group2] : unique_pairs)
+        {
+            auto [it1, inserted1] = indices_by_group1.try_emplace(group1, unique_groups1.size());
+            if (inserted1)
+                unique_groups1.push_back(group1);
+            group1 = it1->second;
+
+            auto [it2, inserted2] = indices_by_group2.try_emplace(group2, unique_groups2.size());
+            if (inserted2)
+                unique_groups2.push_back(group2);
+            group2 = it2->second;
+        }
+
+        auto tags_vector1 = getTagsByGroup(unique_groups1);
+        auto tags_vector2 = getTagsByGroup(unique_groups2);
+        chassert(tags_vector1.size() == unique_groups1.size());
+        chassert(tags_vector2.size() == unique_groups2.size());
+
+        new_tags_vector.resize(unique_pairs.size());
+        for (size_t i = 0; i != unique_pairs.size(); ++i)
+        {
+            const auto [group1, group2] = unique_pairs[i];
+            new_tags_vector[i] = transform_func(tags_vector1[group1], tags_vector2[group2]);
+        }
+    }
+
+    auto new_groups = getGroupForTags(new_tags_vector);
+    for (auto & index : res)
+        index = new_groups.at(index);
 
     return res;
 }
