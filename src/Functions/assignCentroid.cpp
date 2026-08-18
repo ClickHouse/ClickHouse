@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/castColumn.h>
 #include <Dictionaries/IDictionary.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -182,7 +183,15 @@ struct CentroidMatrix
     VectorWithMemoryTracking<Float32> cnorm;   /// ||c||^2 - squared norm of the k centroids
     VectorWithMemoryTracking<UInt32> ids;      /// cluster id returned when centroid c is nearest
 
-    /// build() is called only once per block of INSERT. rows is the array of centroids in row-major form
+    /// Packs the centroids into the layout the kernel reads. `rows` is row-major (k * dim); `id_values` gives
+    /// the id per centroid, or null for 0..k-1. Runs once per block for the inline form and once per
+    /// dictionary version for the cached dictionary form - never per row.
+    ///
+    /// For k = 3 centroids of dim = 2, rows = [[1,2], [3,4], [5,6]]:
+    ///
+    ///     ct    = [1, 3, 5,  2, 4, 6]   coordinate 0 of every centroid, then coordinate 1
+    ///     cnorm = [5, 25, 61]           1*1+2*2, 3*3+4*4, 5*5+6*6
+    ///     ids   = [0, 1, 2]             or the dictionary cids when id_values is given
     void build(const Float32 * rows, size_t k_, size_t dim_, const UInt32 * id_values)
     {
         k = k_;
@@ -307,9 +316,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isDeterministic() const override { return false; } /// dictionary form depends on external, mutable state
     bool isSuitableForConstantFolding() const override { return false; }
-    /// The second argument (the centroids, or the dictionary name) must stay constant - see
-    /// `getArgumentsThatAreAlwaysConstant` below - so the matrix is built once per block, not once per row.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    /// Only kicks in when every argument is constant, and `getArgumentsThatAreAlwaysConstant` keeps the
+    /// centroids a `ColumnConst` even then, which is what the matrix builder expects.
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -319,42 +328,40 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments: assignCentroid(vec, centroids | dict_name)", name);
 
-        /// The kernel reads the nested column as ColumnFloat32, so Float32 is required exactly
         const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!vec_type || !WhichDataType(vec_type->getNestedType()).isFloat32())
+        if (!vec_type || !isFloat(vec_type->getNestedType()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of {} must be Array(Float32) (CAST an Array(Float64) or Array(BFloat16) column first)", name);
+                "First argument of {} must be an array of floats", name);
 
         if (!isCentroidsArray(arguments[1]) && !isString(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument of {} must be a constant Array(Array(Float32)) (centroids, CAST an "
-                "Array(Array(Float64)) literal first) or a constant String (dictionary name)", name);
+                "Second argument of {} must be a constant array of float arrays (the centroids) "
+                "or a constant String (a dictionary name)", name);
 
         return std::make_shared<DataTypeUInt32>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Resolve nothing for an empty block. A distributed initiator can legitimately see zero rows with no
-        /// local copy of the dictionary, and reading it here would throw where an empty column is the answer.
+        /// A distributed initiator can see zero rows with no local copy of the dictionary, so resolving one
+        /// here would throw where an empty column is the answer.
         if (input_rows_count == 0)
             return ColumnUInt32::create();
 
+        /// Shared, not owned: the dictionary form hands back the cached matrix, which another thread may
+        /// swap, so the refcount is what keeps this one alive for the duration of the call.
         std::shared_ptr<const CentroidMatrix> matrix;
         if (isString(arguments[1].type))
         {
-            const auto * name_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-            if (!name_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of {} (dictionary name) must be constant", name);
-            matrix = getDictionaryMatrix(name_const->getValue<String>());
+            /// Constness is enforced by the framework, see `getArgumentsThatAreAlwaysConstant`.
+            matrix = getDictionaryMatrix(assert_cast<const ColumnConst &>(*arguments[1].column).getValue<String>());
         }
         else
         {
             matrix = buildConstMatrix(arguments[1]);
         }
 
-        /// arg #0 may itself be constant (e.g. a literal vector); materialize so the ColumnArray cast is valid.
-        ColumnPtr vec_full = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr vec_full = toFloat32Array(arguments[0]);
         const auto & vec = assert_cast<const ColumnArray &>(*vec_full);
         const auto & vec_data = assert_cast<const ColumnFloat32 &>(vec.getData()).getData();
         const auto & vec_offsets = vec.getOffsets();
@@ -366,6 +373,17 @@ public:
     }
 
 private:
+    /// The kernels read Float32. Any other float width is converted once here rather than rejected, so
+    /// `assignCentroid([1.0, 2.0], ...)` works with plain array literals, which are Array(Float64).
+    static ColumnPtr toFloat32Array(const ColumnWithTypeAndName & arg)
+    {
+        static const DataTypePtr target = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
+        ColumnWithTypeAndName full{arg.column->convertToFullColumnIfConst(), arg.type, arg.name};
+        if (target->equals(*arg.type))
+            return full.column;
+        return castColumn(full, target);
+    }
+
     mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
     /// A `weak_ptr`, not a raw pointer: expression actions can outlive a query, and comparing raw addresses
@@ -382,17 +400,23 @@ private:
         if (!outer)
             return false;
         const auto * inner = typeid_cast<const DataTypeArray *>(outer->getNestedType().get());
-        return inner && WhichDataType(inner->getNestedType()).isFloat32();
+        return inner && isFloat(inner->getNestedType());
     }
 
     /// Build the matrix from a constant Array(Array(Float32)) argument. Ids are the array positions (0..k-1).
     static std::shared_ptr<const CentroidMatrix> buildConstMatrix(const ColumnWithTypeAndName & arg)
     {
-        const auto * col_const = typeid_cast<const ColumnConst *>(arg.column.get());
-        if (!col_const)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Centroids argument of assignCentroid must be constant");
+        const auto & col_const = assert_cast<const ColumnConst &>(*arg.column);
 
-        const auto & outer = assert_cast<const ColumnArray &>(col_const->getDataColumn()); /// one row = the k centroids
+        /// Convert to Array(Array(Float32)) first, so a Float64 or BFloat16 literal is accepted. The data
+        /// column behind the constant carries `arg.type` itself, not its nested type.
+        static const DataTypePtr target
+            = std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
+        ColumnPtr casted = col_const.getDataColumnPtr();
+        if (!target->equals(*arg.type))
+            casted = castColumn({casted, arg.type, arg.name}, target);
+
+        const auto & outer = assert_cast<const ColumnArray &>(*casted);                    /// one row = the k centroids
         const auto & inner = assert_cast<const ColumnArray &>(outer.getData());            /// k inner arrays
         const auto & values = assert_cast<const ColumnFloat32 &>(inner.getData()).getData();
 
@@ -516,10 +540,11 @@ REGISTER_FUNCTION(AssignCentroid)
 {
     FunctionDocumentation::Description description =
         "Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant "
-        "Array(Array(Float32)) (id = position) or as the name of a Dictionary holding columns (cid, vec) (id = cid).";
+        "array of float arrays, where the id is the 0-based position in that array, or as the name of a "
+        "Dictionary holding columns (cid, vec), where the id is the cid.";
     FunctionDocumentation::Syntax syntax = "assignCentroid(vec, centroids | dict_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"vec", "Input vector.", {"Array(Float32)"}},
+        {"vec", "Input vector.", {"Array(Float32)", "Array(Float64)", "Array(BFloat16)"}},
         {"centroids", "Constant centroids as Array(Array(Float32)), or a constant dictionary name.", {"Array(Array(Float32))", "String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id.", {"UInt32"}};

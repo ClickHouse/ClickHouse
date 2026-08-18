@@ -280,7 +280,7 @@ void parallelRanges(size_t n, size_t num_threads, Body && body)
     }
 
     const size_t per_thread = (n + num_threads - 1) / num_threads;
-    ThreadPoolCallbackRunnerLocal<void> runner(getTrainingThreadPool(), ThreadName::HIERARCHICAL_KMEANS);
+    ThreadPoolCallbackRunnerLocal<void> runner(getTrainingThreadPool(), ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     for (size_t t = 0; t < num_threads; ++t)
     {
         const size_t begin = t * per_thread;
@@ -708,7 +708,7 @@ void trainHierarchical(
         {
             /// Enough independent nodes to fill the pool: one pooled task per node, each node serial inside.
             const KMeansParams params{iters, spherical, 1};
-            ThreadPoolCallbackRunnerLocal<void> runner(getTrainingThreadPool(), ThreadName::HIERARCHICAL_KMEANS);
+            ThreadPoolCallbackRunnerLocal<void> runner(getTrainingThreadPool(), ThreadName::MERGETREE_VECTOR_SIM_INDEX);
             for (size_t i = 0; i < num_tasks; ++i)
             {
                 runner.enqueueAndKeepTrack([&, i]
@@ -907,6 +907,7 @@ class AggregateFunctionHierarchicalKMeans final
     UInt64 sample_cap;
     UInt64 seed;
     bool spherical;
+    TypeIndex nested_type;
 
 public:
     AggregateFunctionHierarchicalKMeans(const DataTypes & args, const Array & params)
@@ -921,12 +922,26 @@ public:
                 "Aggregate function hierarchicalKMeans accepts at most 6 parameters "
                 "(k, branching, max_iter, sample_cap, seed, spherical), got {}", params.size());
 
-        k          = params[0].safeGet<UInt64>();
-        branching  = params.size() > 1 ? params[1].safeGet<UInt64>() : 16;
-        max_iter   = params.size() > 2 ? params[2].safeGet<UInt64>() : 20;
-        sample_cap = params.size() > 3 ? params[3].safeGet<UInt64>() : 1'000'000;
-        seed       = params.size() > 4 ? params[4].safeGet<UInt64>() : 0;
-        spherical  = params.size() > 5 && params[5].safeGet<UInt64>() != 0;
+        /// Read as a non-negative integer or fail with a message naming the parameter. Going through
+        /// `safeGet<UInt64>` alone is not enough: a negative literal is an `Int64` field, so it either raises
+        /// a bare `BAD_GET` or, where the value is read anyway, wraps to a huge positive `branching`.
+        auto param = [&](size_t i, const char * pname, UInt64 def) -> UInt64
+        {
+            if (i >= params.size())
+                return def;
+            if (params[i].getType() != Field::Types::UInt64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "hierarchicalKMeans: parameter {} must be a non-negative integer, got {}",
+                    pname, params[i].dump());
+            return params[i].safeGet<UInt64>();
+        };
+
+        k          = param(0, "k", 0);
+        branching  = param(1, "branching", 16);
+        max_iter   = param(2, "max_iter", 20);
+        sample_cap = param(3, "sample_cap", 1'000'000);
+        seed       = param(4, "seed", 0);
+        spherical  = param(5, "spherical", 0) != 0;
 
         /// Reject rather than clamp. Silently substituting `branching = 2` for a caller who asked for 1 trains
         /// something other than what was requested, which hides typos and makes experiments irreproducible.
@@ -955,11 +970,13 @@ public:
 
         /// `add` reads the nested column as `ColumnFloat32`, so `Float32` is required exactly - accepting any float
         /// here would reinterpret e.g. `Float64` payload as `Float32` and silently train on garbage.
+        /// Any float width is accepted and converted to the Float32 the kernels use, so a plain array
+        /// literal - which is Array(Float64) - works without an explicit CAST.
         const auto * array_type = typeid_cast<const DataTypeArray *>(args[0].get());
-        if (!array_type || !WhichDataType(array_type->getNestedType()).isFloat32())
+        if (!array_type || !isFloat(array_type->getNestedType()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Aggregate function hierarchicalKMeans requires an Array(Float32) argument "
-                "(CAST an Array(Float64) or Array(BFloat16) column to Array(Float32) first)");
+                "Aggregate function hierarchicalKMeans requires an array of floats");
+        nested_type = WhichDataType(array_type->getNestedType()).idx;
     }
 
     String getName() const override { return "hierarchicalKMeans"; }
@@ -984,10 +1001,21 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & array = assert_cast<const ColumnArray &>(*columns[0]);
-        const auto & nested = assert_cast<const ColumnFloat32 &>(array.getData()).getData();
         const auto & offsets = array.getOffsets();
         size_t start = row_num ? offsets[row_num - 1] : 0;
         size_t length = offsets[row_num] - start;
+
+        /// Read the coordinate at `start + j` as Float32, whatever width the column actually holds.
+        const IColumn & nested_col = array.getData();
+        auto coord = [&](size_t j) -> Float
+        {
+            switch (nested_type)
+            {
+                case TypeIndex::Float32: return assert_cast<const ColumnFloat32 &>(nested_col).getData()[start + j];
+                case TypeIndex::Float64: return static_cast<Float>(assert_cast<const ColumnFloat64 &>(nested_col).getData()[start + j]);
+                default:                 return static_cast<Float>(assert_cast<const ColumnBFloat16 &>(nested_col).getData()[start + j]);
+            }
+        };
 
         /// One pass covering both input contracts.
         ///
@@ -999,13 +1027,16 @@ public:
         /// A zero vector has no direction, so cosine against it is undefined. Under `spherical = 1` every
         /// centroid is meant to be a unit direction, so reject rather than let a zero-norm point drag a
         /// cluster mean toward the origin.
+        /// Materialised as Float32 here, which doubles as the conversion for the non-Float32 widths.
+        VectorWithMemoryTracking<Float> row(length);
         double norm2 = 0;
         for (size_t j = 0; j < length; ++j)
         {
-            const Float x = nested[start + j];
+            const Float x = coord(j);
             if (!std::isfinite(x))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "hierarchicalKMeans: input vector must not contain non-finite values (NaN or Inf)");
+            row[j] = x;
             norm2 += static_cast<double>(x) * static_cast<double>(x);
         }
         if (spherical && norm2 == 0)
@@ -1013,7 +1044,7 @@ public:
                 "hierarchicalKMeans: zero-norm vectors are not allowed with spherical = 1 "
                 "(cosine is undefined for a vector with no direction)");
 
-        data(place).addVector(&nested[start], static_cast<UInt32>(length), sample_cap);
+        data(place).addVector(row.data(), static_cast<UInt32>(length), sample_cap);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -1051,24 +1082,38 @@ public:
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "hierarchicalKMeans: corrupt aggregate state ({} values for dimension {})", n, d.dim);
 
-        /// States are user-transportable via `hierarchicalKMeansState`, so `n` is untrusted input that is
-        /// about to become an allocation. The reservoir can never hold more than `sample_cap` vectors, so
-        /// anything above that is corrupt or hostile. Divide rather than multiply - `sample_cap * dim`
-        /// overflows for large caps.
-        if (d.dim != 0 && n / d.dim > sample_cap)
+        /// States are user-transportable via `hierarchicalKMeansState`, so everything read above is untrusted.
+        /// Re-establish the full reservoir invariant, not just an upper bound: `merge` reads `seen > cap` as
+        /// proof that the side holds exactly `cap` rows and indexes on that basis, so a state claiming
+        /// `seen = cap + 1` while storing one row would walk off the end of `samples`.
+        const UInt64 have = d.dim ? n / d.dim : 0;
+        const UInt64 expected = std::min<UInt64>(d.seen, sample_cap);
+        if (have != expected)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "hierarchicalKMeans: aggregate state holds {} vectors, above the sample_cap of {}",
-                n / d.dim, sample_cap);
+                "hierarchicalKMeans: aggregate state holds {} vectors, but seen = {} with sample_cap = {} "
+                "requires exactly {}", have, d.seen, sample_cap, expected);
 
         d.samples.resize(n);
         buf.readStrict(reinterpret_cast<char *>(d.samples.data()), n * sizeof(Float));
 
-        /// `add` rejects non-finite input, but a transported state bypasses `add` entirely, so the invariant
-        /// has to be re-established here before the payload can reach `kMeansLloyd`.
-        for (size_t i = 0; i < n; ++i)
-            if (!std::isfinite(d.samples[i]))
+        /// `add` enforces these on the way in, but a transported state bypasses `add` entirely, so both
+        /// contracts have to be re-established before the payload can reach `kMeansLloyd`.
+        for (UInt64 i = 0; i < have; ++i)
+        {
+            double norm2 = 0;
+            for (UInt64 j = 0; j < d.dim; ++j)
+            {
+                const Float x = d.samples[i * d.dim + j];
+                if (!std::isfinite(x))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "hierarchicalKMeans: aggregate state contains non-finite values (NaN or Inf)");
+                norm2 += static_cast<double>(x) * static_cast<double>(x);
+            }
+            if (spherical && norm2 == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "hierarchicalKMeans: aggregate state contains non-finite values (NaN or Inf)");
+                    "hierarchicalKMeans: aggregate state contains a zero-norm vector, which spherical = 1 "
+                    "does not allow");
+        }
 
         String rng_string;
         readStringBinary(rng_string, buf);
@@ -1120,8 +1165,9 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
 {
     FunctionDocumentation::Description description =
         "Trains up to k cluster centroids from the aggregated vectors using hierarchical k-means and returns "
-        "them as Array(Array(Float32)). Fewer than k are returned when the input holds fewer than k distinct "
-        "points, since a point can yield at most one centroid. Distance is squared L2; pass `spherical = 1` to "
+        "them as Array(Array(Float32)). Fewer than k are returned only when the input has fewer than k rows, "
+        "since a row can yield at most one centroid; repeated points still yield k. Distance is squared L2; "
+        "pass `spherical = 1` to "
         "renormalize the centroids to unit length after each iteration, which makes the same centroids an exact "
         "cosine/inner-product quantizer.";
     FunctionDocumentation::Syntax syntax = "hierarchicalKMeans(k[, branching[, max_iter[, sample_cap[, seed[, spherical]]]]])(vec)";
@@ -1129,7 +1175,7 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
         {"vec", "Input vector to cluster.", {"Array(Float32)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
-        {"An array of up to k centroids, capped by the number of input points.", {"Array(Array(Float32))"}};
+        {"An array of up to k centroids, capped by the number of input rows.", {"Array(Array(Float32))"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT length(hierarchicalKMeans(256)(vec)) FROM sample", ""}
     };

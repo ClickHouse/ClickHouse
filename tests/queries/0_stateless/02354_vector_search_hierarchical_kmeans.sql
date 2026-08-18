@@ -11,13 +11,18 @@ SELECT number % 4 AS g,
         toFloat32(number % 4 * 100) + toFloat32(sipHash64(number, 2) % 10) / 10]::Array(Float32)
 FROM numbers(20000);
 
+SELECT '-- any float width is accepted; plain literals are Array(Float64)';
+SELECT length(hierarchicalKMeans(2)([1.0, 2.0]));
+SELECT length(hierarchicalKMeans(4)(v)) FROM (SELECT arrayJoin([[1.0,1.0],[2.0,2.0],[9.0,9.0],[8.0,8.0],[3.0,3.0]]) AS v);
+SELECT length(hierarchicalKMeans(4)(v)) FROM (SELECT arrayJoin([[1.0,1.0],[2.0,2.0],[9.0,9.0],[8.0,8.0],[3.0,3.0]])::Array(BFloat16) AS v);
+
 SELECT '-- returns exactly k centroids of the input dimension';
 SELECT length(c), length(c[1]) FROM (SELECT hierarchicalKMeans(4)(v) AS c FROM blobs);
 SELECT length(hierarchicalKMeans(64)(v)) FROM blobs;
 SELECT length(hierarchicalKMeans(1000)(v)) FROM blobs;
 
-SELECT '-- k is capped by the number of points, since one point yields at most one centroid';
-SELECT length(hierarchicalKMeans(500)(v)) FROM (SELECT [toFloat32(number), 2.0]::Array(Float32) AS v FROM numbers(100));
+SELECT '-- k is capped by the number of rows, since one row yields at most one centroid';
+SELECT length(hierarchicalKMeans(30000)(v)) FROM blobs;
 
 SELECT '-- each blob maps to exactly one cluster';
 SELECT g, uniqExact(cid) FROM (
@@ -52,11 +57,15 @@ SELECT length(hierarchicalKMeansMerge(4)(st)) FROM (
 );
 
 SELECT '-- errors';
--- Float32 exactly: the kernel reads the nested column as ColumnFloat32, so a wider float would be
--- reinterpreted rather than converted.
-SELECT hierarchicalKMeans(2)([1.0, 2.0]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT hierarchicalKMeans(2)(v) FROM (SELECT [1.0, 2.0]::Array(Float64) AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hierarchicalKMeans(2)(v) FROM (SELECT 1.0::Float32 AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hierarchicalKMeans(2)([1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hierarchicalKMeans(2)(['a', 'b']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Parameters themselves must be sane.
+SELECT hierarchicalKMeans(-1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(1.5)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans('4')(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, 20, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- An empty vector would make `dim` zero, which is also the "no rows yet" sentinel.
 SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS }
 -- No comparison against NaN is true, so a non-finite coordinate would collect rows into cluster 0 and can
@@ -64,8 +73,9 @@ SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS
 SELECT hierarchicalKMeans(1)([toFloat32(nan)]::Array(Float32)); -- { serverError INCORRECT_DATA }
 SELECT hierarchicalKMeans(1)([toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
 SELECT hierarchicalKMeans(1)([-toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
--- A transported state bypasses `add`, so the invariant is re-established on deserialization. The state is
--- patched at runtime (1.0f -> NaN) rather than hardcoded, so this cannot drift with the serialization format.
+-- A state can be written by one query and read by another, so the same checks run on deserialization.
+-- The float in a real state is patched from 1.0 to NaN here, so the test does not depend on the exact
+-- byte layout of the state.
 SELECT finalizeAggregation(CAST(
     unhex(replaceOne(hex(hierarchicalKMeansState(1, 16, 20, 100)(v)), '0000803F', '0000C07F')),
     'AggregateFunction(hierarchicalKMeans(1, 16, 20, 100), Array(Float32))'))
@@ -83,8 +93,8 @@ SELECT hierarchicalKMeans(256, 16, 0)(v) FROM blobs; -- { serverError BAD_ARGUME
 SELECT hierarchicalKMeans(4, 16, 20, 5000000000)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- A reservoir smaller than k could never yield k centroids, so the contract is rejected up front.
 SELECT hierarchicalKMeans(2, 16, 20, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
--- Aggregate states are user-transportable, so a crafted one must not be trusted to size an allocation.
--- This blob claims 1M vectors of dimension 3 while sample_cap is 5.
+-- A hand-written state must not be trusted to size an allocation: this one claims 1M vectors of
+-- dimension 3 while sample_cap is 5.
 SELECT finalizeAggregation(CAST(unhex('030000006400000000000000C08DB701'),
     'AggregateFunction(hierarchicalKMeans(2, 16, 20, 5), Array(Float32))')); -- { serverError INCORRECT_DATA }
 

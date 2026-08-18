@@ -1,9 +1,13 @@
+-- any float width is accepted; plain literals are Array(Float64)
+1
+4
+4
 -- returns exactly k centroids of the input dimension
 4	2
 64
 1000
--- k is capped by the number of points, since one point yields at most one centroid
-100
+-- k is capped by the number of rows, since one row yields at most one centroid
+20000
 -- each blob maps to exactly one cluster
 0	1
 1	1
