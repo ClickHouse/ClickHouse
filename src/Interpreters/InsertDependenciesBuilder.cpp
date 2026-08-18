@@ -998,7 +998,10 @@ bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & st
             if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
                 continue;
 
-            auto target = materialized_view->tryGetTargetTable();
+            /// Use the current INSERT context rather than the view's creation context. The latter can
+            /// retain a stale target-table entry after `DROP TABLE`, while the dependency builder will
+            /// correctly prune the same view from its executable graph.
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
             auto target_lock = target
                 ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
                 : nullptr;
@@ -1217,7 +1220,10 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
             if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
                 continue;
 
-            auto target = materialized_view->tryGetTargetTable();
+            /// Resolve through the current INSERT context for consistency with `observePath`.
+            /// `StorageMaterializedView::tryGetTargetTable` uses the view's context, which can retain
+            /// a stale target-table entry after `DROP TABLE`.
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), init_context);
             auto target_lock = target
                 ? target->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout])
                 : nullptr;
