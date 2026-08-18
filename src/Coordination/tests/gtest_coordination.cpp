@@ -1272,7 +1272,7 @@ namespace DB
 class KeeperRequestDispatcherTestAccessor
 {
 public:
-    /// Puts requests in a fresh in-flight batch, the way dispatchThread would, and returns its index.
+    /// Puts requests in a fresh in-flight batch, the way `dispatchThread` would, and returns its index.
     static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, KeeperRequestsForSessions requests)
     {
         size_t batch_idx = dispatcher.tail_idx.load();
@@ -1297,11 +1297,11 @@ public:
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
 
-    /// Seeds a batch with reads parked at `boundary` in intermediate_reads, the way dispatchThread
-    /// does through flush_to_intermediate_reads: initialize at the fill site, then move the reads
-    /// into the batch, then activate, which is what classifies the prefix.
-    /// InFlightBatch documents 0 < next_request_idx < requests.size(); requests.size() is reserved
-    /// for late_reads.
+    /// Seeds a batch with reads parked at `boundary` in `intermediate_reads`, the way
+    /// `dispatchThread` does through `flush_to_intermediate_reads`: initialize at the fill site,
+    /// then move the reads into the batch, then `activate`, which is what classifies the prefix.
+    /// `InFlightBatch` documents 0 < next_request_idx < requests.size(); requests.size() is
+    /// reserved for `late_reads`.
     static size_t seedIntermediateReads(
         KeeperRequestDispatcher & dispatcher,
         KeeperRequestsForSessions requests,
@@ -1715,8 +1715,8 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
-    /// A prefix write need not lead the batch: under quorum_reads the first request can be a read,
-    /// and a write appended after it still precedes the next boundary.
+    /// A prefix write need not lead the batch: under `quorum_reads` the first request can be a
+    /// read, and a write appended after it still precedes the next boundary.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
@@ -1740,8 +1740,8 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
-    /// late_reads drain only once every request of the batch has committed, so a write anywhere in
-    /// the batch precedes them even when it belongs to another session. That wait is real.
+    /// `late_reads` drain only once every request of the batch has committed, so a write anywhere
+    /// in the batch precedes them even when it belongs to another session. That wait is real.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
