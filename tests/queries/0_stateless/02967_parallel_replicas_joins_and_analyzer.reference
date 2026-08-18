@@ -83,7 +83,8 @@ Expression
                       Join
                         Expression
                           Expression
-                            ReadFromMemoryStorage
+                            Expression
+                              ReadFromMergeTree
                         Expression
                           Expression
                             ReadFromMemoryStorage
@@ -354,8 +355,7 @@ Expression
                               ReadFromMergeTree
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
