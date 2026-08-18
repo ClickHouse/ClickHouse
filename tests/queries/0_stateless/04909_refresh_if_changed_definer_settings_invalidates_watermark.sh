@@ -12,7 +12,7 @@ set -u
 definer="definer_04909_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "
-    CREATE USER ${definer} SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
+    CREATE USER ${definer} SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break';
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${definer};
 
     CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -32,7 +32,7 @@ done
 
 # The source data is unchanged, but the definer now reads two rows. Without invalidating the old
 # watermark the refresh is skipped and `mv` remains at one row.
-$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_result_rows = 2, result_overflow_mode = 'break'"
+$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 2, read_overflow_mode = 'break'"
 for _ in {1..30}
 do
     rows=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
