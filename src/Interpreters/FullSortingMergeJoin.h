@@ -21,6 +21,8 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
                                   int null_direction_ = 1, bool is_parallel_ = false)
         : table_join(table_join_)

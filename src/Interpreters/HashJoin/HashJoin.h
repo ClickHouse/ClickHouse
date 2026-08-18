@@ -109,6 +109,8 @@ class HashJoinMethods;
 class HashJoin : public IJoin
 {
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block,
@@ -141,14 +143,10 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
-    using IJoin::addBlockToJoin;
-
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
-
-    using IJoin::joinBlock;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.

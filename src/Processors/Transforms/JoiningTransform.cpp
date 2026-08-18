@@ -45,12 +45,14 @@ JoiningTransform::JoiningTransform(
     size_t max_block_size_,
     bool on_totals_,
     bool default_totals_,
-    FinishCounterPtr finish_counter_)
+    FinishCounterPtr finish_counter_,
+    size_t stream_index_)
     : IProcessor({input_header}, {output_header})
     , join(std::move(join_))
     , on_totals(on_totals_)
     , default_totals(default_totals_)
     , finish_counter(std::move(finish_counter_))
+    , stream_index(stream_index_)
     , max_block_size(max_block_size_)
 {
     if (!join->isFilled())
@@ -243,7 +245,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     {
         Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        join_result = join->joinBlock(std::move(block));
+        join_result = join->joinBlock(std::move(block), stream_index);
     }
 
     auto data = join_result->next();
@@ -260,8 +262,9 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(
+    SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, size_t build_lane_)
+    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_)), build_lane(build_lane_)
 {
     spillable = typeid_cast<GraceHashJoin *>(join.get());
 }
@@ -370,7 +373,7 @@ void FillingRightJoinSideTransform::work()
     else
     {
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-        stop_reading = !join->addBlockToJoin(block, num_rows, true);
+        stop_reading = !join->addBlockToJoin(block, num_rows, true, build_lane);
     }
 
     set_totals = for_totals;

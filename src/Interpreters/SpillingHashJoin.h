@@ -50,6 +50,8 @@ class ConcurrentHashJoin;
 class SpillingHashJoin final : public IJoin
 {
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     /// Single-thread mode: wraps a HashJoin.
     SpillingHashJoin(
         std::shared_ptr<TableJoin> table_join_,

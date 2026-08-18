@@ -39,6 +39,8 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
     /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
     /// when this instance is wrapped. It bounds statistics-driven preallocation so the
     /// reserve cannot blow past the wrapper's spill threshold. Pass 0 for standalone use
