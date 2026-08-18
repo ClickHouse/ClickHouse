@@ -57,15 +57,14 @@ void addRetainedActionInputs(
     const ActionsDAG & dag,
     const NameSet & requested_input_names,
     const std::optional<String> & removed_column_name,
-    bool retain_subcolumn_inputs)
+    bool retain_all_inputs)
 {
     for (const auto & col : dag.getRequiredColumns())
     {
         const bool is_requested_input = requested_input_names.contains(col.name);
-        const bool is_retained_subcolumn_input = retain_subcolumn_inputs && !Nested::splitName(col.name).second.empty();
-        if (!is_requested_input && !is_retained_subcolumn_input)
+        if (!is_requested_input && !retain_all_inputs)
             continue;
-        if (removed_column_name && col.name == *removed_column_name && !is_retained_subcolumn_input)
+        if (removed_column_name && col.name == *removed_column_name && !retain_all_inputs)
             continue;
         if (header.has(col.name))
             continue;
@@ -107,6 +106,8 @@ Block applyPrewhereHeaderActions(
         prewhere_info->prewhere_actions,
         requested_input_names,
         prewhere_info->remove_prewhere_column ? std::optional<String>{prewhere_info->prewhere_column_name} : std::nullopt,
+        /// `Parquet` may defer the whole `PREWHERE` expression when it refers to a `VARIANT` subcolumn.
+        /// Keep all of its inputs in the delivered header so deferred execution can evaluate the expression.
         true);
 
     return header;

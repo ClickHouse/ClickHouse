@@ -8,11 +8,11 @@ SET output_format_parquet_json_as_variant = 1;
 SET input_format_parquet_use_native_reader_v3 = 1;
 
 INSERT INTO FUNCTION file(currentDatabase() || '04303_parquet_variant_deferred_prewhere_input.parquet', Parquet)
-SELECT CAST('{"kind":"commit","extra":"x"}' AS JSON(max_dynamic_paths=0, kind String)) AS j
+SELECT CAST('{"kind":"commit","extra":"x"}' AS JSON(max_dynamic_paths=0, kind String)) AS j, 1 AS y
 UNION ALL
-SELECT CAST('{"kind":"identity","extra":"y"}' AS JSON(max_dynamic_paths=0, kind String)) AS j
+SELECT CAST('{"kind":"identity","extra":"y"}' AS JSON(max_dynamic_paths=0, kind String)) AS j, 1 AS y
 UNION ALL
-SELECT CAST('{"kind":"commit","extra":"x"}' AS JSON(max_dynamic_paths=0, kind String)) AS j;
+SELECT CAST('{"kind":"commit","extra":"x"}' AS JSON(max_dynamic_paths=0, kind String)) AS j, 2 AS y;
 
 SELECT count()
 FROM file(
@@ -20,6 +20,14 @@ FROM file(
     Parquet,
     'j JSON(max_dynamic_paths=0, kind String)')
 PREWHERE j.kind = 'commit'
+FORMAT TSVRaw;
+
+SELECT count()
+FROM file(
+    currentDatabase() || '04303_parquet_variant_deferred_prewhere_input.parquet',
+    Parquet,
+    'j JSON(max_dynamic_paths=0, kind String), y UInt8')
+PREWHERE j.kind = 'commit' AND y = 1
 FORMAT TSVRaw;
 
 SELECT 'parent-prewhere', JSONExtractString(toJSONString(j), 'extra')
