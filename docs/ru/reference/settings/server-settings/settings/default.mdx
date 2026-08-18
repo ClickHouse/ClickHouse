@@ -27,9 +27,14 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 Допустимые значения:
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **По умолчанию:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </div>
 
 Профиль настроек, используемый по умолчанию. Профили настроек находятся в файле, указанном в параметре `user_config`.
+
+* **По умолчанию:** `default`
 
 **Пример**
 
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 </div>
 
 Тайм-аут сеанса по умолчанию в секундах.
+
+* **По умолчанию:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
