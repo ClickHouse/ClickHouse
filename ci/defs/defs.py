@@ -391,6 +391,7 @@ class JobNames:
     LLVM_COVERAGE = "LLVM Coverage"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
+    COMPACT_SYMBOLS_CHECK = "Compact symbols check"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
@@ -450,6 +451,7 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    COMPACT_SYMBOLS_AMD_RELEASE = "COMPACT_SYMBOLS_AMD_RELEASE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
@@ -614,6 +616,11 @@ class ArtifactConfigs:
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
         ]
+    )
+    compact_symbols_amd_release = Artifact.Config(
+        name=ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/utils/compact-symbols/compact-symbols",
     )
     llvm_profdata_file = Artifact.Config(
         name="...",

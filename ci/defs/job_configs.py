@@ -46,6 +46,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         "./ci/jobs/scripts/log_cluster.py",
         "./utils/prepare-time-trace/prepare-time-trace.sh",
+        "./utils/CMakeLists.txt",
+        "./utils/compact-symbols",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -372,6 +374,7 @@ class JobConfigs:
             parameter=BuildTypes.AMD_RELEASE,
             provides=[
                 ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
@@ -571,6 +574,34 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
+            ],
+        ),
+    )
+    compact_symbols_check_jobs = Job.Config(
+        name=JobNames.COMPACT_SYMBOLS_CHECK,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/compact_symbols_check.py",
+        run_in_docker="clickhouse/fasttest",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/compact_symbols_check.py",
+                "./src/Common/CompactSymbols.*",
+                "./src/Common/SymbolIndex.*",
+                "./utils/compact-symbols/",
+                "./cmake/split_debug_symbols.cmake",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+            ],
+        ),
+        timeout=900,
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_release",
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            requires=[
+                ArtifactNames.CH_AMD_RELEASE,
+                ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
             ],
         ),
     )

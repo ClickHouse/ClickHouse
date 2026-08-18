@@ -17,4 +17,6 @@ endif()
 target_include_directories(compact-symbols PRIVATE ${ClickHouse_SOURCE_DIR}/src)
 target_link_libraries(compact-symbols PRIVATE ch_contrib::zstd)
 
-add_native_target(compact-symbols)
+if (SYMBOL_SECTIONS STREQUAL "compact")
+    add_native_target(compact-symbols)
+endif()

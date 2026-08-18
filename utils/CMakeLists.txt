@@ -10,7 +10,7 @@ if (USE_BINARY_HASH)
     add_subdirectory (hash-binary)
 endif ()
 
-if (SYMBOL_SECTIONS STREQUAL "compact")
+if (SYMBOL_SECTIONS STREQUAL "compact" OR BUILD_COMPACT_SYMBOLS_TOOL)
     add_subdirectory (compact-symbols)
 endif ()
 

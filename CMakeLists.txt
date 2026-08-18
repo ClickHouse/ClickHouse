@@ -258,6 +258,7 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+option(BUILD_COMPACT_SYMBOLS_TOOL "Build the standalone compact symbols writer" OFF)
 set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol sections retained in stripped binaries")
 set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab compact)
 
