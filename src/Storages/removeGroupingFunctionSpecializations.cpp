@@ -2,18 +2,13 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Common/Exception.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/grouping.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 class GeneralizeGroupingFunctionForDistributedVisitor : public InDepthQueryTreeVisitor<GeneralizeGroupingFunctionForDistributedVisitor>
 {
@@ -37,23 +32,27 @@ public:
         auto & arguments = function->getArguments().getNodes();
 
         /// The analyzer appends constant arguments carrying the specialization parameters (two for
-        /// `groupingOrdinary`, three for the rest); they must not reach the query text either.
+        /// `groupingOrdinary`, three for the rest), and for the other specializations it prepends
+        /// the `__grouping_set` column; they must not reach the query text. The specializations
+        /// are also registered functions, so a query can call them directly with any arguments;
+        /// leave a node that does not match the analyzer-built shape untouched, the remote server
+        /// resolves it on its own.
         const size_t num_state_arguments = ordinary_grouping ? 2 : 3;
-        if (arguments.size() < num_state_arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping function specialization must have arguments");
-        arguments.resize(arguments.size() - num_state_arguments);
-
+        if (arguments.size() <= num_state_arguments)
+            return;
+        for (size_t i = arguments.size() - num_state_arguments; i < arguments.size(); ++i)
+            if (!arguments[i]->as<ConstantNode>())
+                return;
         if (!ordinary_grouping)
         {
-            if (arguments.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Grouping function specialization must have arguments");
-            auto * grouping_set_arg = arguments[0]->as<ColumnNode>();
+            const auto * grouping_set_arg = arguments[0]->as<ColumnNode>();
             if (!grouping_set_arg || grouping_set_arg->getColumnName() != "__grouping_set")
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The first argument of Grouping function specialization must be '__grouping_set' column but {} found",
-                arguments[0]->dumpTree());
-            arguments.erase(arguments.begin());
+                return;
         }
+
+        arguments.resize(arguments.size() - num_state_arguments);
+        if (!ordinary_grouping)
+            arguments.erase(arguments.begin());
 
         // This node will be only converted to AST, so we don't need
         // to pass the correct force_compatibility flag to FunctionGrouping.

@@ -23,6 +23,11 @@ SELECT groupingForCube(CAST([] AS Array(Int16)), CAST(27 AS UInt64), CAST(1 AS U
 SELECT groupingForRollup(CAST(1.5 AS Float64), materialize(2), CAST([] AS Array(UInt32)), CAST(4 AS UInt64), CAST(9282217 AS UInt64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT groupingForCube(materialize(CAST(0 AS UInt64)), 42, CAST([70] AS Array(UInt64)), CAST(3 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT groupingForGroupingSets(materialize(CAST(5 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST([[0]] AS Array(Array(UInt64))), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
+SELECT groupingForRollup(materialize(CAST(5 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
+SELECT groupingForCube(materialize(CAST(8 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST(3 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
 SELECT groupingOrdinary(42, CAST(range(64) AS Array(UInt64)), CAST(0 AS UInt8)); -- { serverError TOO_MANY_COLUMNS }
+
+SELECT '-- a direct call shipped to a remote server stays intact';
+SELECT groupingForRollup(CAST(0 AS UInt64), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8)) FROM remote('127.0.0.{1,2}', system.one);
 
 DROP TABLE t_grouping_validation;

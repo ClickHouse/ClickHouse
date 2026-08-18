@@ -139,6 +139,13 @@ public:
                 // | (a, b)       |   1   |
                 // | (a)          |   2   |
                 // | ()           |   3   |
+
+                /// A direct call of the function can pass any set index; without the check an
+                /// index above the key count would give a wrong value from unsigned wrap-around.
+                if (set_index > aggregation_keys_number)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, ROLLUP over {} keys has {} grouping sets",
+                        set_index, aggregation_keys_number, aggregation_keys_number + 1);
                 return arg_index < aggregation_keys_number - set_index;
             }
         );
@@ -169,6 +176,13 @@ public:
                 // | (a)          |   1   |
                 // | (b)          |   2   |
                 // | ()           |   3   |
+
+                /// A direct call of the function can pass any set index; without the check an
+                /// index outside the sets would give a wrong value from unsigned wrap-around.
+                if (set_index >= (ONE << aggregation_keys_number))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, CUBE over {} keys has {} grouping sets",
+                        set_index, aggregation_keys_number, ONE << aggregation_keys_number);
                 auto set_mask = (ONE << aggregation_keys_number) - 1 - set_index;
                 return set_mask & (ONE << (aggregation_keys_number - arg_index - 1));
             }
