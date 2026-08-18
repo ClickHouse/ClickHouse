@@ -51,9 +51,21 @@ class Git:
         dry_run: bool = False,
         strict: bool = False,
         retries: int = 1,
+        rebase_retries: int = 0,
+        git_prefix: str = "git",
         verbose: bool = True,
     ) -> bool:
         """Push `refspec` to `repo` over HTTPS with an App/PAT token.
+
+        `rebase_retries` > 0 heals a non-fast-forward rejection (a concurrent
+        push advanced the branch): fetch the pushed branch and rebase the local
+        commits onto its new tip — using `git_prefix` for the committer identity
+        — then retry, up to `rebase_retries` times. Requires `refspec` to be
+        `HEAD:refs/heads/<branch>`.
+
+        A dry run runs `git push --dry-run`: it contacts the remote and reports
+        what would happen (including a non-fast-forward) without updating any
+        ref, and the rebase loop is skipped (a dry run cannot heal a rejection).
 
         The token is `$GH_TOKEN` when the caller has one exported (the release
         job sets it to the robot PAT, which carries the `workflow` scope), else
@@ -90,18 +102,43 @@ class Git:
         repo_url = (
             "https://x-access-token:${token}@github.com/" + shlex.quote(repo) + ".git"
         )
-        force_flag = "--force " if force else ""
+        flags = ("--force " if force else "") + ("--dry-run " if dry_run else "")
         push_cmd = (
             'token="${GH_TOKEN:-$(gh auth token)}" && '
             "git -c http.https://github.com/.extraheader= push "
-            f"{force_flag}{repo_url} {shlex.quote(refspec)}"
+            f"{flags}{repo_url} {shlex.quote(refspec)}"
         )
-        return Shell.check(
+        # Run the first push verbosely: the command itself logs the repo, refspec
+        # and flags, and its output diagnoses a rejection better than a summary
+        # line. Raise on failure only when no retry follows — no rebase_retries,
+        # or a dry run (which reports a non-fast-forward but cannot heal it).
+        result = Shell.check(
             push_cmd,
-            dry_run=dry_run,
-            strict=strict,
+            strict=strict and (dry_run or not rebase_retries),
             verbose=verbose,
             retries=retries,
+        )
+        if dry_run or result or not rebase_retries:
+            return result
+        branch = refspec.split(":", 1)[-1]
+        if branch.startswith("refs/heads/"):
+            branch = branch[len("refs/heads/") :]
+        for attempt in range(1, rebase_retries + 1):
+            print(
+                f"Push to {branch} rejected; re-syncing and retrying {attempt}/{rebase_retries}"
+            )
+            Shell.check(
+                f"{git_prefix} fetch --quiet origin {shlex.quote(branch)}",
+                strict=True,
+                verbose=verbose,
+            )
+            Shell.check(
+                f"{git_prefix} rebase FETCH_HEAD", strict=True, verbose=verbose
+            )
+            if Shell.check(push_cmd, strict=False, verbose=verbose, retries=retries):
+                return True
+        raise RuntimeError(
+            f"Failed to push {refspec} to {repo} after {rebase_retries} rebase attempts"
         )
 
     @staticmethod
