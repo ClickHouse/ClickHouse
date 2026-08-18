@@ -86,7 +86,7 @@ std::vector<char> compress(std::span<const char> input)
 
 size_t frameContentSize(std::string_view input)
 {
-    unsigned long long decompressed_size = ZSTD_getFrameContentSize(input.data(), input.size());
+    uint64_t decompressed_size = ZSTD_getFrameContentSize(input.data(), input.size());
     if (decompressed_size == ZSTD_CONTENTSIZE_ERROR)
         throw std::runtime_error("Invalid zstd frame in compact symbols");
     if (decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN)

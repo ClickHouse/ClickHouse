@@ -12,7 +12,7 @@
 namespace DB::CompactSymbols
 {
 
-inline constexpr std::string_view section_name = ".clickhouse.symbols";
+inline constexpr char section_name[] = ".clickhouse.symbols";
 inline constexpr uint32_t format_version = 1;
 inline constexpr uint32_t names_per_granule = 4096;
 inline constexpr int compression_level = 19;

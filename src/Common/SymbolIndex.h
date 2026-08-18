@@ -38,8 +38,8 @@ public:
     struct Symbol
     {
         /// Here addresses are relative to objects.
-        const void * offset_begin;
-        const void * offset_end;
+        const void * offset_begin{};
+        const void * offset_end{};
 
         void setName(const char * name) { name_reference = reinterpret_cast<uintptr_t>(name); }
         const char * directName() const { return reinterpret_cast<const char *>(name_reference); }

@@ -454,7 +454,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 bool searchAndCollectCompactSymbols(const Elf & elf, SymbolIndex::Data & data)
 {
-    auto section = elf.findSectionByName(CompactSymbols::section_name.data());
+    auto section = elf.findSectionByName(CompactSymbols::section_name);
     if (!section)
         return false;
 

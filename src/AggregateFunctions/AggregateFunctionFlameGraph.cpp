@@ -255,7 +255,8 @@ static void dumpFlameGraphImpl(
             if (const auto * symbol = symbol_index.findSymbol(ptr))
             {
                 if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
-                    writeString(demangle(symbol_name.data()), out);
+                    /// The `getSymbolName` view is NUL-terminated by contract.
+                    writeString(demangle(symbol_name.data()), out); /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 else
                     writePointerHex(ptr, out);
             }

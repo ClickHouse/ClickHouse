@@ -100,7 +100,8 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insertData(symbol_name.empty() ? "" : symbol_name.data(), symbol_name.size());
 #if USE_XRAY
-            const auto function_name = symbol_name.empty() ? String{} : demangle(symbol_name.data());
+            /// The view from `SymbolIterator::next` is NUL-terminated by contract.
+            const auto function_name = symbol_name.empty() ? String{} : demangle(symbol_name.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
 
             /// Not every function is instrumented, so we need to look for those which are.

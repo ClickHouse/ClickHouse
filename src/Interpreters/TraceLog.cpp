@@ -275,7 +275,8 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
                 std::string_view symbol_name = symbol_index.getSymbolName(*symbol);
-                DemangleResult demangled = !symbol_name.empty() ? tryDemangle(symbol_name.data()) : DemangleResult{};
+                /// The `getSymbolName` view is NUL-terminated by contract.
+                DemangleResult demangled = !symbol_name.empty() ? tryDemangle(symbol_name.data()) : DemangleResult{}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 if (!symbol_name.empty() && demangled)
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
                 else if (!symbol_name.empty())
