@@ -1850,14 +1850,14 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
-When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of ALTER TABLE UPDATE/DELETE mutations on tables of the `ReplicatedMergeTree` family and only mutates the affected partitions instead of all partitions.
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of `ALTER TABLE UPDATE`/`DELETE` mutations and lightweight `UPDATE`/`DELETE` statements on tables of the `ReplicatedMergeTree` family and only processes the affected partitions instead of all partitions.
 
 This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
 
 Possible values:
 
-- 0 — Disabled. Mutations will process all partitions.
-- 1 — Enabled. Mutations will only process partitions that match the WHERE condition.
+- 0 — Disabled. Mutations and lightweight updates will process all partitions.
+- 1 — Enabled. Mutations and lightweight updates will only process partitions that match the WHERE condition.
 )", 0) \
     DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
 Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
