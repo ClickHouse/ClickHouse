@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 from ci.defs.defs import JobNames
+from ci.praktika.cache import Cache
 from ci.praktika.digest import Digest
 from ci.praktika.docker import Docker
 from ci.praktika.hook_cache import CacheRunnerHooks
@@ -254,6 +255,85 @@ def test_the_cache_key_is_not_just_the_jobs_own_scripts(monkeypatch):
     own = _fake_digests(_job(BPD))
     assert keys[BPD] != own
     assert keys[BPD].endswith(own)
+
+
+def _lookup(monkeypatch, per_job_digest, records):
+    """Run the real cache lookup and return (keys looked up, jobs marked reusable).
+
+    `records` maps a cache key to whether S3 holds a success record for it. Being in
+    `cache_success_base64` is what makes the generated `if:` skip the runner, so that
+    list is the actual reuse decision.
+    """
+    looked_up = {}
+    captured = {}
+
+    class _FakeCache:
+        digest = Digest()
+
+        def fetch_success(self, job_name, job_digest):
+            looked_up[job_name] = job_digest
+            if not records.get(job_digest):
+                return None
+            return Cache.CacheRecord(
+                type=Cache.CacheRecord.Type.SUCCESS,
+                sha="deadbeef",
+                pr_number=1,
+                branch="a-branch",
+                workflow="PR",
+            )
+
+    monkeypatch.setattr(
+        "ci.praktika.digest.Digest.calc_job_digest",
+        lambda self, job_config, docker_digests, artifact_configs: per_job_digest(
+            job_config
+        ),
+    )
+    monkeypatch.setattr("ci.praktika.hook_cache.Cache", _FakeCache)
+    monkeypatch.setattr(
+        RunConfig, "from_fs", classmethod(lambda cls, name: _make_run_config())
+    )
+    monkeypatch.setattr(RunConfig, "dump", lambda self: captured.update(vars(self)))
+    with redirect_stdout(io.StringIO()):
+        CacheRunnerHooks.configure(_pr_workflow())
+    return looked_up, captured["cache_success"]
+
+
+def test_the_job_is_not_even_looked_up_when_the_build_is_not_reused(monkeypatch):
+    """The lookup seam, not just the digest arithmetic.
+
+    Because the composed key makes this job a dependent of the build, `configure` fetches
+    it only after the build's own record was found. With no build record it is never
+    queried, so no record of any provenance can grant it reuse.
+    """
+    looked_up, reusable = _lookup(monkeypatch, _fake_digests, records={})
+    assert (
+        PROFILED_BUILD in looked_up
+    ), "the build was not looked up - seam not exercised"
+    assert BPD not in looked_up
+    assert BPD not in reusable
+
+
+def test_a_record_for_the_jobs_own_digest_alone_does_not_grant_reuse(monkeypatch):
+    """A record stored under the job's own two-script digest - what a PR at a different
+    source state would leave behind if `requires` were dropped - must not be reused."""
+    own = _fake_digests(_job(BPD))
+    looked_up, reusable = _lookup(monkeypatch, _fake_digests, records={own: True})
+    assert BPD not in reusable
+    assert looked_up.get(BPD) != own
+
+
+def test_the_composed_key_does_grant_reuse(monkeypatch):
+    """Control for the two tests above: the lookup is wired up and does reuse a matching
+    record, so their negative results are about the key rather than about a lookup that
+    never reuses anything. Identical sources reusing a result is what the cache is for.
+    """
+    arm = _fake_digests(_job(PROFILED_BUILD))
+    composed = arm + "-" + _fake_digests(_job(BPD))
+    looked_up, reusable = _lookup(
+        monkeypatch, _fake_digests, records={arm: True, composed: True}
+    )
+    assert looked_up[BPD] == composed
+    assert BPD in reusable
 
 
 def test_the_builds_digest_tracks_the_source_tree():
