@@ -532,3 +532,62 @@ jobs:
       regression_args: --aws-s3-access-key {{AWS_ACCESS_KEY}} --aws-s3-key-id {{AWS_KEY_ID}} --aws-s3-uri https://s3.{{AWS_REGION}}.amazonaws.com/{{AWS_BUCKET}}/data/ --gcs-key-id {{GCS_KEY_ID}} --gcs-key-secret {{GCS_KEY_SECRET}} --gcs-uri {{GCS_URI}}
       extra_args: ${{ matrix.STORAGE != 'local' && format('--with-{0}', matrix.STORAGE) || '' }}
     secrets: inherit
+
+  # CAS (content-addressed storage) is only available in Antalya builds >= 26.6.
+  # These jobs run the suites that support the `--cas` flag with a content-addressed
+  # disk as the default MergeTree storage. Gated on the Antalya version so they are
+  # never scheduled on upstream release builds where the `cas` metadata type does
+  # not exist.
+  CAS:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        SUITE: [aggregate_functions, alter, atomic_insert, engines, lightweight_delete, selects]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ${{ matrix.SUITE }}
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: cas_${{ matrix.SUITE }}
+      regression_args: --cas
+    secrets: inherit
+
+  TieredStorageCAS:
+    if: |
+      contains(fromJson(inputs.workflow_config).workflow_config.custom_data.version.string, 'antalya') &&
+      (
+        fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'tiered_storage') ||
+        contains(fromJson(inputs.workflow_config).workflow_config.custom_data.ci_regression_jobs, 'cas')
+      )
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: tiered_storage
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /with_cas
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: tiered_storage_cas
+      regression_args: --with-cas
+    secrets: inherit
