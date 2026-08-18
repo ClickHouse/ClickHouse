@@ -184,6 +184,7 @@
           "group": "Community integrations",
           "pages": [
             "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
+            "integrations/connectors/data-ingestion/community-integrations/erathos",
             {
               "group": "Estuary",
               "pages": [
@@ -229,6 +230,7 @@
       "group": "Tools",
       "pages": [
         "integrations/connectors/tools/index",
+        "integrations/connectors/tools/misc-index",
         "integrations/connectors/tools/gui",
         "integrations/connectors/tools/proxy",
         "integrations/connectors/tools/third-party-libraries"
