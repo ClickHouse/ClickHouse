@@ -2119,7 +2119,7 @@ def test_the_reserve_covers_the_worst_case_of_what_it_guards():
 # --- the agent holds no credential that can write -----------------------------
 
 
-def test_the_investigation_mints_no_github_token(monkeypatch):
+def test_the_investigation_mints_no_github_token(monkeypatch, tmp_path):
     """The agent executes commands with network access over CI output a merged
     pull request can write, and anything it changed on GitHub would happen
     before every guard in `act`. A token it can reach is a token it can use --
@@ -2129,6 +2129,7 @@ def test_the_investigation_mints_no_github_token(monkeypatch):
     monkeypatch.setattr(
         job.GHAuth, "auth", lambda **kwargs: calls.append(kwargs) or True
     )
+    monkeypatch.setattr(job, "AGENT_SCRATCH_PARENT", str(tmp_path))
     monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
     monkeypatch.setattr(job, "investigation_clone", lambda *a, **k: None)
     monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
@@ -2163,7 +2164,6 @@ def test_the_agent_runs_as_its_own_user_with_an_empty_environment(
         verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
         return True
 
-    monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(job.Secret, "Config", FakeSecret)
     monkeypatch.setattr(job, "confine_agent_user", lambda: None)
     monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/local/bin/codex")
@@ -2201,6 +2201,122 @@ def test_the_agent_runs_as_its_own_user_with_an_empty_environment(
     )
 
 
+def test_the_agent_workspace_is_outside_the_home_and_squat_proof(monkeypatch, tmp_path):
+    """Owning the workdir does not let the agent reach it: resolving the path
+    needs the execute bit on every ancestor, and a stock Ubuntu image creates
+    the job user's home 0750 -- which is where the checkout, and `TEMP_DIR`
+    inside it, live. Opening those ancestors would let the agent read every
+    world-readable file of the job user's by known name, so the workspace
+    lives outside the home instead, under a world-traversable parent. The
+    root is created at a random name (the parent is world-writable, a chosen
+    name could be squatted by a leftover process of an earlier agent) and is
+    traversal-only for others: the names inside it can only be planted by
+    the job user, and cannot be listed by anyone else."""
+    monkeypatch.setattr(job, "AGENT_SCRATCH_PARENT", str(tmp_path))
+
+    root = job.agent_scratch_root()
+
+    assert os.path.dirname(root) == str(tmp_path)
+    assert os.stat(root).st_mode & 0o777 == 0o711
+    # Distinct runs get distinct roots: the name is never reused, so it is
+    # never predictable.
+    assert job.agent_scratch_root() != root
+
+
+def test_every_attempt_gets_a_scratch_subtree_of_its_own(monkeypatch, tmp_path):
+    """A helper the first attempt's agent leaves behind shares the uid the
+    second attempt's directories are handed to, so the second attempt must
+    not reappear at a path the first attempt already knew: every attempt
+    works in a fresh `mkdtemp` under the unlistable root, and each attempt's
+    subtree is removed when the attempt ends."""
+    workdirs = []
+    removals = []
+
+    def fake_agent(prompt, verdict_file, workdir):
+        workdirs.append(workdir)
+        if len(workdirs) == 1:
+            raise RuntimeError("the first attempt dies")
+        return (
+            '{"verdict": "inconclusive", "confidence": "low",'
+            ' "explanation": "could not tell"}'
+        )
+
+    def fake_check(command, **_):
+        if command.startswith("rm -rf "):
+            removals.append(command)
+        return True
+
+    monkeypatch.setattr(job, "AGENT_SCRATCH_PARENT", str(tmp_path))
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(job, "investigation_clone", lambda *a, **k: None)
+    monkeypatch.setattr(job, "run_agent", fake_agent)
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+
+    investigation = job.investigate(make_failure(), 0, "ClickHouse/ClickHouse")
+
+    assert investigation.verdict == "inconclusive"
+    assert len(workdirs) == 2
+    first, second = (os.path.dirname(w) for w in workdirs)
+    assert first != second
+    # Both attempts live under the same investigation root...
+    assert os.path.dirname(first) == os.path.dirname(second)
+    # ...and each attempt's subtree is removed with the attempt, the root
+    # with the investigation.
+    assert removals == [
+        f"rm -rf {shlex.quote(first)}",
+        f"rm -rf {shlex.quote(second)}",
+        f"rm -rf {shlex.quote(os.path.dirname(first))}",
+    ]
+
+
+def test_no_process_of_the_agents_user_survives_an_attempt(monkeypatch, tmp_path):
+    """Unpredictable, unlistable paths stop an outside observer, not a
+    survivor: a process the agent leaves behind runs as the same uid as the
+    next attempt's agent, and that agent's own `/proc` would hand it every
+    path the moment it starts. The boundary is absence -- every process of
+    `AGENT_USER` is killed before the workspace is handed over and again
+    before it is taken back."""
+    verdict_file = tmp_path / "verdict.json"
+    commands = []
+
+    class FakeSecret:
+        def __init__(self, **_):
+            pass
+
+        def get_value(self):
+            return "openai-key"
+
+    def fake_check(command, **_):
+        commands.append(command)
+        verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(job.Secret, "Config", FakeSecret)
+    monkeypatch.setattr(job, "confine_agent_user", lambda: None)
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+    # Keep `scrub_gh_credentials` away from the developer's real `gh` store.
+    monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path / "gh-config"))
+
+    assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
+
+    kills = [
+        i
+        for i, c in enumerate(commands)
+        if f"pkill -KILL -U {job.AGENT_USER}" in c
+    ]
+    agent = [i for i, c in enumerate(commands) if "codex" in c and " exec " in c]
+    handed = [i for i, c in enumerate(commands) if "chown" in c]
+    assert len(kills) == 2
+    assert len(agent) == 1
+    assert len(handed) == 2
+    # Killed before the hand-over, and killed again after the agent, before
+    # the workspace is taken back.
+    assert kills[0] < handed[0] < agent[0]
+    assert agent[0] < kills[1] < handed[1]
+
+
 def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
     monkeypatch, tmp_path
 ):
@@ -2234,7 +2350,6 @@ def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
         verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
         return True
 
-    monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(job.Secret, "Config", FakeSecret)
     monkeypatch.setattr(job, "confine_agent_user", lambda: None)
     monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/local/bin/codex")
@@ -2321,7 +2436,9 @@ def test_a_job_that_hides_the_checkout_token_cannot_pre_authenticate_gh():
         )
 
 
-def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypatch):
+def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(
+    monkeypatch, tmp_path
+):
     """`reset_worktree` restores the worktree, but a writable `.git` can carry
     a rewritten `origin`, an `insteadOf` mapping or a `pre-push` hook past it,
     and the privileged phase then fetches from whatever `origin` says and
@@ -2347,6 +2464,7 @@ def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypa
             removals.append(command)
         return True
 
+    monkeypatch.setattr(job, "AGENT_SCRATCH_PARENT", str(tmp_path))
     monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
     monkeypatch.setattr(job, "investigation_clone", fake_clone)
     monkeypatch.setattr(job, "run_agent", fake_agent)
@@ -2358,18 +2476,32 @@ def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypa
     assert len(cloned) == 1
     path, repo = cloned[0]
     assert repo == "ClickHouse/ClickHouse"
-    # The agent worked in the clone, and the clone did not outlive the run.
+    # The agent worked in the clone, and the clone lives inside the attempt's
+    # own scratch directory, inside the investigation's root, under the
+    # traversable parent.
     assert agent_ran_in == [path]
-    assert removals == [f"rm -rf {shlex.quote(path)}"]
+    attempt_dir = os.path.dirname(path)
+    root = os.path.dirname(attempt_dir)
+    assert os.path.dirname(root) == str(tmp_path)
+    # Both levels let the agent through by known name and nothing more.
+    assert os.stat(attempt_dir).st_mode & 0o777 == 0o711
+    assert os.stat(root).st_mode & 0o777 == 0o711
+    # Neither the attempt's directory nor the root outlives the run.
+    assert removals == [
+        f"rm -rf {shlex.quote(attempt_dir)}",
+        f"rm -rf {shlex.quote(root)}",
+    ]
     # A clone of its own, not the checkout the privileged phase trusts.
     assert os.path.abspath(path) != os.path.abspath(".")
 
 
 def test_the_clone_is_anonymous_and_carries_the_full_history(monkeypatch):
     """Cloned over the public HTTPS URL with no token in it, borrowing objects
-    from the checkout by an alternates path rather than by hardlinks, and
-    treeless the same way the checkout was unshallowed, so `git log` has the
-    whole history and older trees are fetched on demand -- anonymously,
+    from the checkout only for the transfer -- the clone is dissociated, so no
+    alternates path points back into the checkout behind the job user's
+    closed home, and no file is shared the way a hardlink would share it --
+    and treeless the same way the checkout was unshallowed, so `git log` has
+    the whole history and older trees are fetched on demand -- anonymously,
     because `origin` is the public URL."""
     commands = []
     monkeypatch.setattr(
@@ -2383,7 +2515,7 @@ def test_the_clone_is_anonymous_and_carries_the_full_history(monkeypatch):
     assert "git clone" in clone
     assert "https://github.com/ClickHouse/ClickHouse.git" in clone
     assert "--filter=tree:0" in clone
-    assert "--reference ." in clone
+    assert "--reference . --dissociate" in clone
     assert f"--branch {job.BASE_BRANCH}" in clone
     assert "@" not in clone  # no credential baked into any URL
     assert clone.endswith(" /scratch/investigation_0")
