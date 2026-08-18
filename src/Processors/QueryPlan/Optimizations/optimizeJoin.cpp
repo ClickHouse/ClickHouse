@@ -25,9 +25,6 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#if CLICKHOUSE_CLOUD
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#endif
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -77,8 +74,8 @@ namespace Setting
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
@@ -114,6 +111,10 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         /// Add the offset, guarding against overflow when the source NDV is near the maximum.
         if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
+        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+        /// width to unknown.
+        if (!output_lineage.input->preserves_width)
+            stats.avg_bytes = 0;
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
@@ -273,9 +274,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        /// Run partition/PK analysis up front: statistics must be composed over the parts
-        /// surviving pruning, not over all active parts (issue #110281), and the index-based
-        /// fallback below needs the same analysis result anyway.
+        /// Analyze partition and primary-key ranges before estimating the relation so column
+        /// statistics come only from parts that can satisfy the query. Reuse the result for
+        /// the index-based fallback below.
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
@@ -284,25 +285,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 
-            /// Join-order estimation needs these ranges before `optimizeReadInOrder` runs. Both variants
-            /// perform the same partition/PK/index analysis; the normal one memoizes its result for later
-            /// consumers. Since `optimizeReadInOrder` may exempt the final read from row limits, under
-            /// throwing limits analyze locally without checking them, then let the final read analyze and
-            /// memoize the ranges after its input order is known.
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
             analyzed_result = has_throwing_row_limit
                 ? reading->selectRangesToReadForEstimation()
                 : reading->selectRangesToRead();
         }
 
-        /// `has_exact_ranges` is a deterministic index-analysis result, not a confidence estimate.
-        /// If it selects zero rows, the read is provably empty. Early empty returns have no
-        /// `index_stats`, so preserve zero here instead of degrading to unknown in the fallback.
+        /// An exact empty range selection proves that the relation is empty. Other empty
+        /// analysis results can be placeholders for deferred work, so only propagate zero
+        /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
-        /// `STREAM` reads intentionally defer index analysis to `MergeTreeCommitOrderSequentialSource`,
-        /// so the empty `AnalysisResult` is not an exact empty relation. Do not expose its sentinel
-        /// zero as a join cardinality estimate.
+        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
+        /// selected rows but does not mean that the relation is empty.
         if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
         {
             return RelationStats{
@@ -331,8 +330,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 return stats;
             }
         }
-        if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
-            return dummy_stats;
+        if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
+            return stats_hint;
 
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
@@ -449,10 +448,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return stats;
     }
 
-#if CLICKHOUSE_CLOUD
+    /// Estimates must see through exchanges: they do not change row counts, and an
+    /// already-distributed subtree would otherwise report unknown cardinality, degrading
+    /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
-#endif
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
@@ -577,7 +577,7 @@ struct QueryGraphBuilder
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
-        String dummy_stats;
+        String stats_hint;
         UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
@@ -1539,7 +1539,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
+    query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

@@ -460,6 +460,7 @@ struct QueryPlanSettings
             {"column_structure", query_plan_options.column_structure},
             {"compact", query_plan_options.compact},
             {"pretty", query_plan_options.pretty},
+            {"estimates", query_plan_options.estimates},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -1262,7 +1263,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
             watch.restart();

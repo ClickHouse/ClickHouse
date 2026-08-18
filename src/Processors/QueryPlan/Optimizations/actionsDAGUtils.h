@@ -23,6 +23,8 @@ struct ActionsDAGLineageHop
 {
     ActionsDAGLineageKind kind;
     UInt64 ndv_delta;
+    /// Whether the input column's average value width remains applicable after this hop.
+    bool preserves_width;
 };
 
 struct ActionsDAGInputLineage
@@ -30,6 +32,8 @@ struct ActionsDAGInputLineage
     size_t input_position;
     ActionsDAGLineageKind kind;
     UInt64 ndv_delta;
+    /// True only when every hop from the input preserves the average value width.
+    bool preserves_width;
 };
 
 struct ActionsDAGOutputLineage

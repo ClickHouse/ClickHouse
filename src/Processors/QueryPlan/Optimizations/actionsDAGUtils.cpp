@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -554,7 +555,7 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0};
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
@@ -574,7 +575,9 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     /// non-Nullable result can map NULL to one additional counted value.
     const bool collapses_null
         = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
-    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u};
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
 }
 
 std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
@@ -603,7 +606,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 
             if (auto input = input_positions.find(node); input != input_positions.end())
             {
-                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0};
+                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
                 nodes_to_process.pop();
                 continue;
             }
@@ -629,7 +632,11 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
                     else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
                         || child->kind == ActionsDAGLineageKind::ValuePreserving)
                         kind = ActionsDAGLineageKind::ValuePreserving;
-                    result = ActionsDAGInputLineage{child->input_position, kind, child->ndv_delta + hop->ndv_delta};
+                    result = ActionsDAGInputLineage{
+                        child->input_position,
+                        kind,
+                        child->ndv_delta + hop->ndv_delta,
+                        child->preserves_width && hop->preserves_width};
                 }
             }
             traced[node] = result;

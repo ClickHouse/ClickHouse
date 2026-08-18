@@ -426,6 +426,35 @@ TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputN
     EXPECT_EQ(lineage[1].input->kind, ActionsDAGLineageKind::DistinctValuesBound);
 }
 
+TEST(ColumnStatsDerivation, RemapColumnStatsTracksWidthAcrossEntireLineage)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", int_type);
+
+    const auto & alias = dag.addAlias(input, "alias");
+    dag.addOrReplaceInOutputs(alias);
+    addOutputFunction(dag, "toNullable", {&input}, "nullable");
+    addOutputFunction(dag, "negate", {&input}, "negated");
+    const auto & formatted = addOutputFunction(dag, "toString", {&input}, "formatted");
+    const auto & roundtrip = dag.addCast(formatted, int_type, "roundtrip", getContext().context);
+    dag.addOrReplaceInOutputs(roundtrip);
+
+    constexpr Float64 source_width = 17;
+    auto stats = statsOf("n", 100);
+    stats["n"].avg_bytes = source_width;
+    remapColumnStats(stats, dag);
+
+    EXPECT_DOUBLE_EQ(stats["alias"].avg_bytes, source_width);
+    EXPECT_DOUBLE_EQ(stats["nullable"].avg_bytes, source_width);
+    EXPECT_DOUBLE_EQ(stats["negated"].avg_bytes, source_width);
+    EXPECT_DOUBLE_EQ(stats["formatted"].avg_bytes, 0);
+    /// Returning to the source type does not restore width after an intermediate type change.
+    EXPECT_DOUBLE_EQ(stats["roundtrip"].avg_bytes, 0);
+}
+
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
 /// increase the distinct count, so the final output is still bounded by the source column. A
 /// multi-argument link anywhere in the chain breaks the propagation.
