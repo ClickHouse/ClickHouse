@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import itertools
 import json
 import math
@@ -573,18 +574,30 @@ EXTERNAL_DATASETS = {
 }
 
 
-def fetch_commit(repo: Path, sha: str, refs: list[str], depth: int = 0) -> bool:
-    """Fetch `sha` into `repo`, trying each ref in turn. True once it is there."""
-    for ref in refs:
-        cmd = ["git", "-C", str(repo), "fetch", "--quiet"]
-        if depth:
-            cmd += [f"--depth={depth}"]
-        cmd += ["origin", ref]
-        if subprocess.run(cmd, capture_output=True).returncode == 0 and subprocess.run(
-            ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"],
-            capture_output=True,
-        ).returncode == 0:
-            return True
+UPSTREAM_URL = f"https://github.com/{REPO}.git"
+
+
+def fetch_commit(repo: Path, sha: str, refs: list[str], remotes: tuple[str, ...],
+                 depth: int = 0) -> bool:
+    """Fetch `sha` into `repo`, trying each remote and ref. True once it is
+    there.
+
+    Success is decided by the commit being present afterwards, never by the
+    fetch's exit code, so a ref that resolves to something else on the wrong
+    remote -- `refs/pull/<n>/head` of a fork is a different pull request
+    entirely -- cannot be mistaken for the commit we asked for."""
+    for remote in remotes:
+        for ref in refs:
+            cmd = ["git", "-C", str(repo), "fetch", "--quiet"]
+            if depth:
+                cmd += [f"--depth={depth}"]
+            cmd += [remote, ref]
+            subprocess.run(cmd, capture_output=True)
+            if subprocess.run(
+                ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"],
+                capture_output=True,
+            ).returncode == 0:
+                return True
     return False
 
 
@@ -595,8 +608,10 @@ def init_scratch_repo(repo_root: Path, scratch: Path) -> bool:
         ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
         capture_output=True, text=True,
     )
-    if url.returncode != 0:
-        return False
+    # The scratch repo's "origin" is the local one when there is one, but
+    # fetch_commit falls back to the canonical upstream, so a fork checkout --
+    # or no origin at all -- still resolves the commit.
+    origin = url.stdout.strip() if url.returncode == 0 else UPSTREAM_URL
     scratch.mkdir(parents=True, exist_ok=True)
     if not (scratch / ".git").is_dir():
         if subprocess.run(
@@ -604,7 +619,7 @@ def init_scratch_repo(repo_root: Path, scratch: Path) -> bool:
         ).returncode != 0:
             return False
         if subprocess.run(
-            ["git", "-C", str(scratch), "remote", "add", "origin", url.stdout.strip()],
+            ["git", "-C", str(scratch), "remote", "add", "origin", origin],
             capture_output=True,
         ).returncode != 0:
             return False
@@ -635,7 +650,12 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
     if have.returncode != 0:
         log(f"commit {sha[:12]} not in the local clone, fetching it")
         refs = [f"refs/pull/{pr_number}/head", sha]
-        if not fetch_commit(repo_root, sha, refs):
+        # Only this checkout's own origin, and only here: fetching upstream
+        # into someone's clone is unbounded work when the history is not
+        # already there, and shallow-fetching into a full clone would leave a
+        # .git/shallow behind. The scratch repo below does that part, cheaply
+        # and where nothing else cares.
+        if not fetch_commit(repo_root, sha, refs, remotes=("origin",)):
             # Fetching writes to .git (FETCH_HEAD at minimum), which some
             # sandboxes mount read-only. A scratch repository under the work
             # dir needs nothing from .git but the remote URL, and produces the
@@ -650,10 +670,15 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
                     "not be created. Fetch the commit yourself, or pass "
                     "--use-working-tree-tests to accept this checkout's tests."
                 )
-            if not fetch_commit(scratch, sha, refs, depth=1):
+            # A fork checkout's origin has a different refs/pull/<n>/head, or
+            # none, so the canonical upstream is tried as well.
+            if not fetch_commit(
+                scratch, sha, refs, remotes=("origin", UPSTREAM_URL), depth=1
+            ):
                 die(
-                    f"commit {sha} could not be fetched from origin (tried "
-                    f"refs/pull/{pr_number}/head and the SHA itself). Fetch it "
+                    f"commit {sha} could not be fetched (tried "
+                    f"refs/pull/{pr_number}/head and the SHA itself, from this "
+                    f"checkout's origin and from {UPSTREAM_URL}). Fetch it "
                     "yourself, or pass --use-working-tree-tests."
                 )
             archive_from = scratch
@@ -702,6 +727,7 @@ def selected_query_text(repo_root: Path, xml_path: Path,
     to any server, so this is cheap and needs nothing running."""
     cmd = [
         sys.executable,
+        "-c", PRINT_QUERIES_RUNNER,
         str(repo_root / "tests/performance/scripts/perf.py"),
         str(xml_path),
         "--print-queries",
@@ -712,6 +738,61 @@ def selected_query_text(repo_root: Path, xml_path: Path,
                                        stderr=subprocess.DEVNULL)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         die(f"perf.py --print-queries failed for {xml_path.name}: {e}")
+
+
+# perf.py imports clickhouse_driver and scipy at module scope, before the
+# --print-queries early exit, so listing queries needs packages that only the
+# benchmark itself uses. Rather than reimplement the expansion (substitutions
+# turn one <query> into several, and `file=` bodies are inlined), run perf.py
+# with stand-ins for whatever is missing: the metadata path never touches them,
+# and using perf.py's own code keeps the numbering identical to CI's.
+PRINT_QUERIES_RUNNER = """\
+import runpy, sys, types
+
+def _stub(name):
+    module = types.ModuleType(name)
+    module.__path__ = []
+    return module
+
+try:
+    import clickhouse_driver  # noqa: F401
+except ImportError:
+    driver = _stub("clickhouse_driver")
+    errors = _stub("clickhouse_driver.errors")
+    class _Error(Exception):
+        pass
+    errors.Error = _Error
+    driver.errors = errors
+    sys.modules["clickhouse_driver"] = driver
+    sys.modules["clickhouse_driver.errors"] = errors
+
+try:
+    from scipy import stats  # noqa: F401
+except ImportError:
+    scipy = _stub("scipy")
+    scipy_stats = _stub("scipy.stats")
+    scipy.stats = scipy_stats
+    sys.modules["scipy"] = scipy
+    sys.modules["scipy.stats"] = scipy_stats
+
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def require_perf_dependencies() -> None:
+    """Fail before the downloads when the packages the rerun itself needs are
+    missing. Only the metadata path can do without them."""
+    missing = []
+    for module in ("clickhouse_driver", "scipy"):
+        if importlib.util.find_spec(module) is None:
+            missing.append(module)
+    if missing:
+        die(
+            "perf.py needs " + " and ".join(missing) + " to run the benchmark; "
+            "install " + " ".join(missing) + " (a virtualenv is fine) and retry. "
+            "--dry-run works without them."
+        )
 
 
 def query_display_name_from_tree(repo_root: Path, xml_path: Path,
@@ -1528,8 +1609,6 @@ POPULATE_CLIENT_SETTINGS = [
 POPULATE_INSERT_SETTINGS = (
     "enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 )
-POPULATE_DONE_MARKER = "test._populate_done"
-
 
 def populate_query(h: ServerHandle, sql: str, timeout: int = 2000) -> str:
     client = h.side_dir / "clickhouse-client"
@@ -1587,9 +1666,9 @@ def populate_side(h: ServerHandle, tables: list[str]) -> None:
     Sequential on purpose: the inserts share the per-user memory limit and
     hits_100m_single alone uses ~21 GiB, so running them in parallel on one
     server gets killed by the OvercommitTracker."""
-    if table_exists(h, POPULATE_DONE_MARKER):
-        log(f"{h.name}: already populated, skipping")
-        return
+    # No completion marker: main re-hardlinks each side's db from the dataset
+    # directory at the start of every run, which would wipe one anyway, so
+    # --populate rebuilds every time it is asked for.
     populate_query(h, "CREATE DATABASE IF NOT EXISTS test")
     for table in tables:
         if table == "test.hits":
@@ -1602,9 +1681,7 @@ def populate_side(h: ServerHandle, tables: list[str]) -> None:
                 rebuild_table(h, "test.hits", "test.hits")
         else:
             rebuild_table(h, table, table)
-    populate_query(
-        h, f"CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"
-    )
+
 
 
 def populate_data_both(handles: list[ServerHandle], tables: list[str]) -> None:
@@ -2478,6 +2555,8 @@ def main() -> int:
         test_files[test] = f"{test}.xml"
 
     exit_code = 0
+
+    require_perf_dependencies()
 
     # Download binaries
     left_bin, right_bin = download_binaries(

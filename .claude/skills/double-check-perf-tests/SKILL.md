@@ -84,6 +84,12 @@ skill:
 
 ### 1. Sanity checks
 
+- `--dry-run` needs nothing but `python3` and `git`: the query expansion runs
+  `perf.py` with stand-ins for `clickhouse_driver` and `scipy`, which it
+  imports at module scope but never uses on the metadata path. The rerun
+  itself does need them, and is refused up front, before any download, if
+  they are missing.
+
 - The skill must be invoked from the root of a ClickHouse checkout (the
   script verifies `tests/performance/scripts/perf.py` is present).
 - The dry-run inspects **only the flagged query indices** of every affected
@@ -229,7 +235,12 @@ treated as CI noise.
   the commit CI measured into `tmp/double_check_perf/perf-tree/<sha>` and
   everything runs from there, fetching the commit if the clone lacks it — and
   if the clone's `.git` cannot be written to, as in some sandboxes, into a
-  scratch repository under the work dir instead. This
+  scratch repository under the work dir instead. Only this checkout's own
+  `origin` is fetched into the clone; the scratch repository additionally
+  tries the canonical upstream with `--depth=1`, so a fork checkout — whose
+  `refs/pull/<n>/head` is a different pull request — still resolves the
+  commit. A fetch counts only when the commit is present afterwards, never on
+  the fetch's exit code. This
   is not a nicety: query indices are positional and substitutions expand
   them, so an XML that gained or lost a query means index *n* is a different
   query — on a checkout of this repo one commit behind,
