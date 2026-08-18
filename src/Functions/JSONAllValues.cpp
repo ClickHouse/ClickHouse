@@ -100,6 +100,8 @@ private:
         auto & offsets = offsets_column->getData();
 
         FormatSettings format_settings;
+        /// Values can be JSON objects themselves, so the setting must reach nested serializers.
+        format_settings.json.type_json_skip_null_typed_paths = skip_null_typed_paths;
 
         /// Collect typed + dynamic paths, sorted for deterministic output order.
         const auto & typed_path_types = type_object.getTypedPaths();

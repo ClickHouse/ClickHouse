@@ -102,3 +102,19 @@ nested JSONExtractRaw with setting
 {"b":42}
 
 
+inner JSON serialization without setting
+{"a":{"b":42}}
+{"a":{"b":null}}
+{"a":{"b":null}}
+inner JSON serialization with setting
+{"a":{"b":42}}
+{"a":{}}
+{"a":{}}
+inner JSON JSONAllValues without setting
+['{"b":42}']
+['{"b":null}']
+['{"b":null}']
+inner JSON JSONAllValues with setting
+['{"b":42}']
+['{}']
+['{}']

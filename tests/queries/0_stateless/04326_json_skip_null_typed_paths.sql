@@ -97,7 +97,25 @@ SELECT JSONExtractRaw(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBl
 SELECT 'nested JSONExtractRaw with setting';
 SELECT JSONExtractRaw(json, 'a') FROM test_json_nested ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
 
+-- Test typed path of JSON type: the setting must be applied to nested typed paths as well.
+DROP TABLE IF EXISTS test_json_inner_json;
+CREATE TABLE test_json_inner_json (json JSON(a JSON(b Nullable(Int64)))) ENGINE = Memory;
+INSERT INTO test_json_inner_json VALUES ('{"a": {"b": 42}}'), ('{"a": {"b": null}}'), ('{}');
+
+SELECT 'inner JSON serialization without setting';
+SELECT json FROM test_json_inner_json ORDER BY rowNumberInAllBlocks();
+
+SELECT 'inner JSON serialization with setting';
+SELECT json FROM test_json_inner_json ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
+SELECT 'inner JSON JSONAllValues without setting';
+SELECT JSONAllValues(json) FROM test_json_inner_json ORDER BY rowNumberInAllBlocks();
+
+SELECT 'inner JSON JSONAllValues with setting';
+SELECT JSONAllValues(json) FROM test_json_inner_json ORDER BY rowNumberInAllBlocks() SETTINGS type_json_skip_null_typed_paths = 1;
+
 DROP TABLE test_json_skip_null;
 DROP TABLE test_json_non_nullable;
 DROP TABLE test_json_mixed;
 DROP TABLE test_json_nested;
+DROP TABLE test_json_inner_json;
