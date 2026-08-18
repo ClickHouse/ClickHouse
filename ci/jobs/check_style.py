@@ -236,7 +236,10 @@ def check_functional_test_cases(files):
 
 # A `SELECT` star projection can include optional `DISTINCT` / `ALL` and a table alias.
 # It still materializes the server-side path column in the shell.
-STAR_PROJECTION_RE = r"\bselect\s+(?:(?:distinct|all)\s+)?(?:[A-Za-z_]\w*\.)?\*"
+STAR_PROJECTION_RE = (
+    r"\bselect\s+(?:(?:distinct|all)\s+)?"
+    r"(?:[^\"`|;]*?,\s*)?(?:[A-Za-z_]\w*\.)?\*"
+)
 
 # A query that pulls a server-side filesystem path out of a system table into the shell.
 # Single quotes are allowed inside the window so that a derived expression such as
