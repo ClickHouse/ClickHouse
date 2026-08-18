@@ -82,7 +82,7 @@ ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { serverEr
 --     case. The fix is the `has_uuid_clause` flag on `ASTTableIdentifier`, which
 --     records that the parser actually saw the `UUID '...'` clause regardless of
 --     value, and which propagates into `ASTCreateQuery::has_uuid_clause`.
-ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
 
 -- 13. `FROM '/path'` on an `ATTACH TABLE`: silently dropped before this patch.
 --     The parser sets `create.has_attach_from_path` and `create.attach_from_path`,
@@ -104,7 +104,7 @@ ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000001'; -- {
 --     case 14, but with the all-zero UUID. The parser sets
 --     `has_inner_uuid_clause = true` based on the presence of the literal, not
 --     its value, so the all-zero case is also rejected.
-ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
 
 -- Restore the table so cleanup at the end works.
 ATTACH TABLE t_104791;
@@ -126,7 +126,7 @@ ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { ser
 
 -- 17. `ATTACH DICTIONARY d UUID '...'` with an explicit `Nil` UUID: same gap,
 --     same fix.
-ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { clientError BAD_ARGUMENTS }
 
 -- Plain short `ATTACH DICTIONARY` still works.
 ATTACH DICTIONARY d_104791;
