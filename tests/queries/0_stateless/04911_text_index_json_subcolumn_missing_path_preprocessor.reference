@@ -1,0 +1,12 @@
+unsafe missing-path predicate before materialization
+[]
+safe predicate before materialization
+[2]
+unsafe missing-path predicate after materialization
+[]
+unsafe missing-path predicate does not select JSONAllValues index
+0
+safe predicate after materialization
+[2]
+safe predicate selects JSONAllValues index
+1

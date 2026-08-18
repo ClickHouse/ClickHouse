@@ -172,6 +172,15 @@ private:
         Field value_field,
         RPNElement & out) const;
 
+    bool traverseFunctionNodeImpl(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        DataTypePtr value_type,
+        Field value_field,
+        RPNElement & out) const;
+
+    bool textIndexConditionMayMatchDefaultString(const RPNElement & element) const;
+
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;

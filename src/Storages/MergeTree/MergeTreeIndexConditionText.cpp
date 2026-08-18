@@ -901,7 +901,102 @@ bool MergeTreeIndexConditionText::canUseJSONAllValuesIndexForNode(const RPNBuild
     return dag_node && isString(dag_node->result_type);
 }
 
+bool MergeTreeIndexConditionText::textIndexConditionMayMatchDefaultString(const RPNElement & element) const
+{
+    /// Mirror the atom-level checks in `mayBeTrueOnGranule` for a synthetic document
+    /// containing the fully transformed tokens of a missing `String` path.
+    const auto default_tokens = stringToTokens(Field(String{}));
+
+    auto has_any_token = [&](const TextSearchQuery & query)
+    {
+        return std::ranges::any_of(query.getTokens(), [&](const auto & token)
+        {
+            return std::ranges::find(default_tokens, token) != default_tokens.end();
+        });
+    };
+
+    auto has_all_tokens_or_empty = [&](const TextSearchQuery & query)
+    {
+        return std::ranges::all_of(query.getTokens(), [&](const auto & token)
+        {
+            return std::ranges::find(default_tokens, token) != default_tokens.end();
+        });
+    };
+
+    switch (element.function)
+    {
+        case RPNElement::FUNCTION_LIKE:
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & query = *element.text_search_queries.front();
+            return std::ranges::any_of(query.getPatterns(), [&](const auto & pattern)
+            {
+                return std::ranges::any_of(default_tokens, [&](const auto & token) { return pattern.match(token); });
+            });
+        }
+        case RPNElement::FUNCTION_HAS_ANY_TOKENS:
+        {
+            chassert(element.text_search_queries.size() == 1);
+            return has_any_token(*element.text_search_queries.front());
+        }
+        case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_HAS_PHRASE:
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & query = *element.text_search_queries.front();
+            return !query.getTokens().empty() && has_all_tokens_or_empty(query);
+        }
+        case RPNElement::FUNCTION_EQUALS:
+        {
+            chassert(element.text_search_queries.size() == 1);
+            return has_all_tokens_or_empty(*element.text_search_queries.front());
+        }
+        case RPNElement::FUNCTION_HAS_ANY_ELEMENTS:
+            return std::ranges::any_of(element.text_search_queries, [&](const auto & query)
+            {
+                return has_all_tokens_or_empty(*query);
+            });
+        case RPNElement::ALWAYS_FALSE:
+            return false;
+        case RPNElement::FUNCTION_UNKNOWN:
+        case RPNElement::FUNCTION_NOT:
+        case RPNElement::FUNCTION_AND:
+        case RPNElement::FUNCTION_OR:
+        case RPNElement::ALWAYS_TRUE:
+            return true;
+    }
+
+    /// Keep unknown future condition kinds conservative.
+    return true;
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
+    const RPNBuilderFunctionTreeNode & function_node,
+    const RPNBuilderTreeNode & index_column_node,
+    DataTypePtr value_type,
+    Field value_field,
+    RPNElement & out) const
+{
+    RPNElement candidate;
+    if (!traverseFunctionNodeImpl(function_node, index_column_node, std::move(value_type), std::move(value_field), candidate))
+        return false;
+
+    const bool matches_json_all_values_subcolumn = std::ranges::any_of(candidate.text_search_queries, [](const auto & query)
+    {
+        return query->matchesJSONAllValuesSubcolumn();
+    });
+
+    /// A preprocessor can turn the default empty `String` into tokens, while a missing path
+    /// contributes no element to `JSONAllValues`. Reject the index when its condition could
+    /// match those tokens, otherwise the missing row could be pruned as a false negative.
+    if (has_preprocessor && matches_json_all_values_subcolumn && textIndexConditionMayMatchDefaultString(candidate))
+        return false;
+
+    out = std::move(candidate);
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
     DataTypePtr value_type,
