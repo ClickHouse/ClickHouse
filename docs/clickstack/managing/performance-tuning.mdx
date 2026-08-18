@@ -555,28 +555,23 @@ reference `LogAttributes['key']` see the speedup without any change.
 ### ClickHouse version requirements {#map-direct-read-version}
 
 The query rewrite requires a ClickHouse version that supports direct
-token-level pruning on text-indexed array columns. ClickStack detects the
-connected server version (`SELECT version()`, cached per connection) and only
-emits the rewritten form when the server is at or above the threshold. Older
-servers fall back to the original Map subscript form automatically.
+token-level pruning on text-indexed array columns.
 
 <Tabs>
 <Tab title="ClickHouse Cloud">
 
-| ClickHouse branch | Minimum Cloud version |
-|---|---|
-| 26.2 | `26.2.19.*` |
-| 26.3 | `26.3.12.*` |
-| 26.4 | `26.4.3.*` |
-| 26.5+ | All versions |
-
-The wildcard (`*`) matches any Cloud build number.
+The query rewrite is supported in ClickHouse Cloud. Cloud builds and
+self-managed releases use independent version lines, so their version numbers
+are not directly comparable. If the rewrite does not apply in ClickHouse
+Cloud, an insufficient ClickHouse version is not the cause.
 
 </Tab>
 <Tab title="Self-managed">
 
-For self-managed ClickHouse, compare the complete version number with the
-minimum version below.
+ClickStack detects the connected server version (`SELECT version()`, cached per
+connection) and only emits the rewritten form when the server is at or above
+the threshold below. Older servers fall back to the original Map subscript
+form automatically.
 
 | ClickHouse branch | Minimum self-managed version |
 |---|---|
