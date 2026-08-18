@@ -39,7 +39,7 @@ run "EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${query}"
 
 # Each CTE is declared before its use, and the access walker must keep
 # scanning newly discovered dependencies until it reaches the view.
-chained_query="WITH b AS (SELECT a FROM v), a AS (SELECT a FROM b), z AS (SELECT a FROM a) SELECT a FROM z"
+chained_query="WITH with_first AS (SELECT a FROM v), with_second AS (SELECT a FROM with_first), with_third AS (SELECT a FROM with_second) SELECT a FROM with_third"
 run "Chained SELECT" "${chained_query}"
 run "Chained EXPLAIN SYNTAX" "EXPLAIN SYNTAX ${chained_query}"
 run "Chained EXPLAIN AST optimize=1" "EXPLAIN AST optimize = 1 ${chained_query}"
