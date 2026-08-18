@@ -83,8 +83,7 @@ Expression
                       Join
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMemoryStorage
                         Expression
                           Expression
                             ReadFromMemoryStorage
