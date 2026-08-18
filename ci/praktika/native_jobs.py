@@ -89,6 +89,25 @@ _final_job = Job.Config(
 )
 
 
+# This marker is intentionally part of the aggregate merge-status description.
+# The review-thread reconciliation workflow can clear this exact failure after
+# the dedicated override label is added, while leaving every other post-hook
+# and job failure untouched.
+_REVIEW_THREADS_POST_HOOK = "ci/jobs/scripts/workflow_hooks/can_be_merged.py"
+_REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"
+
+
+def _review_threads_were_the_only_failed_post_hook(results):
+    """Whether `can_be_merged.py` was the sole failed workflow post-hook."""
+    return any(
+        not result.is_ok() and _REVIEW_THREADS_POST_HOOK in result.name
+        for result in results
+    ) and all(
+        result.is_ok() or _REVIEW_THREADS_POST_HOOK in result.name
+        for result in results
+    )
+
+
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
@@ -1037,6 +1056,7 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
+    review_threads_only_post_hook_failure = False
     if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
         update_final_report = True
@@ -1047,6 +1067,10 @@ def _finish_workflow(workflow, job_name):
             else:
                 name = str(check)
             results_.append(Result.from_commands_run(name=name, command=check))
+
+        review_threads_only_post_hook_failure = (
+            _review_threads_were_the_only_failed_post_hook(results_)
+        )
 
         results.append(
             Result.create_from(
@@ -1147,6 +1171,17 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description = f"Failed: {len(failed_results)}"
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
+
+        # `Finish Workflow` aggregates all post hooks into one result. Retain
+        # a precise, run-scoped marker only when this hook is the *only*
+        # failure in the entire workflow, so the review-thread override can
+        # later clear the aggregate status without masking another failure.
+        if (
+            failed_results == ["Workflow Post Hook"]
+            and not dropped_results
+            and review_threads_only_post_hook_failure
+        ):
+            ready_for_merge_description = _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE
 
     # Revert PRs should be easy to merge - only Fast test is required
     if "Reverts ClickHouse/" in env.PR_BODY:

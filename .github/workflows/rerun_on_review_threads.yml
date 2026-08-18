@@ -207,8 +207,9 @@ jobs:
                 --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
               last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
               if [ "$mergeable_state" = "failure" ] \
-                 && [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
-                 && [ "$last_pr_conclusion" = "success" ]; then
+                 && { [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+                      && [ "$last_pr_conclusion" = "success" ] \
+                      || [ "$mergeable_description" = "Failed: review threads only" ]; }; then
                 post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
               fi
             fi

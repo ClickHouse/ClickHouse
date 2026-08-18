@@ -134,6 +134,7 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha"' in rerun_workflow
     assert 'review threads: $unresolved unresolved review thread(s)' in rerun_workflow
     assert 'last_pr_conclusion' in rerun_workflow
+    assert '"Failed: review threads only"' in rerun_workflow
     # `Finish Workflow` aggregates every post hook. It must never be used as
     # proof that the review-thread hook was the only failure, because that
     # would allow a resolved thread to clear another merge blocker.
@@ -145,6 +146,9 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
     assert 'review threads and another post-hook blocked' not in (
+        repository_root / "ci/praktika/native_jobs.py"
+    ).read_text()
+    assert '_REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"' in (
         repository_root / "ci/praktika/native_jobs.py"
     ).read_text()
 
