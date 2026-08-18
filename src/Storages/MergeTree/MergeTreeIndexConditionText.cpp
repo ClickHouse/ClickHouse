@@ -14,10 +14,12 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/MapKeyValueToken.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
@@ -29,6 +31,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -647,6 +650,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto rhs_argument = function.getArgumentAt(1);
 
         if ((function_name == "in" || function_name == "globalIn")
+            && tryPrepareMapElementKeyValueSet(lhs_argument, rhs_argument, out))
+        {
+            return true;
+        }
+
+        if ((function_name == "in" || function_name == "globalIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -892,6 +901,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
+
+    /// keyValuePairs: `m['key'] = 'value'` is an exact lookup of the combined key-value token, used for
+    /// granule pruning only (no direct read) - the predicate is re-checked on surviving granules.
+    if (typeid_cast<const KeyValuePairsTokenizer *>(tokenizer)
+        && WhichDataType(value_type).isStringOrFixedString()
+        && function_name == "equals")
+    {
+        if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
+        {
+            /// `m['key']` is '' for an absent key, so `m['key'] = ''` is true for rows lacking the key
+            /// (which have no token). Bail to a full scan then.
+            if (value_field.safeGet<String>().empty())
+                return false;
+
+            /// First-value semantics: match only the key's first occurrence (is_rest = 0).
+            VectorWithMemoryTracking<String> tokens;
+            tokens.push_back(encodeMapKeyValueToken(*key, value_field.safeGet<String>(), /*is_rest=*/ false));
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+            return true;
+        }
+    }
+
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
@@ -1755,6 +1788,108 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 bool isTextIndexVirtualColumn(const String & column_name)
 {
     return column_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX);
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForKeyValueIndex(const RPNBuilderTreeNode & node) const
+{
+    /// `arrayElement(m, 'key')` form (i.e. `m['key']` before subcolumn rewriting).
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        {
+            const auto column_name = function.getArgumentAt(0).getColumnName();
+            if (header.has(column_name))
+            {
+                Field key_field;
+                DataTypePtr key_type;
+                if (function.getArgumentAt(1).tryGetConstant(key_field, key_type) && key_field.getType() == Field::Types::String)
+                    return key_field.safeGet<String>();
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// `m.key_<key>` map subcolumn form, which is how `m['key']` usually reaches the index.
+    if (auto parsed = tryParseMapSubcolumnName(node.getColumnName()))
+    {
+        auto & [map_column_name, serialized_key] = *parsed;
+        if (header.has(map_column_name))
+        {
+            /// `serialized_key` is the subcolumn-name text `FunctionToSubcolumnsPass` produced via
+            /// `serializeText`, not necessarily the raw key. Deserialize it back through the key type
+            /// (identity for the String / LowCardinality(String) keys allowed here, but correct for any type).
+            const auto * map_type = typeid_cast<const DataTypeMap *>(header.getByName(map_column_name).type.get());
+            if (!map_type)
+                return std::nullopt;
+            const auto & key_type = map_type->getKeyType();
+            auto key_column = key_type->createColumn();
+            ReadBufferFromString buf(serialized_key);
+            key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buf, {});
+
+            Field key_field;
+            key_column->get(0, key_field);
+            if (key_field.getType() == Field::Types::String)
+                return key_field.safeGet<String>();
+        }
+    }
+
+    return std::nullopt;
+}
+
+bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
+    const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out) const
+{
+    /// `m['key'] IN (v1, ..., vn)` = OR of the exact `m['key'] = vi` lookups. The generic
+    /// tryPrepareSetForTextSearch can't answer it (it targets a `mapValues(m)` index and tokenizes each
+    /// element alone, not whole pairs), so handle it here like the `m['key'] = v` rewrite. Pruning only.
+    if (!typeid_cast<const KeyValuePairsTokenizer *>(tokenizer))
+        return false;
+
+    auto key = tryGetMapElementKeyForKeyValueIndex(lhs);
+    if (!key)
+        return false;
+
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return false;
+
+    Columns columns = prepared_set->getSetElements();
+    /// A single-column set may arrive wrapped in a tuple; unwrap it.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+    if (columns.size() != 1)
+        return false;
+
+    const auto & set_column = *columns.front();
+    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+        return false;
+
+    /// One exact pair token per set element (each matches the key's first occurrence, is_rest = 0), OR'd
+    /// with FUNCTION_HAS_ANY_TOKENS (a single multi-token query so all postings are read).
+    VectorWithMemoryTracking<String> tokens;
+    size_t total_row_count = prepared_set->getTotalRowCount();
+    for (size_t row = 0; row < total_row_count; ++row)
+    {
+        auto ref = set_column.getDataAt(row);
+        /// `m['key'] = ''` is true for rows lacking the key (default value), which have no token, so a set
+        /// with the empty string cannot be answered by the index - fall back to a scan.
+        if (ref.empty())
+            return false;
+        tokens.push_back(encodeMapKeyValueToken(*key, std::string_view(ref.data(), ref.size()), /*is_rest=*/ false));
+    }
+
+    if (tokens.empty())
+        return false;
+
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        "in", TextSearchMode::Any, TextIndexDirectReadMode::None, std::move(tokens)));
+    return true;
 }
 
 }

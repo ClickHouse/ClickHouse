@@ -1,0 +1,22 @@
+mapContainsKey	1
+mapContainsKey absent	1
+mapContainsValue	1
+mapContainsValue absent	1
+mapContainsKeyLike	1
+mapContainsValueLike	1
+mapContainsValueLike prefix	1
+mapKeys	1
+mapValues	1
+has(mapKeys)	1
+mapExtractKeyLike	1
+mapExtractValueLike	1
+element equals	1
+element equals subcol	1
+element IN	1
+element LIKE	1
+startsWith	1
+endsWith	1
+AND	1
+OR	1
+NOT	1
+IN AND NOT	1

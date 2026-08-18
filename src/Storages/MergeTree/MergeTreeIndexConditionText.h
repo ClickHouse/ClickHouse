@@ -189,6 +189,11 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
+    /// For the `keyValuePairs` tokenizer: parse `m['key']` (arrayElement or the map subcolumn) to its key.
+    std::optional<String> tryGetMapElementKeyForKeyValueIndex(const RPNBuilderTreeNode & node) const;
+    /// `m['key'] IN (v1, ..., vn)` over a keyValuePairs index: an OR of the exact `m['key'] = vi` tokens.
+    bool tryPrepareMapElementKeyValueSet(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out) const;
+
     bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
 
     /// Returns true if all tokens must be read for text index analysis

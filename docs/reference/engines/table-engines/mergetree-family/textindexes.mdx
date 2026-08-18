@@ -106,7 +106,7 @@ ORDER BY key
 Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
-- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions), and
+- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions, or directly with the `keyValuePairs` tokenizer), and
 - [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
@@ -174,6 +174,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)).
+- `keyValuePairs` indexes a `Map(String, String)` (or `Map(LowCardinality(String), LowCardinality(String))`) column directly, storing each `(key, value)` pair as a single token.
+  Unlike the `mapKeys` / `mapValues` indexes, which index keys and values independently, it keeps whole pairs, so it can accelerate the exact map-element predicates `m['key'] = 'value'` and `m['key'] IN (...)` (see [Indexing Map columns](#text-index-example-map)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -983,6 +985,29 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 -- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
+
+#### Indexing key-value pairs directly {#text-index-example-map-keyvaluepairs}
+
+The `mapKeys` / `mapValues` indexes above index keys and values independently, so they cannot tell which value belongs to which key.
+To accelerate a specific `key = value` lookup, add the `keyValuePairs` tokenizer directly on the `Map` column.
+It stores each map entry as one `(key, value)` token and prunes granules that cannot contain the pair, so the exact map-element predicates `m['key'] = 'value'` and `m['key'] IN (...)` become fast:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = 'keyValuePairs');
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+```
+
+```sql
+-- Finds all logs whose 'level' attribute is exactly 'error':
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast
+
+-- Finds all logs whose 'level' is 'error' or 'warning':
+SELECT * FROM logs WHERE attributes['level'] IN ('error', 'warning'); -- fast
+```
+
+The indexed column must be `Map(String, String)` or `Map(LowCardinality(String), LowCardinality(String))`; other key/value types (including `FixedString`) and the `preprocessor` / `postprocessor` options are rejected.
+For a duplicate key, `m['key']` returns the key's first value, and the index matches that first occurrence.
+Other map functions (for example `mapContainsKey`, `mapContainsValue`, `mapContainsValueLike`) are not accelerated by this index and fall back to a scan; use the `mapKeys` / `mapValues` indexes above for those.
 
 ### Indexing JSON columns {#text-index-example-json}
 
