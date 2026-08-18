@@ -81,11 +81,8 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
         size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
         ByteRange block_range{offset, this_block_size};
 
-        {
-            std::lock_guard lock(state_mutex);
-            if (committed_ranges.subtract(block_range).empty())
-                continue;
-        }
+        if (committed_ranges.subtract(block_range).empty())
+            continue;
 
         if (!data.covers(block_range))
             continue;
@@ -141,11 +138,8 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
         /// bytes WE wrote.
         if (cell)
         {
-            {
-                std::lock_guard lock(state_mutex);
-                blocks.push_back(cell);
-                committed_ranges.add(block_range);
-            }
+            blocks.push_back(cell);
+            committed_ranges.add(block_range);
 
             if (loaded)
             {
@@ -167,7 +161,6 @@ CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
     lead.available = ByteRange{range.offset, 0};
 
     SipHash base_hash = file.baseHash();
-    std::lock_guard lock(state_mutex);
     for (size_t off = range.offset; off < range.end(); off += block_size)
     {
         const size_t sz = std::min(block_size, file_size_in_bytes - off);
@@ -196,8 +189,7 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Serve the self-populated blocks overlapping `sub`, zero-copy, under the lock that guards `blocks`.
-    std::lock_guard lock(state_mutex);
+    /// Serve the self-populated blocks overlapping `sub`, zero-copy.
     for (const auto & cell : blocks)
     {
         if (!cell)

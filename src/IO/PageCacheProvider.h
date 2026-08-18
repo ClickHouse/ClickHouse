@@ -6,8 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <mutex>
-
 namespace DB
 {
 
@@ -59,11 +57,7 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override
-    {
-        std::lock_guard lock(state_mutex);
-        return committed_ranges;
-    }
+    IntervalSet committed() const override { return committed_ranges; }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
     /// Re-probe the cache: a block may have been populated by a concurrent query since `resolve`. Any
@@ -83,11 +77,9 @@ private:
     ByteRange range_member;
     IntervalSet committed_ranges;
     /// The whole-block cells this writer populated or adopted, in file order (same layout as the
-    /// reader's `cells`: each cell carries its own `cell->range` and size).
+    /// reader's `cell`: each carries its own `cell->range` and size). One writer is driven by a single
+    /// thread, so no lock is needed.
     VectorWithMemoryTracking<PageCache::MappedPtr> blocks;
-    /// Guards `committed_ranges` and `blocks`. Uncontended today (the executor drives one writer from a
-    /// single thread); it makes the writer ready for the concurrent fill a later prefetch worker adds.
-    mutable std::mutex state_mutex;
     LoggerPtr log = getLogger("PageCacheWriter");
 };
 
