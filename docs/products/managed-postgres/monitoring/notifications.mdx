@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/notifications
 sidebarTitle: 'Notifications'
 title: 'ClickHouse Managed Postgres notifications'
 description: 'Cloud console notifications for ClickHouse Managed Postgres services'
-keywords: ['managed postgres', 'notifications', 'alerts', 'storage', 'disk usage']
+keywords: ['managed postgres', 'notifications', 'alerts', 'storage', 'disk usage', 'replica lag', 'replication']
 doc_type: 'guide'
 ---
 
@@ -24,6 +24,7 @@ services.
 | Notify when | Specific alert condition | Default notification channels | Resolution steps |
 |---|---|---|---|
 | Postgres storage passed 85% threshold | When storage usage on a Managed Postgres service reaches 85% of capacity. Notification will only trigger once per calendar day. | UI, email | Storage scales automatically when usage reaches 90% (brief cutover downtime). No action is needed unless auto-scaling is already at its limit. |
+| Postgres replica lag passed 5 minute threshold | When replication lag on a high-availability standby or a read replica stays above 5 minutes. Notification will only trigger once per calendar day. | UI, email | For a standby, failover readiness is reduced until it catches up; for a read replica, reads may return stale data. Lag usually clears on its own once write load drops. If it keeps growing, check the replica's CPU, memory, and disk on the monitoring dashboard, or contact support. |
 
 ## Related pages {#related}
 
