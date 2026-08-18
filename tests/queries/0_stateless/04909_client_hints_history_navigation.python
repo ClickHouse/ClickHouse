@@ -162,7 +162,18 @@ def main():
         lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
     )
 
-    # 3. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
+    # 3. Recalling a history entry with the same text as the scratch line is still a programmatic
+    # display. Down must return from that entry to the scratch line instead of selecting a hint.
+    history = make_history_file("same_text_recall", ["SELECT 222 AS rand", "SELECT 111 AS rand"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "same_text_recall_down_navigates_history",
+        [b"SELECT 111 AS rand", b"\x1b[A", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+    )
+
+    # 4. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
     #    prefix "concatAssumeInject" and the ghost "ive" appears.
     history = make_history_file("edit_after_recall", ["SELECT concatAssumeInjec"])
     run_with_timeout(
@@ -173,7 +184,7 @@ def main():
         lambda o: (HINT_COLOR + "ive") in o,
     )
 
-    # 4. A (bracketed) paste is also a whole new line displayed at once - no hint at its end.
+    # 5. A (bracketed) paste is also a whole new line displayed at once - no hint at its end.
     history = make_history_file("paste", [])
     run_with_timeout(
         base[0],
@@ -182,6 +193,29 @@ def main():
         [b"\x1b[200~SELECT concatAssumeInject\x1b[201~"],
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
+
+    # 6. An unchanged editor round-trip redisplays the line programmatically. It must invalidate
+    # replxx's cached hints, so Down remains history navigation.
+    editor = os.path.join(os.environ["CLICKHOUSE_TMP"], "client_hints_unchanged_editor.sh")
+    with open(editor, "w") as f:
+        f.write("#!/bin/sh\nexit 0\n")
+    os.chmod(editor, 0o755)
+    previous_editor = os.environ.get("EDITOR")
+    os.environ["EDITOR"] = editor
+    try:
+        history = make_history_file("unchanged_editor", [])
+        run_with_timeout(
+            base[0],
+            args + [f"--history_file={history}"],
+            "unchanged_editor_down_navigates_history",
+            [b"SELECT 111 AS rand", b"\x1bE", b"\x1b[B", b"\r"],
+            lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+        )
+    finally:
+        if previous_editor is None:
+            del os.environ["EDITOR"]
+        else:
+            os.environ["EDITOR"] = previous_editor
 
 
 if __name__ == "__main__":

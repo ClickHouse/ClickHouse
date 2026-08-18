@@ -693,7 +693,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             /// REPAINT before to avoid prompt overlap by the query
             rx.invoke(Replxx::ACTION::REPAINT, code);
 
-            if (!new_query.empty())
+            const bool selected_query = !new_query.empty();
+            if (selected_query)
             {
                 /// The picked query is a whole new line displayed at once - do not pop hints on it
                 /// (see historyNavigate).
@@ -706,7 +707,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
             rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
             auto result = rx.invoke(Replxx::ACTION::REPAINT, code);
-            suppressHintsForDisplayedLine();
+            if (selected_query)
+                suppressHintsForDisplayedLine();
             return result;
         };
 
@@ -724,10 +726,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         uint32_t reverse_search = Replxx::KEY::control('R');
         /// The found entry is a whole new line displayed at once - do not pop hints on it (see
         /// historyNavigate).
-        const std::string original_text = rx.get_state().text();
         suppress_hints_once = true;
         auto result = rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-        if (rx.get_state().text() != original_text)
+        if (rx.history_recalled())
             suppressHintsForDisplayedLine();
         else
             suppress_hints_once = false;
@@ -781,10 +782,9 @@ replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::
     /// suppression must be armed before it; the pin below keeps later regenerations of the
     /// recalled text hintless (the refresh inside the action may be throttled and replayed after
     /// this returns) and is cleared by the first edit.
-    const std::string original_text = rx.get_state().text();
     suppress_hints_once = true;
     auto result = rx.invoke(action, code);
-    if (rx.get_state().text() != original_text)
+    if (rx.history_recalled())
         suppressHintsForDisplayedLine();
     else
         suppress_hints_once = false;
@@ -852,6 +852,7 @@ void ReplxxLineReader::openEditor(bool format_query)
     /// We need to clear till the end of screen *before*, to avoid extra new-line in case of multi-line queries
     rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
 
+    bool accepted_editor_result = false;
     try
     {
         String query = rx.get_state().text();
@@ -873,6 +874,7 @@ void ReplxxLineReader::openEditor(bool format_query)
             /// (see historyNavigate).
             suppress_hints_once = true;
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            accepted_editor_result = true;
         }
         else
         {
@@ -888,7 +890,8 @@ void ReplxxLineReader::openEditor(bool format_query)
 
     rx.invoke(replxx::Replxx::ACTION::CLEAR_SELF, 0);
     rx.invoke(replxx::Replxx::ACTION::REPAINT, 0);
-    suppressHintsForDisplayedLine();
+    if (accepted_editor_result)
+        suppressHintsForDisplayedLine();
 
     if (bracketed_paste_enabled)
         enableBracketedPaste();
