@@ -961,6 +961,21 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
+size_t StorageLog::getMaxReadStreams(size_t num_streams)
+{
+    if (!use_marks_file)
+        return 1;
+
+    const auto lock_timeout = getLockTimeout(getContext());
+    loadMarks(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    return std::min(num_streams, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size());
+}
+
 void StorageLog::drop()
 {
     disk->removeRecursive(table_path);

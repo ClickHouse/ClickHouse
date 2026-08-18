@@ -80,7 +80,7 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
-    size_t getMaxReadStreams(size_t num_streams) const override { return use_marks_file ? num_streams : 1; }
+    size_t getMaxReadStreams(size_t num_streams) override;
     ColumnSizeByName getColumnSizes() const override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
