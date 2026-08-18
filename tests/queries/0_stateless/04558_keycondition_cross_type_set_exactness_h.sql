@@ -39,11 +39,9 @@ DROP TABLE at_tu; DROP TABLE ao_tu;
 
 SELECT '--- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---';
 
--- A source NULL surviving into the prepared set as the nested default is a SECOND root cause, living in
--- the `Nullable`-source branch that this change does not touch, and it is fixed separately by
--- https://github.com/ClickHouse/ClickHouse/pull/111418. The `transform_null_in = 1` shapes are
--- therefore deliberately NOT asserted here - they belong to that PR's test. What stays is the pair of
--- controls proving this change leaves that branch alone.
+-- A source NULL surviving into the prepared set as the nested default lives in the `Nullable`-source
+-- branch, which this change does not touch, so the `transform_null_in = 1` shapes are not asserted
+-- here. What stays is the pair of controls proving that branch is left alone.
 
 DROP TABLE IF EXISTS nn_t; DROP TABLE IF EXISTS nn_o;
 CREATE TABLE nn_t (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
