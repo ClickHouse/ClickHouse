@@ -719,6 +719,21 @@ Names extractPartitionColumnNames(ASTPtr partition_by)
     return result;
 }
 
+/// Whether a *valid* Delta table can be read at the location (forces a snapshot load, unlike `deltaLogExists`).
+bool validDeltaTableExists(const DeltaLake::KernelHelperPtr & kernel_helper, const ObjectStoragePtr & object_storage, LoggerPtr log)
+{
+    try
+    {
+        auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(/* version */ std::nullopt, kernel_helper, object_storage, log);
+        snapshot->getVersion();
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 }
 
 bool DeltaLakeMetadataDeltaKernel::createTable(
@@ -771,13 +786,10 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     }
     catch (const Exception & e)
     {
-        /// If the commit lost a race and a `_delta_log` now exists, attach to it; otherwise propagate the genuine kernel error.
-        if (e.code() == ErrorCodes::DELTA_KERNEL_ERROR && deltaLogExists(*object_storage_, data_path))
-        {
-            LOG_DEBUG(log, "Delta table was created concurrently at `{}`; attaching to it instead", data_path);
-            return false;
-        }
-        throw;
+        if (e.code() != ErrorCodes::DELTA_KERNEL_ERROR || !validDeltaTableExists(kernel_helper, object_storage_, log))
+            throw;
+        LOG_DEBUG(log, "Delta table was created concurrently at `{}`; attaching to it instead", data_path);
+        return false;
     }
 
     LOG_DEBUG(
