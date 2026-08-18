@@ -163,7 +163,12 @@ namespace DB
         /// `CREATE`/`ALTER USER` reject or normalize the value at query time. (The server still starts:
         /// the directory scan skips a broken definition with a logged error, and a lazy per-entity read
         /// reports the error to the operation that touches it.)
-        if (!context && std::all_of(valid_until_str.begin(), valid_until_str.end(), isNumericASCII))
+        /// Whitespace is insignificant around a stored literal. Trim it before recognizing the
+        /// timestamp form so that a hand-edited 11- or 12-digit deadline does not fall through to
+        /// `parseDateTimeBestEffort`, which only recognizes timestamps up to 10 digits at second scale.
+        String trimmed_valid_until_str = valid_until_str;
+        trim(trimmed_valid_until_str);
+        if (!context && std::all_of(trimmed_valid_until_str.begin(), trimmed_valid_until_str.end(), isNumericASCII))
         {
             /// The read must be overflow-checked: an unchecked read would wrap a digit string that
             /// exceeds the 64-bit signed range into some other - possibly live - deadline instead of
@@ -172,7 +177,8 @@ namespace DB
             /// signals an overflow as well. The server never writes such a value (the stored form is at
             /// most `MAX_VALID_UNTIL_TIME`, 12 digits), so it can only come from a hand-edited or
             /// corrupted definition, and the definition must fail to load.
-            if (!tryReadIntText(time, in) || !in.eof())
+            ReadBufferFromString trimmed_in(trimmed_valid_until_str);
+            if (!tryReadIntText(time, trimmed_in) || !trimmed_in.eof())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "VALID UNTIL deadline '{}' cannot be read as a 64-bit signed Unix timestamp",

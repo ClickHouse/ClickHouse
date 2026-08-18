@@ -139,6 +139,25 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
     EXPECT_EQ(serializedValidUntil(-62135596800), "0000000001");
 }
 
+TEST(ValidUntilAttachEncoding, WhitespaceAroundStoredTimestampIsIgnored)
+{
+    /// Hand-edited stored definitions may contain insignificant surrounding whitespace. In
+    /// particular, an 11- or 12-digit timestamp must still use the numeric path: the datetime parser
+    /// only recognizes 9/10-digit second timestamps, while these values are the encoding used for
+    /// deadlines after 2286.
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL ' 253402250399';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '253402250399 ';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL ' 253402250399 ';"})
+    {
+        const auto entity = deserializeAccessEntity(definition);
+        const auto * user = typeid_cast<const User *>(entity.get());
+        ASSERT_NE(user, nullptr) << definition;
+        ASSERT_EQ(user->authentication_methods.size(), 1u) << definition;
+        EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402250399) << definition;
+    }
+}
+
 TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
 {
     /// `deserializeAccessEntity` is the entry point used to load stored access entities. A definition
