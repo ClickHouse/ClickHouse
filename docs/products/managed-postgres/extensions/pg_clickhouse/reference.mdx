@@ -1344,7 +1344,7 @@ equivalents as follows:
 * `->>` (JSON/JSONB extract element as text): [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (JSON/JSONB extract): [toJSONString](/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
-### IN and NULL Semantics
+### IN and NULL semantics {#in-and-null-semantics}
 
 ClickHouse evaluates `IN` under two-valued logic: when the probe finds no
 match it returns `0` even if a NULL is involved, where PostgreSQL computes
