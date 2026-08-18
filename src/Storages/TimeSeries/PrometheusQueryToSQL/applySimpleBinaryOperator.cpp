@@ -81,7 +81,7 @@ namespace
 
         /// The chosen side always ends up with a `sort_key`: its own if it has one, otherwise a
         /// fallback tiebreak of its own `group` (same mechanism as the `or` operator's fallback).
-        auto makeSortKeyForSide = [&](bool side_has_sort_order) -> ASTPtr
+        auto make_sort_key_for_side = [&](bool side_has_sort_order) -> ASTPtr
         {
             if (side_has_sort_order)
                 return make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
@@ -157,7 +157,7 @@ namespace
             bool result_order_side = (side == left) ? order_side_is_left : !order_side_is_left;
             if (result_order_side)
             {
-                ASTPtr sort_key = makeSortKeyForSide(order_side_has_sort_order);
+                ASTPtr sort_key = make_sort_key_for_side(order_side_has_sort_order);
                 if (check_side_one)
                     sort_key = makeASTFunction("any", std::move(sort_key));
                 sort_key->setAlias(ColumnNames::SortKey);
