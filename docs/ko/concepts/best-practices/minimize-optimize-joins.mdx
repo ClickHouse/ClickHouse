@@ -3,7 +3,7 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: '조인 최소화 및 최적화'
 title: '조인 최소화 및 최적화'
 description: 'ClickHouse에서 조인을 사용하는 모범 사례를 설명하는 문서'
-keywords: ['조인', 'Parallel Hash 조인']
+keywords: ['조인', 'Hash 조인']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -50,7 +50,7 @@ ClickHouse에서 데이터를 비정규화하는 전체 가이드는 [here](/ko/
 
 ClickHouse는 속도와 메모리 사용량 사이의 절충이 서로 다른 여러 조인 알고리즘을 지원합니다:
 
-* **Parallel Hash 조인 (default):** 메모리에 적재할 수 있는 소규모~중간 규모의 오른쪽 테이블에서 빠르게 동작합니다.
+* **Hash 조인 (default):** 메모리에 적재할 수 있는 소규모~중간 규모의 오른쪽 테이블에서 빠르게 동작합니다.
 * **Direct 조인:** 딕셔너리(또는 키-값 특성을 가진 다른 테이블 엔진)를 `INNER` 또는 `LEFT ANY JOIN`과 함께 사용할 때 이상적입니다 — 해시 테이블을 만들 필요가 없어 키 기반 조회에 가장 빠른 방법입니다.
 * **Full Sorting Merge 조인:** 두 테이블이 모두 조인 키를 기준으로 정렬되어 있을 때 효율적입니다.
 * **Partial Merge 조인:** 메모리 사용량을 최소화하지만 더 느립니다—메모리가 제한된 환경에서 대규모 테이블을 조인할 때 가장 적합합니다.
@@ -62,7 +62,7 @@ ClickHouse는 속도와 메모리 사용량 사이의 절충이 서로 다른 �
   각 알고리즘이 지원하는 조인 유형은 서로 다릅니다. 각 알고리즘에서 지원하는 조인 유형의 전체 목록은 [여기](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)에서 확인할 수 있습니다.
 </Note>
 
-`join_algorithm = 'auto'`로 설정하면 ClickHouse가 최적의 알고리즘을 선택하도록 할 수 있으며, 워크로드에 따라 명시적으로 제어할 수도 있습니다. 기본값은 `direct,parallel_hash,hash`이므로, 오른쪽이 딕셔너리 또는 키-값 엔진인 경우 ClickHouse는 direct 조인을 사용하고, 그렇지 않으면 parallel hash, 그다음 hash로 대체합니다. 성능이나 메모리 오버헤드를 최적화하기 위해 조인 알고리즘을 선택해야 한다면, [이 가이드](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 권장합니다.
+`join_algorithm = 'auto'`로 설정하면 ClickHouse가 최적의 알고리즘을 선택하도록 할 수 있으며, 워크로드에 따라 명시적으로 제어할 수도 있습니다. 기본값은 `direct,parallel_hash,hash`이므로, 오른쪽이 딕셔너리 또는 키-값 엔진인 경우 ClickHouse는 direct 조인을 사용하고, 그렇지 않으면 해시 조인을 사용합니다(`hash`와 `parallel_hash`는 같은 클래스이며 병렬성을 선택하지 않습니다). 성능이나 메모리 오버헤드를 최적화하기 위해 조인 알고리즘을 선택해야 한다면, [이 가이드](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 권장합니다.
 
 최적의 성능을 위해:
 
