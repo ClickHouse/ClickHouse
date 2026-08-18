@@ -51,6 +51,7 @@ grep -q 'TIMEOUT' "$scratch/timeout.log"
 worker="${worktree_base}-0"
 submodule="$worker/contrib/FP16"
 git clone --quiet --shared "$repo/contrib/FP16" "$submodule"
+git -C "$submodule" checkout --detach --quiet HEAD~1
 printf 'dirty\n' > "$submodule/continue-all-prs-test-untracked"
 [[ -n "$(git -C "$submodule" status --short)" ]]
 
@@ -60,6 +61,7 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
 
 [[ -z "$(git -C "$worker" status --short)" ]]
 [[ -z "$(git -C "$submodule" status --short)" ]]
+[[ "$(git -C "$submodule" rev-parse HEAD)" == "$(git -C "$worker" rev-parse HEAD:contrib/FP16)" ]]
 
 PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_EXEC_SLEEP=30 \
     CODEX_TEST_READY="$scratch/login-ready" "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key \

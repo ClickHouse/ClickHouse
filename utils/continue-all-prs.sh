@@ -723,7 +723,12 @@ prepare_worktree_for_task()
     # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
     git -C "$wt" submodule foreach --quiet --recursive \
         'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
-    if (( ! SKIP_SUBMODULES )); then
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. Resetting each submodule above is not
+        # enough: it retains a stale but clean submodule `HEAD`.
+        git -C "$wt" submodule update --checkout --force --recursive --no-fetch
+    else
         git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
     fi
     # Integration tests can leave root-owned artifacts, and stale servers can
