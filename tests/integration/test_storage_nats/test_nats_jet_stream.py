@@ -1055,8 +1055,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(result)
 
 
-RESUBSCRIBE_LOG_LINE = "A subscription was closed by the NATS server, resubscribing"
-SUBSCRIBED_LOG_LINE = "Subscribed to subject test_subject"
+RESUBSCRIBE_LOG_LINE = "A subscription stopped consuming from the NATS server, resubscribing"
 
 
 def _setup_restart_table(subject, consumer_name):
@@ -1112,60 +1111,20 @@ def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_se
         "no pull request is parked for consumer {}: num_waiting is {}".format(consumer_name, num_waiting))
 
 
-def _restart_nats(nats_cluster, attempts = 4):
-    # Restarts the broker with a pull request parked, retrying until the restart lands outside the
-    # window this fix does not cover.
+def _restart_nats(nats_cluster, kill = nats_helpers.kill_nats):
+    # Restarts the broker with a pull request parked, which is the state that used to leave the table
+    # subscribed and permanently silent.
     #
-    # This fix recovers a subscription that the NATS client has closed, which happens when the server
-    # answers our outstanding pull request while shutting down. A restart landing in the milliseconds
-    # between a re-subscribe and its request being parked instead leaves the client holding a
-    # subscription it has no status for, so nothing reports it as closed and it never consumes again -
-    # the residual this fix deliberately does not cover, which a hard kill or a network partition
-    # reaches the same way.
-    #
-    # Such a restart cannot be excluded in advance. Delivering the backlog these tests drain to reach
-    # the idle state is itself followed by a re-subscribe at an unpredictable delay, and `num_waiting`
-    # cannot rule one out because it counts parked requests broker side without saying which
-    # subscription parked them: it reads one for the previous request while a fresh subscription has
-    # none parked yet.
-    #
-    # So it is detected afterwards instead. A re-subscribe logs before it can park a request, so a
-    # subscribe line written between the parked-request check and the restart marks a restart that
-    # never exercised the recovery, and that attempt is retried. Every measured failure has such a
-    # line within tens of milliseconds of the restart and no passing run has one. This decides which
-    # restarts count as a trial and cannot mask the bug it tests for: without the fix, the restart
-    # still lands with no subscribe line in between, so the attempt proceeds and the consumption
-    # assertion fails, which is what the pristine-master arm confirms.
-    for attempt in range(attempts):
-        # Anchored before the wait rather than after it: `num_waiting` can be satisfied by the
-        # previous request while a re-subscribe is already under way, and a window opened only after
-        # the wait returns would not contain that subscribe line at all.
-        anchor = nats_helpers.log_line_count(instance)
-        _wait_for_parked_pull_request()
+    # Recovery keys on two things, and a restart can land on either: a graceful shutdown answers the
+    # outstanding pull request, which closes the subscription client side, while a restart landing in
+    # the milliseconds between a re-subscribe and its request being parked leaves the client holding a
+    # subscription it has no status for. The reconnect itself is what reports the second one, so no
+    # restart needs to be excluded here, and which one a restart lands on need not be known.
+    _wait_for_parked_pull_request()
 
-        nats_helpers.kill_nats(nats_cluster)
-        time.sleep(4)
-        resubscribed = nats_helpers.count_in_log_after(instance, SUBSCRIBED_LOG_LINE, anchor)
-        nats_helpers.revive_nats(nats_cluster)
-        if not resubscribed:
-            return
-
-        logging.info(
-            "restart attempt %s raced a re-subscribe, retrying so the restart exercises the recovery",
-            attempt)
-
-        # The discarded attempt leaves the subscription it raced holding no request: the restart
-        # destroyed that request broker side while the client kept a handle it has no status for, so
-        # nothing reports it closed and the recovery this fix adds never fires for it. Retrying
-        # against it would poll `num_waiting` forever, so rebuild the subscription first and require
-        # a fresh streaming cycle before the next attempt reads the precondition again.
-        instance.query("SYSTEM STOP test.consume")
-        instance.query("SYSTEM START test.consume")
-        nats_helpers.wait_for_streaming_started(instance, "test.consume")
-
-    raise AssertionError(
-        "every one of {} restarts raced a re-subscribe, so the recovery was never exercised".format(
-            attempts))
+    kill(nats_cluster)
+    time.sleep(4)
+    nats_helpers.revive_nats(nats_cluster)
 
 
 def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
@@ -1179,6 +1138,22 @@ def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
     _publish_and_expect("test_subject", range(0, 10), total_expected)
 
     _restart_nats(nats_cluster)
+
+    total_expected += 10
+    _publish_and_expect("test_subject", range(100, 110), total_expected)
+
+
+def test_nats_jet_stream_resumes_consuming_after_broker_hard_kill(nats_cluster):
+    # A hard kill answers nothing, so no subscription is ever reported as closed: the client keeps
+    # handles that still look healthy while the request they wait on died with the broker. Only the
+    # reconnect reports this, and it is the same state a restart reaches when it lands between a
+    # re-subscribe and its request being parked - the window that made a graceful restart flaky.
+    _setup_restart_table("test_subject", "test_consumer")
+
+    total_expected = 10
+    _publish_and_expect("test_subject", range(0, 10), total_expected)
+
+    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
 
     total_expected += 10
     _publish_and_expect("test_subject", range(100, 110), total_expected)

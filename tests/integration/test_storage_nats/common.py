@@ -58,6 +58,13 @@ def kill_nats(cluster):
     p.communicate()
     return p.returncode == 0
 
+def hard_kill_nats(cluster):
+    # `SIGKILL`, so the broker answers nothing on its way out: unlike `kill_nats`, which stops it
+    # gracefully, the client is left holding subscriptions it has no status for.
+    p = subprocess.Popen(("docker", "kill", cluster.nats_docker_id), stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
 def revive_nats(cluster):
     p = subprocess.Popen(("docker", "start", cluster.nats_docker_id), stdout=subprocess.PIPE)
     p.communicate()

@@ -55,6 +55,11 @@ bool INATSConsumer::hasClosedSubscription() const
         subscriptions, [](const auto & subscription) { return !natsSubscription_IsValid(subscription.get()); });
 }
 
+bool INATSConsumer::hasConnectionReconnected() const
+{
+    return connection->getReconnectCount() != connection_reconnect_count;
+}
+
 void INATSConsumer::subscribe()
 {
     if (isSubscribed())
@@ -63,7 +68,13 @@ void INATSConsumer::subscribe()
     if (loadReceived()->isFinished())
         storeReceived(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size));
 
+    /// Read before subscribing: a reconnect racing `subscribeImpl` can already have dropped what the
+    /// new subscription is waiting for, and the count from before still reports that reconnect.
+    const UInt64 reconnect_count_before_subscribe = connection->getReconnectCount();
+
     subscribeImpl();
+
+    connection_reconnect_count = reconnect_count_before_subscribe;
 }
 
 void INATSConsumer::unsubscribe(bool finish_queue)

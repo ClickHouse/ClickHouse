@@ -86,6 +86,10 @@ protected:
     /// nothing is subscribed, so there is nothing to recover.
     bool hasClosedSubscription() const;
 
+    /// True if the connection has been re-established since we subscribed. The subscriptions we hold
+    /// are still valid, but the broker kept nothing of what they were waiting for.
+    bool hasConnectionReconnected() const;
+
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
     virtual void subscribeImpl() = 0;
@@ -100,6 +104,9 @@ private:
 
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
+    /// Reconnect count of the connection as of the moment we subscribed. Only ever touched under the
+    /// storage's consumers mutex, together with `subscriptions`.
+    UInt64 connection_reconnect_count = 0;
     const std::vector<String> subjects;
     LoggerPtr log;
     const std::atomic<bool> & stopped;

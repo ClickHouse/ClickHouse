@@ -25,11 +25,16 @@ public:
 
     bool needsAck() const override { return true; }
 
-    /// An asynchronous pull subscription is renewed only when a message is delivered, and a
-    /// reconnect resends the `SUB` line but not the outstanding pull request, so a subscription
-    /// whose fetch the client has terminated never consumes again. JetStream redelivers unacked
-    /// messages, so re-subscribing is safe here.
-    bool needsResubscribe() const override { return isSubscribed() && hasClosedSubscription(); }
+    /// An asynchronous pull subscription is renewed only when a message is delivered, so it consumes
+    /// nothing more once the pull request it is waiting for is gone. That happens two ways: the
+    /// client closes the subscription when the broker answers the request while shutting down, and a
+    /// reconnect resends the `SUB` line but not the request, leaving a subscription that still looks
+    /// healthy with nothing parked on the broker. JetStream redelivers unacked messages, so
+    /// re-subscribing is safe here.
+    bool needsResubscribe() const override
+    {
+        return isSubscribed() && (hasClosedSubscription() || hasConnectionReconnected());
+    }
 
 protected:
     void subscribeImpl() override;

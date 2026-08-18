@@ -647,11 +647,11 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A consumer whose subscription the NATS client has closed never receives another message,
-    /// so drop the subscriptions here and let the cycle below subscribe again.
+    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
+    /// another message, so drop the subscriptions here and let the cycle below subscribe again.
     if (consumers_ready && consumersNeedResubscribe())
     {
-        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
         unsubscribeConsumers();
     }
 
