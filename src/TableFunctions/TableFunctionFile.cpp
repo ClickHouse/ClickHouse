@@ -58,6 +58,7 @@ StorageFile::FileSource parseFileSourceFromStringArray(const Array & sources, co
         if (is_first_source)
         {
             result.format_from_filenames = source.format_from_filenames;
+            result.user_files_volume = std::move(source.user_files_volume);
             is_first_source = false;
         }
         else if (result.format_from_filenames != source.format_from_filenames)

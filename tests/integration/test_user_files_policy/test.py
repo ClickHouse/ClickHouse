@@ -494,6 +494,22 @@ def test_s3_truncate_table_routes_through_disk():
     node_s3.query("DROP TABLE s3_truncate_routed")
 
 
+def test_s3_file_table_function_array_routes_through_disk():
+    """The array form of `file` must preserve the policy volume while combining
+    its individual sources, so each path is read through `IDisk`."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('array_source_1.csv', 'CSV', 'x UInt64') VALUES (1)"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('array_source_2.csv', 'CSV', 'x UInt64') VALUES (2)"
+    )
+
+    result = node_s3.query(
+        "SELECT x FROM file(['array_source_1.csv', 'array_source_2.csv'], 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result == "1\n2\n", result
+
+
 def test_local_filesystem_database():
     """The `Filesystem` database engine must resolve a relative path against the
     configured `user_files_policy` disk root and read tables through `IDisk`."""
