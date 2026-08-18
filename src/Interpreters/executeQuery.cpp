@@ -2357,6 +2357,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             auto internal_context = Context::createCopy(context);
             internal_context->makeQueryContext();
             internal_context->setCurrentQueryId({});
+            internal_context->setProcessListElement(context->getProcessListElementSafe());
             return internal_context;
         };
 
