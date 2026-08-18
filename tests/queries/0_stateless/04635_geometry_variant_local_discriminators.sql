@@ -1,10 +1,50 @@
--- Regression test: area* / perimeter* must map Variant local discriminators to global ones.
--- flipCoordinates over Geometry returns a plain Variant whose alternatives are ordered by name,
--- while Geometry uses a fixed discriminator order (with MultiPoint appended at the end), so the
--- cast back to Geometry produces a column whose local discriminators differ from the global ones.
--- Reading local discriminators as global decoded Point rows as Polygon, Polygon rows as Ring, etc.
+-- Regression test: `areaCartesian` / `perimeterCartesian` must map `Variant` local discriminators
+-- to global ones. `Geometry` uses a fixed discriminator order (with `MultiPoint` appended at the
+-- end), so a variant-to-variant conversion produces a column whose local discriminators differ from
+-- the global ones. Reading local discriminators as global decoded `Point` rows as `Polygon`,
+-- `Polygon` rows as `Ring`, etc. The cases below build such a column from a reordered `Variant`,
+-- so they do not depend on the result type of any other function.
+
+SET allow_suspicious_variant_types = 1;
 
 -- { echoOn }
+SELECT
+    variantType(g2) AS t,
+    areaCartesian(g2) AS area,
+    perimeterCartesian(g2) AS perimeter
+FROM
+(
+    SELECT CAST(g, 'Geometry') AS g2
+    FROM
+    (
+        SELECT arrayJoin([
+            CAST((0., 0.)::Point, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(1., 2.), (3., 4.)]::MultiPoint, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]::Ring, 'Variant(Ring, Polygon, Point, MultiPoint)')
+        ]) AS g
+    )
+);
+
+-- `flipCoordinates` over such a column must map local to global as well: it picks the alternative
+-- type per arm to decide how to flip it, so reading local discriminators as global picks the wrong
+-- type and misflips the rows (or throws).
+SELECT variantType(f) AS t, toTypeName(f) AS type_name, wkt(f) AS w
+FROM
+(
+    SELECT flipCoordinates(CAST(g, 'Geometry')) AS f
+    FROM
+    (
+        SELECT arrayJoin([
+            CAST((1., 2.)::Point, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(1., 2.), (3., 4.)]::MultiPoint, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([[(0., 0.), (4., 0.), (4., 3.), (0., 3.), (0., 0.)]]::Polygon, 'Variant(Ring, Polygon, Point, MultiPoint)'),
+            CAST([(0., 0.), (4., 0.), (4., 3.), (0., 3.), (0., 0.)]::Ring, 'Variant(Ring, Polygon, Point, MultiPoint)')
+        ]) AS g
+    )
+)
+ORDER BY t, w;
+
 SELECT
     variantType(g2) AS t,
     areaCartesian(g2) AS area,

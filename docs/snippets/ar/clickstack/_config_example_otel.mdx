@@ -2,7 +2,7 @@
 title: مثال على تهيئة OTel
 ---
 
-فيما يلي مثال على هذه التهيئة (ستُعبَّأ متغيرات البيئة مسبقًا عند النسخ من UI):
+استبدل العنصرين النائبين `endpoint` و`password` ببيانات الاعتماد التي أنشأها ClickStack:
 
 ```yaml
 receivers:
@@ -34,10 +34,6 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
-  debug:
-    verbosity: detailed
-    sampling_initial: 5
-    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

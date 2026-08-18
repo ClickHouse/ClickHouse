@@ -40,7 +40,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)
@@ -201,7 +201,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const Co
     return result;
 }
 
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
+ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const
 {
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;
