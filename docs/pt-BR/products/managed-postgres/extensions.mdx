@@ -7,11 +7,11 @@ keywords: ['extensões do Postgres', 'postgis', 'pgvector', 'pg_cron', 'extensõ
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
 
-O Managed Postgres inclui uma seleção de extensões que ampliam a funcionalidade do seu banco de dados. Abaixo está a lista de extensões disponíveis.
+O ClickHouse Managed Postgres inclui uma seleção de extensões que ampliam a funcionalidade do seu banco de dados. Abaixo está a lista de extensões disponíveis.
 
 <div id="installing-extensions">
   ## Instalando extensões
@@ -141,7 +141,7 @@ SELECT * FROM pg_available_extensions;
   ## extensão pg_clickhouse
 </div>
 
-A extensão `pg_clickhouse` vem pré-instalada em todas as instâncias do Managed Postgres. Ela permite consultar bancos de dados do ClickHouse diretamente a partir do PostgreSQL, possibilitando uma camada de consulta unificada tanto para transações quanto para análises.
+A extensão `pg_clickhouse` vem pré-instalada em todas as instâncias do ClickHouse Managed Postgres. Ela permite consultar bancos de dados do ClickHouse diretamente a partir do PostgreSQL, possibilitando uma camada de consulta unificada tanto para transações quanto para análises.
 
 Consulte a [documentação do pg&#95;clickhouse](/pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction) para ver as instruções de configuração e os detalhes de uso.
 
@@ -149,10 +149,10 @@ Consulte a [documentação do pg&#95;clickhouse](/pt-BR/products/managed-postgre
   ## extensão pg_stat_ch
 </div>
 
-A extensão `pg_stat_ch` fornece observabilidade em nível de consulta para sua instância de Managed Postgres. Ela captura a telemetria por consulta (tempos, linhas, buffers, WAL, erros) e a envia para a UI do ClickHouse Cloud, onde aparece nas exibições de consultas lentas, erros e workload. Não requer configuração.
+A extensão `pg_stat_ch` fornece observabilidade em nível de consulta para sua instância de ClickHouse Managed Postgres. Ela captura a telemetria por consulta (tempos, linhas, buffers, WAL, erros) e a envia para a UI do ClickHouse Cloud, onde aparece nas exibições de consultas lentas, erros e workload. Não requer configuração.
 
 <div id="pg-re2">
   ## extensão pg_re2
 </div>
 
-A extensão `pg_re2` adiciona ao Managed Postgres funções de regex compatíveis com o ClickHouse, baseadas no mecanismo RE2 do Google. É útil ao portar consultas entre os dois ou ao executar workloads híbridos que exigem a mesma semântica de correspondência de padrões em ambos os lados.
+A extensão `pg_re2` adiciona ao ClickHouse Managed Postgres funções de regex compatíveis com o ClickHouse, baseadas no mecanismo RE2 do Google. É útil ao portar consultas entre os dois ou ao executar workloads híbridos que exigem a mesma semântica de correspondência de padrões em ambos os lados.

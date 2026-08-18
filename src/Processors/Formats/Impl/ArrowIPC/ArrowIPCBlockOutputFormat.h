@@ -28,7 +28,7 @@ namespace DB
 /// Native ClickHouse writer for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
 /// Encodes ClickHouse columns directly into Arrow IPC record-batch buffers and builds the FlatBuffers
-/// metadata without the Apache Arrow C++ library. Selected via `output_format_arrow_use_native_writer`.
+/// metadata without the Apache Arrow C++ library.
 /// `LowCardinality` is written as its full column, or — when `output_format_arrow_low_cardinality_as_dictionary`
 /// is on — as an Arrow dictionary-encoded column (a single dictionary per id, extended across batches via deltas).
 class ArrowIPCBlockOutputFormat final : public IOutputFormat

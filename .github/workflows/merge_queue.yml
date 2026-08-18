@@ -222,9 +222,44 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci --timestamp
 
+  stateless_tests_amd_binary_flaky_check:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBmbGFreSBjaGVjayk=') }}
+    name: "Stateless tests (amd_binary, flaky check)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, flaky check)' --workflow "MergeQueueCI" --ci --timestamp
+
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, fast_test, style_check]
+    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, fast_test, stateless_tests_amd_binary_flaky_check, style_check]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

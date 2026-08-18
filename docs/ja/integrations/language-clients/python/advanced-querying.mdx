@@ -18,14 +18,16 @@ ClickHouse Connect は、標準のクエリを `QueryContext` 内で実行しま
 `QueryContext` の最もわかりやすいユースケースは、同じクエリを異なるバインドパラメータ値で送信することです。すべてのパラメータ値は、辞書を指定して `QueryContext.set_parameters` メソッドを呼び出すことで更新できます。また、個々の値は、目的の `key`、`value` の組を指定して `QueryContext.set_parameter` を呼び出すことで更新できます。
 
 ```python
-client.create_query_context(query='SELECT value1, value2 FROM data_table WHERE key = {k:Int32}',
-                            parameters={'k': 2},
-                            column_oriented=True)
+qc = client.create_query_context(
+    query="SELECT {k:Int32}",
+    parameters={"k": 13},
+)
 result = client.query(context=qc)
-assert result.result_set[1][0] == 'second_value2'
-qc.set_parameter('k', 1)
-result = test_client.query(context=qc)
-assert result.result_set[1][0] == 'first_value2'
+assert result.first_row == (13,)
+
+qc.set_parameter("k", 79)
+result = client.query(context=qc)
+assert result.first_row == (79,)
 ```
 
 `QueryContext` はスレッドセーフではありませんが、マルチスレッド環境では `QueryContext.updated_copy` メソッドを呼び出すことで、そのコピーを取得できます。
@@ -41,21 +43,21 @@ ClickHouse Connect クライアントは、データをストリームとして�
 * `query_rows_stream` -- クエリデータを、Python ネイティブオブジェクトを使用して、行のシーケンスとして返します
 * `query_np_stream` -- クエリデータの各 ClickHouse ブロックを NumPy 配列として返します
 * `query_df_stream` -- クエリデータの各 ClickHouse ブロックを Pandas DataFrame として返します
-* `query_arrow_stream` -- クエリデータを PyArrow RecordBlocks として返します
-* `query_df_arrow_stream` -- kwarg `dataframe_library` に応じて、クエリデータの各 ClickHouse ブロックを Arrow バックエンドの Pandas DataFrame または Polars DataFrame として返します (デフォルトは &quot;pandas&quot; です) 。
+* `query_arrow_stream` -- クエリデータを PyArrow `RecordBatch` オブジェクトとして返します
+* `query_df_arrow_stream` -- `dataframe_library` によって選択された Pandas または Polars DataFrame として、各 Arrow バッチを返します
 
-これらのメソッドはいずれも `ContextStream` オブジェクトを返し、ストリームの読み取りを開始するには `with` ステートメントで開く必要があります。
+各メソッドは `StreamContext` を返し、`with` ステートメントで開く必要があります。async クライアントのストリーミングメソッドは `await` で待機し、`async with` で開きます。
 
 <div id="data-blocks">
   ### データブロック
 </div>
 
-ClickHouse Connect は、主要な `query` メソッドから取得されるすべてのデータを、ClickHouse server から受信するブロックのストリームとして処理します。これらのブロックは、ClickHouse との間でカスタムの「Native」フォーマットを使って送受信されます。「block」は、指定されたデータ型のバイナリデータで構成されたカラムの並びにすぎず、各カラムには同じ数のデータ値が含まれます。 (列指向データベースである ClickHouse では、データもこれに近い形式で保存されます。) クエリから返されるブロックのサイズは、複数のレベル (user profile、user、session、または query) で設定できる 2 つのユーザー設定によって決まります。設定項目は次のとおりです。
+ClickHouse Connect は、主要な `query` メソッドから取得されるすべてのデータを、ClickHouse server から受信するブロックのストリームとして処理します。これらのブロックは、ClickHouse との間でカスタムの「Native」フォーマットを使って送受信されます。「ブロック」は、指定されたデータ型のバイナリデータで構成されたカラムの並びにすぎず、各カラムには同じ数のデータ値が含まれます。 (列指向データベースである ClickHouse では、データもこれに近い形式で保存されます。) クエリから返されるブロックのサイズは、複数のレベル (user profile、user、session、または query) で設定できる 2 つのユーザー設定によって決まります。設定項目は次のとおりです。
 
-* [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size) -- ブロックサイズの上限 (行数) 。デフォルトは 65536。
-* [preferred&#95;block&#95;size&#95;bytes](/ja/reference/settings/session-settings#preferred_block_size_bytes) -- ブロックサイズのソフトリミット (バイト数) 。デフォルトは 1,000,0000。
+* [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size) -- ブロックサイズの上限 (行数) 。
+* [preferred&#95;block&#95;size&#95;bytes](/ja/reference/settings/session-settings#preferred_block_size_bytes) -- 推奨されるブロックサイズ (バイト数) 。
 
-`preferred_block_size_setting` にかかわらず、各ブロックが `max_block_size` 行を超えることはありません。返される実際のブロックサイズは、クエリの種類によってさまざまです。たとえば、多数の分片をまたぐ分散テーブルに対するクエリでは、各分片から直接取得された小さめのブロックが含まれる場合があります。
+`preferred_block_size_bytes` にかかわらず、ブロックが `max_block_size` 行を超えることはありません。実際のサイズはこれより小さい場合があり、安定しているものとして扱うべきではありません。
 
 Client の `query_*_stream` メソッドのいずれかを使用すると、結果はブロック単位で返されます。ClickHouse Connect は、一度に 1 つのブロックだけを読み込みます。これにより、大きな結果セット全体をメモリに読み込むことなく、大量のデータを処理できます。アプリケーションは、任意の数のブロックを処理できるようにしておく必要があり、各ブロックの正確なサイズは制御できない点に注意してください。
 
@@ -63,7 +65,7 @@ Client の `query_*_stream` メソッドのいずれかを使用すると、結�
   ### 処理が遅い場合の HTTP データバッファ
 </div>
 
-HTTP プロトコルの制約により、ブロックの処理速度が ClickHouse server からデータがストリーミングされる速度よりも大幅に遅い場合、ClickHouse server は接続を閉じ、その結果、処理スレッドで例外がスローされます。この問題は、共通の `http_buffer_size` 設定を使用して HTTP ストリーミングバッファ (デフォルトでは 10 メガバイト) のバッファサイズを増やすことで、ある程度軽減できます。アプリケーションで利用可能なメモリが十分にある場合、このような状況では `http_buffer_size` を大きくしても問題ありません。`lz4` または `zstd` 圧縮を使用している場合、バッファ内のデータは圧縮された状態で保存されるため、これらの圧縮タイプを使用すると、実質的に利用可能なバッファ容量が増えます。
+アプリケーションによるブロックの消費がサーバーの生成より大幅に遅い場合、処理が完了する前に HTTP 接続が閉じられることがあります。アプリケーションに、より多くの応答データをバッファリングできるだけの十分なメモリがある場合は、共通設定の `http_buffer_size` を増やしてください。デフォルトは 10 MiB です。lz4 と zstd の応答バイトはこのバッファ内で圧縮されたまま保持されるため、実効容量は大きくなります。
 
 <div id="streamcontexts">
   ### StreamContexts
@@ -72,15 +74,19 @@ HTTP プロトコルの制約により、ブロックの処理速度が ClickHou
 各 `query_*_stream` メソッド (`query_row_block_stream` など) は、Python のコンテキストマネージャーとジェネレーターを組み合わせた ClickHouse の `StreamContext` オブジェクトを返します。基本的な使い方は次のとおりです。
 
 ```python
-with client.query_row_block_stream('SELECT pickup, dropoff, pickup_longitude, pickup_latitude FROM taxi_trips') as stream:
+with client.query_row_block_stream(
+    "SELECT pickup, dropoff, pickup_longitude, pickup_latitude FROM taxi_trips"
+) as stream:
     for block in stream:
         for row in block:
-            <Pythonのトリップデータの各行に対して何らかの処理を行う>
+            process_trip(row)
 ```
 
 `with` ステートメントを使わずに `StreamContext` を使用しようとすると、エラーが発生する点に注意してください。Python のコンテキストを使うことで、ストリーム (この場合はストリーミング HTTP レスポンス) は、すべてのデータが消費されなかった場合や、処理中に例外が発生した場合でも、適切にクローズされます。また、`StreamContext` はストリームの消費に一度しか使用できません。終了後の `StreamContext` を使用しようとすると、`StreamClosedError` が発生します。
 
-`StreamContext` の `source` プロパティを使うと、カラム名と型を含む親の `QueryResult` オブジェクトにアクセスできます。
+結果の読み取り中に接続が失敗した場合、切り詰められた結果が暗黙的に返されるのではなく、`StreamFailureError` が発生します。そのメッセージはクライアントの `show_clickhouse_errors` 設定に従います。
+
+`StreamContext` の `source` プロパティを使うと、カラム名と型を含む親の結果オブジェクトにアクセスできます。ほとんどのストリームではこれは `QueryResult` ですが、`query_np_stream` と `query_df_stream` メソッドでは代わりに `NumpyResult` が公開されます。
 
 <div id="stream-types">
   ### ストリームの種類
@@ -90,23 +96,23 @@ with client.query_row_block_stream('SELECT pickup, dropoff, pickup_longitude, pi
 
 `query_row_block_stream` メソッドは、従来のリレーショナルデータベースのように、ブロックを行のシーケンスとして返します。タクシー乗車データでは、返されるデータはリストになり、その各要素はデータの1行を表す別のリストになります。したがって `block[0]` には最初のタクシー乗車のすべてのフィールドが (順番どおりに) 含まれ、`block[1]` には2番目のタクシー乗車のすべてのフィールドを含む行が入ります。以降も同様です。行指向の結果は、通常、表示や変換処理に使われます。
 
-`query_row_stream` は、ストリームを反復処理するときに自動的に次のブロックへ進むための便利なメソッドです。それ以外は `query_row_block_stream` と同じです。
+`query_rows_stream` メソッドは、自動的に次のブロックへ進み、1回に1行ずつ返します。これは `query_row_block_stream` の行単位の対応メソッドです。
 
-`query_np_stream` メソッドは、各ブロックを2次元の NumPy Array として返します。内部的には、NumPy 配列は (通常) カラムとして格納されるため、行用とカラム用で別々のメソッドは必要ありません。NumPy 配列の &quot;shape&quot; は (columns, rows) として表されます。NumPy ライブラリには、NumPy 配列を操作するためのメソッドが数多く用意されています。なお、クエリ内のすべてのカラムが同じ NumPy dtype を共有している場合、返される NumPy 配列の dtype も1つだけになり、内部構造を実際に変更することなく reshape / rotate できます。
+`query_np_stream` メソッドは、各ブロックを NumPy 配列として返します。すべての結果カラムが同じ NumPy dtype を共有している場合、配列は shape が `(rows, columns)` の2次元になります。型が混在する結果は、1次元の structured array として返されるか、object dtype が使用されます。
 
 `query_df_stream` メソッドは、各 ClickHouse Block を2次元の Pandas DataFrame として返します。以下の例は、`StreamContext` オブジェクトを遅延的にコンテキストとして使用できることを示しています (ただし1回のみ) 。
 
 ```python
-df_stream = client.query_df_stream('SELECT * FROM hits')
+df_stream = client.query_df_stream("SELECT * FROM hits")
 column_names = df_stream.source.column_names
 with df_stream:
     for df in df_stream:
-        <do something with the pandas DataFrame>
+        process_dataframe(df)
 ```
 
-`query_df_arrow_stream` メソッドは、各 ClickHouse Block を PyArrow の dtype バックエンドを持つ DataFrame として返します。このメソッドは、`dataframe_library` パラメータを通じて Pandas (2.x 以降) と Polars の両方の DataFrame をサポートしており、既定値は `"pandas"` です。各反復では、PyArrow の record batch から変換された DataFrame が返されるため、特定のデータ型ではパフォーマンスとメモリ効率が向上します。
+`query_df_arrow_stream` メソッドは、Arrow バッチを Pandas または Polars の DataFrame に変換します。使用するライブラリは `dataframe_library` で選択し、既定値は `"pandas"` です。
 
-最後に、`query_arrow_stream` メソッドは、ClickHouse の `ArrowStream` フォーマットの結果を、`StreamContext` でラップされた `pyarrow.ipc.RecordBatchStreamReader` として返します。ストリームの各反復では、PyArrow RecordBlock が返されます。
+最後に、`query_arrow_stream` は ClickHouse の `ArrowStream` レスポンスを `StreamContext` でラップします。各反復では、PyArrow の `RecordBatch` が返されます。
 
 <div id="streaming-examples">
   ### ストリーミングの使用例
@@ -121,15 +127,15 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# 大きな結果セットを1行ずつストリーミング
+# Stream large result sets row by row
 with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.numbers LIMIT 100000") as stream:
     for row in stream:
-        print(row)  # 各行を処理する
-        # 出力:
+        print(row)  # Process each row
+        # Output:
         # (0, 0)
         # (1, 2)
         # (2, 4)
-        # ....
+        # Additional rows follow
 ```
 
 <div id="stream-row-blocks">
@@ -141,13 +147,10 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# 行のブロック単位でストリーミング（行ごとの処理より効率的）
+# Stream in blocks of rows (more efficient than row-by-row)
 with client.query_row_block_stream("SELECT number, number * 2 FROM system.numbers LIMIT 100000") as stream:
     for block in stream:
         print(f"Received block with {len(block)} rows")
-        # 出力:
-        # 65409 行のブロックを受信
-        # 34591 行のブロックを受信
 ```
 
 <div id="stream-pandas-dataframes">
@@ -159,23 +162,12 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリ結果をPandas DataFrameとしてストリーミング
+# Stream query results as Pandas DataFrames
 with client.query_df_stream("SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000") as stream:
     for df in stream:
-        # 各DataFrameブロックを処理
+        # Process each DataFrame block
         print(f"Received DataFrame with {len(df)} rows")
         print(df.head(3))
-        # 出力:
-        # 65409行のDataFrameを受信
-        #    number str
-        # 0       0   0
-        # 1       1   1
-        # 2       2   2
-        # 34591行のDataFrameを受信
-        #    number    str
-        # 0   65409  65409
-        # 1   65410  65410
-        # 2   65411  65411
 ```
 
 <div id="stream-arrow-batches">
@@ -187,14 +179,33 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリ結果をArrowレコードバッチとしてストリーミング
+# Stream query results as Arrow record batches
 with client.query_arrow_stream("SELECT * FROM large_table") as stream:
     for arrow_batch in stream:
-        # 各Arrowバッチを処理
+        # Process each Arrow batch
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
-        # 出力:
-        # 65409行のArrowバッチを受信
-        # 34591行のArrowバッチを受信
+```
+
+<div id="async-stream-rows">
+  #### 行を非同期でストリームする
+</div>
+
+```python
+import asyncio
+
+import clickhouse_connect
+
+
+async def main():
+    async_client = await clickhouse_connect.get_async_client()
+    async with await async_client.query_rows_stream(
+        "SELECT number FROM numbers(100000)"
+    ) as stream:
+        async for row in stream:
+            print(row)
+
+
+asyncio.run(main())
 ```
 
 <div id="numpy-pandas-and-arrow-queries">
@@ -214,15 +225,15 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリはNumPy配列を返します
+# Query returns a NumPy array
 np_array = client.query_np("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
 
 print(type(np_array))
-# 出力:
-# <class "numpy.ndarray">
+# Output:
+# <class 'numpy.ndarray'>
 
 print(np_array)
-# 出力:
+# Output:
 # [[0 0]
 #  [1 2]
 #  [2 4]
@@ -241,11 +252,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリはPandas DataFrameを返します
+# Query returns a Pandas DataFrame
 df = client.query_df("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
 
 print(type(df))
-# Output: <class "pandas.core.frame.DataFrame">
+# Output: <class 'pandas.core.frame.DataFrame'>
 print(df)
 # Output:
 #    number  doubled
@@ -260,22 +271,22 @@ print(df)
   ### PyArrow クエリ
 </div>
 
-`query_arrow` メソッドは、クエリ結果を PyArrow Table として返します。ClickHouse の `Arrow` フォーマットを直接利用するため、メインの `query` メソッドと共通して受け付ける引数は `query`、`parameters`、`settings` の 3 つだけです。これに加えて `use_strings` という引数もあり、Arrow Table が ClickHouse の String 型を文字列として扱うか (True の場合) 、bytes として扱うか (False の場合) を指定します。
+`query_arrow` メソッドは、ClickHouse の `Arrow` 出力フォーマットを直接使用して PyArrow Table を返します。受け付ける引数は `query`、`parameters`、`settings`、`external_data`、`transport_settings` です。`use_strings` オプションは、ClickHouse の `String` カラムを Arrow の文字列として出力するか、バイナリ値として出力するかを制御します。
 
 ```python
 import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリはPyArrow Tableを返す
+# Query returns a PyArrow Table
 arrow_table = client.query_arrow("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
 
 print(type(arrow_table))
-# 出力:
-# <class "pyarrow.lib.Table">
+# Output:
+# <class 'pyarrow.lib.Table'>
 
 print(arrow_table)
-# 出力:
+# Output:
 # pyarrow.Table
 # number: uint64 not null
 # str: string not null
@@ -285,15 +296,15 @@ print(arrow_table)
 ```
 
 <div id="arrow-backed-dataframes">
-  ### Arrow バックエンドのDataFrame
+  ### Arrow バックエンド DataFrames
 </div>
 
-ClickHouse Connect は、`query_df_arrow` および `query_df_arrow_stream` メソッドを通じて、Arrow の結果から高速かつメモリ効率よく DataFrame を作成できます。これらは Arrow クエリメソッドの軽量なラッパーであり、可能な場合は DataFrame へのゼロコピー変換を行います。
+ClickHouse Connect は、`query_df_arrow` と `query_df_arrow_stream` により、Arrow の結果から DataFrame を効率的に作成できます。これらのメソッドは Python の行オブジェクトを経由する変換を避け、対象のライブラリが対応していれば Arrow バッファを再利用します。
 
 * `query_df_arrow`: ClickHouse の `Arrow` 出力フォーマットを使用してクエリを実行し、DataFrame を返します。
-  * `dataframe_library='pandas'` の場合、Arrow バックエンドの dtype (`pd.ArrowDtype`) を使用する pandas 2.x の DataFrame を返します。これには pandas 2.x が必要で、可能な場合はゼロコピーバッファを活用することで、優れたパフォーマンスと低いメモリオーバーヘッドを実現します。
-  * `dataframe_library='polars'` の場合、Arrow テーブルから作成された Polars DataFrame (`pl.from_arrow`) を返します。これも同様に効率的で、データによってはゼロコピーが可能です。
-* `query_df_arrow_stream`: Arrow ストリームのバッチから変換された DataFrame (pandas 2.x または Polars) のシーケンスとして結果をストリーミングします。
+  * `dataframe_library="pandas"` は、`pd.ArrowDtype` を使用する Pandas 2.0 以降の DataFrame を返します。
+  * `dataframe_library="polars"` は、`pl.from_arrow` を使って作成された Polars DataFrame を返します。
+* `query_df_arrow_stream`: Arrow のバッチを Pandas または Polars の DataFrame としてストリーミングします。
 
 <div id="query-to-arrow-backed-dataframe">
   #### ArrowバックエンドのDataFrameへのクエリ
@@ -304,203 +315,203 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# クエリは Arrow dtype を持つ Pandas DataFrame を返します（pandas 2.x が必要）
+# Query returns a Pandas DataFrame with Arrow dtypes (requires pandas 2.x)
 df = client.query_df_arrow(
     "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
     dataframe_library="pandas"
 )
 
 print(df.dtypes)
-# 出力:
+# Output:
 # number    uint64[pyarrow]
 # str       string[pyarrow]
 # dtype: object
 
-# または Polars を使用します
+# Or use Polars
 polars_df = client.query_df_arrow(
     "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
     dataframe_library="polars"
 )
-print(df.dtypes)
-# 出力:
+print(polars_df.dtypes)
+# Output:
 # [UInt64, String]
 
-# DataFrame のバッチとしてストリーミング（以下は polars の例）
+# Streaming into batches of DataFrames (polars shown)
 with client.query_df_arrow_stream(
     "SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000", dataframe_library="polars"
 ) as stream:
     for df_batch in stream:
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
-        # 出力:
-        # <class 'polars.dataframe.frame.DataFrame'> 型のバッチを受信、65409 行、dtype: [UInt64, String]
-        # <class 'polars.dataframe.frame.DataFrame'> 型のバッチを受信、34591 行、dtype: [UInt64, String]
 ```
 
 <div id="notes-and-caveats">
   #### 注意事項と留意点
 </div>
 
-* Arrow の型マッピング: Arrow フォーマットでデータを返す場合、ClickHouse は各型を、サポートされている中で最も近い Arrow 型にマッピングします。一部の ClickHouse 型には Arrow にネイティブな対応型がないため、Arrow のフィールドでは生のバイト列 (通常は `BINARY` または `FIXED_SIZE_BINARY`) として返されます。
-  * 例: `IPv4` は Arrow の `UINT32` として表現されます。`IPv6` と大きな整数 (`Int128/UInt128/Int256/UInt256`) は、多くの場合、生のバイト列を含む `FIXED_SIZE_BINARY` / `BINARY` として表現されます。
-  * このような場合、DataFrame のカラムには Arrow フィールドに基づくバイト値が格納されます。これらのバイト列を ClickHouse のセマンティクスに従ってどう解釈・変換するかは、クライアントコード側で対応する必要があります。
-* サポートされていない Arrow の data types (例: 真の Arrow 型としての UUID/ENUM) は出力されません。代わりに、出力時には最も近いサポート対象の Arrow 型 (多くの場合はバイナリのバイト列) で表現されます。
-* Pandas の要件: Arrow バックエンドの dtype を使うには pandas 2.x が必要です。古い pandas バージョンでは、代わりに `query_df` (非 Arrow) を使用してください。
-* String とバイナリ: `use_strings` オプション (server setting `output_format_arrow_string_as_string` がサポートされている場合) は、ClickHouse の `String` カラムを Arrow の文字列として返すか、バイナリとして返すかを制御します。
-
-<div id="mismatched-clickhousearrow-type-conversion-examples">
-  #### ClickHouse/Arrow 型変換の不一致の例
-</div>
-
-ClickHouse がカラムを生のバイナリデータ (例: `FIXED_SIZE_BINARY` や `BINARY`) として返す場合、これらのバイト列を適切な Python 型に変換するのは application code 側の責任です。以下の例は、一部の変換は DataFrame ライブラリの API で可能である一方、別の変換では `struct.unpack` のような pure Python の手法が必要になる場合があることを示しています (柔軟性は保てますが、性能は犠牲になります) 。
-
-`Date` カラムは `UINT16` (Unix エポック 1970‑01‑01 からの日数) として返されることがあります。DataFrame 内での変換は効率的で簡単です:
-
-```python
-# Polars
-df = df.with_columns(pl.col("event_date").cast(pl.Date))
-
-# Pandas
-df["event_date"] = pd.to_datetime(df["event_date"], unit="D")
-```
-
-`Int128` のようなカラムは、生のバイト列を含む `FIXED_SIZE_BINARY` として渡されることがあります。Polars は 128 ビット整数をネイティブにサポートしています。
-
-```python
-# Polars - ネイティブサポート
-df = df.with_columns(pl.col("data").bin.reinterpret(dtype=pl.Int128, endianness="little"))
-```
-
-NumPy 2.3 の時点では公開された 128 ビット整数の `dtype` はないため、純粋な Python にフォールバックして、たとえば次のようにできます。
-
-```python
-# dtype fixed_size_binary[16][pyarrow] の Int128 カラムを持つ pandas DataFrame があると仮定する
-
-print(df)
-# 出力:
-#   str_col                                        int_128_col
-# 0    num1  b'\\x15}\\xda\\xeb\\x18ZU\\x0fn\\x05\\x01\\x00\\x00\\x00...
-# 1    num2  b'\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00...
-# 2    num3  b'\\x15\\xdfp\\x81r\\x9f\\x01\\x00\\x00\\x00\\x00\\x00\\x...
-
-print([int.from_bytes(n, byteorder="little") for n in df["int_128_col"].to_list()])
-# 出力:
-# [1234567898765432123456789, 8, 456789123456789]
-```
-
-重要なポイントは、これらの変換を、選択したDataFrameライブラリの機能と許容可能なパフォーマンス上のトレードオフを踏まえて、application code側で処理する必要があるということです。DataFrameネイティブな変換が利用できない場合でも、純粋なPythonによる方法は引き続き選択肢となります。
+* Arrow スキーマは ClickHouse によって制御されます。Arrow で直接表現できない型は、バイナリフィールドを含む互換性のある物理型で返される場合があります。アプリケーション固有の変換を適用する前に、`table.schema` または DataFrame の dtype を確認してください。
+* Arrow バックエンドの Pandas の結果を利用するには、Pandas 2.0 以降が必要です。
+* `use_strings` は、サーバーが `output_format_arrow_string_as_string` をサポートしている場合に、ClickHouse の `String` カラムで Arrow の string フィールドと binary フィールドのどちらを使用するかを制御します。
+* `tz_mode="schema"` は、Arrow ベースのクエリメソッドではまだサポートされていません。これらのメソッドは警告を出し、Arrow レスポンスで提供されたタイムゾーンのメタデータを保持します。
 
 <div id="read-formats">
   ## 読み取りフォーマット
 </div>
 
-読み取りフォーマットは、クライアントの `query`、`query_np`、`query_df` メソッドから返される値のデータ型を制御します。 (`raw_query` と `query_arrow` は ClickHouse から受信したデータを変更しないため、フォーマット制御は適用されません。) たとえば、UUID の読み取りフォーマットをデフォルトの `native` フォーマットから代替の `string` フォーマットに変更すると、`UUID` カラムに対する ClickHouse クエリの結果は、Python の UUID オブジェクトではなく文字列値 (標準の 8-4-4-4-12 RFC 1422 形式を使用) として返されます。
+読み取りフォーマットは、`query`、`query_np`、`query_df` が返す値を制御します。raw メソッドや Arrow メソッドには適用されません。これらのメソッドはサーバーの出力フォーマットを直接使用するためです。たとえば、UUID の読み取りフォーマットを `"string"` に設定すると、`uuid.UUID` オブジェクトではなく UUID 文字列が返されます。
 
-どのフォーマット関数でも、「data type」引数にはワイルドカードを含めることができます。フォーマットは小文字 1 つの文字列です。
+任意のフォーマット関数の &quot;data type&quot; 引数にはワイルドカードを含めることができます。フォーマットは小文字 1 つからなる文字列です。`Array`、`Nullable`、`LowCardinality` などのコンテナーラッパーでは、その要素型に対して選択したフォーマットが維持されます。
 
 読み取りフォーマットは、複数のレベルで設定できます。
 
-* `clickhouse_connect.datatypes.format` パッケージで定義されたメソッドを使用して、グローバルに設定できます。これにより、すべてのクエリで、設定したデータ型のフォーマットが制御されます。
+* `clickhouse_connect.datatypes.format` パッケージで定義されているメソッドを使用して、グローバルに設定できます。これにより、設定したデータ型のフォーマットがすべてのクエリで適用されます。
 
 ```python
 from clickhouse_connect.datatypes.format import set_read_format
 
-# IPv6とIPv4の値をどちらも文字列として返す
-set_read_format('IPv*', 'string')
+# Return both IPv6 and IPv4 values as strings
+set_read_format("IPv*", "string")
 
-# すべてのDateタイプを基底のエポック秒またはエポック日として返す
-set_read_format('Date*', 'int')
+# Return all Date types as the underlying epoch second or epoch day
+set_read_format("Date*", "int")
 ```
 
-* クエリ全体に対しては、省略可能な `query_formats` 辞書引数を使用します。この場合、指定したデータ型の任意のカラム (またはサブカラム) に、設定したフォーマットが適用されます。
+* オプションの `query_formats` 辞書引数を使用すると、クエリ全体に対して指定できます。この場合、指定したデータ型の任意のカラム (またはサブカラム) に、設定されたフォーマットが適用されます。
 
 ```python
-# 任意の UUID カラムを文字列で返す
-client.query('SELECT user_id, user_uuid, device_uuid from users', query_formats={'UUID': 'string'})
+# Return any UUID column as a string
+client.query(
+    "SELECT user_id, user_uuid, device_uuid FROM users",
+    query_formats={"UUID": "string"},
+)
 ```
 
-* 特定のカラム内の値に対しては、オプションの `column_formats` 辞書引数を使用します。キーには ClickHouse が返すカラム名を指定し、値にはそのデータカラムのフォーマット、または ClickHouse の型名をキー、クエリのフォーマットを値とする第2レベルの &quot;format&quot; 辞書を指定します。この二次辞書は、Tuples や Maps などのネストされたカラム型に使用できます。
+* 特定の結果カラムに対しては、省略可能な `column_formats` 辞書を使用します。各キーには返されるカラム名を指定します。値には、フォーマット文字列、または ClickHouse の型名からフォーマットへのネストされたマッピングを指定できます。これは Tuples、Maps、その他のコンテナー型で役立ちます。
 
 ```python
-# `dev_address` カラムのIPv6値を文字列として返す
-client.query('SELECT device_id, dev_address, gw_address from devices', column_formats={'dev_address':'string'})
+# Return IPv6 values in the `dev_address` column as strings
+client.query(
+    "SELECT device_id, dev_address, gw_address FROM devices",
+    column_formats={"dev_address": "string"},
+)
 ```
 
 <div id="read-format-options-python-types">
-  ### 読み取りフォーマットのオプション (Python 型)
+  ### 読み取りフォーマットオプション (Python 型)
 </div>
 
-| ClickHouse 型          | ネイティブ Python 型          | 読み取りフォーマット        | コメント                                                                 |
+| ClickHouse Type       | ネイティブ Python 型          | 読み取りフォーマット        | 備考                                                                   |
 | --------------------- | ----------------------- | ----------------- | -------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | -                 |                                                                      |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                      |
 | UInt64                | int                     | signed            | Superset は現在、大きな符号なし UInt64 値を処理できません                                |
-| [U]Int[128,256]       | int                     | string            | Pandas と NumPy の int 値は最大 64 ビットまでのため、これらは文字列として返すことができます            |
+| [U]Int[128,256]       | int                     | string            | Pandas と NumPy の int 値は最大 64 ビットのため、これらは文字列として返すことができます              |
 | BFloat16              | float                   | -                 | Python の float はすべて内部的に 64 ビットです                                     |
-| Float32               | float                   | -                 | Python の float はすべて内部的に 64 ビットです                                     |
-| Float64               | float                   | -                 |                                                                      |
+| Float32               | float                   | string            | Python の float はすべて内部的に 64 ビットです                                     |
+| Float64               | float                   | string            |                                                                      |
 | Decimal               | decimal.Decimal         | -                 |                                                                      |
-| String                | string                  | bytes             | ClickHouse の String カラムには固有のエンコーディングがないため、可変長のバイナリデータにも使われます         |
+| String                | str                     | bytes             | ClickHouse の String 型のカラムには固有のエンコーディングがないため、可変長のバイナリデータにも使われます       |
 | FixedString           | bytes                   | string            | FixedString は固定長のバイト配列ですが、Python の文字列として扱われることもあります                  |
-| Enum[8,16]            | string                  | string, int       | Python の enum は空文字列を受け付けないため、すべての enum は文字列または基になる int 値として返されます。    |
-| Date                  | datetime.date           | int               | ClickHouse は Date を 01/01/1970 からの日数として保存します。この値は int として利用できます      |
-| Date32                | datetime.date           | int               | Date と同様ですが、より広い日付範囲に対応します                                           |
-| DateTime              | datetime.datetime       | int               | ClickHouse は DateTime を epoch 秒として保存します。この値は int として利用できます           |
-| DateTime64            | datetime.datetime       | int               | Python の datetime.datetime はマイクロ秒精度に制限されています。生の 64 ビット int 値を利用できます  |
-| Time                  | datetime.timedelta      | int, string, time | 時点は Unix timestamp として保存されます。この値は int として利用できます                      |
-| Time64                | datetime.timedelta      | int, string, time | Python の datetime.timedelta はマイクロ秒精度に制限されています。生の 64 ビット int 値を利用できます |
-| IPv4                  | `ipaddress.IPv4Address` | string            | IP アドレスは文字列として読み取ることができ、適切な形式の文字列は IP アドレスとして挿入できます                  |
-| IPv6                  | `ipaddress.IPv6Address` | string            | IP アドレスは文字列として読み取ることができ、適切な形式の文字列は IP アドレスとして挿入できます                  |
-| Tuple                 | dict or tuple           | tuple, json       | 名前付き tuple はデフォルトで辞書として返されます。名前付き tuple は JSON 文字列として返すこともできます       |
+| Enum[8,16]            | str                     | int               | ネイティブフォーマットではラベルが返されます。`int` は元の整数値を返します。                            |
+| Date                  | datetime.date           | int               | 整数フォーマットは 1970-01-01 からの日数を返します。                                     |
+| Date32                | datetime.date           | int               | 整数フォーマットは、より広い範囲の符号付き日オフセットを返します。                                    |
+| DateTime              | datetime.datetime       | int               | 整数フォーマットはエポック秒を返します。                                                 |
+| DateTime64            | datetime.datetime       | int               | 整数フォーマットは、カラムの精度での ticks を返します。Python の `datetime` はマイクロ秒までに制限されます。  |
+| Time                  | datetime.timedelta      | int, string, time | 整数フォーマットは秒を返します。`time` フォーマットは `datetime.time` に収まる値に限られます。          |
+| Time64                | datetime.timedelta      | int, string, time | 整数フォーマットは、カラムの精度での ticks を返します。Python の `timedelta` はマイクロ秒までに制限されます。 |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP アドレスは文字列または整数として読み取れます。                                           |
+| IPv6                  | `ipaddress.IPv6Address` | string            | IP アドレスは文字列として読み取れ、適切な形式であれば IP アドレスとして挿入できます                        |
+| Tuple                 | dict or tuple           | tuple, dict, json | 名前付き Tuple は既定で辞書を返し、名前のない Tuple は tuple を返します。                      |
 | Map                   | dict                    | -                 |                                                                      |
 | Nested                | Sequence[dict]          | -                 |                                                                      |
-| UUID                  | uuid.UUID               | string            | UUID は RFC 4122 に従った形式の文字列として読み取ることができます<br />                       |
-| JSON                  | dict                    | string            | デフォルトでは Python の辞書が返されます。`string` フォーマットでは JSON 文字列が返されます            |
-| Variant               | object                  | -                 | 値に格納されている ClickHouse データ型に対応する Python 型を返します                         |
-| Dynamic               | object                  | -                 | 値に格納されている ClickHouse データ型に対応する Python 型を返します                         |
+| UUID                  | uuid.UUID               | string            | UUID は RFC 4122 に準拠した形式の文字列として読み取れます<br />                           |
+| JSON                  | dict                    | string            | 既定では Python の辞書が返されます。`string` フォーマットでは JSON 文字列が返されます               |
+| Variant               | object                  | typed             | `typed` は `TypedVariant(value, type_name)` を返すため、元のメンバー型が保持されます。     |
+| Dynamic               | object                  | -                 | 値に格納されている ClickHouse のデータ型に対応する Python 型を返します                        |
+| QBit                  | list[float]             | -                 | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                      |
 
 <div id="external-data">
   ## 外部データ
 </div>
 
-ClickHouseのクエリでは、任意のClickHouseフォーマットの外部データを受け取ることができます。このバイナリデータはクエリ文字列と一緒に送信され、データの処理に使用されます。External Data機能の詳細は[こちら](/ja/reference/engines/table-engines/special/external-data)を参照してください。クライアントの`query*`メソッドは、この機能を利用するための省略可能な`external_data`パラメーターを受け付けます。`external_data`パラメーターの値には、`clickhouse_connect.driver.external.ExternalData`オブジェクトを指定する必要があります。このオブジェクトのコンストラクタは、以下の引数を受け取ります。
+ClickHouse のクエリでは、サポートされている任意の入力フォーマットで外部データを受け取ることができます。クライアントはデータをリクエストの一部として送信し、クエリ内ではそれを一時的な外部テーブルとして参照できます。詳しくは、[ClickHouse external data documentation](/ja/reference/engines/table-engines/special/external-data) を参照してください。Client のクエリメソッドは、`external_data` パラメータを通じて `clickhouse_connect.driver.external.ExternalData` オブジェクトを受け取ります。
 
-| Name          | Type              | Description                                                                      |
-| ------------- | ----------------- | -------------------------------------------------------------------------------- |
-| file&#95;path | str               | 外部データの読み取り元となる、ローカルシステム上のファイルへのパスです。`file_path`または`data`のいずれかが必要です               |
-| file&#95;name | str               | 外部データの&quot;ファイル&quot;名です。指定しない場合は、`file_path`から (拡張子を除いて) 決定されます                |
-| data          | bytes             | バイナリ形式の外部データです (ファイルから読み取る代わりに指定します) 。`data`または`file_path`のいずれかが必要です             |
-| fmt           | str               | データのClickHouse[入力フォーマット](/ja/reference/formats/index)です。デフォルトは`TSV`です               |
-| types         | str or seq of str | 外部データ内のカラムのデータ型の一覧です。文字列の場合、型はカンマ区切りで指定する必要があります。`types`または`structure`のいずれかが必要です |
-| structure     | str or seq of str | データ内のカラム名 + データ型の一覧です (例を参照) 。`structure`または`types`のいずれかが必要です                    |
-| mime&#95;type | str               | ファイルデータの省略可能なMIMEタイプです。現在、ClickHouseはこのHTTPサブヘッダーを無視します                          |
+| Name          | Type              | Description                                                                                 |
+| ------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| file&#95;path | str               | 外部データの読み込み元となる、ローカルシステム上のファイルへのパスです。`file_path` または `data` のいずれかが必要です                       |
+| file&#95;name | str               | 外部データの &quot;file&quot; 名です。指定しない場合は、`file_path` のファイル名部分が使用されます。外部テーブル名は、拡張子を除いたファイル名になります |
+| data          | bytes             | 外部データをバイナリ形式で指定します (ファイルから読み込む代わりに使用します) 。`data` または `file_path` のいずれかが必要です                 |
+| fmt           | str               | データの ClickHouse [入力フォーマット](/ja/reference/formats) です。デフォルトは `TSV` です                           |
+| types         | str or seq of str | 外部データ内のカラムのデータ型一覧です。文字列の場合、型はカンマで区切る必要があります。`types` または `structure` のいずれかが必要です              |
+| structure     | str or seq of str | データ内のカラム名 + データ型の一覧です (例を参照) 。`structure` または `types` のいずれかが必要です                            |
+| mime&#95;type | str               | 省略可能なファイルデータの MIME タイプです。現在、ClickHouse はこの HTTP サブヘッダーを無視します                                |
 
-&quot;movie&quot;データを含む外部CSVファイルを使ってクエリを送信し、そのデータをClickHouse server上にすでに存在する`directors`テーブルと結合するには、次のようにします。
+この例では、外部 CSVファイルをサーバー上に保存されている `directors` テーブルに結合しています:
 
 ```python
 import clickhouse_connect
 from clickhouse_connect.driver.external import ExternalData
 
 client = clickhouse_connect.get_client()
-ext_data = ExternalData(file_path='/data/movies.csv',
-                        fmt='CSV',
-                        structure=['movie String', 'year UInt16', 'rating Decimal32(3)', 'director String'])
-result = client.query('SELECT name, avg(rating) FROM directors INNER JOIN movies ON directors.name = movies.director GROUP BY directors.name',
-                      external_data=ext_data).result_rows
+ext_data = ExternalData(
+    file_path="/data/movies.csv",
+    fmt="CSV",
+    structure=[
+        "movie String",
+        "year UInt16",
+        "rating Decimal32(3)",
+        "director String",
+    ],
+)
+result = client.query(
+    "SELECT name, avg(rating) "
+    "FROM directors INNER JOIN movies ON directors.name = movies.director "
+    "GROUP BY directors.name",
+    external_data=ext_data,
+).result_rows
 ```
 
-追加の外部データファイルは、コンストラクターと同じパラメーターを取る `add_file` メソッドを使って、既存の `ExternalData` オブジェクトに追加できます。HTTP では、すべての外部データが `multi-part/form-data` によるファイルアップロードの一部として送信されます。
+追加の外部データファイルは、コンストラクターと同じパラメーターを受け取る `add_file` メソッドを使って、最初の `ExternalData` オブジェクトに追加できます。HTTP では、すべての外部データは `multi-part/form-data` によるファイルアップロードの一部として送信されます。
+
+chDB バックエンドは外部データをサポートしていません。
 
 <div id="time-zones">
   ## タイムゾーン
 </div>
 
-ClickHouse の DateTime および DateTime64 の値にタイムゾーンを適用する方法はいくつかあります。内部的には、ClickHouse server は DateTime または `DateTime64` オブジェクトを常に、エポックである 1970-01-01 00:00:00 UTC からの秒数を表すタイムゾーンなしの数値として保存します。`DateTime64` の値では、精度に応じて、エポックからのミリ秒、マイクロ秒、またはナノ秒で表現されます。そのため、タイムゾーン情報の適用は常にクライアント側で行われます。これには無視できない追加の計算コストがかかるため、パフォーマンスが重要なアプリケーションでは、ユーザー向け表示や変換を除き、DateTime 型はエポック timestamp として扱うことを推奨します (たとえば Pandas の Timestamps は、パフォーマンス向上のため、常にエポックのナノ秒を表す 64 ビット整数です) 。
+ClickHouse の `DateTime` および `DateTime64` の値は、epoch ベースの数値として送信されます。ClickHouse Connect は、カラムのメタデータ、クエリのオーバーライド、クライアントのタイムゾーンポリシーを使用して、これらを Python の `datetime` オブジェクトに変換します。
 
-クエリでタイムゾーン対応のデータ型を使用する場合、特に Python の `datetime.datetime` オブジェクトでは、`clickhouse-connect` は次の優先順位ルールに従ってクライアント側のタイムゾーンを適用します。
+クライアントには、互いに独立した 2 つのタイムゾーンオプションがあります。
 
-1. クエリに `client_tzs` クエリメソッド parameter が指定されている場合は、そのカラム固有のタイムゾーンが適用されます
-2. ClickHouse のカラムに timezone metadata がある場合 (つまり、DateTime64(3, &#39;America/Denver&#39;) のような型である場合) 、ClickHouse のカラムのタイムゾーンが適用されます。 (なお、この timezone metadata は ClickHouse version 23.2 より前の DateTime カラムでは clickhouse-connect から利用できません)
-3. クエリに `query_tz` クエリメソッド parameter が指定されている場合は、「クエリタイムゾーン」が適用されます。
-4. タイムゾーン設定がクエリまたは session に適用されている場合は、そのタイムゾーンが適用されます。 (この機能は ClickHouse server ではまだリリースされていません)
-5. 最後に、クライアントの `apply_server_timezone` parameter が True (デフォルト) に設定されている場合は、ClickHouse server のタイムゾーンが適用されます。
+* `tz_source` は、明示的なタイムゾーンメタデータを持たないカラムに対するフォールバックのタイムゾーンを選択します。
+  * `"auto"` がデフォルトです。クライアントが夏時間の切り替えをまたいでも安全に解決できる場合はサーバータイムゾーンを使用し、そうでない場合はローカルタイムゾーンを使用します。
+  * `"server"` は常にサーバータイムゾーンを使用します。
+  * `"local"` は常にローカルプロセスのタイムゾーンを使用します。
+* `tz_mode` はタイムゾーン対応を制御します。
+  * `"naive_utc"` がデフォルトです。UTC および UTC 相当の結果は、後方互換性のため、naive な `datetime` オブジェクトとして返されます。
+  * `"aware"` は UTC の tzinfo を保持し、タイムゾーン対応の UTC 値を返します。
+  * `"schema"` は、カラム型でタイムゾーンが宣言されている場合にのみタイムゾーン対応の値を返し、タイムゾーン指定のない `DateTime`/`DateTime64` カラムには naive な値を返します。
 
-これらのルールに基づいて適用されたタイムゾーンが UTC の場合、`clickhouse-connect` は *常に* タイムゾーン情報を持たない Python の `datetime.datetime` オブジェクトを返す点に注意してください。その後、必要に応じて、このタイムゾーン情報を持たないオブジェクトにアプリケーションコード側で追加のタイムゾーン情報を付与できます。
+通常の `"naive_utc"` および `"aware"` クエリでは、有効なタイムゾーンは次の順序で選択されます。
+
+1. カラムごとの `column_tzs` オーバーライド。
+2. ClickHouse のカラム型に含まれるタイムゾーンメタデータ。
+3. クエリ全体に適用される `query_tz` オーバーライド。
+4. HTTP レスポンスとともに返されるタイムゾーン情報。
+5. `tz_source` で選択されたフォールバック。
+
+`tz_mode="schema"` はクエリおよびフォールバックのタイムゾーンを無視しますが、明示的な `column_tzs` オーバーライドは引き続き優先されます。
+
+```python
+result = client.query(
+    "SELECT "
+    "toDateTime('2026-01-15 12:00:00', 'UTC') AS utc_time, "
+    "toDateTime('2026-01-15 12:00:00', 'America/Denver') AS denver_time",
+    tz_mode="aware",
+)
+
+assert result.first_row[0].tzinfo is not None
+assert result.first_row[1].tzinfo is not None
+```
+
+タイムゾーン名は、標準ライブラリの `zoneinfo` モジュールで解決されます。Windows へのインストールでは `tzdata` が自動的に自動的に含まれます。IANA タイムゾーンデータベースを含まない最小構成の Linux イメージでは、`clickhouse-connect[tzdata]` をインストールしてください。
+
+Pandas の結果では、`DateTime` は `datetime64[s]`、`DateTime64(3)` は `datetime64[ms]` というように、各 ClickHouse 型本来の精度が保持されます。Arrow バックエンドの DataFrame メソッド `query_df_arrow` と `query_df_arrow_stream` は、まだ `tz_mode="schema"` に対応しておらず、これが指定されると警告を出します。`query_arrow` と `query_arrow_stream` は、Arrow レスポンスのタイムゾーン メタデータを変更せずにそのまま返します。

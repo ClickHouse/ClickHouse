@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: 'Dicionários Naive Bayes'
+sidebarTitle: 'Naive Bayes'
+description: 'Configure dicionários NAIVE_BAYES para classificação de texto.'
+doc_type: 'reference'
+---
+
+O dicionário `naive_bayes` (`NAIVE_BAYES`) classifica texto com um modelo multinomial de [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier), o modelo de eventos padrão para texto: ele atribui uma pontuação a cada classe com base na frequência com que os n-gramas da entrada aparecem nela. Você fornece uma tabela de **contagens de n-gramas** por classe, que ele compila em um modelo uma única vez, no momento do carregamento, e depois usa para classificar qualquer texto informado.
+
+Ele é adequado para classificação de texto rápida e leve, como análise de sentimento, rotulagem de tópicos ou spam e detecção de idioma ou sistema de escrita.
+
+Você consulta o dicionário com uma de três funções:
+
+* [`naiveBayesClassifier`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) retorna o id da classe prevista.
+* [`naiveBayesClassifierWithProb`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb) retorna a classe prevista com sua probabilidade.
+* [`naiveBayesClassifierWithAllProbs`](/pt-BR/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) retorna cada classe com sua probabilidade.
+
+A função [`dictGet`](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet) simples também classifica (consulte [Notas](#notes)). Outra função, [`naiveBayesNgrams`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), não classifica — ela divide o texto em n-gramas da mesma forma que o dicionário, para que você possa montar os dados de treinamento a partir de texto bruto (consulte [criar dados de treinamento a partir de texto bruto](#build-training-data-from-raw-text)).
+
+<div id="quickstart">
+  ## Início rápido
+</div>
+
+Aqui, criamos um modelo unigrama (`n = 1`) em modo token para análise de sentimento.
+
+**1. Crie uma tabela de origem** com contagens de n-gram por classe:
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. Insira os dados de treinamento** — palavras individuais (unigramas) e a frequência com que cada uma ocorre na classe positiva (`1`) e negativa (`0`):
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. Crie o dicionário** com o layout `NAIVE_BAYES`:
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+`PRIMARY KEY ngram` faz da coluna `ngram` a chave — mas, para um dicionário `NAIVE_BAYES`, essa &quot;chave&quot; é o texto que você fornece para classificar, e não um valor armazenado que você procura (veja [Estrutura do dicionário](#dictionary-structure)). O `LAYOUT` configura o modelo: `class_attribute 'class_id'` marca `class_id` como o rótulo da classe (portanto, o outro atributo, `count`, é a contagem de ocorrências por classe), `n 1` usa unigramas e `mode 'token'` divide o texto em palavras separadas por espaços em branco (veja [Parâmetros de layout](#layout-parameters)).
+
+**4. Classifique** — `naiveBayesClassifier` retorna o ID da classe:
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+`1` corresponde à classe positiva, com base nos dados de treinamento que inserimos na etapa 2.
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+Da mesma forma, `0` corresponde à classe negativa.
+
+O mesmo resultado com `dictGet`:
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+Obtenha a probabilidade da predição ou de cada classe:
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+A previsão é a classe `0` (negativa), com probabilidade `0.64`.
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+`naiveBayesClassifierWithAllProbs` retorna todas as classes em ordem da mais provável para a menos provável, com probabilidades cuja soma é `1.0` — aqui, `0.64` para a classe negativa e `0.36` para a positiva.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+**Treinamento (no carregamento).** Cada linha de origem é uma observação `(n-gram, class, count)`. Quando o dicionário é carregado, as linhas são compiladas no modelo uma única vez. Linhas duplicadas de `(n-gram, class)` são somadas, e linhas com `count = 0` são ignoradas.
+
+**Classificação (no momento da consulta).** Para classificar uma string, o modelo:
+
+1. Divide a string em n-grams de acordo com `mode` e `n` (consulte [Modos de tokenização](#tokenization-modes)).
+2. Calcula a pontuação de cada classe combinando o prior da classe com a frequência com que os n-grams da entrada foram vistos nessa classe.
+3. Ordena as classes por pontuação. A classe com a maior pontuação é a predição retornada por `naiveBayesClassifier`; `naiveBayesClassifierWithProb` e `naiveBayesClassifierWithAllProbs` também retornam probabilidades — dessa classe ou de todas elas.
+
+Há dois fatores que afetam a pontuação de cada classe. O primeiro é `alpha`, usado para suavização. A suavização impede que o modelo atribua pontuação zero a uma classe só porque um n-gram não apareceu nessa classe durante o treinamento. Um `alpha` menor faz o modelo depender mais dos dados de treinamento, então uma classe pode receber uma pontuação muito maior do que as outras, mas isso também pode deixar o modelo sensível demais quando os dados de treinamento são escassos ou desbalanceados. Um `alpha` maior faz com que as contagens de n-grams tenham menos peso, tornando as pontuações das diferentes classes mais parecidas. Se `alpha` for muito grande, a informação dos n-grams quase não influencia, e a pontuação passa a ser determinada principalmente pelo prior da classe (descrito a seguir).
+
+O segundo fator é o prior da classe — o que o modelo assume sobre a probabilidade de cada classe antes de analisar o texto. Ele funciona como uma pontuação inicial que cada classe recebe antes que qualquer n-gram seja considerado; assim, um prior mais alto torna uma classe mais propensa a ser prevista. A forma como ele é definido depende de `priors_mode`. Por padrão (`proportional`), uma classe com contagem total maior de n-grams nos dados de treinamento começa com uma pontuação mais alta. Com `uniform`, todas as classes começam em igualdade, então apenas os n-grams decidem. Com `explicit`, você define manualmente o ponto de partida de cada classe. Consulte [Modos de prior](#prior-modes).
+
+Um n-gram que nunca apareceu em nenhum ponto dos dados de treinamento é ignorado: ele não faz parte do vocabulário do modelo, portanto não ajuda nem prejudica nenhuma classe.
+
+O algoritmo segue o modelo multinomial Naive Bayes para classificação de texto; consulte [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html).
+
+<div id="dictionary-structure">
+  ## Estrutura do dicionário
+</div>
+
+Um dicionário `NAIVE_BAYES` tem uma estrutura fixa:
+
+* A `PRIMARY KEY` é uma única coluna `String` — o n-gram. No momento da consulta, essa &quot;chave&quot; é o texto que você fornece para classificar, não uma chave de busca armazenada.
+* Junto com ela, declare **exatamente dois atributos de inteiros sem sinal**: o rótulo da classe e a contagem de ocorrências. Os IDs de classe sempre usam `UInt32` internamente, então um rótulo de classe deve caber em `UInt32` (no máximo `4294967295`), mesmo que você declare o atributo como `UInt64`. Um valor maior é rejeitado quando o dicionário é carregado, não quando você o cria. O mesmo vale para os tipos declarados: se um ID de classe de origem ou uma contagem não couber no tipo de atributo declarado, o carregamento falhará em vez de o valor ser truncado silenciosamente.
+* O parâmetro de layout `class_attribute` indica qual atributo é o rótulo da classe; o outro passa a ser automaticamente a contagem. Os dois atributos podem ser declarados em qualquer ordem.
+
+A tabela de origem armazena contagens **pré-agregadas**: uma linha por `(n-gram, class)` com o número de vezes que esse n-gram apareceu nessa classe. Você gera essas contagens tokenizando seu corpus e agrupando o resultado, seja no seu próprio pipeline de treinamento ou no ClickHouse a partir de texto bruto rotulado (veja [Criar dados de treinamento a partir de texto bruto](#build-training-data-from-raw-text)). O dicionário apenas consome esses dados.
+
+**Atualizando o modelo.** Como o modelo é um dicionário baseado em uma tabela, faça o retreinamento atualizando a tabela e recarregando-a:
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## Parâmetros de layout
+</div>
+
+| Parâmetro         | Descrição                                                                                                                                                                                                        | Exemplo                | Padrão                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | --------------------- |
+| `class_attribute` | Nome do atributo que contém o rótulo da classe; o outro atributo é a contagem.                                                                                                                                   | `'class_id'`           | *Obrigatório*         |
+| `n`               | Tamanho do n-grama: `1` = unigramas, `2` = bigramas, `3` = trigramas, … (1–1024).                                                                                                                                | `2`                    | *Obrigatório*         |
+| `mode`            | Método de tokenização: `byte`, `codepoint` ou `token`. Veja [Modos de tokenização](#tokenization-modes).                                                                                                         | `'token'`              | *Obrigatório*         |
+| `alpha`           | Suavização aditiva (Lidstone) para probabilidades de n-gramas; `alpha = 1` é suavização de Laplace (deve ser finito e `> 0`).                                                                                    | `0.5`                  | `1.0`                 |
+| `priors_mode`     | Como os priors de classe são determinados: `uniform`, `proportional` ou `explicit`. Veja [Modos de prior](#prior-modes).                                                                                         | `'uniform'`            | `'proportional'`      |
+| `priors`          | Priors explícitos por classe: uma coleção de pares `(class, probability)`. Válido apenas com `priors_mode 'explicit'`, caso em que é obrigatório; fornecê-lo em qualquer outro modo é um erro. Deve somar `1.0`. | `[(0, 0.6), (1, 0.4)]` | —                     |
+| `store_source`    | Retém as linhas de origem para que `SELECT * FROM dictionary` funcione. Aproximadamente dobra o uso de memória.                                                                                                  | `1`                    | `0`                   |
+| `start_token`     | Token de fronteira prefixado à entrada `(n-1)` vezes. Veja [Tokens de delimitação](#boundary-tokens-padding).                                                                                                    | `'0x01'` / `'<s>'`     | — (sem preenchimento) |
+| `end_token`       | Token de fronteira anexado à entrada `(n-1)` vezes.                                                                                                                                                              | `'0xFF'` / `'</s>'`    | — (sem preenchimento) |
+
+Você pode definir o dicionário com a DDL `CREATE DICTIONARY` (como no início rápido acima) ou em um arquivo de configuração XML; veja [layouts de dicionário](/pt-BR/reference/statements/create/dictionary/layouts/overview) para saber onde esse arquivo deve ficar. O exemplo abaixo define todas as opções de layout para que você possa ver todas elas — apenas `class_attribute`, `n` e `mode` são obrigatórios, e a tabela acima fornece os valores padrão para o restante. Em um arquivo de configuração, os priors são escritos como elementos `prior` repetidos (um por classe, como mostrado abaixo), os tokens de preenchimento para `byte` e `codepoint` são números (a configuração não pode conter bytes brutos) e um literal `token` recebe escape de XML quando necessário, então `<s>` se torna `&lt;s&gt;`.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## Modos de tokenização
+</div>
+
+`mode` define o que é um &quot;token&quot; e, portanto, como são os n-gramas. Os n-gramas de origem devem ter sido gerados com o **mesmo** `mode` e `n`.
+
+* `byte` — cada token é um único byte; não se assume UTF-8. Com `n = 2`, `'abc'` gera os bigramas de bytes `'ab'`, `'bc'`. *Bom para* detectar idioma ou codificação em sequências arbitrárias de bytes, e para quaisquer dados em que sinais abaixo do nível de caractere sejam importantes. Normalmente é usado com `n >= 2`.
+* `codepoint` — cada token é um ponto de código Unicode; a entrada é interpretada como UTF-8. Com `n = 1`, `'café'` gera os pontos de código `'c'`, `'a'`, `'f'`, `'é'`. *Bom para* detectar escrita e idioma, e para texto curto ou CJK, em que limites de palavras por espaço em branco não são confiáveis. (Os n-gramas de origem devem ser UTF-8 válidos; a entrada da consulta é decodificada de forma tolerante — veja [Notas](#notes).)
+* `token` — cada token é uma palavra delimitada por **espaços em branco ASCII** (espaço, tabulação, quebra de linha, retorno de carro, avanço de página, tabulação vertical; sequências são reduzidas a um único separador). Espaços em branco Unicode não ASCII, como `U+00A0` (espaço inseparável) ou `U+2003` (espaço em), **não** são separadores e permanecem dentro de um token. Espaço em branco é a única coisa que separa — nada é convertido para minúsculas nem removido — então `'Hello, World!'` se torna os tokens `'Hello,'` e `'World!'` (a vírgula, o `!` e as letras maiúsculas são mantidos), e com `n = 2` eles formam o único bigrama `'Hello, World!'`. *Bom para* classificação no nível de palavras em idiomas separados por espaços — sentimento, tópico, spam, idioma de uma frase.
+
+<div id="prior-modes">
+  ## Modos de prior
+</div>
+
+O prior é a crença do modelo sobre cada classe *antes* de ele analisar o texto. `priors_mode` define como ele é configurado.
+
+* `proportional` (padrão) — o prior de cada classe é proporcional à sua contagem total de n-gramas nos dados de treinamento — a soma da coluna `count` para essa classe, não o número de linhas nem de documentos de treinamento — portanto, as classes vistas com mais frequência começam com maior probabilidade. **Escolha-o** quando as proporções das classes no treinamento (pela contagem total de n-gramas) corresponderem às frequências esperadas no momento da consulta. **Nada a informar** — ele é derivado das contagens de origem.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — todas as classes começam com a mesma probabilidade, então nenhuma sai na frente e a previsão vem inteiramente dos n-gramas da entrada. **Escolha-o** quando as classes estiverem balanceadas ou quando as frequências de treinamento não refletirem a frequência com que cada classe aparece no momento da consulta. **Nada a informar.**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — você fornece os priors com `priors [(0, 0.6), (1, 0.4)]`: um par `(classe, probabilidade)` por classe, cada probabilidade maior que 0 e no máximo 1, somando `1.0` no total. **Escolha-o** quando você souber as taxas-base reais e elas forem diferentes das do treinamento — por exemplo, apenas 1% do tráfego em produção é spam, embora o conjunto de treinamento tenha sido balanceado. **Calcule-os** com base na participação esperada de cada classe no mundo real.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## Tokens de fronteira (padding)
+</div>
+
+O padding fica desativado por padrão. Ele só importa para `n > 1`, quando pode melhorar a precisão ao permitir que o modelo use sinais no início e no fim do texto.
+
+**Por que isso ajuda.** Com `n > 1`, os n-grams no meio do texto recebem contexto completo à esquerda e à direita, mas os primeiros e os últimos tokens não. Adicionar tokens de fronteira cria n-grams que marcam &quot;início do texto&quot; e &quot;fim do texto&quot;, para que o modelo possa aprender padrões ligados à posição — por exemplo, uma palavra que é distintiva quando *começa* uma mensagem, ou um caractere típico no *fim* de uma palavra.
+
+**O que você deve fazer:**
+
+1. **Decida separadamente para cada lado.** `start_token` e `end_token` são independentes — defina um, ambos ou nenhum. Um valor vazio significa que aquele lado não recebe padding.
+2. **Escolha valores raros** que não entrem em conflito com dados reais, por exemplo `0x01` / `0xFF` para `byte`, `U+10FFFE` / `U+10FFFF` para `codepoint`, ou `<s>` / `</s>` para `token`.
+3. **Produza os n-grams de treinamento com o mesmo padding.** O Dicionário aplica padding à entrada da consulta, mas nunca à sua fonte, então os tokens de fronteira já precisam estar incorporados aos n-grams que você carrega. A maneira mais fácil de garantir que eles correspondam é gerar a fonte com [`naiveBayesNgrams`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), passando os mesmos `start_token` e `end_token` (além de `n` e `mode`) que você fornece ao layout — ele emite exatamente os n-grams com padding que o Dicionário produz no momento da consulta.
+
+O formato do token de padding depende do modo:
+
+* `byte` — um número para o valor do byte, em decimal ou hexadecimal `0x` (portanto, `'1'` e `'0x01'` são iguais):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — um número para o ponto de código UTF-8, em decimal ou hexadecimal `0x` (portanto, `'1114110'` e `'0x10FFFE'` são iguais):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — a string literal do token:
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## Crie dados de treinamento a partir de texto bruto
+</div>
+
+Se você partir de texto bruto rotulado, em vez de contagens pré-agregadas, use a função [`naiveBayesNgrams`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) para dividi-lo em n-grams. Forneça a ela os mesmos `n`, `mode`, `start_token` e `end_token` do seu layout, e ela produzirá exatamente os n-grams que o dicionário espera, para que os dados de treinamento correspondam ao que o modelo vê em tempo de consulta.
+
+Dada uma tabela com linhas `(class_id, text)`, construa a fonte `(ngram, class_id, count)` com um `GROUP BY`:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+`training_data` agora é uma fonte válida para um dicionário `NAIVE_BAYES` (aqui, unigramas de token; altere os argumentos `n` e `mode` para corresponder ao seu layout). O dicionário tokeniza a entrada da consulta exatamente como ela é fornecida; portanto, se o texto de treinamento estiver em minúsculas, mas o texto da consulta não, os n-gramas não corresponderão e a precisão do modelo será prejudicada.
+
+<Info>
+  **Priors e contagens de documentos**
+
+  O prior `proportional` (o padrão) é ponderado pela **contagem total de n-gramas** de cada classe, não pelo número de documentos. Se você quiser o prior clássico de frequência de documentos (`documents_in_class / total_documents`), calcule-o a partir da tabela bruta `docs` e passe-o com `priors_mode 'explicit'`:
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+Em seguida, crie o dicionário a partir de `training_data`, passando o prior explícito calculado acima, e classifique novas avaliações:
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+A classe `1` é positiva e `0` é negativa, portanto ambas as avaliações foram classificadas corretamente.
+
+<div id="more-examples">
+  ## Mais exemplos
+</div>
+
+**Modo byte** — bigramas de bytes (`n = 2`, `mode 'byte'`; classe `0` = sequências de letras `a`–`d`, classe `1` = letras `x`–`z`):
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**Modo de ponto de código** — detecção do sistema de escrita por caractere (`n = 1`, `mode 'codepoint'`; classe `0` = latino, `1` = cirílico):
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**Leia novamente os dados de treinamento** com `store_source`:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**Detecção de idioma a partir de raw text** — palavras curtas com padding nas bordas (`n = 2`, `mode 'codepoint'`; classe `0` = inglês, `1` = espanhol). Os n-grams de treinamento são gerados a partir de palavras brutas com [`naiveBayesNgrams`](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams), e os tokens de fronteira — passados tanto para a função quanto para o layout — permitem que o modelo use a primeira e a última letra de cada palavra:
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## Notas
+</div>
+
+* **Semântica computacional de dicionário.** Este é um dicionário *computacional*: `dictGet(dict, '<class_attribute>', text)` classifica `text` (a chave é uma entrada a ser classificada, não uma chave armazenada), o atributo de contagem não é consultável, e `dictHas` sempre retorna `1`.
+* **Validação da origem no carregamento.** Todo n-grama de origem deve corresponder ao `n` e ao `mode` configurados (no modo `codepoint`, também deve ser UTF-8 válido); qualquer incompatibilidade faz o carregamento falhar. Como linhas com contagem zero são ignoradas (consulte [Como funciona](#how-it-works)), uma origem vazia ou que contenha apenas contagens zero não tem nada com que treinar e falha ao carregar.
+* **A tokenização no momento da consulta é tolerante.** Ao contrário da validação da origem, a entrada da consulta nunca é rejeitada. No modo `codepoint`, bytes que não são UTF-8 válidos são decodificados da melhor forma possível, em vez de fazer a consulta falhar; no modo `token`, apenas espaços em branco ASCII separam palavras (espaços em branco Unicode, como `U+00A0`, permanecem dentro de um token). Entradas malformadas ainda são classificadas — normalmente com base nas probabilidades a priori, já que seus n-gramas não corresponderão aos usados no treinamento.

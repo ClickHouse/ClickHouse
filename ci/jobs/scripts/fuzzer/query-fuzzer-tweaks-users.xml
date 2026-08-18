@@ -62,6 +62,7 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_experimental_eval_table_function>1</allow_experimental_eval_table_function>
             <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
             <allow_experimental_expire_snapshots>1</allow_experimental_expire_snapshots>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>

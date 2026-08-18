@@ -1,18 +1,44 @@
 ---
-description: 'ClickHouse 的原生客户端与接口'
-keywords: ['客户端', '接口', 'CLI', 'SQL 控制台', '驱动']
+description: 'ClickHouse 的原生客户端和接口'
+keywords: ['客户端', '接口', '命令行客户端', 'SQL 控制台', '驱动程序']
 slug: /interfaces/natives-clients-and-interfaces
-title: '原生客户端与接口'
+title: '原生客户端和接口'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-ClickHouse 提供多种原生客户端与接口，让您可以连接到 ClickHouse。
+ClickHouse 提供了多种原生客户端和接口，供您连接到 ClickHouse。
 
-更多信息请参见以下页面：
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/zh/concepts/features/interfaces/cli">
+    ClickHouse 的命令行客户端：适用于本地和 Cloud。
+  </Card>
 
-| Section                                                     | Summary                           |
-| ----------------------------------------------------------- | --------------------------------- |
-| [clickhousectl](/zh/concepts/features/interfaces/cli)          | ClickHouse 的 CLI，支持本地和云端。         |
-| [ClickHouse Client](/zh/concepts/features/interfaces/client)   | 原生命令行客户端，支持命令行选项和配置文件。            |
-| [驱动和接口](/zh/concepts/features/interfaces/overview)             | 提供多种网络接口、库和可视化界面。                 |
-| [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) | 在 ClickHouse Cloud 中与数据交互的快速便捷方式。 |
+  <Card title="ClickHouse 客户端" icon="keyboard" href="/zh/concepts/features/interfaces/client">
+    支持命令行选项和配置文件的原生命令行客户端。
+  </Card>
+
+  <Card title="驱动程序和接口" icon="plug" href="/zh/concepts/features/interfaces/overview">
+    用于连接 ClickHouse 的网络接口、驱动程序和工具。
+  </Card>
+
+  <Card title="C++ 客户端库" icon="code" href="/zh/concepts/features/interfaces/cpp">
+    ClickHouse C++ 客户端库。
+  </Card>
+
+  <Card title="Schema 推断" icon="wand-magic-sparkles" href="/zh/concepts/features/interfaces/schema-inference">
+    从输入数据自动推断 schema。
+  </Card>
+
+  <Card title="Web 终端" icon="globe" href="/zh/concepts/features/interfaces/web-terminal">
+    通过 WebSocket 在浏览器中提供 `clickhouse-client` 会话。
+  </Card>
+
+  <Card title="Web SQL UI (Play)" icon="browser" href="/zh/concepts/features/interfaces/web-sql">
+    ClickHouse 在 `/play` 提供的内置浏览器 SQL 接口。
+  </Card>
+
+  <Card title="第三方接口" icon="puzzle-piece" href="/zh/concepts/features/interfaces/third-party/index">
+    第三方工具、库和集成。
+  </Card>
+</CardGroup>

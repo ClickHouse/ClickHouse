@@ -1,0 +1,23 @@
+-- MySQLDump: an unquoted number for DateTime64 is a Unix timestamp in seconds
+2023-12-23 20:37:33.000
+2023-12-23 20:37:33.035
+-- MySQLDump: the same for DateTime, a fractional number is truncated to whole seconds
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+-- MySQLDump compatibility: a bare integer for DateTime64 is the raw scaled value (ticks)
+2023-12-23 20:37:33.035
+-- MySQLDump compatibility: a fractional number is rejected
+-- CustomSeparated with Quoted escaping: an unquoted number for DateTime64 is seconds
+2023-12-23 20:37:33.000
+2023-12-23 20:37:33.035
+-- CustomSeparated with Quoted escaping: the same for DateTime
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+-- CustomSeparated compatibility: a bare integer for DateTime64 is the raw scaled value (ticks)
+2023-12-23 20:37:33.035
+-- CustomSeparated compatibility: a fractional number is rejected
+-- Quoted strings are unaffected by the setting in both formats
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
