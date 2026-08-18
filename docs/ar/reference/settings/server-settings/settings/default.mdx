@@ -27,9 +27,14 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 القيم المقبولة هي:
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **الافتراضي:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </div>
 
 ملف تعريف الإعدادات default. توجد ملفات تعريف الإعدادات في الملف المحدد في الإعداد `user_config`.
+
+* **الافتراضي:** `default`
 
 **مثال**
 
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </div>
 
 مهلة انتهاء الجلسة الافتراضية، بالثواني.
+
+* **القيمة الافتراضية:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>

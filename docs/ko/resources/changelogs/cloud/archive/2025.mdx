@@ -89,7 +89,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 * **AWS Glue용 ClickHouse Connector**
   이제 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s)에서 제공되는 공식 [AWS Glue용 ClickHouse Connector](/ko/integrations/connectors/data-ingestion/AWS/glue)를 사용할 수 있습니다. 이 커넥터는 AWS Glue의 Apache
-  Spark 기반 서버리스 엔진을 활용해 ClickHouse와 기타 데이터 소스 간 데이터 통합을 위한 추출, 변환, 적재를 수행합니다. 테이블을 생성하고 ClickHouse와 Spark 간에 데이터를 읽고 쓰는 방법은 안내 [블로그 게시물](http://clickhouse.com/blog/clickhouse-connector-aws-glue)을 따라 시작하십시오.
+  Spark 기반 서버리스 엔진을 활용해 ClickHouse와 기타 데이터 소스 간 데이터 통합을 위한 추출, 변환, 적재를 수행합니다. 테이블을 생성하고 ClickHouse와 Spark 간에 데이터를 읽고 쓰는 방법은 안내 [블로그 게시물](https://clickhouse.com/blog/clickhouse-connector-aws-glue)을 따라 시작하십시오.
 * **서비스의 최소 레플리카 수 변경**
   스케일 업된 서비스는 이제 [다시 스케일 다운](/ko/products/cloud/features/autoscaling/overview)하여 단일 레플리카를 사용할 수 있습니다(이전 최소값은 2개의 레플리카였습니다). 참고: 단일 레플리카 서비스는 가용성이 낮아지므로 프로덕션 환경에서는 권장되지 않습니다.
 * ClickHouse Cloud는 기본적으로 관리자 역할에 대해 서비스 스케일링 및 서비스 버전 업그레이드와 관련된 알림을 보내기 시작합니다. 알림 기본 설정은 알림 설정에서 조정할 수 있습니다.
@@ -244,8 +244,8 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   시스템, ClickHouse Cloud 간에 안전한 연결을 설정할 수 있습니다. 이를 통해
   AWS의 Postgres, MySQL,
   MSK와 같은 소스에서 데이터를 이동하는 동안 트래픽을 공용 인터넷에 노출하지 않아도 됩니다.
-  또한 VPC 서비스 endpoint를 통한 cross-region 액세스도 지원합니다.
-  이제 ClickPipes를 통해 PrivateLink 연결 설정을 [완전히 셀프서비스 방식으로](/ko/integrations/clickpipes/aws-privatelink)
+  또한 VPC 서비스 endpoint를 통한 교차 리전 액세스도 지원합니다.
+  이제 ClickPipes를 통해 PrivateLink 연결 설정을 [완전히 셀프서비스 방식으로](/ko/integrations/clickpipes/networking/aws-privatelink)
   수행할 수 있습니다.
 
 <div id="april-4-2025">

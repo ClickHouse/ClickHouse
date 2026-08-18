@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
 }
 
@@ -1310,6 +1311,15 @@ void Reader::preparePrewhere()
         if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
     }
+
+    /// A primitive whose output slot is past `sample_block` is discarded by `applyPrewhere` after the
+    /// last step, and no step above claimed this one, so nothing can read it. Never schedule it:
+    /// the main step would decode into a slot that is already gone.
+    for (auto & pc : primitive_columns)
+        if (pc.first_step_to_calculate == 0
+            && pc.idx_in_output_block < extended_sample_block.columns()
+            && pc.idx_in_output_block >= sample_block->columns())
+            pc.first_step_to_calculate = SIZE_MAX;
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -1919,6 +1929,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+        size_t pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -1974,12 +1985,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
-                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
+                ++pruned_pages;
             }
         }
 
         if (size_t(row_group.meta->num_rows) > prev_row_idx)
             column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
+
+        if (pruned_pages)
+            ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
     }
     catch (Exception & e)
     {
@@ -2844,6 +2858,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     if (max_rep > 0 || column.need_null_map)
         decodeRepOrDefLevels(def_encoding, max_def, page.num_values, std::span(encoded_def, encoded_def_size), page.def);
 
+    ProfileEvents::increment(ProfileEvents::ParquetReadPages);
     page.initialized = true;
     return true;
 }
