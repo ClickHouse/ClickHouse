@@ -1272,15 +1272,20 @@ namespace DB
 class KeeperRequestDispatcherTestAccessor
 {
 public:
-    /// Puts one request in a fresh in-flight batch, the way dispatchThread would, and returns its index.
-    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
+    /// Puts requests in a fresh in-flight batch, the way dispatchThread would, and returns its index.
+    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, KeeperRequestsForSessions requests)
     {
         size_t batch_idx = dispatcher.tail_idx.load();
         auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
-        batch.requests = {request};
+        batch.requests = std::move(requests);
         batch.activate({});
         dispatcher.tail_idx.store(batch_idx + 1);
         return batch_idx;
+    }
+
+    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
+    {
+        return seedInFlightBatch(dispatcher, KeeperRequestsForSessions{request});
     }
 
     static size_t committedRequests(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
@@ -1696,6 +1701,29 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"));
 
         EXPECT_EQ(waitForWriteObservations() - before, 0u) << "retiring the batch observed the read after all";
+        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
+    }
+
+    /// late_reads drain only once every request of the batch has committed, so a write anywhere in
+    /// the batch precedes them even when it belongs to another session. That wait is real.
+    {
+        auto before = waitForWriteObservations();
+        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+            dispatcher,
+            {makeReadRequest(/*session_id=*/ 8, /*xid=*/ 1, "/"),
+             makeWriteRequest(/*session_id=*/ 9, /*xid=*/ 1, "/cross_session")});
+
+        auto late_read = makeReadRequest(/*session_id=*/ 8, /*xid=*/ 2, "/");
+        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, late_read));
+
+        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 8, /*xid=*/ 1, "/"));
+        EXPECT_EQ(waitForWriteObservations() - before, 0u)
+            << "the late read was observed before the batch's write committed";
+
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 9, /*xid=*/ 1, "/cross_session"));
+
+        EXPECT_EQ(waitForWriteObservations() - before, 1u)
+            << "a late read that waited for another session's write was not observed";
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 }
