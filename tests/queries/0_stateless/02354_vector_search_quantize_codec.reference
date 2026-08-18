@@ -1,0 +1,4 @@
+show_create_has_codec	1
+subcolumn_type	FixedString(12)
+code_length	12
+full_precision_rows	100

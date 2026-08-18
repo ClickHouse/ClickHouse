@@ -389,7 +389,8 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             if (!ast_to_process)
                 fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
             else
-                fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
+                fmt::print(
+                    stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
@@ -801,7 +802,8 @@ bool Client::buzzHouse()
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
                     rg.pickWeighted(
                         {{20, [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                         {5, [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
+                         {5 * static_cast<uint32_t>(fuzz_config->enable_backups),
+                          [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
 
                     full_query.resize(0);
                     dumpContent();
@@ -1183,12 +1185,15 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const auto & engine = tbl.isAnyIcebergEngine()
                              ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
-                         const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             : (tbl.isAnyDeltaLakeEngine()
+                                    ? "deltalake"
+                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
+                         const auto & ndname
+                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine());
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);

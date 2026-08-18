@@ -11,6 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -71,11 +72,16 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 class ThreadGroup
 {
+    /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
+    /// - createForMaterializedView()
+    /// - createForFlushAsyncInsertQueue()
+    /// - createForExplainAnalyze()
+    /// Required for raw pointers to memory_tracker/performance_counters
+    ThreadGroupPtr parent;
+
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -131,7 +137,8 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
-    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -159,6 +166,9 @@ private:
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
+
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
@@ -181,7 +191,7 @@ public:
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
-    Int64 untracked_memory = 0;
+    UntrackedMemoryCounter untracked_memory;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.

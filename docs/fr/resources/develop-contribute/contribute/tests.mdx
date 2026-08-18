@@ -65,6 +65,21 @@ Consultez `tests/clickhouse-test --help` pour connaître toutes les options de `
 Vous pouvez exécuter tous les tests ou un sous-ensemble de tests en fournissant un filtre sur les noms de test : `./clickhouse-test substring`.
 Il existe également des options pour exécuter les tests en parallèle ou dans un ordre aléatoire.
 
+<div id="running-tests-on-macos">
+  #### Exécuter les tests sur macOS (Darwin)
+</div>
+
+De nombreux tests fonctionnels s’appuient sur des utilitaires GNU en ligne de commande (`timeout`, `head`, `sed`, `grep`, `date`, etc.). macOS fournit les variantes BSD de ces outils, dont le comportement et les options diffèrent (par exemple, BSD `head` refuse `head -c 1G`, BSD `ps` ne prend pas en charge les options longues `--` et `timeout` n’existe pas du tout). Exécuter les tests avec les outils BSD entraîne des échecs parasites.
+
+Les runners CI macOS installent les outils GNU via Homebrew et les placent avant les outils BSD dans le `PATH`. Reproduisez la même configuration en local :
+
+```sh
+brew install coreutils gnu-sed grep
+export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$(brew --prefix)/opt/grep/libexec/gnubin:$PATH"
+```
+
+`coreutils` fournit GNU `timeout`, `head`, `date` et autres outils du même type ; `gnu-sed` et `grep` fournissent GNU `sed` et `grep`. Après cela, `which timeout head sed grep` devrait pointer vers les chemins `gnubin`.
+
 <div id="running-fast-tests">
   ### Exécution des tests rapides
 </div>

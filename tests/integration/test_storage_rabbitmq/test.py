@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import random
 import threading
@@ -133,6 +134,24 @@ def check_expected_result_polling(expected, query, instance=instance, timeout=DE
 
 
 # Tests
+
+
+def test_rabbitmq_broker_log_is_collected(rabbitmq_cluster):
+    logs_dir = rabbitmq_cluster.rabbitmq_logs_dir
+    path = os.path.join(logs_dir, "rabbit.log")
+
+    deadline = time.monotonic() + 30
+    size = 0
+    while time.monotonic() < deadline:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > 0:
+                break
+        time.sleep(1)
+
+    listing = sorted(os.listdir(logs_dir)) if os.path.isdir(logs_dir) else "<no such directory>"
+    assert os.path.exists(path), f"{path} is absent, {logs_dir} contains {listing}"
+    assert size > 0, f"{path} is empty, {logs_dir} contains {listing}"
 
 
 @pytest.mark.parametrize(
@@ -709,7 +728,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = '{unique}_combo',
                      rabbitmq_queue_base = '{unique}_combo',
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 10000,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
@@ -767,32 +786,21 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    # With threadsanitizer the speed of execution is about 8-13k rows per second, so consuming
-    # ~1 mln rows takes ~125s and can exceed a fixed deadline on a loaded runner while still
-    # progressing. Fail only on a genuine stall: reset the no-progress deadline whenever the
-    # total row count increases, so a slow-but-steady run is not abandoned.
-    no_progress_timeout = 180
-    deadline = time.monotonic() + no_progress_timeout
+    # with threadsanitizer the speed of execution is about 8-13k rows per second.
+    # so consumption of 1 mln rows will require about 125 seconds
+    deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
-    prev_result = 0
-    result = 0
     while time.monotonic() < deadline:
-        result = 0
-        for mv_id in range(NUM_MV):
-            result += int(
-                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
-            )
-        if result == expected:
+        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
+        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
+        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
+        if int(result) == expected:
             break
-        if result > prev_result:
-            deadline = time.monotonic() + no_progress_timeout
-        prev_result = result
         logging.debug(f"Result: {result} / {expected}")
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {no_progress_timeout} seconds reached without any RabbitMQ "
-            "consumption progress. The result did not match the expected value."
+            "Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     for thread in threads:
@@ -2141,14 +2149,27 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     assert exists
 
     instance.query(f"DROP TABLE {db}.rabbitmq_drop")
-    time.sleep(30)
 
-    try:
-        exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-    except Exception:
-        exists = False
-
-    assert not exists
+    # Only a 404 means the queue is gone. A successful passive declare leaves the channel
+    # usable, and the 404 path breaks out at once, so the channel is never used after the
+    # broker closes it.
+    queue_removal_timeout_sec = 30
+    deadline = time.monotonic() + queue_removal_timeout_sec
+    while True:
+        try:
+            channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
+        except pika.exceptions.ChannelClosedByBroker as e:
+            assert e.reply_code == 404, f"unexpected channel close: {e}"
+            break
+        # The last declare lands at the deadline, so the accepted window is exactly
+        # queue_removal_timeout_sec.
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            pytest.fail(
+                f"Queue {unique}_rabbit_queue_drop still exists "
+                f"{queue_removal_timeout_sec} seconds after DROP TABLE."
+            )
+        time.sleep(min(0.5, remaining))
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):

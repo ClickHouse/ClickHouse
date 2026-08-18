@@ -33,12 +33,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **Arguments**
 
-- `bucket_upper_bound` — Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`. [`Float64`](/reference/data-types/float)
-- `cumulative_bucket_value` — Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases. [`(U)Int*`](/reference/data-types/int-uint) or [`Float64`](/reference/data-types/float)
+- `bucket_upper_bound` — Upper bounds of the histogram buckets. The highest bucket must have an upper bound of `+Inf`. [`Float*`](/reference/data-types/float)
+- `cumulative_bucket_value` — Cumulative values of the histogram buckets. Values must be monotonically increasing as the bucket upper bound increases. [`UInt*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float)
 
 **Returned value**
 
-Returns the quantile of the specified level. [`Float64`](/reference/data-types/float)
+Returns the quantile of the specified level. The floating-point type of the result matches the type of `bucket_upper_bound`. [`Float32`](/reference/data-types/float) or [`Float64`](/reference/data-types/float)
 
 **Examples**
 
