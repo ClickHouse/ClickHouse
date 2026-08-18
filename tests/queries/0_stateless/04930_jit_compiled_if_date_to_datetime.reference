@@ -13,3 +13,5 @@ CASE	1
 Nullable(Date32) + DateTime64(3)	1
 post-1970 date	1
 absolute value	['1900-01-01 00:00:00.000','1970-01-01 00:00:00.000']
+mixed-unit shape is not compiled	1
+same-unit shape is still compiled	1

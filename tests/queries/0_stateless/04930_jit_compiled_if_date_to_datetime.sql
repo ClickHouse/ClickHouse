@@ -44,3 +44,22 @@ SELECT 'post-1970 date', (SELECT groupArray(if(number % 2 = 0, toDate32('2000-01
     = (SELECT groupArray(if(number % 2 = 0, toDate32('2000-01-01'), toDateTime64('1970-01-01', 3))) FROM numbers(2) SETTINGS compile_expressions = 0);
 
 SELECT 'absolute value', groupArray(if(number % 2 = 0, toDate32('1900-01-01'), toDateTime64('1970-01-01', 3))) FROM numbers(2) SETTINGS compile_expressions = 1;
+
+-- The rows above compare compiled against interpreted, so they would all pass if compilation stopped
+-- happening. These two pin which shapes compile. CompiledFunctionExecute counts executions of an
+-- already-compiled node, so it does not care whether the global compiled cache was already warm.
+SELECT groupArray(if(number % 2 = 0, toDate32('1900-01-01'), toDateTime64('1970-01-01', 3))) FROM numbers(2)
+    SETTINGS compile_expressions = 1, log_comment = '04930_mixed_unit' FORMAT Null;
+
+SELECT groupArray(if(number % 2 = 0, toDate32('1900-01-01'), toDate('1970-01-01'))) FROM numbers(2)
+    SETTINGS compile_expressions = 1, log_comment = '04930_same_unit' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'mixed-unit shape is not compiled', ProfileEvents['CompiledFunctionExecute'] = 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04930_mixed_unit' AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1;
+
+SELECT 'same-unit shape is still compiled', ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '04930_same_unit' AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1;
