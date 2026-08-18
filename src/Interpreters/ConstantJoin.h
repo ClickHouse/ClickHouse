@@ -29,7 +29,7 @@ public:
 
     std::string getName() const override { return "ConstantJoin"; }
 
-    std::string_view getAlgorithm() const override { return "CONSTANT"; }
+    std::string getAlgorithm() const override { return "CONSTANT"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 

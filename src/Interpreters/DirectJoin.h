@@ -32,7 +32,7 @@ public:
 
     std::string getName() const override { return "DirectKeyValueJoin"; }
 
-    std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::DIRECT); }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::DIRECT); }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block &, bool) override;

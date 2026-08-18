@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <string_view>
+#include <string>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -75,7 +75,7 @@ public:
 
     virtual std::string getName() const = 0;
 
-    virtual std::string_view getAlgorithm() const = 0;
+    virtual std::string getAlgorithm() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
 

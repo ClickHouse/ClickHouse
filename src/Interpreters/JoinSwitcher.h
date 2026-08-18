@@ -27,7 +27,7 @@ public:
 
     /// The algorithm of the join that is running now: it starts as `HASH` and becomes
     /// `PARTIAL_MERGE` once `switchJoin` has moved the right table to disk.
-    std::string_view getAlgorithm() const override { return join->getAlgorithm(); }
+    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 

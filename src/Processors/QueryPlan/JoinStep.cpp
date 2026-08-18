@@ -33,7 +33,7 @@ namespace
 ///
 /// `full_sorting_merge` and `parallel_full_sorting_merge` both build a `FullSortingMergeJoin`, so the join
 /// object alone cannot tell which one runs.
-std::string_view getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
+std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
 {
     if (!use_sharding)
         return join.getAlgorithm();

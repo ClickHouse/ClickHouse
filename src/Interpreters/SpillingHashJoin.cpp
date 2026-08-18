@@ -108,7 +108,7 @@ std::string SpillingHashJoin::getName() const
     return fmt::format(name_format, hash_join->getName());
 }
 
-std::string_view SpillingHashJoin::getAlgorithm() const
+std::string SpillingHashJoin::getAlgorithm() const
 {
     if (state.load(std::memory_order_acquire) == State::GRACE_HASH_JOIN)
         return toString(JoinAlgorithm::GRACE_HASH);

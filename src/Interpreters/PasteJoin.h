@@ -28,7 +28,7 @@ public:
 
     std::string getName() const override { return "PasteJoin"; }
 
-    std::string_view getAlgorithm() const override { return "PASTE"; }
+    std::string getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override

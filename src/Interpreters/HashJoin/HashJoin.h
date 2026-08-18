@@ -119,7 +119,7 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
-    std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
