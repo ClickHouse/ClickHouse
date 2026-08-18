@@ -401,6 +401,13 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     if (set_and_key->set->isCreated())
         return nullptr;
 
+    /// A destructive in-place build consumed `source` and then threw, so this set can never be built.
+    /// Every caller treats a null plan as "nothing to build" and moves on, which leaves the set unready
+    /// and makes `FunctionIn` report "Not-ready Set is passed as the second argument" once the main
+    /// pipeline evaluates the condition. Report the real reason instead. See `buildOrderedSetInplace`.
+    if (in_place_build_failure)
+        std::rethrow_exception(in_place_build_failure);
+
     auto plan = std::move(source);
 
     if (!plan)
@@ -567,6 +574,16 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// destructive fallback. Read the built set through this member: a cache hit rebinds it.
     SetAndKeyPtr tmp_set_and_key;
 
+    /// The destructive fallback below leaves the set unbuildable if anything throws after `build` has
+    /// consumed `source`: every `build` caller treats a null plan as "nothing to do", so the set stays
+    /// not-ready and `FunctionIn` reports "Not-ready Set is passed as the second argument" once the main
+    /// pipeline evaluates the condition. That is exactly what a caller which deliberately ignores an
+    /// in-place build failure produces — primary key, skip index, and statistics analysis all run this
+    /// build speculatively and continue without the set when it throws. Remember the failure so that
+    /// `build` can report the real reason instead. Nothing is remembered on the non-destructive path:
+    /// `source` is intact there and the deferred build simply runs the subquery again.
+    try
+    {
     auto prepared_sets_cache = context->getPreparedSetsCache();
     /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
     if (settings[Setting::make_distributed_plan])
@@ -671,6 +688,13 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     if (!run_plan(*plan))
         return nullptr;
+    }
+    catch (...)
+    {
+        if (!source_preserved)
+            in_place_build_failure = std::current_exception();
+        throw;
+    }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
     /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
