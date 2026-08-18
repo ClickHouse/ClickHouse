@@ -1240,15 +1240,13 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `map` | `Map` |
 | `struct` | `Tuple` |
 
-## Writing data {#writing-data}
-
-### Limitations {#writing-limitations}
+## Writing compatibility limitations {#writing-compatibility-limitations}
 
 The data type mappings above apply to reads. The following limitations apply when writing:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation returns an `Unsupported type for iceberg` exception. This limitation does not prevent inserting `Decimal` values into existing Iceberg tables when the column is not used as a direct partition field.
-- Direct partition fields do not support `Bool`, `Decimal`, or `FixedString`. A `DateTime64` direct partition field must have scale `6`.
-- For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. The data remains correct, but ClickHouse and other Iceberg readers might read more files because manifest-level min-max pruning is unavailable.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation returns an `Unsupported type for iceberg` exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
+- ClickHouse cannot write to an Iceberg table that uses a `Decimal` column as a direct partition field. The operation returns an `Unsupported type for iceberg` exception.
+- For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
