@@ -559,6 +559,14 @@ static bool writeMetadataFiles(
             }
         }
     }
+    catch (const Exception & e)
+    {
+        /// An unestablished commit may have taken effect, which makes these position-delete files,
+        /// rewritten data files, manifests and manifest list the ones the current snapshot references.
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup();
+        throw;
+    }
     catch (...)
     {
         cleanup();

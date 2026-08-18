@@ -1,0 +1,13 @@
+-- INSERT: a commit that landed upstream must be reported as committed
+9
+yes
+9
+-- DELETE: the mutation commit path has the same shape
+4
+yes
+-- Unknown outcome: throws, and leaves every staged file in place
+unknown status reported
+staged files kept
+9
+-- control: with no failpoint armed, sequential commits still work
+4
