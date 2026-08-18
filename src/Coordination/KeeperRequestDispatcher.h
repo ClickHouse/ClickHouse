@@ -131,7 +131,7 @@ private:
     /// that write committed. Reads dropped by dropInFlightRequests never saw the write complete, so
     /// they are not finalized and their span is discarded with the request.
     static void initializeWaitForWriteSpan(const KeeperRequestForSession & read_request);
-    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
+    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads, bool batch_has_write);
 
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
@@ -248,12 +248,23 @@ private:
         alignas(CH_CACHE_LINE_SIZE) std::chrono::steady_clock::time_point start_time {};
         KeeperRequestsForSessions requests;
         size_t committed_requests = 0;
+        /// Whether `requests` holds an actual write, as opposed to only reads that `quorum_reads`
+        /// sent through raft. Derived from `requests` in `activate`, read by `onCommit` afterwards.
+        bool has_write = false;
         /// Read requests to do after some prefix of `requests` is committed.
         /// Element <next_request_idx, read_requests> means that these read_requests must be
         /// executed just after request requests[next_request_idx - 1].
         /// 0 < next_request_idx < requests.size().
         /// Reads to do after the last request go into late_reads instead.
-        std::vector<std::pair</*next_request_idx*/ size_t, KeeperRequestsForSessions>> intermediate_reads;
+        struct IntermediateReads
+        {
+            size_t next_request_idx;
+            KeeperRequestsForSessions reads;
+            /// Whether requests[0 .. next_request_idx) holds an actual write. The whole batch may
+            /// hold one and this prefix not, in which case these reads did not wait for a write.
+            bool prefix_has_write = false;
+        };
+        std::vector<IntermediateReads> intermediate_reads;
         /// Index in intermediate_reads up to which we've processed the reads.
         /// (We could make intermediate_reads an std::queue instead, but I'm a little paranoid about std::deque memory overhead.)
         size_t intermediate_reads_idx = 0;
@@ -264,6 +275,22 @@ private:
         {
             committed_requests = 0;
             intermediate_reads_idx = 0;
+
+            /// A parked read waits for whatever precedes it in `requests`, but quorum_reads puts
+            /// reads in there too, and waiting for one of those is not what the read wait metric
+            /// measures. So classify each intermediate group by its own prefix, and the batch as a
+            /// whole for late_reads, which wait for all of `requests`.
+            has_write = false;
+            size_t next_group = 0;
+            for (size_t i = 0; i < requests.size(); ++i)
+            {
+                while (next_group < intermediate_reads.size() && intermediate_reads[next_group].next_request_idx == i)
+                    intermediate_reads[next_group++].prefix_has_write = has_write;
+                has_write |= !requests[i].request->isReadRequest();
+            }
+            while (next_group < intermediate_reads.size())
+                intermediate_reads[next_group++].prefix_has_write = has_write;
+
             late_reads.activate(std::move(initial_late_reads));
             active.store(true);
         }

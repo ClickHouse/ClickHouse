@@ -770,7 +770,7 @@ void KeeperRequestDispatcher::dispatchThread()
             /// Reads that we can execute right in this thread, before sending the batch to leader.
             KeeperRequestsForSessions early_reads;
             /// Reads to do in between writes in this batch.
-            std::vector<std::pair<size_t, KeeperRequestsForSessions>> intermediate_reads;
+            std::vector<InFlightBatch::IntermediateReads> intermediate_reads;
             /// Reads to do after the whole batch is committed.
             KeeperRequestsForSessions late_reads;
             size_t batch_bytes = 0;
@@ -821,7 +821,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         return;
                     }
                     chassert(!requests.empty());
-                    intermediate_reads.emplace_back(requests.size(), std::move(late_reads));
+                    intermediate_reads.push_back({requests.size(), std::move(late_reads)});
                     late_reads.clear();
                     ++current_reordering_version;
                 };
@@ -1039,9 +1039,9 @@ void KeeperRequestDispatcher::dropInFlightRequests()
             addErrorResponse(batch.requests[batch.committed_requests], Coordination::Error::ZCONNECTIONLOSS);
             batch.committed_requests += 1;
             if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
-                batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
+                batch.intermediate_reads[batch.intermediate_reads_idx].next_request_idx == batch.committed_requests)
             {
-                for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].second)
+                for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].reads)
                 {
                     reads_dropped += 1;
                     addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
@@ -1086,8 +1086,13 @@ void KeeperRequestDispatcher::initializeWaitForWriteSpan(const KeeperRequestForS
         KeeperSpan::ReadWaitForWrite, read_request.request->tracing_context.get());
 }
 
-void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads)
+void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads, bool batch_has_write)
 {
+    /// Under quorum_reads a batch can hold only reads sent through raft, and waiting for those is
+    /// not what this metric measures. The parked reads keep an unfinalized span, like dropped ones.
+    if (!batch_has_write)
+        return;
+
     for (const auto & read_request : reads)
     {
         read_request.request->spans.maybeFinalize(
@@ -1152,16 +1157,18 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
     batch.committed_requests += 1;
 
     if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
-        batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
+        batch.intermediate_reads[batch.intermediate_reads_idx].next_request_idx == batch.committed_requests)
     {
-        auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
+        auto & group = batch.intermediate_reads[batch.intermediate_reads_idx];
+        auto reads = std::move(group.reads);
+        const bool prefix_has_write = group.prefix_has_write;
         batch.intermediate_reads_idx += 1;
 
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
         ///  this raft batch, and hopefully raft commit latency doesn't get high in practice even
         ///  under too much load because we limit the number of in-flight batches.)
-        finalizeWaitForWriteSpans(reads);
+        finalizeWaitForWriteSpans(reads, prefix_has_write);
         executeReads(std::move(reads));
     }
 
@@ -1195,7 +1202,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
             /// Only reads taken before any of this batch's reads ran were waiting for the write.
             /// Later arrivals waited for the preceding reads, which this metric does not measure.
             if (first_take)
-                finalizeWaitForWriteSpans(reads);
+                finalizeWaitForWriteSpans(reads, batch.has_write);
             first_take = false;
             executeReads(std::move(reads));
         }
