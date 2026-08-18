@@ -14,8 +14,8 @@
 --- Earlier `partial_merge` wins before `sorted_merge` ---
         Algorithm: PartialMergeJoin
 --- Unsupported earlier `partial_merge` falls through to `hash` with a runtime filter ---
-      Algorithm: HashJoin
-          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+        Algorithm: HashJoin
+            BuildRuntimeFilter (Build runtime join filter on __table2.id)
 --- Results are the same as with plain `hash` ---
 1000
 1000
