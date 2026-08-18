@@ -3,6 +3,8 @@
 1
 -- matching tokenizer prunes granules
 1
+-- matching tokenizer reaches the direct read
+1
 -- registered alias of the same tokenizer uses the index
 1
 -- whitespace variants of the definition use the index
@@ -36,5 +38,8 @@
 4
 1
 4
+-- an index with a preprocessor still full-scans
+2
+2
 -- expression index
 1

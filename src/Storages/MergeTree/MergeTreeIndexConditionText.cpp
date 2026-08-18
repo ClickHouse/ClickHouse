@@ -268,9 +268,9 @@ bool MergeTreeIndexConditionText::acceptsTokenizerArgument(const String & functi
 
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const RPNBuilderTreeNode & node) const
 {
-    /// A postprocessor transforms the tokens after tokenization, so the index stores something the
-    /// bare tokenizer of the argument does not produce and the two cannot answer the same predicate.
-    if (has_postprocessor)
+    /// With a preprocessor or a postprocessor the index stores tokens of a transformed value, which a
+    /// bare tokenizer over the raw argument does not produce, so it cannot answer the same predicate.
+    if (has_preprocessor || has_postprocessor)
         return false;
 
     Field const_value;

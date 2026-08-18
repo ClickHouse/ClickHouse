@@ -25,6 +25,12 @@ SELECT count() > 0 FROM (
     SETTINGS query_plan_direct_read_from_text_index = 0
 ) WHERE explain ILIKE '%Granules: 1/2%';
 
+SELECT '-- matching tokenizer reaches the direct read';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha')
+    SETTINGS query_plan_direct_read_from_text_index = 1
+) WHERE explain ILIKE '%__text_index_idx_hasAnyTokens%';
+
 SELECT '-- registered alias of the same tokenizer uses the index';
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'tokenbf_v1') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
@@ -97,6 +103,30 @@ SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY 
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
 SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- an index with a preprocessor still full-scans';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    doc String,
+    INDEX idx doc TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(doc)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab VALUES (1, 'Hello World'), (2, 'hello there'), (3, 'goodbye');
+
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
