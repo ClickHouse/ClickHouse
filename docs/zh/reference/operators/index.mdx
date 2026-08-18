@@ -12,9 +12,13 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
   ## 访问运算符
 </div>
 
-`a[N]` – 访问数组元素。`arrayElement(a, N)` 函数。
+`a[N]` – 访问数组中的元素。对应 `arrayElement(a, N)` 函数。
+`N` 也可以是整数数组，此时会将这些位置上的所有元素作为数组返回，
+与 `arrayMap(i -> a[i], N)` 的行为相同。这些位置可以为 Nullable。当元素类型
+可封装在 `Nullable` 中时，`NULL` 位置会返回 `NULL`；对于不能包含在 `Nullable` 中的元素类型 (如 `Array`、`Map`) ，则会返回
+该元素类型的默认值，与标量 `NULL` 索引时的行为相同。
 
-`a.N` – 访问Tuple元素。`tupleElement(a, N)` 函数。
+`a.N` – 访问 Tuple 元素。对应 `tupleElement(a, N)` 函数。
 
 <div id="numeric-negation-operator">
   ## 数值取负运算符
