@@ -1,0 +1,28 @@
+-- The `grouping` specializations (`groupingOrdinary` etc.) are registered functions, so they can
+-- be called directly with arbitrary arguments; malformed calls must raise ordinary errors, not
+-- logical ones. Also, `grouping` over a `LowCardinality` key must return plain `UInt64`.
+
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS t_grouping_validation;
+CREATE TABLE t_grouping_validation (k1 String, k2 LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_grouping_validation VALUES ('a', 'x', 1), ('b', 'y', 2);
+
+SELECT '-- grouping over a LowCardinality key stays UInt64';
+EXPLAIN QUERY TREE SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
+FROM t_grouping_validation GROUP BY k1, k2;
+SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
+FROM t_grouping_validation GROUP BY k1, k2 ORDER BY ALL;
+
+SELECT '-- a well-formed direct call executes';
+SELECT groupingForRollup(CAST(0 AS UInt64), 42, CAST([0] AS Array(UInt64)), CAST(1 AS UInt64), CAST(1 AS UInt8));
+
+SELECT '-- malformed direct calls are rejected';
+SELECT groupingForCube(CAST(-8.9757207546686 AS Decimal(38, 13)), CAST(['1970-01-14'] AS Array(Date)), CAST('1970-01-05' AS Date), CAST(-11448 AS Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT groupingForCube(CAST([] AS Array(Int16)), CAST(27 AS UInt64), CAST(1 AS UInt8)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT groupingForRollup(CAST(1.5 AS Float64), materialize(2), CAST([] AS Array(UInt32)), CAST(4 AS UInt64), CAST(9282217 AS UInt64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT groupingForCube(materialize(CAST(0 AS UInt64)), 42, CAST([70] AS Array(UInt64)), CAST(3 AS UInt64), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
+SELECT groupingForGroupingSets(materialize(CAST(5 AS UInt64)), 42, CAST([0] AS Array(UInt64)), CAST([[0]] AS Array(Array(UInt64))), CAST(1 AS UInt8)); -- { serverError BAD_ARGUMENTS }
+SELECT groupingOrdinary(42, CAST(range(64) AS Array(UInt64)), CAST(0 AS UInt8)); -- { serverError TOO_MANY_COLUMNS }
+
+DROP TABLE t_grouping_validation;

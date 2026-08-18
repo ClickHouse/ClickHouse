@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_MANY_COLUMNS;
 }
@@ -53,14 +54,25 @@ public:
     /// `group_by_use_nulls`, and the result must stay plain UInt64.
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// Same as in `FunctionGroupingBase`: without this a single `LowCardinality` key among the
+    /// arguments would wrap the result into `LowCardinality(UInt64)`.
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         const size_t num_trailing = variant == GroupingVariant::Ordinary ? 2 : 3;
-        if (arguments.size() < num_trailing)
+        if (arguments.size() <= num_trailing)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least {} arguments", name, num_trailing);
+                "Function {} requires at least {} arguments", name, num_trailing + 1);
+
+        /// The analyzer always satisfies the checks below, but the function can also be called
+        /// directly with arbitrary arguments; reject those that would break the execution.
+        if (variant != GroupingVariant::Ordinary && !WhichDataType(arguments[0].type).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The first argument of function {} must be the UInt64 grouping set index, got {}",
+                name, arguments[0].type->getName());
 
         const size_t tail = arguments.size() - num_trailing;
         const auto arguments_indexes = getIndexes(arguments[tail]);
@@ -71,12 +83,18 @@ public:
         {
             case GroupingVariant::Ordinary:
             {
+                /// `FunctionGroupingOrdinary` computes `1 << size` in the incompatible mode.
+                if (!force_compatibility && arguments_indexes.size() >= 8 * sizeof(UInt64))
+                    throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+                        "Too many arguments ({}) for function {}, the maximum is {}",
+                        arguments_indexes.size(), name, 8 * sizeof(UInt64) - 1);
                 function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_compatibility);
                 break;
             }
             case GroupingVariant::Rollup:
             {
                 const auto keys_count = getConstant(arguments[tail + 1]).safeGet<UInt64>();
+                validateIndexes(arguments_indexes, keys_count);
                 function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, keys_count, force_compatibility);
                 break;
             }
@@ -87,6 +105,7 @@ public:
                 if (keys_count >= 8 * sizeof(UInt64))
                     throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
                         "Too many keys ({}) are used for CUBE, the maximum is {}.", keys_count, 8 * sizeof(UInt64) - 1);
+                validateIndexes(arguments_indexes, keys_count);
                 function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, keys_count, force_compatibility);
                 break;
             }
@@ -127,6 +146,17 @@ private:
         for (const auto & index : getConstant(argument).safeGet<Array>())
             indexes.push_back(index.safeGet<UInt64>());
         return indexes;
+    }
+
+    /// Without this an index at or above the key count would shift a UInt64 out of range in
+    /// `FunctionGroupingForCube`.
+    void validateIndexes(const ColumnNumbers & arguments_indexes, UInt64 keys_count) const
+    {
+        for (const auto index : arguments_indexes)
+            if (index >= keys_count)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Function {}: argument index {} is out of range, there are {} aggregation keys",
+                    name, index, keys_count);
     }
 
     const String name;

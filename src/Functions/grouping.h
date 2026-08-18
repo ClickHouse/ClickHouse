@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -57,7 +58,10 @@ public:
     template <typename AggregationKeyChecker>
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, AggregationKeyChecker checker) const
     {
-        const auto & grouping_set_column = checkAndGetColumn<ColumnUInt64>(*arguments[0].column);
+        /// The analyzer passes `__grouping_set` as a full column, but a direct call of the
+        /// function can pass a constant.
+        const auto grouping_set_column_full = arguments[0].column->convertToFullColumnIfConst();
+        const auto & grouping_set_column = checkAndGetColumn<ColumnUInt64>(*grouping_set_column_full);
 
         auto result = ColumnUInt64::create();
         auto & result_data = result->getData();
@@ -190,6 +194,11 @@ public:
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
             [this](UInt64 set_index, UInt64 arg_index)
             {
+                /// A direct call of the function can pass any set index; without the check an
+                /// index outside the sets would read out of bounds.
+                if (set_index >= grouping_sets.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Grouping set index {} is out of range, there are {} grouping sets", set_index, grouping_sets.size());
                 return grouping_sets[set_index].contains(arg_index);
             }
         );
