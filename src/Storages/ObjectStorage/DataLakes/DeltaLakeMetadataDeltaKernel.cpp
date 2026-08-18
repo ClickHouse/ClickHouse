@@ -730,6 +730,7 @@ bool validDeltaTableExists(const DeltaLake::KernelHelperPtr & kernel_helper, con
     }
     catch (...)
     {
+        /// Ok: a failed snapshot load means there is no valid table to attach to; report that as `false`.
         return false;
     }
 }
