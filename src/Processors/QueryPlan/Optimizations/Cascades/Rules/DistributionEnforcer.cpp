@@ -76,6 +76,9 @@ public:
 
 private:
     void addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting = {});
+    /// Input requirement matching the source expression's own distribution: the exchange
+    /// consumes the stream where it already is.
+    ExpressionProperties inputAtSourceDistribution() const;
 
     const DistributionEnforcer & rule;
     GroupExpressionPtr expression;
@@ -88,6 +91,14 @@ private:
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
     return !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
+}
+
+ExpressionProperties DistributionEnforcer::EnforcerEnumerator::inputAtSourceDistribution() const
+{
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = expression->properties.distribution.node_count;
+    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+    return input_required;
 }
 
 void DistributionEnforcer::EnforcerEnumerator::addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting)
@@ -130,13 +141,9 @@ void DistributionEnforcer::EnforcerEnumerator::addRoundRobinScatter()
 /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
 void DistributionEnforcer::EnforcerEnumerator::addGather()
 {
-    ExpressionProperties input_required;
-    input_required.distribution.node_count = expression->properties.distribution.node_count;
-    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
-
     addEnforcer(
         std::make_unique<GatherExchangeStep>(input_header, expression->properties.distribution.node_count),
-        std::move(input_required));
+        inputAtSourceDistribution());
 }
 
 /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
@@ -144,9 +151,7 @@ void DistributionEnforcer::EnforcerEnumerator::addGather()
 /// sort-per-node followed by this sorted gather keeps the result sorted.
 void DistributionEnforcer::EnforcerEnumerator::addSortedGather()
 {
-    ExpressionProperties input_required;
-    input_required.distribution.node_count = expression->properties.distribution.node_count;
-    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+    ExpressionProperties input_required = inputAtSourceDistribution();
     input_required.sorting = expression->properties.sorting;
 
     addEnforcer(
@@ -223,12 +228,8 @@ void DistributionEnforcer::EnforcerEnumerator::addKeyedShuffle()
             required_properties.distribution.node_count,
             std::move(hash_cast_types)));
 
-    ExpressionProperties input_required;
-    input_required.distribution.node_count = expression->properties.distribution.node_count;
-    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
-
     /// Shuffle/scatter destroys sorting.
-    addEnforcer(std::move(exchange_step), std::move(input_required));
+    addEnforcer(std::move(exchange_step), inputAtSourceDistribution());
 }
 
 std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const

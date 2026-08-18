@@ -136,37 +136,32 @@ ExpressionWithCost Group::selectInputImplementation(
 {
     /// The wildcard-axis rejections below are what stop a self-referential enforcer from picking
     /// itself; the full contract is on the declaration in Group.h.
-    auto is_eligible = [&](const GroupExpressionPtr & candidate)
+    GroupExpressionPtr found_best;
+    auto consider = [&](const GroupExpressionPtr & candidate)
     {
         if (!candidate->cost.has_value())
-            return false;
+            return;
         if (active_path.contains(candidate.get()))
-            return false;
+            return;
         if (!required_properties.isSatisfiedBy(candidate->properties))
-            return false;
+            return;
 
         if (input_is_self_referential && candidate->enforced_property != EnforcedProperty::None)
         {
             /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
             if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
-                return false;
+                return;
             /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
             /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
             if (candidate->enforced_property == EnforcedProperty::Distribution
                 && required_properties.distribution.columns.empty()
                 && (!candidate->properties.distribution.columns.empty()
                     || !candidate->properties.distribution.hash_type_names.empty()))
-                return false;
+                return;
         }
-        return true;
-    };
 
-    GroupExpressionPtr found_best;
-    auto consider = [&](const GroupExpressionPtr & candidate)
-    {
-        if (is_eligible(candidate)
-            && (!found_best
-                || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config)))
+        if (!found_best
+            || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config))
             found_best = candidate;
     };
 
