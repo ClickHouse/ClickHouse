@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Mise à l’échelle'
 title: 'Mise à l’échelle'
-description: 'Redimensionnez verticalement votre instance Postgres managed by ClickHouse grâce à des types de VM flexibles et à une mise à l’échelle indépendante des ressources'
+description: 'Redimensionnez verticalement votre instance ClickHouse Managed Postgres grâce à des types de VM flexibles et à une mise à l’échelle indépendante des ressources'
 keywords: ['mise à l’échelle Postgres', 'mise à l’échelle verticale', 'types de VM', 'mise à l’échelle NVMe', 'types d’instance', 'mise à l’échelle des performances']
 doc_type: 'guide'
 ---
@@ -12,13 +12,13 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres offre des options de mise à l’échelle flexibles pour s’adapter aux exigences de votre charge de travail. Avec plus de 50 types d’instance basés sur NVMe au choix, vous pouvez faire évoluer indépendamment le CPU, la mémoire et le stockage afin d’optimiser les performances et les coûts pour votre use case spécifique.
+ClickHouse Managed Postgres offre des options de mise à l’échelle flexibles pour s’adapter aux exigences de votre charge de travail. Avec plus de 50 types d’instance basés sur NVMe au choix, vous pouvez faire évoluer indépendamment le CPU, la mémoire et le stockage afin d’optimiser les performances et les coûts pour votre use case spécifique.
 
 <div id="instance-types">
   ## Types d’instance et flexibilité
 </div>
 
-Managed Postgres offre un large éventail de types d’instance, chacun optimisé pour différents profils de charge de travail :
+ClickHouse Managed Postgres offre un large éventail de types d’instance, chacun optimisé pour différents profils de charge de travail :
 
 * **Plus de 50 types d’instance** disponibles, avec des configurations optimisées pour la puissance de calcul, la mémoire et le stockage
 * **Stockage basé sur NVMe** sur tous les types d’instance pour des E/S disque stables et hautes performances
@@ -46,7 +46,7 @@ Différents types de charges de travail tirent parti de configurations de ressou
   ## Fonctionnement de la mise à l’échelle
 </div>
 
-Lorsque vous changez de type d’instance, Managed Postgres effectue une mise à l’échelle verticale qui alloue une nouvelle infrastructure et migre votre base de données avec un minimum d’indisponibilité.
+Lorsque vous changez de type d’instance, ClickHouse Managed Postgres effectue une mise à l’échelle verticale qui alloue une nouvelle infrastructure et migre votre base de données avec un minimum d’indisponibilité.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Paramètres de mise à l’échelle" size="md" border />
 
@@ -95,7 +95,7 @@ Le temps de restauration peut varier de quelques minutes à quelques heures, mai
   ### Restauration parallèle avec WAL-G
 </div>
 
-Managed Postgres utilise [WAL-G](https://github.com/wal-g/wal-g) pour accélérer la restauration des sauvegardes lors des opérations de mise à l’échelle. À noter que le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, apportant une solide expertise au processus de restauration.
+ClickHouse Managed Postgres utilise [WAL-G](https://github.com/wal-g/wal-g) pour accélérer la restauration des sauvegardes lors des opérations de mise à l’échelle. À noter que le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, apportant une solide expertise au processus de restauration.
 
 WAL-G offre :
 
@@ -110,7 +110,7 @@ Ces optimisations réduisent considérablement le temps nécessaire pour mettre 
   ### Démarrer une opération de mise à l&#39;échelle
 </div>
 
-Pour mettre à l&#39;échelle votre instance Managed Postgres :
+Pour mettre à l&#39;échelle votre instance ClickHouse Managed Postgres :
 
 1. Accédez à l&#39;onglet **Paramètres** de votre instance
 2. Dans la section **Mise à l&#39;échelle**, faites défiler jusqu&#39;à **Taille du service**
@@ -125,7 +125,7 @@ Pour mettre à l&#39;échelle votre instance Managed Postgres :
   ### Mise à l’échelle verticale
 </div>
 
-La mise à l’échelle verticale (changement de type d’instance) est la principale méthode pour ajuster les ressources de Managed Postgres. Cette approche offre :
+La mise à l’échelle verticale (changement de type d’instance) est la principale méthode pour ajuster les ressources de ClickHouse Managed Postgres. Cette approche offre :
 
 * **Contrôle précis** : choisissez parmi plus de 50 types d’instance pour ajuster finement le CPU, la mémoire et le stockage
 * **Optimisation de la charge de travail** : sélectionnez des configurations optimisées pour votre charge de travail spécifique (à forte intensité de calcul, de mémoire ou de stockage)
@@ -159,7 +159,47 @@ Cela vous permet d’optimiser le débit de réplication indépendamment des res
   ## Mise à l’échelle automatique
 </div>
 
-Lorsque l’utilisation du disque atteint 90 %, votre type d’instance est remplacé par un type d’instance supérieur.
+ClickHouse Managed Postgres surveille l’utilisation du disque et augmente automatiquement la capacité de stockage afin que votre instance ne manque pas d’espace :
+
+* **85 % d’utilisation du disque** : vous recevez une [notification](/fr/products/managed-postgres/monitoring/notifications) dans la console Cloud et par e-mail.
+* **90 % d’utilisation du disque** : la mise à l’échelle automatique démarre. La capacité de stockage passe à la taille immédiatement supérieure disponible pour votre famille d’instances. Le CPU et la mémoire restent inchangés, sauf si la taille actuelle de l’instance ne prend pas en charge un disque plus grand, auquel cas la taille de l’instance est également augmentée. Les [répliques de lecture](/fr/products/managed-postgres/read-replicas) sont mises à l’échelle en même temps que l’instance primaire.
+* **95 % d’utilisation du disque** : le basculement ne tient pas compte de toute fenêtre de maintenance configurée et s’effectue dès que le nouveau serveur est prêt.
+
+Si votre instance utilise déjà la plus grande configuration disponible, la mise à l’échelle automatique ne peut pas aller plus loin. Libérez de l’espace disque ou contactez le [support](https://clickhouse.com/support/program).
+
+<div id="autoscaling-cutover">
+  ### Basculement et connexions
+</div>
+
+Le stockage ne peut pas être redimensionné sur place. La mise à l’échelle automatique suit le même [processus de mise à l&#39;échelle](#scaling-process) qu&#39;un changement manuel de type d&#39;instance : un serveur de remplacement disposant de davantage de stockage est provisionné, restauré à partir de la dernière sauvegarde, rattrape le WAL, puis est promu nouvelle instance primaire lors d&#39;un basculement contrôlé. Les instances dotées de la [haute disponibilité](/fr/products/managed-postgres/high-availability) reçoivent, dans le cadre de la même opération, des instances de secours de remplacement de la nouvelle taille.
+
+Le basculement est la seule étape entraînant une interruption de service, généralement inférieure à une minute. Si une [fenêtre de maintenance](/fr/products/managed-postgres/upgrades#maintenance-windows) est configurée, le basculement attend cette fenêtre, sauf si l&#39;utilisation du disque atteint 95 %. Pendant le basculement, les connexions ouvertes sont interrompues et les transactions en cours sont annulées. Votre chaîne de connexion ne change pas : le DNS est mis à jour pour pointer vers la nouvelle instance primaire, et les applications disposant d&#39;une logique de reconnexion standard se reconnectent automatiquement.
+
+<div id="autoscaling-read-only">
+  ### Mode lecture seule
+</div>
+
+Si les écritures remplissent le disque plus rapidement que la mise à l’échelle automatique ne peut s’effectuer, l’instance passe en mode lecture seule pour éviter de saturer complètement le disque. Le seuil de déclenchement dépend de l’espace libre restant :
+
+| Taille totale du disque | Passage en mode lecture seule en dessous de | Reprise des écritures au-dessus de |
+| ----------------------- | ------------------------------------------- | ---------------------------------- |
+| Jusqu’à 64 Go           | 1 Go libre                                  | 2 Go libres                        |
+| Jusqu’à 128 Go          | 5 Go libres                                 | 7 Go libres                        |
+| Jusqu’à 512 Go          | 7 Go libres                                 | 10 Go libres                       |
+| Plus de 512 Go          | 2 % libres                                  | 3 % libres                         |
+
+Les lectures continuent de fonctionner, tandis que les écritures échouent avec l’erreur Postgres standard `cannot execute INSERT in a read-only transaction`. Si l’espace libre continue de diminuer, les connexions existantes sont interrompues afin que chaque session prenne en compte le paramètre de lecture seule ; les lectures fonctionnent de nouveau une fois les clients reconnectés. Le mode lecture seule est automatiquement désactivé dès que l’espace libre se rétablit, généralement juste après la fin du basculement de scale-up.
+
+<div id="autoscaling-example">
+  ### Exemple
+</div>
+
+Une instance disposant de 1024 Go de stockage exécute une charge de travail intensive en écritures :
+
+1. Lorsque 870 Go sont utilisés (85 %), vous recevez une notification concernant le stockage.
+2. Lorsque 922 Go sont utilisés (90 %), la mise à l’échelle automatique démarre. Un serveur de remplacement disposant de 2048 Go de stockage est provisionné et restauré à partir de la dernière sauvegarde, tandis que votre instance continue de traiter le trafic.
+3. Une fois le serveur de remplacement synchronisé, le basculement est effectué, pendant votre fenêtre de maintenance si elle est configurée. Les connexions sont interrompues pendant moins d’une minute, votre application se reconnecte au même nom d’hôte et l’utilisation retombe à environ 45 %.
+4. Si l’espace libre tombe sous 2 % (environ 20 Go) avant la fin du basculement, l’instance passe en lecture seule. Les écritures reprennent automatiquement une fois le basculement vers le disque plus grand terminé.
 
 <div id="resources">
   ## Ressources supplémentaires
