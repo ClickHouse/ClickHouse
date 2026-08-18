@@ -886,6 +886,21 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
+bool MergeTreeIndexConditionText::canUseJSONAllValuesIndexForNode(const RPNBuilderTreeNode & node) const
+{
+    if (!tryMatchNodeToJSONIndex(node, header, "JSONAllValues"))
+        return false;
+
+    /// A preprocessed `JSONAllValues` index can be rebound only to a path whose value is
+    /// represented by the same `String`. Explicit conversions such as `FixedString` and
+    /// container paths can change the value and therefore cannot use this index safely.
+    if (!has_preprocessor)
+        return true;
+
+    const auto * dag_node = node.getDAGNode();
+    return dag_node && isString(dag_node->result_type);
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -912,18 +927,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (canUseJSONAllValuesIndexForNode(index_column_node))
     {
-        /// A preprocessed `JSONAllValues` index can be rebound only to a path whose value is
-        /// represented by the same `String`. Explicit conversions such as `FixedString` and
-        /// container paths can change the value and therefore cannot use this index safely.
-        if (has_preprocessor)
-        {
-            const auto * dag_node = index_column_node.getDAGNode();
-            if (!dag_node || !isString(dag_node->result_type))
-                return false;
-        }
-
         matches_json_all_values_subcolumn = true;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1712,7 +1717,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || canUseJSONAllValuesIndexForNode(node);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
