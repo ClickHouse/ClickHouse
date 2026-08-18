@@ -25,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -1365,6 +1366,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     size_t total_rows = 0;
     InsertData::EntryPtr current_entry;
     String current_exception;
+
+    /// The asynchronous flush creates its own query context from the settings captured when the
+    /// entry was enqueued. Apply the INSERT's settings clause as well, as the synchronous path
+    /// does, before resolving the input format and creating the parser.
+    InterpreterSetQuery::applySettingsFromQuery(key.query, insert_context);
 
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
