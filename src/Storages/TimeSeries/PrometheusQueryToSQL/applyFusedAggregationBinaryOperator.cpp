@@ -155,13 +155,12 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         if (left_aggregation->by || left_aggregation->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-        /// Drop empty-values rows, see applyOneArgumentAggregationOperator().
-        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
         aggregation_query = builder.getSelectQuery();
     }
 
     /// Step 2: rename `new_group` back to `group`.
+    /// Drop empty-values rows after the rename so `notEmpty(values)` cannot resolve to the
+    /// pre-aggregation input column when prefer_column_name_to_alias is enabled.
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 
@@ -170,6 +169,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         res.select_query = builder.getSelectQuery();
     }
