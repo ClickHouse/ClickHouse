@@ -1,0 +1,45 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lc_bulk_insert_right
+        (
+            s0 LowCardinality(String),
+            s1 LowCardinality(String),
+            s2 LowCardinality(String),
+            s3 LowCardinality(String),
+            u0 LowCardinality(UInt64),
+            u1 LowCardinality(UInt64),
+            u2 LowCardinality(UInt64),
+            u3 LowCardinality(UInt64)
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lc_bulk_insert_right VALUES
+            ('repeated', 'repeated', 'repeated', 'repeated', 42, 42, 42, 42)
+    </fill_query>
+
+    <query><![CDATA[
+        SELECT
+            l.number,
+            r.s0,
+            r.s1,
+            r.s2,
+            r.s3,
+            r.u0,
+            r.u1,
+            r.u2,
+            r.u3
+        FROM numbers(50000000) AS l
+        ANY LEFT JOIN lc_bulk_insert_right AS r ON 1
+        FORMAT Null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_bulk_insert_right</drop_query>
+</test>
