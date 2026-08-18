@@ -225,12 +225,12 @@ void IMergeTreeReader::fillMissingColumns(
                         continue;
                     }
 
-                    if (const auto * missing = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
+                    if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
                     {
                         missing_column_names.insert(column.getNameInStorage());
-                        if (!res_columns[column_index] && !missing->type_name.empty())
+                        if (!res_columns[column_index] && !missing_info->type_name.empty())
                         {
-                            auto frozen_type = DataTypeFactory::instance().get(missing->type_name);
+                            auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
                             auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                             if (column.isSubcolumn())
                                 frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
