@@ -47,6 +47,8 @@ public:
     bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override;
 
