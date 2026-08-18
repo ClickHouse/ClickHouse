@@ -619,6 +619,15 @@ class Result(MetaClasses.Serializable):
         result.results = failed_results
         return result
 
+    # ext keys dropped from a job's result when it is embedded as a sub-result of
+    # the workflow result. Only the heavy decimated host `metrics` timeline is
+    # dropped - it is not rendered at the workflow level and is only needed on the
+    # job's own report, which is uploaded separately with the full ext. Everything
+    # else (labels/hlabels badges, storage_usage link sizes, warnings/errors/notes,
+    # run_url) is lightweight and kept, so the workflow report and the embedded-node
+    # fallback path in json.html keep rendering the same content.
+    _WORKFLOW_SUB_RESULT_DROP_EXT_KEYS = ("metrics",)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -631,6 +640,11 @@ class Result(MetaClasses.Serializable):
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
+                    self.results[i].ext = {
+                        k: v
+                        for k, v in (self.results[i].ext or {}).items()
+                        if k not in self._WORKFLOW_SUB_RESULT_DROP_EXT_KEYS
+                    }
                 else:
                     self.results[i] = result
         self._update_status()
