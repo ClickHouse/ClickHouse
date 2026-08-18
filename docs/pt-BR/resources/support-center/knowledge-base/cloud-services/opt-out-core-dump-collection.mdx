@@ -1,0 +1,71 @@
+---
+date: 2026-02-04
+title: 'Como desativar a coleta de relatórios de falhas'
+description: 'Este artigo mostra como desativar a coleta de relatórios de falhas no ClickHouse Cloud'
+tags: ['Gerenciamento da Cloud']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+A partir de **27 de fevereiro de 2026**, o ClickHouse Cloud começará a coletar relatórios de falha quando ocorrerem falhas do servidor. Isso faz parte do nosso compromisso de melhorar a confiabilidade do serviço para todos os nossos usuários.
+
+A coleta de relatórios de falha nos ajuda a:
+
+* Identificar e entender o que causou uma falha
+* Corrigir problemas mais rapidamente
+* Melhorar continuamente sua experiência com o serviço
+
+<div id="whats-collected">
+  ## O que é coletado
+</div>
+
+Quando ocorre uma falha, os relatórios de falha capturam um retrato do estado do servidor naquele momento. Queremos deixar claro que isso pode incluir informações sensíveis que estavam na memória, como:
+
+* Credenciais de conexão
+* Chaves de criptografia
+* Strings de consulta
+* Outros dados presentes na memória no momento da falha
+
+<div id="how-we-protect-your-data">
+  ### Como protegemos seus dados
+</div>
+
+Levamos a segurança desses dados a sério:
+
+* **Armazenamento regional**: Todos os dados permanecem na mesma região do seu serviço
+* **Segurança reforçada**: Aplicamos proteções adicionais a todos os dados coletados
+* **Retenção limitada**: Os dados são mantidos apenas pelo tempo necessário para a depuração e, em seguida, excluídos com segurança
+
+<div id="services-automatically-excluded">
+  ## Serviços excluídos automaticamente
+</div>
+
+Alguns serviços são automaticamente excluídos da coleta de relatórios de falhas:
+
+* Serviços com requisitos de conformidade **HIPAA**
+* Serviços com requisitos de conformidade **PCI**
+* Serviços **BYOC** (Bring Your Own Cloud)
+
+<div id="how-to-opt-out">
+  ## Como desativar
+</div>
+
+Se você preferir não participar da coleta de relatórios de falha, pode desativá-la facilmente:
+
+1. Acesse o [ClickHouse Cloud Console](https://clickhouse.cloud)
+2. Selecione seu serviço
+3. Clique na aba **Settings**
+4. Role a página até encontrar &quot;Share crash reports with ClickHouse&quot;
+5. Desative essa opção para não participar
+
+<Image img="/images/crash-reports.png" size="md" alt="Onde encontrar a opção de desativação na UI do Cloud" />
+
+<Note>
+  Além da configuração no nível do serviço, também é possível configurar preferências para a organização. Se essa configuração estiver desabilitada, ou seja, se você optar por não participar da coleta de relatórios de falha, todos os serviços existentes e novos serão automaticamente excluídos da coleta. Se você definir a preferência como habilitada, ou seja, optar por participar, poderá desabilitá-la seletivamente no nível do serviço para substituir essa configuração e não participar.
+</Note>
+
+<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="Coleta de relatórios de falha" />

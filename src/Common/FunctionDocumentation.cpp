@@ -17,7 +17,7 @@ namespace
 {
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
-/// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
+/// Example output string: [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float)
 String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const FunctionDocumentation::Syntax & syntax)
 {
     String result;
@@ -35,97 +35,99 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             type = type.substr(6); // Remove "const " prefix
 
         if (type == "NULL")
-            result += "`](/sql-reference/syntax#null)";
+            result += "`](/reference/syntax#null)";
         else if (type == "Any")
-            result += "`](/sql-reference/data-types)";
+            result += "`](/reference/data-types)";
         else if (type == "String" || type == "String literal")
-            result += "`](/sql-reference/data-types/string)";
+            result += "`](/reference/data-types/string)";
         else if (type.starts_with("FixedString"))
-            result += "`](/sql-reference/data-types/fixedstring)";
+            result += "`](/reference/data-types/fixedstring)";
         else if (type.starts_with("Int") || type.starts_with("UInt") || type.starts_with("(U)Int")) /// "Int8", "Int16", ... || "UInt8", "UInt16", ... || "(U)Int*", "(U)Int8", "(U)Int16", ...
-            result += "`](/sql-reference/data-types/int-uint)";
+            result += "`](/reference/data-types/int-uint)";
         else if (type.starts_with("Float") || type == "BFloat16") /// "Float32", "Float64", "BFloat16"
-            result += "`](/sql-reference/data-types/float)";
+            result += "`](/reference/data-types/float)";
         else if (type.starts_with("Decimal")) /// "Decimal(P, S)", "Decimal32", "Decimal64", ...
-            result += "`](/sql-reference/data-types/decimal)";
+            result += "`](/reference/data-types/decimal)";
         else if (type == "Date")
-            result += "`](/sql-reference/data-types/date)";
+            result += "`](/reference/data-types/date)";
         else if (type == "Date32")
-            result += "`](/sql-reference/data-types/date32)";
+            result += "`](/reference/data-types/date32)";
         else if (type == "DateTime")
-            result += "`](/sql-reference/data-types/datetime)";
+            result += "`](/reference/data-types/datetime)";
         else if (type.starts_with("DateTime64")) /// "DateTime64(P)", "DateTime64(3)", "DateTime64(6)", ...
-            result += "`](/sql-reference/data-types/datetime64)";
+            result += "`](/reference/data-types/datetime64)";
         else if (type == "Time")
-            result += "`](/sql-reference/data-types/time)";
+            result += "`](/reference/data-types/time)";
         else if (type.starts_with("Time64")) //// "Time64(P)", "Time64(3)", ...
-            result += "`](/sql-reference/data-types/time64)";
+            result += "`](/reference/data-types/time64)";
         else if (type == "Enum")
-            result += "`](/sql-reference/data-types/enum)";
+            result += "`](/reference/data-types/enum)";
         else if (type == "UUID")
-            result += "`](/sql-reference/data-types/uuid)";
+            result += "`](/reference/data-types/uuid)";
         else if (type == "Object")
-            result += "`](/sql-reference/data-types/object-data-type)";
+            result += "`](/reference/data-types/newjson)";
         else if (type == "IPv4")
-            result += "`](/sql-reference/data-types/ipv4)";
+            result += "`](/reference/data-types/ipv4)";
         else if (type == "IPv6")
-            result += "`](/sql-reference/data-types/ipv6)";
+            result += "`](/reference/data-types/ipv6)";
         else if (type.starts_with("Array")) /// "Array(T)", "Array(UInt8)", "Array(String)", ...
-            result += "`](/sql-reference/data-types/array)";
+            result += "`](/reference/data-types/array)";
         else if (type == "Bool")
-            result += "`](/sql-reference/data-types/boolean)";
+            result += "`](/reference/data-types/boolean)";
         else if (type.starts_with("Tuple")) /// "Tuple(T1, T2)", "Tuple(UInt8, String)", ...
-            result += "`](/sql-reference/data-types/tuple)";
+            result += "`](/reference/data-types/tuple)";
         else if (type.starts_with("Map")) /// "Map(K, V)"
-            result += "`](/sql-reference/data-types/map)";
+            result += "`](/reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
-            result += "`](/sql-reference/data-types/variant)";
+            result += "`](/reference/data-types/variant)";
         else if (type.starts_with("Geometry"))
-            result += "`](/sql-reference/data-types/geo)";
+            result += "`](/reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
-            result += "`](/sql-reference/data-types/lowcardinality)";
+            result += "`](/reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
-            result += "`](/sql-reference/data-types/nullable)";
+            result += "`](/reference/data-types/nullable)";
         else if (type.starts_with("AggregateFunction")) /// "AggregateFunction(agg_func, T)", "AggregateFunction(any, UInt8)", ...
-            result += "`](/sql-reference/data-types/aggregatefunction)";
+            result += "`](/reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
-            result += "`](/sql-reference/data-types/simpleaggregatefunction)";
+            result += "`](/reference/data-types/simpleaggregatefunction)";
         else if (type == "Geo")
-            result += "`](/sql-reference/data-types/geo)";
+            result += "`](/reference/data-types/geo)";
         else if (type == "Point")
-            result += "`](/sql-reference/data-types/geo#point)";
+            result += "`](/reference/data-types/geo#point)";
+        else if (type == "MultiPoint")
+            result += "`](/reference/data-types/geo#multipoint)";
         else if (type == "Ring")
-            result += "`](/sql-reference/data-types/geo#ring)";
+            result += "`](/reference/data-types/geo#ring)";
         else if (type == "LineString")
-            result += "`](/sql-reference/data-types/geo#linestring)";
+            result += "`](/reference/data-types/geo#linestring)";
         else if (type == "MultiLineString")
-            result += "`](/sql-reference/data-types/geo#multilinestring)";
+            result += "`](/reference/data-types/geo#multilinestring)";
         else if (type == "Polygon")
-            result += "`](/sql-reference/data-types/geo#polygon)";
+            result += "`](/reference/data-types/geo#polygon)";
         else if (type == "MultiPolygon")
-            result += "`](/sql-reference/data-types/geo#multipolygon)";
+            result += "`](/reference/data-types/geo#multipolygon)";
         else if (type == "numericIndexedVector")
-            result += "`](/sql-reference/functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)";
+            result += "`](/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
-            result += "`](/sql-reference/data-types/special-data-types/expression)";
+            result += "`](/reference/data-types/special-data-types/expression)";
         else if (type == "Set")
-            result += "`](/sql-reference/data-types/special-data-types/set)";
+            result += "`](/reference/data-types/special-data-types/set)";
         else if (type == "Nothing")
-            result += "`](/sql-reference/data-types/special-data-types/nothing)";
+            result += "`](/reference/data-types/special-data-types/nothing)";
         else if (type == "Interval")
-            result += "`](/sql-reference/data-types/special-data-types/interval)";
+            result += "`](/reference/data-types/special-data-types/interval)";
         else if (type.starts_with("Nested")) /// "Nested(N1 T1, N2 T2, ...)", ...
-            result += "`](/sql-reference/data-types/nested-data-structures/nested)";
+            result += "`](/reference/data-types/nested-data-structures)";
         else if (type == "Dynamic")
-            result += "`](/sql-reference/data-types/dynamic)";
+            result += "`](/reference/data-types/dynamic)";
         else if (type == "JSON")
-            result += "`](/sql-reference/data-types/newjson)";
+            result += "`](/reference/data-types/newjson)";
         else if (type == "Lambda function")
-            result += "`](/sql-reference/functions/overview#arrow-operator-and-lambda)";
+            result += "`](/reference/functions/regular-functions/overview#arrow-operator-and-lambda)";
         else if (type == "NULL")
-            result += "`](/sql-reference/syntax#null)";
+            result += "`](/reference/syntax#null)";
         else if (type.starts_with("QBit")) /// "QBit(T, UInt64)", "QBit(Float64, UInt64)", ...
-            result += "`](/sql-reference/data-types/qbit)";
+            result += "`](/reference/data-types/qbit)";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }

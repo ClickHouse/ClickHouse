@@ -13,16 +13,12 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
 > `deb` または `rpm` パッケージをインストールできない Linux ディストリビューションでは、公式の事前コンパイル済み `tgz` アーカイブを使用することを推奨します。
 
 <Steps>
-  <Step>
-    ## 推奨事項を確認する
-
+  <Step title="推奨事項を確認する" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 最新の stable バージョンをダウンロードしてインストールする
-
-    必要なバージョンは、リポジトリ https://packages.clickhouse.com/tgz/ から `curl` または `wget` を使用してダウンロードできます。
+  <Step title="最新の stable バージョンをダウンロードしてインストールする" id="install-latest-stable">
+    必要なバージョンは、リポジトリ [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/) から `curl` または `wget` を使用してダウンロードできます。
     その後、ダウンロードしたアーカイブを展開し、インストールスクリプトを使ってインストールします。
 
     以下は、最新の stable バージョンをインストールする例です。
@@ -36,9 +32,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 最新の ClickHouse バージョンを取得する
-
+  <Step title="最新の ClickHouse バージョンを取得する" id="get-latest-version">
     GitHub から最新の ClickHouse バージョンを取得し、`LATEST_VERSION` 変数に格納します。
 
     ```bash
@@ -48,9 +42,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## システムアーキテクチャを検出する
-
+  <Step title="システムアーキテクチャを検出する" id="detect-system-architecture">
     システムアーキテクチャを検出し、それに応じて `ARCH` 変数を設定します。
 
     ```bash
@@ -62,9 +54,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 各 ClickHouse コンポーネントの tarball をダウンロードする
-
+  <Step title="各 ClickHouse コンポーネントの tarball をダウンロードする" id="download-tarballs">
     各 ClickHouse コンポーネントの tarball をダウンロードします。このループでは、まずアーキテクチャ固有の
     パッケージを試し、利用できない場合は汎用パッケージにフォールバックします。
 
@@ -77,9 +67,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## パッケージを展開してインストールする
-
+  <Step title="パッケージを展開してインストールする" id="extract-and-install">
     以下のコマンドを実行して、次のパッケージを展開し、インストールします。
 
     * `clickhouse-common-static`

@@ -28,7 +28,7 @@ Examples of cloud services that are upgraded include:
 
 ## Kubernetes Cluster Upgrade Process {#k8s-upgrade-process}
 
-The Kubernetes cluster (EKS for AWS, GKE for GCP) that hosts your ClickHouse services requires periodic upgrades to maintain security, compatibility, and access to new features. ClickHouse Cloud manages all Kubernetes cluster upgrades for your BYOC deployment, ensuring your cluster stays current with the supported versions.
+The Kubernetes cluster (EKS for AWS, GKE for GCP, AKS for Azure) that hosts your ClickHouse services requires periodic upgrades to maintain security, compatibility, and access to new features. ClickHouse Cloud manages all Kubernetes cluster upgrades for your BYOC deployment, ensuring your cluster stays current with the supported versions.
 
 ### Cluster Upgrade Types {#cluster-upgrade-types}
 
@@ -50,4 +50,4 @@ Kubernetes cluster upgrades are scheduled in coordination with you through Click
 
 ### Version Support {#version-support}
 
-ClickHouse Cloud maintains Kubernetes clusters within the supported version ranges defined by your cloud service provider (AWS EKS or Google GKE). We ensure your cluster remains compatible with provider requirements while staying current with security patches and feature updates.
+ClickHouse Cloud maintains Kubernetes clusters within the supported version ranges defined by your cloud service provider (AWS EKS, Google GKE, or Azure AKS). We ensure your cluster remains compatible with provider requirements while staying current with security patches and feature updates.

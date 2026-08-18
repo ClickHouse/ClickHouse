@@ -2,17 +2,17 @@
 slug: /cloud/managed-postgres/settings
 sidebarTitle: '設定'
 title: '設定'
-description: 'PostgreSQL と PgBouncer のパラメータを設定し、Managed Postgres のインスタンス設定を管理します'
+description: 'PostgreSQL と PgBouncer のパラメータを設定し、ClickHouse Managed Postgres のインスタンス設定を管理します'
 keywords: ['Postgres 設定', 'PostgreSQL 設定', 'PgBouncer']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
-サイドバーの**設定**タブで、Managed Postgres インスタンスの設定パラメータを変更し、インスタンス設定を管理できます。
+サイドバーの**設定**タブで、ClickHouse Managed Postgres インスタンスの設定パラメーターを変更し、インスタンス設定を管理できます。
 
 <div id="service-actions">
   ## Service actions とスケーリング
@@ -20,7 +20,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <Image img="/images/managed-postgres/service-actions.webp" alt="Service actions とスケーリング" size="md" border />
 
-**Service actions** ツールバーには、Managed Postgres インスタンスを管理するための操作が用意されています。
+**Service actions** ツールバーには、ClickHouse Managed Postgres インスタンスを管理するための操作が用意されています。
 
 * **Reset password**: スーパーユーザーのパスワードを更新します (インスタンスが `Running` の場合のみ)
 * **Restart**: データベースインスタンスを再起動します (インスタンスが `Running` の場合のみ)
