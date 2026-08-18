@@ -29,6 +29,15 @@ FROM
 )
 WHERE explain ILIKE '%ReadFromMergeTree (by_v)%';
 
+-- The all-parts rewrite detaches the regular read, so the plan contains no base-table read arm.
+SELECT count() = 0
+FROM
+(
+    EXPLAIN projections = 1
+    SELECT k FROM normal_projection_materialize_constants PREWHERE v = 1
+)
+WHERE explain ILIKE '%ReadFromMergeTree%' AND explain NOT ILIKE '%(by_v)%';
+
 SELECT groupArray(k) FROM (SELECT k FROM normal_projection_materialize_constants PREWHERE v = 1 ORDER BY k);
 
 DROP TABLE normal_projection_materialize_constants;
