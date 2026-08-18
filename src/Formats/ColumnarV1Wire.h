@@ -1276,6 +1276,20 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_VARIANT declared type has too many alternatives: {}", alt_types.size());
 
+        // Neither array is optional for COL_VARIANT, so 0 is not an "absent" sentinel here the
+        // way it is for a plain column's null map: the writer's cursor starts past the header
+        // and descriptor table, so it is never 0 in a genuine frame. Without these checks a
+        // frame omitting the discriminators makes disc_src point at the frame header, so a
+        // 1-row column takes its discriminator from the low byte of num_rows and is accepted
+        // with no discriminator bytes on the wire at all; omitting the row offsets is the same
+        // hole for an all-null frame, where row_off is never examined.
+        if (desc.null_offset == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT descriptor has no discriminators (null_offset is 0)");
+        if (desc.offsets_offset == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT descriptor has no row offsets (offsets_offset is 0)");
+
         // Discriminators: uint8[rows_to_dec] at null_offset (NULL_DISCRIMINATOR=0xFF for NULL rows).
         if (desc.null_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.null_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
