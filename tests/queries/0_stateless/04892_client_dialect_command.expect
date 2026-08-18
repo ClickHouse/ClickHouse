@@ -104,6 +104,15 @@ send -- "/dialect\r"
 expect -- "Current dialect: clickhouse"
 expect -- ":) "
 
+# A PromQL metric named `set` must not be mistaken for the SQL SET escape.
+send -- "SET dialect = 'promql'\r"
+expect -- "(promql) :) "
+send -- "set{job=\"x\"}\r"
+expect -- "Time series table is not specified"
+expect -- "(promql) :) "
+send -- "SET dialect = 'clickhouse'\r"
+expect -- ":) "
+
 send -- "exit\r"
 expect eof
 
