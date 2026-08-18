@@ -33,3 +33,37 @@ UPDATE t_lwu_text_index SET str = '777' WHERE val >= 140000 AND val < 140020;
 SELECT count() FROM t_lwu_text_index WHERE hasToken(str, '777');
 
 DROP TABLE t_lwu_text_index;
+
+-- A patch part on the indexed column disables the direct read, but the preprocessor must stay applied: otherwise
+-- the predicate silently falls back to raw semantics and stops matching until the patch is merged away.
+DROP TABLE IF EXISTS t_lwu_text_index_pp;
+
+CREATE TABLE t_lwu_text_index_pp
+(
+    id UInt64,
+    s String,
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha(), preprocessor = lower(s))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_lwu_text_index_pp VALUES (1, 'Beta'), (2, 'Gamma');
+
+SELECT count() FROM t_lwu_text_index_pp WHERE hasToken(s, 'beta') SETTINGS use_skip_indexes = 1;
+
+-- A no-op update of the indexed column on an unrelated row must not change the answer.
+UPDATE t_lwu_text_index_pp SET s = s WHERE id = 2;
+
+SELECT count() FROM t_lwu_text_index_pp WHERE hasToken(s, 'beta') SETTINGS use_skip_indexes = 1;
+
+-- Updates that really change the data still give the up-to-date answer.
+UPDATE t_lwu_text_index_pp SET s = 'Delta' WHERE id = 1;
+
+SELECT count() FROM t_lwu_text_index_pp WHERE hasToken(s, 'beta') SETTINGS use_skip_indexes = 1;
+
+UPDATE t_lwu_text_index_pp SET s = 'Beta' WHERE id = 2;
+
+SELECT count() FROM t_lwu_text_index_pp WHERE hasToken(s, 'beta') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_lwu_text_index_pp;
