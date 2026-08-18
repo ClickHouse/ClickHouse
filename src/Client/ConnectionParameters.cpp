@@ -171,7 +171,7 @@ SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
         if (!identities.empty())
         {
             fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identities.front().comment);
-            return SSHKeyFactory::makeKeyFromSSHAgent(identities.front().key_blob);
+            return SSHKeyFactory::makeKeyFromSSHAgent(identities.front().key_blob, agent_socket_path);
         }
     }
 

@@ -10,7 +10,6 @@
 #    include <fstream>
 #    include <fnmatch.h>
 #    include <pwd.h>
-#    include <sstream>
 #    include <unistd.h>
 
 #    pragma clang diagnostic push
@@ -116,19 +115,27 @@ String expandIdentityFileName(std::string_view pattern, const String & home_dire
 
 bool matchesHostPattern(const String & patterns, const String & host)
 {
-    std::istringstream input(patterns);
-    String pattern;
     bool matched = false;
-    while (input >> pattern)
+    size_t pattern_begin = 0;
+    while (pattern_begin < patterns.size())
     {
+        pattern_begin = patterns.find_first_not_of(" \t\r\n", pattern_begin);
+        if (pattern_begin == String::npos)
+            break;
+
+        size_t pattern_end = patterns.find_first_of(" \t\r\n", pattern_begin);
+        String pattern = patterns.substr(pattern_begin, pattern_end - pattern_begin);
         if (pattern.starts_with('!'))
         {
             if (fnmatch(pattern.c_str() + 1, host.c_str(), 0) == 0)
                 return false;
-            continue;
         }
+        else
+            matched |= fnmatch(pattern.c_str(), host.c_str(), 0) == 0;
 
-        matched |= fnmatch(pattern.c_str(), host.c_str(), 0) == 0;
+        if (pattern_end == String::npos)
+            break;
+        pattern_begin = pattern_end + 1;
     }
     return matched;
 }
@@ -147,14 +154,19 @@ std::optional<String> findSSHAgentSocketPathInConfig(const String & config_file,
         if (comment != String::npos)
             line.resize(comment);
 
-        std::istringstream line_input(line);
-        String keyword;
-        line_input >> keyword;
-        if (keyword.empty())
+        size_t keyword_begin = line.find_first_not_of(" \t\r\n");
+        if (keyword_begin == String::npos)
             continue;
 
+        size_t keyword_end = line.find_first_of(" \t\r\n", keyword_begin);
+        String keyword = line.substr(keyword_begin, keyword_end - keyword_begin);
         String argument;
-        std::getline(line_input >> std::ws, argument);
+        if (keyword_end != String::npos)
+        {
+            size_t argument_begin = line.find_first_not_of(" \t\r\n", keyword_end);
+            if (argument_begin != String::npos)
+                argument = line.substr(argument_begin);
+        }
         if (keyword == "Host")
         {
             applies = matchesHostPattern(argument, host);
