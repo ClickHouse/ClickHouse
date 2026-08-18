@@ -1,0 +1,99 @@
+-- a refused policy over a storage that processes past FetchColumns fails closed --
+10
+-- so does a policy on a matching column: only the query text ships, never the filter --
+-- a policy on the Distributed table itself fails closed too, instead of a silent drop --
+10
+-- the leaf policy still enforces through the Distributed read, matching shard-side model --
+5
+5
+-- Remote over a nested Merge must be rejected too --
+-- a matching column still supports PREWHERE through Remote --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- a view over a target that refuses the auto-move still answers correctly --
+9
+1	2
+2	3
+3	4
+-- and so does a view over a Merge that inherits the refusal --
+9
+1	2
+2	3
+3	4
+-- an explicit PREWHERE through both views keeps working --
+10
+10
+-- re-attached tables are lazy proxies --
+lazy_inner	TableProxy
+lazy_leaf	TableProxy
+lazy_outer	TableProxy
+-- the proxy must still reject the mismatched column, not abort --
+-- a matching column still supports PREWHERE through the proxy --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working through the proxy --
+9
+10
+1	2
+2	3
+3	4
+-- row policy on a mismatched column must not abort: single level --
+1	2
+2	3
+3	4
+-- and nested, under both analyzers --
+1	2
+2	3
+3	4
+1	2
+2	3
+3	4
+-- a policy on a matching column keeps working --
+3	4
+4	5
+5	6
+-- row policy on a view whose type drifts from the target must not abort --
+1	2
+2	3
+3	4
+-- and through a view over a view, where the drift is one level down --
+1	2
+2	3
+3	4
+1	2
+2	3
+3	4
+-- a subcolumn PREWHERE rides its origin column through a Buffer --
+10
+5
+5
+-- and through a Merge whose origin type matches the leaf --
+10
+5
+-- the auto WHERE -> PREWHERE move admits subcolumns through their origin too --
+10
+10
+SELECT sum(x)
+FROM sub_merge
+PREWHERE less(t.a, 5)
+SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0
+-- a subcolumn of a type-drifted origin stays rejected --
+10
+SELECT sum(x)
+FROM sub_merge_bad
+WHERE less(t.a, 5)
+SETTINGS optimize_move_to_prewhere = 1, enable_analyzer = 0, query_plan_optimize_prewhere = 0
+-- a row policy consuming a subcolumn maps to its origin for the push decision --
+0
+1
+2

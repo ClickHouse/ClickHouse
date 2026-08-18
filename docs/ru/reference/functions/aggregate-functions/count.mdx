@@ -23,21 +23,21 @@ ClickHouse поддерживает следующие варианты синт
 **Детали**
 
 ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`.
-Поведение этой конструкции зависит от настройки [`count_distinct_implementation`](/ru/reference/settings/session-settings#count_distinct_implementation).
+Поведение этой конструкции зависит от настройки [`count_distinct_implementation`](/ru/reference/settings/session-settings/count-distinct#count_distinct_implementation).
 Она определяет, какая из функций [uniq*](/ru/reference/functions/aggregate-functions/uniq) используется для выполнения этой операции.
 По умолчанию используется функция [uniqExact](/ru/reference/functions/aggregate-functions/uniqExact).
 
 Запрос `SELECT count() FROM table` по умолчанию оптимизируется с использованием метаданных MergeTree.
-Если вам нужно использовать безопасность на уровне строк, отключите эту оптимизацию с помощью настройки [`optimize_trivial_count_query`](/ru/reference/settings/session-settings#optimize_trivial_count_query).
+Если вам нужно использовать безопасность на уровне строк, отключите эту оптимизацию с помощью настройки [`optimize_trivial_count_query`](/ru/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query).
 
-Однако запрос `SELECT count(nullable_column) FROM table` можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Однако запрос `SELECT count(nullable_column) FROM table` можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 При `optimize_functions_to_subcolumns = 1` функция считывает только подстолбец [`null`](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки всех данных столбца.
 Запрос `SELECT count(n) FROM table` преобразуется в `SELECT sum(NOT n.null) FROM table`.
 
 <Tip>
   **Повышение производительности COUNT(DISTINCT expr)**
 
-  Если запрос `COUNT(DISTINCT expr)` выполняется медленно, попробуйте добавить [`GROUP BY`](/ru/reference/statements/select/group-by), так как это улучшает распараллеливание.
+  Если запрос `COUNT(DISTINCT expr)` выполняется медленно, попробуйте добавить предложение [`GROUP BY`](/ru/reference/statements/select/group-by), так как это улучшает распараллеливание.
   Также можно использовать [projection](/ru/reference/statements/alter/projection), чтобы создать индекс для целевого столбца, используемого в `COUNT(DISTINCT target_col)`.
 </Tip>
 
@@ -72,7 +72,7 @@ SELECT count() FROM t
 **Пример COUNT(DISTINCT)**
 
 ```sql title=Query
--- В этом примере показано, что `count(DISTINCT num)` выполняется функцией `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

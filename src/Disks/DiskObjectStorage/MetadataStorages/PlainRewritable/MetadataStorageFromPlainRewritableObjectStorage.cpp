@@ -295,13 +295,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::stri
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
 {
-    return fs.takeReadOnlySnapshot()->existsDirectory(path).first;
+    return fs.takeReadOnlySnapshot()->existsDirectory(path);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
 {
     const auto tree = fs.takeReadOnlySnapshot();
-    return tree->existsFile(path) || tree->existsDirectory(path).first;
+    return tree->existsFile(path) || tree->existsDirectory(path);
 }
 
 uint64_t MetadataStorageFromPlainRewritableObjectStorage::getFileSize(const std::string & path) const
@@ -372,8 +372,10 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 {
     const auto tree = fs.takeReadOnlySnapshot();
 
-    if (auto [exists, remote_info] = tree->existsDirectory(path); exists)
+    if (tree->existsDirectory(path))
     {
+        const auto remote_info = tree->getDirectoryRemoteInfo(path);
+
         if (remote_info)
             return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
 
@@ -447,7 +449,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
         normalizeDirectoryPath(path),
-        uncommitted_state.lookupDirectory(path).second->remote_path,
+        uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
@@ -467,12 +469,11 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,
         normalizeDirectoryPath(path),
-        uncommitted_state.lookupDirectory(path).second->remote_path,
+        uncommitted_state.getDirectoryRemoteInfo(path)->remote_path,
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics));
-
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
@@ -486,12 +487,11 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics));
-
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
-    uncommitted_state.lookupDirectory(normalizePath(path).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path).parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
         path,
@@ -532,8 +532,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.lookupDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.lookupDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
         path_from,
@@ -546,8 +546,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.lookupDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.lookupDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
@@ -562,8 +562,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.lookupDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.lookupDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
+    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,
@@ -582,12 +582,24 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     if (normalized_path.filename().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
 
-    /// Materialize virtual parent.
     const auto parent_path = normalized_path.parent_path();
-    if (const auto [parent_exists, parent_info] = uncommitted_state.lookupDirectory(parent_path); parent_exists && !parent_info)
-        createDirectoryRecursive(parent_path);
+    const auto parent_info = uncommitted_state.getDirectoryRemoteInfo(parent_path);
 
-    if (const auto directory_remote_info = uncommitted_state.lookupDirectory(parent_path).second)
+    if (!parent_info)
+    {
+        /// Validate during commit that directory will be created on S3.
+        uncommitted_state.useMissingDirectory(parent_path);
+
+        /// Materialize virtual parent.
+        createDirectoryRecursive(parent_path);
+    }
+    else
+    {
+        /// Validate during commit that directory will not be recreated on S3.
+        uncommitted_state.useDirectory(parent_path);
+    }
+
+    if (const auto directory_remote_info = uncommitted_state.getDirectoryRemoteInfo(parent_path))
         return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());

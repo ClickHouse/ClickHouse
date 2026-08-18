@@ -11,26 +11,35 @@ integration:
 
 以下は、MySQL ClickPipe でサポートされているデータ型のマッピングです。
 
-| MySQL Type                           | ClickHouse type        | Notes                                                        |
-| ------------------------------------ | ---------------------- | ------------------------------------------------------------ |
-| Enum                                 | LowCardinality(String) |                                                              |
-| Set                                  | String                 |                                                              |
-| Decimal                              | Decimal                |                                                              |
-| TinyInt                              | Int8                   | 符号なしをサポートします。                                                |
-| SmallInt                             | Int16                  | 符号なしをサポートします。                                                |
-| MediumInt, Int                       | Int32                  | 符号なしをサポートします。                                                |
-| BigInt                               | Int64                  | 符号なしをサポートします。                                                |
-| Year                                 | Int16                  |                                                              |
-| TinyText, Text, MediumText, LongText | String                 |                                                              |
-| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                              |
-| Char, Varchar                        | String                 |                                                              |
-| Binary, VarBinary                    | String                 |                                                              |
-| TinyInt(1)                           | Bool                   |                                                              |
-| JSON                                 | String                 | MySQL のみ。MariaDB の `json` は、制約付きの `text` のエイリアスにすぎません。       |
-| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text) 。WKT ではわずかな精度低下が生じる場合があります。            |
-| Vector                               | Array(Float32)         | MySQL のみ。MariaDB でもまもなくサポートされる予定です。                          |
-| Float                                | Float32                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。 |
-| Double                               | Float64                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。 |
-| Date                                 | Date32                 | 日または月が 00 の場合は 01 にマッピングされます。                                |
-| Time                                 | DateTime64(6)          | Unixエポックからの時間オフセット。                                          |
-| Datetime, Timestamp                  | DateTime64(6)          | 日または月が 00 の場合は 01 にマッピングされます。                                |
+| MySQL Type                           | ClickHouse type        | Notes                                                                                                                                     |
+| ------------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                                                                           |
+| Set                                  | String                 |                                                                                                                                           |
+| Decimal                              | Decimal(76,38)         | 整数部が 38 桁を超える値は、ゼロとして取り込まれます。                                                                                                             |
+| Bit                                  | UInt64                 |                                                                                                                                           |
+| TinyInt                              | Int8                   | 符号なしをサポートします。                                                                                                                             |
+| SmallInt                             | Int16                  | 符号なしをサポートします。                                                                                                                             |
+| MediumInt, Int                       | Int32                  | 符号なしをサポートします。                                                                                                                             |
+| BigInt                               | Int64                  | 符号なしをサポートします。                                                                                                                             |
+| Serial                               | UInt64                 |                                                                                                                                           |
+| Year                                 | Int16                  |                                                                                                                                           |
+| TinyInt(1)                           | Bool                   |                                                                                                                                           |
+| Float                                | Float32                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。 `Float(p)` は、`p <= 24` の場合は `Float32` に、`p >= 25` の場合は `Float64` にマッピングされます。 |
+| Double                               | Float64                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。                                                                              |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                                                                           |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                                                                           |
+| Char, Varchar                        | String                 |                                                                                                                                           |
+| Long, Long Varchar                   | String                 |                                                                                                                                           |
+| Binary, VarBinary                    | String                 |                                                                                                                                           |
+| Long VarBinary                       | String                 |                                                                                                                                           |
+| JSON                                 | String                 | MySQL のみ。MariaDB の `json` は、制約付きの `text` のエイリアスにすぎません。                                                                                    |
+| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text) 。WKT ではわずかな精度低下が生じる場合があります。                                                                                         |
+| UUID                                 | UUID                   | MariaDB のみ。CDC 中に追加されたカラムは、生の 16 バイトを保持する `String` として追加されます。                                                                             |
+| INET4, INET6                         | String                 | MariaDB のみ。                                                                                                                               |
+| Vector                               | Array(Float32)         | MySQL のみ。MariaDB でもまもなくサポートされる予定です。                                                                                                       |
+| Char Byte, Raw                       | String                 | バイナリ型に対する MariaDB/Oracle モードの別名です。                                                                                                        |
+| Clob, Varchar2, XMLType              | String                 | テキスト型に対する MariaDB/Oracle モードの別名です。                                                                                                        |
+| Number                               | Decimal                | `Decimal` の MariaDB/Oracle モードでの別名です。                                                                                                     |
+| Date                                 | Date32                 | 日または月が 00 の場合は 01 にマッピングされます。                                                                                                             |
+| Time                                 | DateTime64(6)          | Unixエポックからの時間オフセット。                                                                                                                       |
+| Datetime, Timestamp                  | DateTime64(6)          | 日または月が 00 の場合は 01 にマッピングされます。                                                                                                             |

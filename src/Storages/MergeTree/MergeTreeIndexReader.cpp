@@ -82,7 +82,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName(), &part->getDataPartStorage());
+    auto index_format = index->getDeserializedFormat(*part, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 
@@ -138,6 +138,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .part = *part,
             .index = *index,
             .readable_ranges = readable_ranges,
+            .skip_postings_deserialization = false,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
