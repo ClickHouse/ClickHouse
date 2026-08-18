@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
 #include <functional>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -14,6 +15,8 @@
 #include <filesystem>
 
 #include <Common/logger_useful.h>
+
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -135,10 +138,16 @@ void collectMetadataRootFiles(
 /// yet older ones) and feed every path they reference through `visit_history`. History is inspected
 /// only so the cleanup callers can detect references outside the base subtree: files under
 /// `table_path` referenced solely by expired history remain eligible as orphans, so the caller's
-/// visitor must not extend the reachable set. Historical metadata files, manifest lists, or
-/// manifests that are already deleted from storage cannot be inspected; they are skipped with a
-/// warning, because failing the whole operation would block cleanup for every table whose history
-/// has already been trimmed.
+/// visitor must not extend the reachable set.
+///
+/// A historical metadata file, manifest list, or manifest that is already deleted from storage is
+/// skipped with a warning: its content is unrecoverable, and refusing to run on it would make
+/// cleanup self-destructing, because `remove_orphan_files` deletes exactly such files itself
+/// (expired manifest lists, and metadata versions no longer listed in the current `metadata-log`,
+/// are orphans under `table_path`), so its first successful run would break every later one. Every
+/// other failure -- permission denied, network error, malformed metadata -- propagates instead of
+/// being swallowed: unlike a deleted object it says nothing about what the file referenced, and
+/// hiding it would silently narrow the caller's fail-close gate on external references.
 void collectHistoricalReferences(
     const Poco::JSON::Object::Ptr & current_metadata,
     ObjectStoragePtr object_storage,
@@ -176,38 +185,48 @@ void collectHistoricalReferences(
 
     std::unordered_set<IcebergPathFromMetadata> traversed_manifest_lists;
 
+    /// Resolve `path`, but hand back the resolved (storage, key) only while the object is still in
+    /// storage, so the walk below can tell an already-deleted historical reference from a failure that
+    /// must propagate.
+    using ResolvedPath = std::pair<ObjectStoragePtr, String>;
+    auto resolve_if_present = [&](const IcebergPathFromMetadata & path) -> std::optional<ResolvedPath>
+    {
+        auto resolved = resolveObjectStorageForPath(
+            persistent_table_components.table_location, path.serialize(),
+            object_storage, secondary_storages, context, resolver);
+        if (!resolved.first->exists(StoredObject(resolved.second)))
+            return std::nullopt;
+        return resolved;
+    };
+
     while (!metadata_worklist.empty())
     {
         auto historical_metadata_path = metadata_worklist.back();
         metadata_worklist.pop_back();
         visit_history(historical_metadata_path);
 
-        Poco::JSON::Object::Ptr historical_metadata;
-        try
-        {
-            auto [storage, key] = resolveObjectStorageForPath(
-                persistent_table_components.table_location, historical_metadata_path.serialize(),
-                object_storage, secondary_storages, context, resolver);
-            /// Bypass the metadata cache: it is keyed by path only, and a historical file may live
-            /// on a secondary storage where the same key means a different object.
-            historical_metadata = getMetadataJSONObject(
-                key,
-                storage,
-                /* metadata_cache */ nullptr,
-                context,
-                log,
-                getCompressionMethodFromMetadataFile(key),
-                persistent_table_components.table_uuid);
-        }
-        catch (const Exception & e)
+        auto resolved_metadata = resolve_if_present(historical_metadata_path);
+        if (!resolved_metadata)
         {
             LOG_WARNING(
                 log,
-                "Skipping historical metadata file {} while scanning history for external references: {}",
-                historical_metadata_path,
-                e.displayText());
+                "Historical metadata file {} is already deleted from storage, so the paths it referenced "
+                "cannot be checked for locations outside the table's base directory",
+                historical_metadata_path);
             continue;
         }
+
+        auto & [historical_metadata_storage, historical_metadata_key] = *resolved_metadata;
+        /// Bypass the metadata cache: it is keyed by path only, and a historical file may live
+        /// on a secondary storage where the same key means a different object.
+        auto historical_metadata = getMetadataJSONObject(
+            historical_metadata_key,
+            historical_metadata_storage,
+            /* metadata_cache */ nullptr,
+            context,
+            log,
+            getCompressionMethodFromMetadataFile(historical_metadata_key),
+            persistent_table_components.table_uuid);
 
         enqueue_log_entries(historical_metadata);
         collectStatisticsPaths(historical_metadata, f_statistics, visit_history);
@@ -230,28 +249,38 @@ void collectHistoricalReferences(
                 continue;
             visit_history(manifest_list_path);
 
-            try
-            {
-                auto manifest_keys = getManifestList(
-                    object_storage, persistent_table_components, context, manifest_list_path, log, secondary_storages);
-                for (const auto & manifest_entry : manifest_keys)
-                {
-                    visit_history(manifest_entry.manifest_file_path);
-                    auto entries_handle = getManifestFileEntriesHandle(
-                        object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, secondary_storages);
-                    for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
-                        for (const auto & entry : entries_handle.getFilesWithoutDeleted(content_type))
-                            visit_history(entry->parsed_entry->file_path_key);
-                }
-            }
-            catch (const Exception & e)
+            if (!resolve_if_present(manifest_list_path))
             {
                 LOG_WARNING(
                     log,
-                    "Skipping manifest list {} of historical metadata file {} while scanning history for external references: {}",
+                    "Manifest list {} of historical metadata file {} is already deleted from storage, so the "
+                    "files it referenced cannot be checked for locations outside the table's base directory",
                     manifest_list_path,
-                    historical_metadata_path,
-                    e.displayText());
+                    historical_metadata_path);
+                continue;
+            }
+
+            auto manifest_keys = getManifestList(
+                object_storage, persistent_table_components, context, manifest_list_path, log, secondary_storages);
+            for (const auto & manifest_entry : manifest_keys)
+            {
+                visit_history(manifest_entry.manifest_file_path);
+                if (!resolve_if_present(manifest_entry.manifest_file_path))
+                {
+                    LOG_WARNING(
+                        log,
+                        "Manifest file {} of historical metadata file {} is already deleted from storage, so the "
+                        "files it referenced cannot be checked for locations outside the table's base directory",
+                        manifest_entry.manifest_file_path,
+                        historical_metadata_path);
+                    continue;
+                }
+
+                auto entries_handle = getManifestFileEntriesHandle(
+                    object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, secondary_storages);
+                for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+                    for (const auto & entry : entries_handle.getFilesWithoutDeleted(content_type))
+                        visit_history(entry->parsed_entry->file_path_key);
             }
         }
     }

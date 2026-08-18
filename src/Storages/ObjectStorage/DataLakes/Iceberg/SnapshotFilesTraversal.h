@@ -64,7 +64,8 @@ struct ReachableFilesResult
 /// too (recursively), but solely to report external references into `external_files` -- so callers
 /// that must fail closed on files a base-directory scan cannot see (e.g. `remove_orphan_files`) also
 /// catch references that only exist in table history. History never extends `files`. Historical
-/// metadata, manifest lists, or manifests already deleted from storage are skipped with a warning.
+/// metadata, manifest lists, or manifests already deleted from storage are skipped with a warning
+/// (their content is unrecoverable); any other failure while inspecting them propagates.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
