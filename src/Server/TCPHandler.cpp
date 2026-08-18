@@ -84,6 +84,7 @@
 
 
 #include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -136,6 +137,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
 }
@@ -800,6 +802,9 @@ void TCPHandler::runImpl()
                 {
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
+
+                    /// Stands in for a follower that is still planning while the initiator gives up on it.
+                    fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(5000); });
 
                     std::lock_guard lock(*callback_mutex);
 
