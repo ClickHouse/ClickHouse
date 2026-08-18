@@ -155,7 +155,6 @@ public:
         if (*version >= 1)
             DB::readBoolText(this->data(place).init, buf);
         this->data(place).roaring_bitmap_with_small_set.read(buf);
-
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
