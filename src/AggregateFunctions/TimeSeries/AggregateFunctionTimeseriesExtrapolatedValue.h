@@ -249,7 +249,7 @@ public:
         return Aggregator{Base::window, Base::timestamp_scale_multiplier};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 3;
+    static constexpr UInt16 FORMAT_VERSION = 4;
     static constexpr bool DateTime64Supported = true;
 };
 

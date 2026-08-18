@@ -575,7 +575,7 @@ def test_nats_mv_combo(nats_cluster):
 
     assert (
         int(result) == expected_result
-    ), "Clickhouse server lost some messages: {}".format(result)
+    ), "ClickHouse server lost some messages: {}".format(result)
 
 
 def test_nats_insert(nats_cluster):
