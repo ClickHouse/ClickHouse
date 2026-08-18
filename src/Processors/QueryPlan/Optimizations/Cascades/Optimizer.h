@@ -21,6 +21,8 @@ class CascadesOptimizer
 public:
     CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_);
 
+    /// Runs the search and replaces the plan with the best alternative. Single use: the memo,
+    /// the task stack and the best-plan state belong to this run, so a second call throws.
     void optimize();
 
     std::pair<GroupId, ExpressionProperties> addGroup(QueryPlan::Node & node);
@@ -62,6 +64,7 @@ private:
 
     QueryPlan & query_plan;
     const QueryPlanOptimizationSettings & optimization_settings;
+    bool optimize_was_called = false;
 
     std::vector<OptimizationRulePtr> transformation_rules;
     std::vector<OptimizationRulePtr> implementation_rules;

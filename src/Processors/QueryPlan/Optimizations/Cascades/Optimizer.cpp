@@ -271,6 +271,11 @@ void CascadesOptimizer::scheduleCosting(GroupExpressionPtr expression)
 
 void CascadesOptimizer::optimize()
 {
+    if (optimize_was_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CascadesOptimizer::optimize called twice; the memo and the task stack belong to one run, construct a new optimizer instead");
+    optimize_was_called = true;
+
     Stopwatch optimizer_timer;
     auto query_context = getQueryContextOrThrow();
 
