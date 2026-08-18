@@ -70,10 +70,6 @@ void StorageFromMergeTreeProjection::read(
                 "Cannot enforce the row policy of table {} on projection `{}` without the analyzer",
                 parent_storage_id.getNameForLogs(), projection->name);
 
-        for (const auto & policy : row_policy_filter->policies)
-            if (context->hasQueryContext())
-                context->getQueryContext()->addUsedRowPolicy(policy->getFullName().toString());
-
         FilterDAGInfo filter_info;
         try
         {
