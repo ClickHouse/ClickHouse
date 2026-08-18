@@ -61,8 +61,6 @@ struct TextIndexReadInfo
     const MergeTreeIndexWithCondition * index = nullptr;
     /// Keeps the index helper alive, `condition` holds a non-owning pointer into its tokenizer.
     MergeTreeIndexPtr index_helper = nullptr;
-    /// False when the index cannot be read directly, e.g. a queried part has an on-the-fly update of an indexed column.
-    bool direct_read_eligible = false;
     bool is_materialized = false;
     bool is_fully_materialized = false;
 };
@@ -228,11 +226,11 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         if (!index.index->isTextIndex())
             continue;
 
-        /// Keep the analyzed condition even when the index cannot be read directly: the tokenizer/preprocessor
-        /// rewrite is a row-level expression and must not depend on how fresh the index files are.
-        auto can_use_index = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns);
-        if (!can_use_index)
-            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", can_use_index.error().text);
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        {
+            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+            continue;
+        }
 
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
@@ -244,7 +242,6 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .condition = index.condition_template->generateUnsubstituted(),
             .index = &index,
-            .direct_read_eligible = can_use_index.has_value(),
             .is_materialized = num_materialized_parts > 0,
             .is_fully_materialized = num_materialized_parts == unique_parts.size()
         };
@@ -579,7 +576,7 @@ private:
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
             /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
-            if (!direct_read_from_text_index || !info.direct_read_eligible || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+            if (!direct_read_from_text_index || !info.index || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
                 used_index_columns.insert(index_header.begin()->name);
