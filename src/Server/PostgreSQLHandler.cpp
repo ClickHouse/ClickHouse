@@ -597,7 +597,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 /// itself qualified and is followed by a dot and another identifier is removed.
 static String removePgCatalogQualifier(const String & query)
 {
-    if (query.find("pg_catalog") == String::npos)
+    if (!query.contains("pg_catalog"))
         return query;
 
     std::vector<Token> tokens;
