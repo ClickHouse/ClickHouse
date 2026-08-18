@@ -675,9 +675,8 @@ private:
         AdaptiveAggregationProducer & adaptive,
         bool all_keys_are_const) const;
 
-    /// A set method has no aggregate states, so it is kept off the adaptive path entirely
-    /// (see `AggregatingStep::adaptiveAggregatorRejectionReason`); this overload only exists because the
-    /// dispatch macro is generated over every variant, and it must never be called.
+    /// The set counterpart: with no aggregate functions there are no places to record and no states to
+    /// advance, so a hit is just the probe and a miss stages the key alone.
     template <typename LocalMethod, typename SharedMethod>
     requires SetAggregationMethod<LocalMethod>
     void executeFrozenImpl(
@@ -762,20 +761,6 @@ private:
     /// chunks, while pressure-time drains persist them into the bucket's arena so the chunks
     /// can be freed (the whole point of draining early).
     template <AdaptiveKeyStorage key_storage, typename Method>
-    requires MapAggregationMethod<Method>
-    size_t drainAdaptiveBucketBacklog(
-        Method & method,
-        Arena * arena,
-        const std::vector<StagedChunkPtr> & backlog,
-        size_t bucket_index,
-        size_t total_records,
-        PaddedPODArray<AggregateDataPtr> & places,
-        std::atomic<bool> & is_cancelled) const;
-
-    /// A set method never reaches the adaptive path, so nothing is ever staged for one; this overload
-    /// exists only because the dispatch is generated over every variant.
-    template <AdaptiveKeyStorage key_storage, typename Method>
-    requires SetAggregationMethod<Method>
     size_t drainAdaptiveBucketBacklog(
         Method & method,
         Arena * arena,
@@ -797,8 +782,8 @@ private:
         PaddedPODArray<AggregateDataPtr> & places,
         size_t bucket_index) const;
 
-    /// A set method never reaches the adaptive path, so nothing is ever staged for one; this overload
-    /// exists only because the dispatch is generated over every variant.
+    /// The set counterpart: a staged key is emplaced and that is all - there is no state to create for
+    /// a new key and nothing to advance for one already there.
     template <AdaptiveKeyStorage key_storage, typename Method>
     requires SetAggregationMethod<Method>
     void drainAdaptiveBucketImpl(

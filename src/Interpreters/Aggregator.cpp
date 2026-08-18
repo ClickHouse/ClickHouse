@@ -739,7 +739,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
     if (params.aggregates_size == 0)
     {
-        const auto method_with_states = method_chosen;
         using Type = AggregatedDataVariants::Type;
         switch (method_chosen)
         {
@@ -759,13 +758,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
             default: break;
         }
-        /// A set method has no aggregate states, so it never takes the adaptive path: it cannot freeze,
-        /// and its kernels are written against a mapped value. Clear the flag here, where the method is
-        /// finally known, rather than at the transform - `initDataVariantsWithSizeHint` reads it first, and
-        /// would otherwise start the table deliberately undersized for a freeze that cannot happen,
-        /// forfeiting the cached size hint and the two-level initialization that come with it.
-        if (method_chosen != method_with_states)
-            params.enable_adaptive_aggregator = false;
     }
 
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
