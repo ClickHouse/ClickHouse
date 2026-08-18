@@ -701,9 +701,14 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 /// `AlwaysAllowCredentials` are used only after an internal caller has authenticated the user, for
                 /// example with an interserver secret. They do not identify any particular authentication method, so
                 /// applying one method's `GRANTS` or `VALID UNTIL` here would incorrectly make those method-specific
-                /// limits affect the internal connection.
+                /// limits affect the internal connection. Preserve the matched method's type for session logging.
                 if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+                {
+                    auth_result.authentication_data = *matched_authentication_method;
+                    auth_result.authentication_data.setGrants({});
+                    auth_result.authentication_data.setValidUntil(0);
                     return auth_result;
+                }
 
                 auth_result.authentication_data = *matched_authentication_method;
 
