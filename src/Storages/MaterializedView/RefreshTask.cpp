@@ -1315,6 +1315,7 @@ void RefreshTask::executeRefresh()
             znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
             znode.last_success_dependencies = std::move(execution.dependencies);
             last_refresh_source_hash = watermark.source_hash;
+            last_refresh_definition_hash = watermark.definition_hash;
             /// Persist the watermark too, so a restart or a handover to another replica does not lose
             /// it and re-run a refresh that should have been skipped. In `APPEND` mode such a re-run
             /// would append another copy of unchanged data.
@@ -1386,7 +1387,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// written: an `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` makes
             /// the old source hash meaningless for the new definition, and this way every replica
             /// ignores it without needing a separate Keeper write.
-            std::optional<UInt128> previous_source_hash = watermark.local_source_hash;
+            std::optional<UInt128> previous_source_hash;
+            if (last_refresh_definition_hash == watermark.definition_hash)
+                previous_source_hash = watermark.local_source_hash;
             if (!previous_source_hash.has_value() && watermark.persisted_definition_hash == watermark.definition_hash)
                 previous_source_hash = watermark.persisted_source_hash;
 

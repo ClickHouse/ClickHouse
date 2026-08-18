@@ -389,6 +389,10 @@ private:
     /// persisted in the coordination state is used instead - see
     /// `CoordinationZnode::last_success_source_hash`.
     std::optional<UInt128> last_refresh_source_hash;
+    /// Definition hash paired with `last_refresh_source_hash`. A changed SQL-security definer
+    /// settings profile changes the effective refresh settings without changing the view metadata,
+    /// so the in-memory watermark must be invalidated just like the persisted one.
+    UInt128 last_refresh_definition_hash{};
     /// Bumped by alterRefreshParams. A refresh captures it at the start and, on completion, only stores
     /// its source hash if the value is unchanged - otherwise an ALTER MODIFY REFRESH raced with the
     /// in-flight refresh (which may have been built from the old query/flag) and the hash must stay cleared.
