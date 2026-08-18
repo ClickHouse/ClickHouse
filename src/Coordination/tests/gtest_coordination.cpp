@@ -1454,7 +1454,7 @@ struct DispatcherFixture
 
     /// Executing reads goes through KeeperStateMachine::processReadRequests, which needs the
     /// storage the constructor does not create. Raft still is not started.
-    void initStateMachine() { server->getKeeperStateMachine()->init(); }
+    void initStateMachine() const { server->getKeeperStateMachine()->init(); }
 };
 
 DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
