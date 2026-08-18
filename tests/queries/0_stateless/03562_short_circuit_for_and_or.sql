@@ -27,6 +27,7 @@ SELECT 1 AND (1 OR (SELECT count(*) FROM test_03562) > 1) AS bool; -- 1
 SELECT 0 OR (0 AND (SELECT count(*) FROM test_03562) > 1) AS bool; -- 0
 SELECT true AND (true OR (SELECT count(*) FROM test_03562) > 1) AS bool; -- true
 SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool; -- false
+SELECT 1 OR (0 OR ((SELECT count(*) FROM test_03562) > 0)) AS nested_dead_suffix;
 
 SELECT 'Test type-dependent functions use resolved argument types';
 SELECT isNullable(CAST(NULL AS Nullable(UInt8)));
@@ -108,6 +109,7 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 0 OR (0 AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT true AND (true OR (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
+SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 OR (0 OR ((SELECT count(*) FROM test_03562) > 0)) AS nested_dead_suffix%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)) AS non_literal_comparison%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 
 SELECT 'Test folded scalar subquery in an aggregate projection';
