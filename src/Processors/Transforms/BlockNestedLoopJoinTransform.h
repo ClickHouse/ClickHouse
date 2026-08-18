@@ -40,12 +40,21 @@ public:
         BlockNestedLoopJoinDataPtr data_,
         BlockNestedLoopPredicate predicate_,
         size_t max_block_size_,
-        size_t max_block_bytes_);
+        size_t max_block_bytes_,
+        JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     String getName() const override { return "BlockNestedLoopProbe"; }
 
     Status prepare() override;
     void work() override;
+
+    /// What this stream contributes to the probe side of the step's `EXPLAIN ANALYZE` report: the
+    /// rows it pulled, and how many of them matched at least one build row - `nullopt` where the walk
+    /// does not record that, which `matches = 1` is what turns on.
+    UInt64 getProbeRows() const { return total_probe_rows; }
+    std::optional<UInt64> getMatchedProbeRows() const;
+    /// The store every probe stream of the step shares, and where the build side's own numbers are.
+    const BlockNestedLoopJoinData & getJoinData() const { return *data; }
 
 private:
     /// A maximal group of accumulated pairs that share a stored build block. An output chunk can
@@ -171,6 +180,10 @@ private:
     const bool early_exit_per_probe_row;
     /// Whether the walk records which probe rows have matched.
     const bool track_probe_row_match;
+
+    /// The probe side's participation, summed over the chunks this stream has walked.
+    UInt64 total_probe_rows = 0;
+    UInt64 total_matched_probe_rows = 0;
 
     /// The chunk pulled by `prepare` and not started yet: setting up a probe chunk is work over all
     /// of its rows, and `prepare` runs under the executor's node lock and is not timed as this

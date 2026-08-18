@@ -10,6 +10,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -100,7 +101,8 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     size_t max_block_size_,
     size_t max_block_bytes_,
     size_t min_build_block_size_,
-    size_t min_build_block_bytes_)
+    size_t min_build_block_bytes_,
+    JoinAnalyzeMode analyze_mode_)
     : kind(kind_)
     , strictness(strictness_)
     , size_limits(size_limits_)
@@ -109,6 +111,7 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     , max_block_bytes(max_block_bytes_)
     , min_build_block_size(min_build_block_size_)
     , min_build_block_bytes(min_build_block_bytes_)
+    , analyze_mode(analyze_mode_)
 {
     if (!isSupportedJoinType(kind, strictness))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
@@ -282,7 +285,7 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return std::make_shared<BlockNestedLoopTotalsTransform>(header, output_header, data, probe_totals_are_default);
             return std::make_shared<BlockNestedLoopProbeTransform>(
-                header, output_header, data, probe_predicate, max_block_size, max_block_bytes);
+                header, output_header, data, probe_predicate, max_block_size, max_block_bytes, analyze_mode);
         });
 
         if (keepsUnmatchedBuildRows(kind, strictness))
@@ -362,6 +365,50 @@ String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
         case Stage::Probe: return "probe";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
+}
+
+StepAnalysisReport BlockNestedLoopJoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics.
+    chassert(analyze_mode != JoinAnalyzeMode::None, "BlockNestedLoopJoinStep analyzed without the analyze mode");
+
+    const BlockNestedLoopJoinData * data = nullptr;
+    UInt64 probe_rows = 0;
+    MatchedRowsAccumulator matched_probe_rows;
+    for (const auto * processor : step_processors)
+    {
+        const auto * probe = typeid_cast<const BlockNestedLoopProbeTransform *>(processor);
+        if (!probe)
+            continue;
+
+        /// Every probe stream shares the one store, so any of them leads to the build side's numbers.
+        data = &probe->getJoinData();
+        probe_rows += probe->getProbeRows();
+        matched_probe_rows.add(probe->getMatchedProbeRows());
+    }
+
+    /// A step whose pipeline was never built - a query answered without running the join - has
+    /// nothing to report.
+    if (!data)
+        return {};
+
+    StepAnalysisReport report = buildMatchedRowsReport({
+        .left_rows = probe_rows,
+        .matched_left = matched_probe_rows.get(),
+        .right_rows = data->getTotalRows(),
+        .matched_right = data->countMatchedBuildRows()});
+
+    MetricList buffer_metrics;
+    buffer_metrics.emplace_back(MetricKey::Memory, data->getPeakInMemoryBytes());
+    buffer_metrics.emplace_back(MetricKey::Compressed, std::string(data->hasCompressedBlocks() ? "yes" : "no"));
+    report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
+
+    MetricList spill_metrics;
+    spill_metrics.emplace_back(MetricKey::RightSpilled, data->getSpilledCompressedBytes());
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+
+    return report;
 }
 
 }

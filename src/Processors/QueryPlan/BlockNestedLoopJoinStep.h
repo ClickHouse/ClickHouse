@@ -28,7 +28,8 @@ public:
         size_t max_block_size_,
         size_t max_block_bytes_,
         size_t min_build_block_size_,
-        size_t min_build_block_bytes_);
+        size_t min_build_block_bytes_,
+        JoinAnalyzeMode analyze_mode_);
 
     /// The two stages of execution, kept apart so that `EXPLAIN ANALYZE` attributes the time
     /// of materializing the right input and the time of matching separately.
@@ -43,6 +44,11 @@ public:
 
     String getName() const override { return "BlockNestedLoopJoin"; }
 
+    /// The join the step executes. It never swaps its inputs, so its left input is the probe side and
+    /// its right one the build side.
+    JoinKind getKind() const { return kind; }
+    JoinStrictness getStrictness() const { return strictness; }
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
@@ -52,6 +58,8 @@ public:
 
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
+
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     void updateOutputHeader() override;
@@ -81,6 +89,9 @@ private:
     /// and `min_joined_block_size_bytes`.
     size_t min_build_block_size;
     size_t min_build_block_bytes;
+    /// Whether the operator counts what `EXPLAIN ANALYZE` reports, and how much of it: `Exact` also
+    /// buys the numbers the join has no use for itself.
+    JoinAnalyzeMode analyze_mode;
 };
 
 }

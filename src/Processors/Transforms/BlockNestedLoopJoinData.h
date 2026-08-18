@@ -10,6 +10,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -29,6 +30,11 @@ bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness);
 /// Whether a stage after the probe phase emits the build rows that no probe row matched, padded
 /// with the probe side's column defaults.
 bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness);
+
+/// Whether the match flags, where they are kept, end up set for every build row that satisfied the
+/// condition with some probe row - which is what makes counting them the build side's `matched`
+/// number in `EXPLAIN ANALYZE`.
+bool buildSideMatchFlagsCountEveryMatch(JoinKind kind, JoinStrictness strictness);
 
 /// A build block ready for matching. The store never scatters a block, so a row's index into the
 /// columns is also its position in the block - the equality the match flags and the
@@ -146,6 +152,16 @@ public:
     size_t getTotalRows() const { return total_rows.load(std::memory_order_relaxed); }
     size_t getTotalBytes() const { return total_bytes.load(std::memory_order_relaxed); }
 
+    /// What `EXPLAIN ANALYZE` reports about the build side beyond its row count: how many of its rows
+    /// some probe row matched, the peak it occupied in memory, whether any of it was compressed, and
+    /// what it wrote to disk.
+    /// The count of matched rows is `nullopt` where the match flags answer nothing, and is meaningful
+    /// only once every probe stream has finished - the same point at which the flags become readable.
+    std::optional<UInt64> countMatchedBuildRows() const;
+    size_t getPeakInMemoryBytes() const { return peak_in_memory_bytes.load(std::memory_order_relaxed); }
+    bool hasCompressedBlocks() const { return has_compressed_blocks.load(std::memory_order_relaxed); }
+    size_t getSpilledCompressedBytes() const;
+
     const SharedHeader & getHeader() const { return build_header; }
     JoinKind getKind() const { return kind; }
     JoinStrictness getStrictness() const { return strictness; }
@@ -231,8 +247,12 @@ private:
     /// `max_bytes_in_join` limits, so that spilling does not quietly raise the limit.
     std::atomic<size_t> total_bytes{0};
     std::atomic<size_t> in_memory_bytes{0};
+    /// The largest `in_memory_bytes` ever reached, which spilling does not lower: what the build side
+    /// cost in memory is what it cost, whether or not it was later written out.
+    std::atomic<size_t> peak_in_memory_bytes{0};
     std::atomic<size_t> max_in_memory_block_bytes{0};
     std::atomic<size_t> num_spilled_blocks{0};
+    std::atomic<bool> has_compressed_blocks{false};
     std::atomic<bool> finished{false};
 };
 

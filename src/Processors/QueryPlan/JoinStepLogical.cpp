@@ -1389,7 +1389,8 @@ static void constructBlockNestedLoopJoinStep(
         join_left_node->step->getOutputHeader(), join_right_node->step->getOutputHeader(),
         std::move(predicate), kind, strictness,
         size_limits, std::move(store_settings), max_block_size, join_settings.max_joined_block_size_bytes,
-        join_settings.min_joined_block_size_rows, join_settings.min_joined_block_size_bytes);
+        join_settings.min_joined_block_size_rows, join_settings.min_joined_block_size_bytes,
+        join_settings.join_analyze_mode);
 
     node.children = {join_left_node, join_right_node};
 

@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -147,7 +148,8 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     BlockNestedLoopJoinDataPtr data_,
     BlockNestedLoopPredicate predicate_,
     size_t max_block_size_,
-    size_t max_block_bytes_)
+    size_t max_block_bytes_,
+    JoinAnalyzeMode analyze_mode_)
     : IProcessor({probe_header_}, {output_header_})
     , probe_header(std::move(probe_header_))
     , output_header(std::move(output_header_))
@@ -168,7 +170,11 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     , early_exit_per_probe_row(
         (one_pair_per_probe_row || emits_no_pairs)
         && !keepsUnmatchedBuildRows(data->getKind(), data->getStrictness()))
-    , track_probe_row_match(keep_unmatched_probe_rows || early_exit_per_probe_row || one_pair_per_probe_row)
+    /// `EXPLAIN ANALYZE matches = 1` asks how many probe rows matched, so it records them where the
+    /// result itself has no use for the record.
+    , track_probe_row_match(
+        keep_unmatched_probe_rows || early_exit_per_probe_row || one_pair_per_probe_row
+        || analyze_mode_ == JoinAnalyzeMode::Exact)
 {
     checkStrictnessIsSupported(data->getKind(), data->getStrictness());
 
@@ -235,6 +241,7 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
     walk = {};
     walk.has_probe_chunk = true;
     walk.probe_num_rows = chunk.getNumRows();
+    total_probe_rows += walk.probe_num_rows;
     ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, walk.probe_num_rows);
     walk.probe_columns = chunk.detachColumns();
     /// The tile indexes into these columns and the output gathers from them; neither is possible
@@ -297,12 +304,22 @@ void BlockNestedLoopProbeTransform::work()
             continue;
         }
 
-        /// The chunk is fully processed and a new one may be pulled.
+        /// The chunk is fully processed and a new one may be pulled. Its matched probe rows are
+        /// counted here, where the record of them is complete and about to be dropped.
+        if (track_probe_row_match)
+            total_matched_probe_rows += countBytesInFilter(walk.probe_row_matched);
         walk.has_probe_chunk = false;
         walk.probe_columns.clear();
         walk.current_build_block.reset();
         return;
     }
+}
+
+std::optional<UInt64> BlockNestedLoopProbeTransform::getMatchedProbeRows() const
+{
+    if (!track_probe_row_match)
+        return {};
+    return total_matched_probe_rows;
 }
 
 /// TODO: prune tiles by interval arithmetic over the condition against the min/max of the tile's

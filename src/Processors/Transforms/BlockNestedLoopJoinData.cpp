@@ -51,6 +51,17 @@ bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness)
     return isRightOrFull(kind);
 }
 
+bool buildSideMatchFlagsCountEveryMatch(JoinKind kind, JoinStrictness strictness)
+{
+    /// `ANY INNER` is the exception: it flags a build row only where the row settles a probe row that
+    /// had no pair yet, so a build row it matched but passed over stays unflagged. Every other kind
+    /// that keeps the flags flags each build row a probe row matched, whether or not the pair is part
+    /// of the result.
+    if (strictness == JoinStrictness::Any && isInner(kind))
+        return false;
+    return needsBuildSideMatchFlags(kind, strictness);
+}
+
 namespace
 {
 
@@ -221,9 +232,14 @@ void BlockNestedLoopJoinData::storeBlock(
     const size_t stored_bytes = build_block.allocatedBytes();
     entry.block = std::make_shared<const BuildBlock>(std::move(build_block));
 
-    in_memory_bytes.fetch_add(stored_bytes, std::memory_order_relaxed);
+    /// Every writer holds the store lock, so reading a maximum back before raising it is not a race.
+    const size_t bytes_in_memory = in_memory_bytes.fetch_add(stored_bytes, std::memory_order_relaxed) + stored_bytes;
+    if (bytes_in_memory > getPeakInMemoryBytes())
+        peak_in_memory_bytes.store(bytes_in_memory, std::memory_order_relaxed);
     if (uncompressed_bytes > getMaxInMemoryBlockBytes())
         max_in_memory_block_bytes.store(uncompressed_bytes, std::memory_order_relaxed);
+    if (compressed)
+        has_compressed_blocks.store(true, std::memory_order_relaxed);
 }
 
 void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const BuildBlock & build_block)
@@ -341,6 +357,29 @@ bool BlockNestedLoopJoinData::isBuildRowMatched(size_t global_row) const
 {
     chassert(global_row < getTotalRows());
     return matched_flags[global_row].load(std::memory_order_relaxed);
+}
+
+std::optional<UInt64> BlockNestedLoopJoinData::countMatchedBuildRows() const
+{
+    /// The flags are allocated by `finish`, so a store the query left still growing has none of them,
+    /// whatever the kind.
+    if (!buildSideMatchFlagsCountEveryMatch(kind, strictness) || !isFinished())
+        return {};
+
+    const size_t num_rows = getTotalRows();
+    UInt64 matched = 0;
+    for (size_t global_row = 0; global_row < num_rows; ++global_row)
+        matched += matched_flags[global_row].load(std::memory_order_relaxed);
+    return matched;
+}
+
+size_t BlockNestedLoopJoinData::getSpilledCompressedBytes() const
+{
+    if (!isFinished())
+        return 0;
+
+    const auto & stream = finishedState("the spilled bytes").tmp_stream;
+    return stream ? stream->getHolder()->getStat().compressed_size : 0;
 }
 
 const BlockNestedLoopJoinData::FinishedState & BlockNestedLoopJoinData::finishedState(const char * what) const
