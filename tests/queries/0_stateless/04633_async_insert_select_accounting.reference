@@ -12,3 +12,8 @@ FlushError
 quota charged once per route
 waited for the flush
 1
+client saw the insert fail
+client error mentions QUERY_WAS_CANCELLED
+394
+TIMEOUT_EXCEEDED
+1
