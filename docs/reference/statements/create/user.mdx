@@ -211,7 +211,7 @@ When a user logs in with such an authentication method, the access rights of the
 This provides a convenient way to create tokens for applications: an additional credential with an expiration date and a limited set of privileges, which is tied to the user - it is displayed in `system.query_log` and `system.processes` as the user, it stops working if the user is deleted, and it loses access rights when the user loses them.
 
 <Warning>
-**Enforcement is initiator-only.** The limit is enforced only on the node that receives the query (the initiator). It is **not** propagated to other nodes of a cluster: for distributed queries and `ON CLUSTER` DDL, the access rights are checked on the initiator, but the remote nodes execute with the full rights of the user. This behavior is consistent with `VALID UNTIL` and external roles. Do not rely on the clause to constrain execution cluster-wide. The clause is also not available in `users.xml`.
+**Enforcement is initiator-only.** The authentication-method `GRANTS` limit and its `VALID UNTIL` expiration are enforced only on the node that receives the query (the initiator). They are **not** propagated to other nodes of a cluster, so do not rely on the clause to constrain execution cluster-wide. Remote nodes retain their usual role scoping. The clause is also not available in `users.xml`.
 </Warning>
 
 Examples:
