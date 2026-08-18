@@ -501,7 +501,7 @@ public:
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
-        return getName() == rhs.getName() && haveEqualArgumentTypes(rhs);
+        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
 
     DataTypePtr getNormalizedStateType() const override
