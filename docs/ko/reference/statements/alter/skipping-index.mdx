@@ -25,7 +25,9 @@ doc_type: 'reference'
   ## MATERIALIZE INDEX
 </div>
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 지정한 `partition_name`에 대한 보조 인덱스 `name`를 다시 생성합니다. 이는 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다. `IN PARTITION` 부분을 생략하면 테이블의 전체 데이터에 대해 인덱스를 다시 생성합니다.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - 지정된 `partition_name`에 대해 보조 인덱스 `name`을 재구축합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다. `IN PARTITION` 부분을 생략하면 테이블 전체 데이터의 인덱스를 재구축합니다.
+
+[`MATERIALIZE COLUMN`](/ko/reference/statements/alter/column#materialize-column)은 `MATERIALIZE INDEX`를 완전히 대체할 수 없습니다. 동시에 **wide + full-storage**인 파트에서는 **독립형** 스킵 인덱스(또는 텍스트 인덱스) 파일을 갱신하지 않은 채 컬럼 값을 재작성할 수 있습니다. `skp_idx.packed`에 저장되는 일반 스킵 인덱스는 예외입니다. wide + full-storage 파트에서도 강제로 다시 계산할 수 있습니다(기본 [`packed_skip_index_max_bytes`](/ko/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes)보다 작은 스킵 인덱스 서브스트림의 경우이며, 전문 검색 인덱스는 이 방식으로 패킹되지 않음). **wide + full-storage가 아닌 모든 파트**(**compact + full**, **compact + packed**, **wide + packed** 포함)에서는 파트 전체를 재작성하면 기존 인덱스를 다시 계산할 수 있습니다. 작은 파트는 기본적으로 full 파트 스토리지를 사용하면서도 대개 compact 형식입니다. 이미 데이터가 있는 테이블에 인덱스를 추가한 경우(메타데이터만 추가하는 `ADD INDEX`)와, 독립형 인덱스 파일을 즉시 재구축해야 하는 wide+full-storage 파트의 컬럼 재작성 후에는 **결정적이고 즉시 적용되는** 방식으로 `MATERIALIZE INDEX`를 사용하십시오. [`materialize_skip_indexes_on_merge`](/ko/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)가 활성화되어 있고 [`exclude_materialize_skip_indexes_on_merge`](/ko/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge)를 통해 인덱스가 제외되지 않은 경우, 기존 파트에 새로 추가된 인덱스(텍스트 인덱스 포함)는 이후 머지 과정에서도 구체화될 수 있습니다. 그렇지 않으면 명시적으로 `MATERIALIZE INDEX`를 실행할 때까지 구체화되지 않은 상태로 유지됩니다.
 
 <div id="clear-index">
   ## CLEAR INDEX
@@ -39,3 +41,11 @@ doc_type: 'reference'
 <Note>
   인덱스 조작은 [`*MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하는 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 변형 포함)에서만 지원됩니다.
 </Note>
+
+<div id="concurrent-alter-and-multi-clause-materialize-index">
+  ## 동시 `ALTER` 및 다중 절 `MATERIALIZE INDEX`
+</div>
+
+복제된 테이블에서 동일한 테이블에 대해 별도의 `ALTER`를 빠르게 실행하면, 이전 `ALTER`가 아직 레플리카에 적용되지 않았을 때 `CANNOT_ASSIGN_ALTER`(코드 517)가 발생할 수 있습니다(메타데이터가 여전히 뒤처진 상태이며, 이전 alter가 이미 할당된 후에도 이 상태가 유지될 수 있음). 이는 뮤테이션에만 국한되지 않는 일반적인 동시 메타데이터 `ALTER` / 뮤테이션 상황입니다. 작업을 직렬화하거나 재시도하고, [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync) 또는 [`system.mutations`](/ko/reference/system-tables/mutations)의 `is_done`을 통해 이전 뮤테이션 생성 alter가 완료될 때까지 기다리거나, 문법상 허용되는 경우 독립적인 메타데이터 작업을 하나의 다중 절 `ALTER`로 결합하십시오. [ALTER 쿼리의 동기성](/ko/reference/statements/alter/index#synchronicity-of-alter-queries) 및 [동시 ALTER 할당](/ko/reference/statements/alter/index#concurrent-alter-assignment-on-one-table)을 참조하십시오.
+
+하나의 `ALTER`에 여러 `MATERIALIZE INDEX` 절을 포함할 수 있습니다. 소스 트리에서 다루는 사례는 여러 `ADD INDEX` 절과 해당 새 인덱스에 대한 `MATERIALIZE INDEX`를 하나의 SQL 문으로 묶는 방식입니다(`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). 이 묶음 형식은 일반적인(`DatabaseReplicated`가 아닌) 데이터베이스에서 사용할 수 있으며, `DatabaseReplicated`는 `ADD INDEX`와 `MATERIALIZE INDEX` 세그먼트가 혼합된 경우 `QUERY_IS_PROHIBITED`로 거부합니다. 이미 존재하는 인덱스에 대한 구체화 전용 다중 절 형식도 현재 구현에서는 동일한 메타데이터 스냅샷 준비 경로를 따르지만, 이 정확한 형태는 아직 전용 stateless 테스트로 검증되지 않았습니다. 이러한 테스트 범위가 마련되기 전까지는 별도로 보장된 계약이 아닌 현재 구현 동작으로 간주하십시오. 순차적으로 적용하려면 SQL 문마다 `MATERIALIZE INDEX`를 하나씩 실행하고 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)로 완료될 때까지 기다리십시오.

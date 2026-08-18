@@ -105,7 +105,6 @@
               "pages": [
                 "concepts/features/operations/update/index",
                 "concepts/features/operations/update/overview",
-                "concepts/features/operations/update/on-fly-mutations",
                 "concepts/features/operations/update/replacing-merge-tree"
               ]
             },
@@ -114,7 +113,6 @@
               "pages": [
                 "concepts/features/operations/delete/index",
                 "concepts/features/operations/delete/overview",
-                "concepts/features/operations/delete/delete-mutations",
                 "concepts/features/operations/delete/drop-partition",
                 "concepts/features/operations/delete/lightweight-delete",
                 "concepts/features/operations/delete/truncate",
@@ -199,6 +197,7 @@
           "group": "Backup and restore",
           "pages": [
             "concepts/features/backup-restore/overview",
+            "concepts/features/backup-restore/restore-settings",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",

@@ -33,8 +33,14 @@ def start_cluster():
 
 
 def first_log_line_number(pattern, instance=None):
+    instance = instance or node
+    # The instance is reported as started as soon as its TCP port accepts, but the port is bound
+    # and listening before the `Listening for ...` lines are written, so the line may still be
+    # missing here. Wait for it in that case.
+    if not instance.contains_in_log(pattern):
+        instance.wait_for_log_line(pattern)
     # `grep -n` prints "<line>:<text>"; `-m1` stops at the first match.
-    output = (instance or node).exec_in_container(["bash", "-c", f"grep -n -m1 '{pattern}' {LOG_FILE}"])
+    output = instance.exec_in_container(["bash", "-c", f"grep -n -m1 '{pattern}' {LOG_FILE}"])
     assert output, f"log line not found: {pattern}"
     return int(output.split(":", 1)[0])
 

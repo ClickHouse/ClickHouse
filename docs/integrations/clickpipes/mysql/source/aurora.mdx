@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 This step-by-step guide shows you how to configure Amazon Aurora MySQL to replicate data into ClickHouse Cloud using the [MySQL ClickPipe](/integrations/clickpipes/mysql/index). For common questions around MySQL CDC, see the [MySQL FAQs page](/integrations/clickpipes/mysql/faq).
 
@@ -126,19 +127,13 @@ Connect to your Aurora MySQL instance as an admin user and execute the following
 
 ### Using IAM authentication (optional) {#iam-authentication}
 
-Instead of a password, you can authenticate the ClickPipes user via AWS IAM role-based access. Create the user as follows, then grant it the same schema and replication privileges shown above:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-See [AWS IAM DB authentication (RDS/Aurora)](/integrations/clickpipes/postgres/auth) for the full steps to set up the IAM role and policy required for ClickPipes to authenticate this way.
+<IAMAuthentication engine="mysql" service="aurora" />
 
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}
 
-To restrict traffic to your Aurora MySQL instance, add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to the **Inbound rules** of your Aurora security group.
+To restrict traffic to your Aurora MySQL instance, add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the **Inbound rules** of your Aurora security group.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Where to find security group in Aurora MySQL?" size="lg" border/>
 

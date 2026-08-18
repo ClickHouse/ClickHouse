@@ -1,0 +1,9 @@
+analyzer not_scattered	1
+analyzer inner_reads_in_order	1
+analyzer virtual_row_off	1
+analyzer virtual_row_on	1
+analyzer virtual_row_per_block_on	1
+analyzer inner_left	1
+analyzer rows_identical	1
+legacy not_scattered	1
+legacy virtual_row_on	1

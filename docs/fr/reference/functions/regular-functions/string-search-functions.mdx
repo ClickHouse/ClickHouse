@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifiez un tableau de motifs à rechercher tels quels (sans tokenisation)**
+**Spécifiez un tableau de needles à rechercher tels quels (sans tokenisation)**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -732,7 +732,7 @@ Renvoie `1` s’il existe au moins une correspondance. `0` sinon. [`UInt8`](/fr/
 
 **Exemples**
 
-**Utilisation de base avec une chaîne comme terme recherché**
+**Utilisation de base avec une chaîne comme needle**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifier les motifs à rechercher tels quels (sans tokenisation) dans un tableau**
+**Spécifier les needles à rechercher tels quels (sans tokenisation) dans un tableau**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -913,7 +913,7 @@ Vérifie si `input` contient tous les tokens de `phrase` dans un ordre consécut
 
 Avant la recherche, la fonction tokenise les arguments `input` et `phrase` à l&#39;aide du tokenizer spécifié pour l&#39;index de texte.
 Si aucun index de texte n&#39;est défini pour la colonne, le tokenizer `splitByNonAlpha` est utilisé à la place — sauf si un tokenizer est fourni comme troisième argument facultatif.
-L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `ngrams` ou `asciiCJK`.
+L&#39;argument tokenizer doit être l&#39;un de `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` ou `icu`.
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasPhrase` l&#39;applique à la fois à `input` et à `phrase` avant la tokenisation.
