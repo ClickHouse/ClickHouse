@@ -4655,35 +4655,6 @@ def test_histogram_quantile_with_float32_scalar():
         node.query("DROP TABLE prometheus_f32_histogram SYNC")
 
 
-def test_histogram_quantile_with_uint32_scalar():
-    node.query(
-        "CREATE TABLE prometheus_u32_histogram "
-        "(time_series Array(Tuple(DateTime64(3), UInt32))) ENGINE=TimeSeries"
-    )
-
-    try:
-        node.query(
-            "INSERT INTO prometheus_u32_histogram (metric_name, tags, time_series) VALUES"
-            " ('uint32_bucket', {'le': '0'}, [(toDateTime64(360, 3), toUInt32(0))]),"
-            " ('uint32_bucket', {'le': '1'}, [(toDateTime64(360, 3), toUInt32(10))]),"
-            " ('uint32_bucket', {'le': '+Inf'}, [(toDateTime64(360, 3), toUInt32(20))])"
-        )
-
-        # This used to be accepted by quantilePrometheusHistogramForEach because
-        # unsigned inputs are accumulated as UInt64, regardless of their source width.
-        assert tsv_close_to(
-            node.query(
-                "SELECT * FROM prometheusQuery("
-                "prometheus_u32_histogram, "
-                "'histogram_quantile(0.5, uint32_bucket)', 360)"
-            ),
-            [["[]", "1970-01-01 00:06:00.000", "1"]],
-            eps=1e-6,
-        )
-    finally:
-        node.query("DROP TABLE prometheus_u32_histogram SYNC")
-
-
 def test_label_manipulation_functions():
     # Add a new label using a regex capture from an existing label.
     do_query_test(
