@@ -6,6 +6,8 @@
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -66,6 +68,13 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
+    /// unqualified table inside a body is resolved later, in a context whose current database is not
+    /// the database of the deleted-from table.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 

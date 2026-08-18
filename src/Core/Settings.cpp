@@ -5515,11 +5515,12 @@ When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejecte
 `ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
 scheduling a mutation (see `system.mutations`). This covers:
 
-- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` of a physical
-  column, `RENAME COLUMN` of any column including an `ALIAS`, `CLEAR COLUMN`, `DROP INDEX`,
-  `DROP PROJECTION`, `DROP STATISTICS`, and `MODIFY TTL` when `materialize_ttl_after_modify`
-  is enabled.
-- `UPDATE` under the default `alter_update_mode = 'heavy'`, `DELETE WHERE`,
+- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` or `CLEAR COLUMN`
+  of a physical column, `RENAME COLUMN` of any column including an `ALIAS`, `DROP INDEX`,
+  `CLEAR INDEX`, `DROP PROJECTION`, `CLEAR PROJECTION`, `DROP STATISTICS`, `CLEAR STATISTICS`,
+  and `MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `UPDATE` whenever it runs as a heavyweight mutation, which is the default
+  `alter_update_mode = 'heavy'` and every case the other modes fall back to, `DELETE WHERE`,
   `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE STATISTICS`,
   `MATERIALIZE COLUMN`, `MATERIALIZE TTL`, `APPLY DELETED MASK`, `APPLY PATCHES` and
   `REWRITE PARTS`.

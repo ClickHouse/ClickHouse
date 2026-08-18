@@ -47,6 +47,38 @@ def table():
 
 
 @pytest.fixture
+def udf():
+    # The default user-defined-function store is not replicated (IUserDefinedSQLObjectsStorage::
+    # isReplicated() is false), and CREATE FUNCTION is rejected with ON CLUSTER only when it is
+    # replicated, so a function legitimately exists on one host alone. Drop before and after, so
+    # an interrupted run cannot poison the next one.
+    for node in (ch1, ch2):
+        node.query("DROP FUNCTION IF EXISTS udf_key")
+    yield
+    for node in (ch1, ch2):
+        node.query("DROP FUNCTION IF EXISTS udf_key")
+
+
+def test_delete_from_on_cluster_expands_udf_absent_on_other_host(udf):
+    ch1.query("CREATE FUNCTION udf_key AS (x) -> x = 1")
+    ch1.query("DELETE FROM t ON CLUSTER 'cluster' WHERE udf_key(key)")
+    for node in (ch1, ch2):
+        assert node.query("SELECT count() FROM t") == "9\n"
+
+
+def test_delete_from_on_cluster_expands_udf_defined_differently(udf):
+    # Divergent bodies delete different rows on each host without raising anywhere, so the row
+    # counts still match and only the surviving keys reveal it.
+    ch1.query("CREATE FUNCTION udf_key AS (x) -> x = 1")
+    ch2.query("CREATE FUNCTION udf_key AS (x) -> x = 2")
+    ch1.query("DELETE FROM t ON CLUSTER 'cluster' WHERE udf_key(key)")
+    surviving = [
+        node.query("SELECT arraySort(groupArray(key)) FROM t") for node in (ch1, ch2)
+    ]
+    assert surviving[0] == surviving[1]
+
+
+@pytest.fixture
 def replicated_table():
     # ch1 and ch2 are two replicas of one shard, so the two hosts share a single dataset and a
     # single Keeper mutation log. Insert once and sync, so a doubled mutation is observable
