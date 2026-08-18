@@ -353,7 +353,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
     const bool bypass_local_probe = frozen.bypass_local_probe;
 
-    auto stage_miss = [&](const auto & key, UInt64 hash, size_t row)
+    auto stage_miss = [&]([[maybe_unused]] const auto & key, UInt64 hash, size_t row)
     {
         adaptive.miss_source_rows.push_back(static_cast<UInt32>(row));
         adaptive.miss_hashes.push_back(hash);
