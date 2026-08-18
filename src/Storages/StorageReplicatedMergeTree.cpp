@@ -8625,11 +8625,6 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     if (!dest_storage->supportsImport(query_context))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Destination storage {} does not support MergeTree parts or uses unsupported partitioning", dest_storage->getName());
 
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? ast->formatWithSecretsOneLine() : "";
-    };
-
     auto src_snapshot = getInMemoryMetadataPtr(query_context, false);
     auto destination_snapshot = dest_storage->getInMemoryMetadataPtr(query_context, false);
 
@@ -8637,13 +8632,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     ExportPartitionUtils::verifyExportSchemaCastable(
         src_snapshot, destination_snapshot, dest_storage->getStorageID(), query_context);
 
-    /// Iceberg partition compatibility is checked below; here we only need the
-    /// partition-key ASTs to match (partition-column types follow the lossy-cast gate).
     if (!dest_storage->isDataLake())
-    {
-        if (query_to_string(src_snapshot->getPartitionKeyAST()) != query_to_string(destination_snapshot->getPartitionKeyAST()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
-    }
+        ExportPartitionUtils::assertPartitionKeyASTAreEqual(src_snapshot, destination_snapshot);
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
