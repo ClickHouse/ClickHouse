@@ -18,7 +18,8 @@ $CLICKHOUSE_CLIENT -q "
 # without exercising anything. All of these are randomized in CI, so they are pinned in the query itself,
 # where they override the randomized values, rather than in the probe alone.
 PINNED_SETTINGS="optimize_use_projections = 1, optimize_use_implicit_projections = 1,
-                 optimize_trivial_count_query = 0, enable_parallel_replicas = 0"
+                 optimize_trivial_count_query = 0, enable_parallel_replicas = 0,
+                 use_index_for_in_with_subqueries = 1"
 
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM (
@@ -72,6 +73,16 @@ rm -f "$CLIENT_ERR"
 
 # A nested `IN` makes the outer set source non-clonable because it contains a
 # `DelayedCreatingSetsStep`. This takes the destructive ordered-set build path used for key analysis.
+# The `EXPLAIN indexes` result proves that the predicate is used by the primary-key analysis; together
+# with the pinned setting above, this makes it call `buildOrderedSetInplace` before the cancellation test.
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() > 0 FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_first_cancel_set_build WHERE a IN (
+            SELECT number * 3 FROM numbers(3) WHERE number IN (SELECT number FROM numbers(3))
+        ) SETTINGS $PINNED_SETTINGS
+    ) WHERE explain ILIKE '%PrimaryKey%'"
+
 QUERY_ID="${CLICKHOUSE_DATABASE}_first_cancel_ordered_set_build"
 CLIENT_ERR="${CLICKHOUSE_TMP}/first_cancel_ordered_set_build.err"
 
