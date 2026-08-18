@@ -50,3 +50,8 @@ echo "-- Arrow LowCardinality (dictionary-encoded), library writer and reader"
 $CLICKHOUSE_LOCAL -q "SELECT toLowCardinality('$u'::UUID2) AS lc SETTINGS output_format_arrow_use_native_writer = 0, output_format_arrow_low_cardinality_as_dictionary = 1, allow_suspicious_low_cardinality_types = 1 FORMAT Arrow" \
     | $CLICKHOUSE_LOCAL --input-format Arrow --input_format_arrow_use_native_reader 0 \
         -q "SELECT toTypeName(lc), toString(lc) FROM table"
+
+echo "-- Arrow LowCardinality UUID (dictionary-encoded), library writer and reader"
+$CLICKHOUSE_LOCAL -q "SELECT toLowCardinality('$u'::UUID) AS lc SETTINGS output_format_arrow_use_native_writer = 0, output_format_arrow_low_cardinality_as_dictionary = 1, allow_suspicious_low_cardinality_types = 1 FORMAT Arrow" \
+    | $CLICKHOUSE_LOCAL --input-format Arrow --input_format_arrow_use_native_reader 0 \
+        -q "SELECT toTypeName(lc), toString(lc) FROM table"

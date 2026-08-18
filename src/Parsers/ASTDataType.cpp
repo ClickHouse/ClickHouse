@@ -256,8 +256,10 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     if (equalsCaseInsensitiveString(table_function.name, "format"))
         return arguments.size() == 3 ? std::vector{argument_at(1)} : std::vector<ASTPtr *>{};
     if (equalsCaseInsensitiveString(table_function.name, "generateRandom") || equalsCaseInsensitiveString(table_function.name, "input")
-        || equalsCaseInsensitiveString(table_function.name, "null") || equalsCaseInsensitiveString(table_function.name, "values"))
+        || equalsCaseInsensitiveString(table_function.name, "null"))
         return {argument_at(0)};
+    if (equalsCaseInsensitiveString(table_function.name, "values"))
+        return arguments.size() > 1 ? std::vector{argument_at(0)} : std::vector<ASTPtr *>{};
     if (equalsCaseInsensitiveString(table_function.name, "file") || equalsCaseInsensitiveString(table_function.name, "url")
         || equalsCaseInsensitiveString(table_function.name, "s3") || equalsCaseInsensitiveString(table_function.name, "gcs")
         || equalsCaseInsensitiveString(table_function.name, "oss") || equalsCaseInsensitiveString(table_function.name, "cosn")

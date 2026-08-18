@@ -131,6 +131,14 @@ static bool isUUID2Field(const arrow::Field & field)
     return ch_type.ok() && *ch_type == "UUID2";
 }
 
+static bool isUUIDFieldWithClickHouseType(const arrow::Field & field)
+{
+    if (!field.HasMetadata())
+        return false;
+    auto ch_type = field.metadata()->Get("ClickHouse:type");
+    return ch_type.ok() && *ch_type == "UUID";
+}
+
 namespace
 {
 
@@ -1984,7 +1992,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             /// Correctly triggers the UUID reader for metadata-flagged columns. A field flagged with the
             /// ClickHouse-specific `UUID2` discriminator reads back as the correctly-sorting `UUID2` type.
-            if (arrow_field && (isUUIDField(*arrow_field) || isUUID2Field(*arrow_field)))
+            if (arrow_field && (isUUIDField(*arrow_field) || isUUID2Field(*arrow_field) || isUUIDFieldWithClickHouseType(*arrow_field)))
             {
                 if (isUUID2Field(*arrow_field))
                     return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID2>(), /*is_uuid2=*/true);

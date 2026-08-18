@@ -664,7 +664,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_key_field = convertFieldToType(map_info->key_field, *actual_type, map_info->key_field_type.get());
+            auto converted_key_field = convertFieldToType(map_info->key_field, *actual_type, removeNullable(removeLowCardinality(map_info->key_field_type)).get());
             if (converted_key_field.isNull())
                 return false;
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_key_field)));
@@ -707,7 +707,7 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
     /// hashing a value converted without it would silently drop granules that contain matches.
     const IDataType * element_type_hint = nullptr;
     if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(value_type))
-        element_type_hint = value_array_type->getNestedType().get();
+        element_type_hint = removeNullable(removeLowCardinality(value_array_type->getNestedType())).get();
 
     const bool is_nullable = actual_type->isNullable();
     auto mutable_column = actual_type->createColumn();
@@ -833,7 +833,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 {
                     out.function = RPNElement::FUNCTION_HAS;
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, removeNullable(removeLowCardinality(value_type)).get());
                     if (converted_field.isNull())
                         return false;
 
@@ -875,7 +875,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToType(value_field, *actual_type, removeNullable(removeLowCardinality(value_type)).get());
             if (converted_field.isNull())
                 return false;
 
@@ -922,7 +922,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+        auto converted_field = convertFieldToType(value_field, *actual_type, removeNullable(removeLowCardinality(value_type)).get());
         if (converted_field.isNull())
             return false;
 
@@ -995,7 +995,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_const_value = convertFieldToType(const_value, *actual_type, const_value_type.get());
+            auto converted_const_value = convertFieldToType(const_value, *actual_type, removeNullable(removeLowCardinality(const_value_type)).get());
             if (converted_const_value.isNull())
                 return false;
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_const_value)));

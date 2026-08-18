@@ -1528,7 +1528,8 @@ namespace DB
     /// implementations ignore the extra key and read the column as a regular UUID.
     /// A dictionary-encoded (`LowCardinality`) column cannot carry the `arrow.uuid` extension keys:
     /// the registered extension type rejects dictionary storage at read time, so such a column gets
-    /// only the ClickHouse-specific discriminator (nothing for plain `UUID`, whose reading is unchanged).
+    /// only the ClickHouse-specific discriminator. It records both UUID types, since the Arrow reader
+    /// otherwise cannot recover a plain `UUID` from dictionary values represented as fixed binary.
     static std::shared_ptr<arrow::KeyValueMetadata> getUUIDFieldMetadata(const DataTypePtr & column_type, const CHColumnToArrowColumn::Settings & settings)
     {
         auto leaf_type = removeNullable(removeLowCardinality(column_type));
@@ -1537,9 +1538,7 @@ namespace DB
 
         if (column_type->lowCardinality() && settings.low_cardinality_as_dictionary)
         {
-            if (isUUID2(leaf_type))
-                return arrow::key_value_metadata({"ClickHouse:type"}, {"UUID2"});
-            return nullptr;
+            return arrow::key_value_metadata({"ClickHouse:type"}, {isUUID2(leaf_type) ? "UUID2" : "UUID"});
         }
 
         std::vector<std::string> keys{"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"};
