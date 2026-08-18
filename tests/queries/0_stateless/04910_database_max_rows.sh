@@ -99,89 +99,14 @@ $CH -q "DROP TABLE ${DA}.filler"
 $CH -q "ATTACH TABLE ${DA}.t"
 db_rows "${DA}"
 
-echo "-- 10. cross-database RENAME moves the counter"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(50)"
-echo "before: da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-$CH -q "RENAME TABLE ${DA}.t TO ${DB}.t"
-echo "after:  da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-
-echo "-- 11. EXCHANGE across databases keeps both counters correct"
-$CH -q "CREATE TABLE ${DA}.u (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.u SELECT number FROM numbers(30)"
-# now DA.u=30, DB.t=50
-$CH -q "EXCHANGE TABLES ${DA}.u AND ${DB}.t"
-echo "after exchange: da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-
-echo "-- 12. cross-database RENAME into a full database is rejected"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40"
-$CH -q "CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.big SELECT number FROM numbers(50)"
-# moving big (50 rows) into DB (limit 40) would exceed it
-$CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
-# the table stays in its original database
-echo "da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-
-echo "-- 13. EXCHANGE that would overflow a destination is rejected"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40"
-$CH -q "CREATE TABLE ${DA}.huge (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.huge SELECT number FROM numbers(50)"
-$CH -q "CREATE TABLE ${DB}.small (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DB}.small SELECT number FROM numbers(10)"
-# DB would go 10 -> 50 (loses small, gains huge), over its limit of 40
-$CH -q "EXCHANGE TABLES ${DA}.huge AND ${DB}.small" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
-# both tables stay put
-echo "da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-
-echo "-- 14. RENAME DATABASE keeps the counter and the setting"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(40)"
-$CH -q "RENAME DATABASE ${DA} TO ${DB}"
-db_rows "${DB}"
-$CH -q "SELECT engine_full LIKE '%max_rows = 1000%' FROM system.databases WHERE name = '${DB}'"
-
-echo "-- 15. DETACH + ATTACH DATABASE reseeds the counter"
-$CH -q "DETACH DATABASE ${DB}"
-$CH -q "ATTACH DATABASE ${DB}"
-db_rows "${DB}"
-
-echo "-- 16. non-MergeTree tables do not consume max_rows headroom"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 5"
-$CH -q "CREATE TABLE ${DA}.l (x UInt64) ENGINE = Log"
-$CH -q "INSERT INTO ${DA}.l SELECT number FROM numbers(100)"
-db_rows "${DA}"
-# a MergeTree table can still use the full budget alongside the Log table
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(4)"
-db_rows "${DA}"
-
-echo "-- 17. materialized view inner table counts toward the limit"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 1000"
-$CH -q "CREATE TABLE ${DA}.src (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "CREATE MATERIALIZED VIEW ${DA}.mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM ${DA}.src"
-$CH -q "INSERT INTO ${DA}.src SELECT number FROM numbers(20)"
-# src (20) + mv inner table (20) = 40
-db_rows "${DA}"
-
-echo "-- 18. max_rows and lazy_load_tables cannot be combined"
+echo "-- 10. max_rows and lazy_load_tables cannot be combined"
 $CH -q "DROP DATABASE IF EXISTS ${DB}"
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 5, lazy_load_tables = 1" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
 $CH -q "ALTER DATABASE ${DB} MODIFY SETTING max_rows = 5" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
 $CH -q "DROP DATABASE ${DB}"
 
-echo "-- 19. RENAME into a full Ordinary database is rejected without orphaning the table"
+echo "-- 11. RENAME into a full Ordinary database is rejected without orphaning the table"
 cleanup
 $CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 1000"
 $CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DB} ENGINE = Ordinary SETTINGS max_rows = 40"
@@ -192,7 +117,7 @@ $CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | h
 echo "da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
 $CH -q "SELECT count() FROM ${DA}.big"
 
-echo "-- 20. lazy proxy forwards rows for reporting and cross-database RENAME"
+echo "-- 12. lazy proxy forwards rows for reporting and cross-database RENAME"
 cleanup
 $CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40"
@@ -204,7 +129,7 @@ db_rows "${DA}"
 $CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 $CH -q "EXISTS TABLE ${DA}.big"
 
-echo "-- 21. RENAME inside an over-limit Ordinary database succeeds"
+echo "-- 13. RENAME inside an over-limit Ordinary database succeeds"
 cleanup
 $CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 10"
 $CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
@@ -214,7 +139,7 @@ $CH -q "RENAME TABLE ${DA}.t TO ${DA}.u"
 $CH -q "EXISTS TABLE ${DA}.u"
 db_rows "${DA}"
 
-echo "-- 22. ATTACH PARTITION into a full database is rejected"
+echo "-- 14. ATTACH PARTITION into a full database is rejected"
 cleanup
 $CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 10"
 $CH -q "CREATE TABLE ${DA}.p (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"

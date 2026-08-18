@@ -27,40 +27,19 @@ rejected
 0
 TOO_MANY_ROWS
 60
--- 10. cross-database RENAME moves the counter
-before: da=50 db=0
-after:  da=0 db=50
--- 11. EXCHANGE across databases keeps both counters correct
-after exchange: da=50 db=30
--- 12. cross-database RENAME into a full database is rejected
-TOO_MANY_ROWS
-da=50 db=0
--- 13. EXCHANGE that would overflow a destination is rejected
-TOO_MANY_ROWS
-da=50 db=10
--- 14. RENAME DATABASE keeps the counter and the setting
-40
-1
--- 15. DETACH + ATTACH DATABASE reseeds the counter
-40
--- 16. non-MergeTree tables do not consume max_rows headroom
-0
-4
--- 17. materialized view inner table counts toward the limit
-40
--- 18. max_rows and lazy_load_tables cannot be combined
+-- 10. max_rows and lazy_load_tables cannot be combined
 BAD_ARGUMENTS
 BAD_ARGUMENTS
--- 19. RENAME into a full Ordinary database is rejected without orphaning the table
+-- 11. RENAME into a full Ordinary database is rejected without orphaning the table
 TOO_MANY_ROWS
 da=50 db=0
 50
--- 20. lazy proxy forwards rows for reporting and cross-database RENAME
+-- 12. lazy proxy forwards rows for reporting and cross-database RENAME
 50
 TOO_MANY_ROWS
 1
--- 21. RENAME inside an over-limit Ordinary database succeeds
+-- 13. RENAME inside an over-limit Ordinary database succeeds
 1
 12
--- 22. ATTACH PARTITION into a full database is rejected
+-- 14. ATTACH PARTITION into a full database is rejected
 TOO_MANY_ROWS

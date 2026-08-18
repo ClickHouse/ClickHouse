@@ -40,6 +40,9 @@ public:
 
     String getEngineName() const override { return "MaterializedPostgreSQL"; }
 
+    std::optional<UInt64> getCurrentRowCount() const override { return {}; }
+    UInt64 getMaxRows() const override { return 0; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
