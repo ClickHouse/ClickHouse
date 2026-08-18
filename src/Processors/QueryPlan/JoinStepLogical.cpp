@@ -314,6 +314,7 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
