@@ -49,6 +49,7 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 {
     auto ret_columns = header.cloneEmptyColumns();
     std::swap(ret_columns, result_columns);
+    result_columns_shaped_from_data = false;
     return ret_columns;
 }
 
@@ -158,11 +159,32 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     }
 }
 
+void StreamingFormatExecutor::reshapeResultColumnsFromFirstChunk(const Chunk & chunk)
+{
+    result_columns_shaped_from_data = true;
+
+    const auto & reference_columns = chunk.getColumns();
+    for (size_t i = 0; i < result_columns.size(); ++i)
+    {
+        result_columns[i] = reference_columns[i]->cloneEmpty();
+        checkpoints[i] = result_columns[i]->getCheckpoint();
+    }
+}
+
 size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 {
     size_t chunk_rows = chunk.getNumRows();
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
+
+    /// The header's columns carry only the type's defaults (e.g. ColumnObject's dynamic paths
+    /// cap from `JSON(max_dynamic_paths=N)`), not whatever narrower cap parsing settings put on
+    /// the actually parsed columns. Reshape once, from the first non-empty chunk, so that cap
+    /// survives the aggregation instead of being silently widened back to the header's default.
+    /// A chunk with no rows has not gone through parsing yet (the cap is applied lazily to the
+    /// first parsed row), so it would only lock in the header's default and skip the fix.
+    if (!result_columns_shaped_from_data && chunk_rows > 0)
+        reshapeResultColumnsFromFirstChunk(chunk);
 
     preallocateResultColumns(num_bytes, chunk);
 
