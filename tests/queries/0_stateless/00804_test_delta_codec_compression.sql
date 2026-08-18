@@ -88,12 +88,12 @@ DROP TABLE IF EXISTS default_codec_string;
 CREATE TABLE delta_codec_string
 (
     id Float64 Codec(Delta, LZ4)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns=0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns=0;
 
 CREATE TABLE default_codec_string
 (
     id Float64 Codec(LZ4)
-) ENGINE MergeTree() ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns=0;
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, enable_block_number_column = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO delta_codec_string SELECT concat(toString(number), toString(number % 100)) FROM numbers(1547510400, 500000);
 INSERT INTO default_codec_string SELECT * from delta_codec_string;
