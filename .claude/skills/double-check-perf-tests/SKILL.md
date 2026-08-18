@@ -14,20 +14,27 @@ skill:
 
 1. Looks up the PR for the commit (via `gh api`).
 2. Detects the local machine's architecture (`amd` / `arm`).
-3. For each perf shard, fetches `report.html` and extracts the rows in the
+3. Discards shards CI did not run (`SKIPPED`, `PENDING`, `RUNNING`,
+   `DROPPED`) — they publish no artifacts, so a synthesized report URL only
+   returns HTTP 403. If *no* shard ran, the skill stops with an error rather
+   than reporting "no changes": "CI never ran the comparison" and "CI ran it
+   and found nothing" are different answers, and only the second is a
+   verdict. It stops the same way when shards ran but none of their reports
+   can be read (expired artifacts).
+4. For each remaining perf shard, fetches `report.html` and extracts the rows in the
    "Changes in Performance" table (`<tr id="changes-in-performance.<test>.<idx>">`),
    then pulls the timing numbers for those rows from `all-query-metrics.tsv`.
    This matches the report exactly — re-implementing compare.sh's
    `changed_show` predicate locally would require historical thresholds
    and per-test `<report_threshold>` settings we don't have on the client side.
-4. Runs *every* CI-flagged query locally — even ones flagged only on a
+5. Runs *every* CI-flagged query locally — even ones flagged only on a
    different architecture. Cross-arch changes still get measured against
    the same two binaries; the report table tags each row with a "CI@"
    column showing which arch(es) CI flagged the query on (e.g. `arm-only`
    means CI saw the change on ARM but the local rerun is on AMD). This
    surfaces silent drift on the local arch and lets the user judge whether
    an `<arch>-only` CI verdict was real or noise.
-5. Resolves the reference (left/baseline) git SHA used by the CI run by
+6. Resolves the reference (left/baseline) git SHA used by the CI run by
    querying `query_metrics_v2` on `play.clickhouse.com` for the row with
    `new_sha = <pr-sha>` (the `report.html` "Tested Commits" section is
    unreliable — for official builds `clickhouse --version` does not embed
@@ -35,14 +42,14 @@ skill:
    reference per run, so the newest one is taken — that is the run the
    S3 report reflects, since it is overwritten in place — and the script
    warns when the choice was not unique.
-6. Downloads both binaries from `clickhouse-builds`:
+7. Downloads both binaries from `clickhouse-builds`:
    - Right: `PRs/<pr>/<sha>/build_{amd,arm}_release/clickhouse`
    - Left:  `REFs/master/<ref-sha>/build_{amd,arm}_release/clickhouse`
-7. Starts two local `clickhouse-server` processes (ports 9001 + 19001, the
+8. Starts two local `clickhouse-server` processes (ports 9001 + 19001, the
    same ports `CHServer` uses in `ci/jobs/performance_tests.py`).
-8. Reruns **only** the affected query indices via
+9. Reruns **only** the affected query indices via
    `tests/performance/scripts/perf.py` for each affected XML.
-9. Prints a side-by-side comparison: CI numbers vs. local numbers, with a
+10. Prints a side-by-side comparison: CI numbers vs. local numbers, with a
    verdict per query (`CONFIRMED slower`, `NOT REPRODUCED`, `no local data`).
 
 ## Arguments

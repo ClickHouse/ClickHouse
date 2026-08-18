@@ -42,7 +42,7 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Thread
@@ -243,6 +243,12 @@ def normalize_job_name(name: str) -> str:
     return result.rstrip("_")
 
 
+# praktika statuses (ci/praktika/result.py) that mean the shard published no
+# artifacts. Everything else -- including FAIL and ERROR -- normally still
+# uploads a report, so those shards are kept and simply read.
+NOT_RUN_STATUSES = {"SKIPPED", "PENDING", "RUNNING", "DROPPED"}
+
+
 def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
     pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/result_pr.json"
     pr_json = json.loads(http_get(pr_json_url))
@@ -384,7 +390,9 @@ def parse_changes_in_performance(html: str) -> set[tuple[str, int]]:
     return out
 
 
-def find_changed_queries(shards: list[PerfShard]) -> list[ChangedQuery]:
+def find_changed_queries(
+    shards: list[PerfShard],
+) -> tuple[list[ChangedQuery], int]:
     """Identify rows the CI report flags under "Changes in Performance".
 
     compare.sh computes the predicate at report time using per-test thresholds
@@ -395,14 +403,20 @@ def find_changed_queries(shards: list[PerfShard]) -> list[ChangedQuery]:
     ``id=changes-in-performance.<test>.<query_index>`` table, then pull the
     timing numbers for those tuples from ``all-query-metrics.tsv``. This is
     exactly the set the user sees in the report.
+
+    Also returns how many shard reports were actually readable: a shard whose
+    report cannot be fetched contributes no changed queries, exactly like a
+    shard that had none, and the caller must not read the second as the first.
     """
     changed: list[ChangedQuery] = []
+    read_ok = 0
     for s in shards:
         try:
             html = http_get(f"{s.base_dir_url}/report.html")
         except RuntimeError as e:
             log(f"skipping shard {s.arch}/{s.shard_num} report.html: {e}")
             continue
+        read_ok += 1
         flagged = parse_changes_in_performance(html)
         if not flagged:
             continue
@@ -443,7 +457,7 @@ def find_changed_queries(shards: list[PerfShard]) -> list[ChangedQuery]:
                     changed_threshold=row.get("changed_threshold"),
                 )
             )
-    return changed
+    return changed, read_ok
 
 
 # ---------------------------------------------------------------------------
@@ -1837,6 +1851,28 @@ def main() -> int:
         die(
             f"no Performance Comparison shards found for PR #{pr_number} sha {pr_sha}"
         )
+    # A skipped shard published nothing, so its synthesized report URL would
+    # just 403. Treating that as "CI found no changes" is the difference
+    # between "the comparison ran and was clean" and "the comparison never
+    # ran" — the tool exists to tell CI's verdict, so it must not invent one.
+    not_run = [s for s in shards if s.status.upper() in NOT_RUN_STATUSES]
+    shards = [s for s in shards if s.status.upper() not in NOT_RUN_STATUSES]
+    if not shards:
+        statuses = ", ".join(
+            f"{st} x{n}" for st, n in sorted(
+                Counter(s.status for s in not_run).items()
+            )
+        )
+        die(
+            f"all {len(not_run)} Performance Comparison shard(s) for "
+            f"{pr_sha[:12]} are not run ({statuses}) — CI never measured this "
+            "commit, so there is nothing to double-check. This is normal for a "
+            "PR that does not touch anything the perf check runs on. Point the "
+            "skill at a commit whose perf check actually ran."
+        )
+    if not_run:
+        log(f"ignoring {len(not_run)} shard(s) that did not run")
+
     arch_shards = [s for s in shards if s.arch == perf_arch]
     other_arch_shards = [s for s in shards if s.arch != perf_arch]
     if not arch_shards:
@@ -1857,8 +1893,19 @@ def main() -> int:
     #     can't reproduce the ARM regression" is a meaningful result)
     # When the same (test, query_index) is flagged on more than one arch,
     # we keep one row per query and remember every arch it was flagged on.
-    local_changed = find_changed_queries(arch_shards)
-    other_changed = find_changed_queries(other_arch_shards) if other_arch_shards else []
+    local_changed, local_read = find_changed_queries(arch_shards)
+    if other_arch_shards:
+        other_changed, other_read = find_changed_queries(other_arch_shards)
+    else:
+        other_changed, other_read = [], 0
+    if local_read + other_read == 0:
+        die(
+            f"none of the {len(shards)} Performance Comparison shard(s) for "
+            f"{pr_sha[:12]} could be read (report.html unavailable — artifacts "
+            "expired, or the run did not publish them). Without a report there "
+            "is no way to tell 'CI flagged nothing' from 'no data', so no "
+            "verdict is possible."
+        )
     log(f"changed queries flagged by CI on {perf_arch}: {len(local_changed)}")
     if other_changed:
         log(
@@ -1888,7 +1935,11 @@ def main() -> int:
 
     changed = list(by_key.values())
     if not changed:
-        log("no queries categorized as 'Changes in Performance' on any arch — nothing to do")
+        log(
+            f"CI flagged no 'Changes in Performance' in the "
+            f"{local_read + other_read} shard report(s) read — the comparison "
+            "ran and was clean, nothing to double-check"
+        )
         return 0
     log(f"unique queries to double-check: {len(changed)}")
 
