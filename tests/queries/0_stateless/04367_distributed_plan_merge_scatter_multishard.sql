@@ -37,16 +37,18 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 
 -- The outer plan stays single-stage: the children aggregate up to the mergeable state themselves,
 -- so there are no exchanges above ReadFromMerge. Each child plan under it carries a single layer
--- of exchanges: a gather over the aggregation over the shuffle.
-EXPLAIN SELECT count(_table) FROM m107946 WHERE _table = 'base107946_1' GROUP BY _table;
+-- of exchanges: a gather over the aggregation over the shuffle. The IN filter names both Merge
+-- children, so the child pruning keeps both plans.
+EXPLAIN SELECT count(_table) FROM m107946 WHERE _table IN ('d107946_1', 'd107946_4') GROUP BY _table;
 
--- The reproducer from the issue. It must not throw; no rows match because _table exposes the
--- underlying table names (base107946_*), same as without make_distributed_plan.
+-- The reproducer from the issue. It must not throw; _table carries the name of the Merge table's
+-- own child (the Distributed table), so the count matches the table size, same as without
+-- make_distributed_plan.
 SELECT count(_table) FROM m107946 WHERE _table = 'd107946_1' GROUP BY _table;
+SELECT count(_table) FROM m107946 WHERE _table = 'd107946_4' GROUP BY _table;
 
--- Filter on the underlying table names so rows survive; the counts must match the table sizes.
+-- The underlying tables are not children of the Merge table, so their names match no rows.
 SELECT count(_table) FROM m107946 WHERE _table = 'base107946_1' GROUP BY _table;
-SELECT count(_table) FROM m107946 WHERE _table = 'base107946_4' GROUP BY _table;
 
 DROP TABLE m107946;
 DROP TABLE d107946_1;

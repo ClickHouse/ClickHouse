@@ -26,6 +26,9 @@ SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table = 'test_l
 SELECT * FROM merge(currentDatabase(), 'test_local_1') WHERE _table in ('test_local_1', 'test_local_2');
 SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table in ('test_local_1', 'test_local_2'); -- { serverError ILLEGAL_PREWHERE }
 
+-- The `_table` virtual column of a Merge table carries the name of the Merge table's own child
+-- (here the `Distributed` table), so the filters below that name the underlying local tables
+-- match no child and return no rows.
 SELECT '--------------Single Distributed------------';
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1');
 SELECT *, _table FROM merge(currentDatabase(), 'test_distributed_1') ORDER BY _table;

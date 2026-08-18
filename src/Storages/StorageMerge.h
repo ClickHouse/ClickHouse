@@ -214,6 +214,14 @@ private:
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
+    /// `all_column_names` minus the Merge-level `_database`/`_table` virtual columns. This is what
+    /// is requested from the child tables: those two columns are produced by the Merge itself with
+    /// the child's own name (see `getModifiedQueryInfo` and `addVirtualColumns`), never by the
+    /// child, so that their values always agree with the child-pruning filter in
+    /// `getSelectedTables`.
+    Names column_names;
+    bool has_database_virtual_column = false;
+    bool has_table_virtual_column = false;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -302,6 +310,11 @@ private:
     QueryPipelineBuilderPtr buildPipeline(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
+
+    void addVirtualColumns(
+        ChildPlan & child,
+        QueryProcessingStage::Enum processed_stage,
+        const StorageWithLockAndName & storage_with_lock) const;
 
     static void convertAndFilterSourceStream(
         const Block & header,
