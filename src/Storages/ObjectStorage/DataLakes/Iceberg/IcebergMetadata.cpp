@@ -320,18 +320,18 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 /// `last-column-id` is the table's high-water mark of assigned field ids. The reader needs it to
 /// tell a column dropped from the current schema (id within the bound) from a metadata mismatch.
 /// The spec requires it, so the absence check only fail-closes a non-conformant writer.
-static void observeLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
+static std::optional<Int64> readLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
 {
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
-        schema_processor.observeLastAssignedFieldId(metadata_object->getValue<Int64>(f_last_column_id));
+        return metadata_object->getValue<Int64>(f_last_column_id);
+    return std::nullopt;
 }
 
-Int32 IcebergMetadata::parseTableSchema(
+static Int32 parseTableSchemaAndRegister(
     const Poco::JSON::Object::Ptr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
     LoggerPtr metadata_logger)
 {
-    observeLastAssignedFieldId(metadata_object, schema_processor);
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
     if (format_version == 2)
@@ -378,12 +378,23 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
+Int32 IcebergMetadata::parseTableSchema(
+    const Poco::JSON::Object::Ptr & metadata_object,
+    IcebergSchemaProcessor & schema_processor,
+    LoggerPtr metadata_logger)
+{
+    return parseTableSchemaAndRegister(metadata_object, schema_processor, metadata_logger);
+}
+
 static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    observeLastAssignedFieldId(metadata_object, *schema_processor);
+    /// The bound must not rise until every retained schema and snapshot below is accepted: schemas
+    /// registered before a throw keep serving, and a bound above what they assigned makes the reader
+    /// skip an unknown field id instead of rejecting it.
+    const auto bound = readLastAssignedFieldId(metadata_object);
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -403,6 +414,8 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
             current_snapshot = snapshot;
         }
     }
+    if (bound.has_value())
+        schema_processor->observeLastAssignedFieldId(*bound);
     return current_snapshot;
 }
 

@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <DataTypes/IDataType.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -398,4 +400,23 @@ TEST(IcebergSchemaProcessor, ColumnMapperCarriesLastAssignedFieldId)
 
     processor.observeLastAssignedFieldId(5);
     EXPECT_EQ(processor.getColumnMapperById(0)->getLastAssignedFieldId(), 5);
+}
+
+/// Registering the current schema of a metadata version must not raise the bound on its own: that
+/// version can still be rejected when its remaining retained schemas are registered, and a bound
+/// left behind by a rejected version would make the reader skip an unknown field id that the
+/// schemas which keep serving never assigned.
+TEST(IcebergSchemaProcessor, ParsingTheCurrentSchemaAloneDoesNotRaiseTheBound)
+{
+    auto metadata = parseSchema(R"json({
+        "format-version": 2,
+        "last-column-id": 9,
+        "current-schema-id": 0,
+        "schemas": [{"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]}]
+    })json");
+    IcebergSchemaProcessor processor;
+    EXPECT_EQ(DB::IcebergMetadata::parseTableSchema(metadata, processor, getLogger("gtest")), 0);
+
+    EXPECT_FALSE(processor.tryGetLastAssignedFieldId().has_value());
+    EXPECT_FALSE(processor.getColumnMapperById(0)->getLastAssignedFieldId().has_value());
 }
