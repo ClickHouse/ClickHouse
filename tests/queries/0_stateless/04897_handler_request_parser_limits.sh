@@ -38,4 +38,27 @@ ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_parser_depth=10&param_x=5"
 ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_parser_backtracks=2&param_x=6"
 ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_query_size=10&param_x=7"
 
+echo "=== invoked through PARALLEL WITH under the same request limit ==="
+PARALLEL_HANDLER="h_parallel_parserlimits_${CLICKHOUSE_DATABASE}"
+PARALLEL_URL="/parallel_parserlimits_${CLICKHOUSE_DATABASE}"
+PARALLEL_TABLE_1="parallel_parserlimits_1_${CLICKHOUSE_DATABASE}"
+PARALLEL_TABLE_2="parallel_parserlimits_2_${CLICKHOUSE_DATABASE}"
+
+${CLICKHOUSE_CLIENT} --query "DROP HANDLER IF EXISTS ${PARALLEL_HANDLER}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PARALLEL_TABLE_1}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PARALLEL_TABLE_2}"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE HANDLER ${PARALLEL_HANDLER} URL '${PARALLEL_URL}' AS
+    CREATE TABLE ${PARALLEL_TABLE_1} (x Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(Array(UInt8)))))))))))))))))))))))))))))))
+    ENGINE = Memory
+    PARALLEL WITH
+    CREATE TABLE ${PARALLEL_TABLE_2} (x UInt8) ENGINE = Memory
+"
+${CLICKHOUSE_CURL} -sS "${BASE}${PARALLEL_URL}?max_parser_depth=10"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${PARALLEL_TABLE_1}"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${PARALLEL_TABLE_2}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${PARALLEL_TABLE_1}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${PARALLEL_TABLE_2}"
+${CLICKHOUSE_CLIENT} --query "DROP HANDLER ${PARALLEL_HANDLER}"
+
 ${CLICKHOUSE_CLIENT} --query "DROP HANDLER ${HANDLER}"

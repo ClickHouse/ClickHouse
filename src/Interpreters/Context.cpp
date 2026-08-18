@@ -1366,6 +1366,7 @@ ContextData::ContextData(const ContextData &o) :
     background_context(o.background_context),
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
+    parse_server_owned_query_without_limits(o.parse_server_owned_query_without_limits),
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_view_inner_query(o.is_view_inner_query),

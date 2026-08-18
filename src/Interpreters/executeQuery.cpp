@@ -2166,6 +2166,8 @@ static BlockIO executeQueryImpl(
 {
     if (flags.internal)
         context->getClientInfo().is_internal = true;
+    if (flags.parse_server_owned_query_without_limits)
+        context->setParseServerOwnedQueryWithoutLimits(true);
 
     /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
