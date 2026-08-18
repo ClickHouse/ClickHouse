@@ -24,31 +24,31 @@ SET transform_null_in = 1;
 SET explain_query_plan_default = 'legacy';
 
 SELECT 'String key IN';
-DROP TABLE IF EXISTS t_str SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_str;
 CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_str VALUES ('a'), ('b'), ('c');
 SELECT s FROM t_str WHERE s IN (SELECT s FROM t_str UNION ALL SELECT NULL) ORDER BY s;
 
 SELECT 'FixedString key IN';
-DROP TABLE IF EXISTS t_fs SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_fs;
 CREATE TABLE t_fs (s FixedString(2)) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_fs VALUES ('ab'), ('cd');
 SELECT s FROM t_fs WHERE s IN (SELECT s FROM t_fs UNION ALL SELECT NULL) ORDER BY s;
 
 SELECT 'Int64 key IN';
-DROP TABLE IF EXISTS t_int SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_int;
 CREATE TABLE t_int (s Int64) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_int VALUES (1), (2), (3);
 SELECT s FROM t_int WHERE s IN (SELECT s FROM t_int UNION ALL SELECT NULL) ORDER BY s;
 
 SELECT 'LowCardinality(String) key IN';
-DROP TABLE IF EXISTS t_lc SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_lc;
 CREATE TABLE t_lc (s LowCardinality(String)) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_lc VALUES ('a'), ('b');
 SELECT s FROM t_lc WHERE s IN (SELECT s FROM t_lc UNION ALL SELECT NULL) ORDER BY s;
 
 SELECT 'Date key IN';
-DROP TABLE IF EXISTS t_date SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_date;
 CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d;
 INSERT INTO t_date VALUES ('2020-01-01'), ('2020-01-02');
 SELECT d FROM t_date WHERE d IN (SELECT d FROM t_date UNION ALL SELECT NULL) ORDER BY d;
@@ -57,7 +57,7 @@ SELECT 'String key IN, transform_null_in=0';
 SELECT s FROM t_str WHERE s IN (SELECT s FROM t_str UNION ALL SELECT NULL) ORDER BY s SETTINGS transform_null_in = 0;
 
 SELECT 'Non-PK String column IN';
-DROP TABLE IF EXISTS t_nopk SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_nopk;
 CREATE TABLE t_nopk (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_nopk VALUES (1, 'a'), (2, 'b'), (3, 'c');
 SELECT s FROM t_nopk WHERE s IN (SELECT s FROM t_nopk UNION ALL SELECT NULL) ORDER BY s;
@@ -71,7 +71,7 @@ SELECT s FROM t_nopk WHERE s IN (SELECT s FROM t_nopk UNION ALL SELECT NULL) ORD
 -- the third part). Later cases whose conversion is NOT lossless assert `Parts: 3/3` instead; only that
 -- negative-direction part count separates an exact atom from a merely relaxed one.
 SELECT 'String key NOT IN, partition pruning';
-DROP TABLE IF EXISTS t_np SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_np;
 CREATE TABLE t_np (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_np VALUES ('a'), ('b'), ('');
 -- Case A: the dropped NULL folds to '', which is already the value under test. The '' row must
@@ -87,7 +87,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE s NOT IN (
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE s NOT IN (SELECT 'a' UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
 
 SELECT 'Int64 key NOT IN, partition pruning';
-DROP TABLE IF EXISTS t_ip SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_ip;
 CREATE TABLE t_ip (s Int64) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_ip VALUES (5), (7), (0);
 -- Case D: numeric analogue of case A, the folded default would have been 0. `Int64 -> Int64` is
@@ -109,7 +109,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (
 -- the key type while runtime `IN` casts the key into the set type, so the set is only a superset image
 -- of the predicate. The atom is therefore marked relaxed and nothing is pruned.
 SELECT 'Cross-type UInt64 key NOT IN Nullable(String), relaxed';
-DROP TABLE IF EXISTS t_ct SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_ct;
 CREATE TABLE t_ct (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_ct VALUES (1), (2), (3);
 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('1', 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY k;
@@ -129,7 +129,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (
 -- only the canonical `'1'`) UNDER-approximates the predicate. `relaxed` cannot repair that, because it
 -- only ever widens `can_be_false`, so the atom must decline entirely.
 SELECT 'String key, numeric source, declined';
-DROP TABLE IF EXISTS t_sk SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_sk;
 CREATE TABLE t_sk (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_sk VALUES ('01'), ('1'), ('2');
 -- BOTH '01' and '1' must come back; treating the set as exact prunes the '01' partition.
@@ -145,7 +145,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sk WHERE s IN (SELE
 -- `Nullable(Decimal(10, 2))` set element collapses two distinct keys onto one set value. Note the
 -- direction: the KEY carries the finer scale, because it is the key that is cast at runtime.
 SELECT 'Decimal key, coarser-scale source, declined';
-DROP TABLE IF EXISTS t_dk SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dk;
 CREATE TABLE t_dk (d Decimal(10, 4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_dk VALUES (1.2345), (1.2300), (2.0000);
 -- Both 1.23 and 1.2345 match the set value 1.23 at runtime, so both must come back, and `NOT IN`
@@ -161,7 +161,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (
 -- so gating the decline on that cast would let this atom fall through and be marked merely relaxed,
 -- which cannot protect the positive `IN` direction.
 SELECT 'DateTime64 key, coarser-scale source, declined';
-DROP TABLE IF EXISTS t_dt SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dt;
 CREATE TABLE t_dt (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_dt VALUES ('2020-01-01 00:00:01.2345'), ('2020-01-01 00:00:01.2300'), ('2020-01-01 00:00:02.0000');
 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL) ORDER BY d;
@@ -176,7 +176,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELE
 -- onto one set value. Each case must decline; C6 additionally used to throw error 349 before this PR,
 -- so leaving it exact would have converted a loud error into a silently wrong result.
 SELECT 'String key, FixedString source, declined';
-DROP TABLE IF EXISTS t_sf SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_sf;
 CREATE TABLE t_sf (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 -- `VALUES` cannot carry a raw NUL, so the padded twin goes in through `INSERT ... SELECT`.
 INSERT INTO t_sf SELECT 'a';
@@ -188,7 +188,7 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sf WHERE s IN (SELE
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sf WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 SELECT 'FixedString key, narrower FixedString source, declined';
-DROP TABLE IF EXISTS t_f2 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_f2;
 CREATE TABLE t_f2 (s FixedString(2)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_f2 VALUES ('a'), ('ab'), ('b');
 SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL) ORDER BY s;
@@ -196,7 +196,7 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELE
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 SELECT 'FixedString key, wider FixedString source, declined';
-DROP TABLE IF EXISTS t_f1 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_f1;
 CREATE TABLE t_f1 (s FixedString(1)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_f1 VALUES ('a'), ('b'), ('c');
 SELECT hex(s) FROM t_f1 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(2))') UNION ALL SELECT NULL) ORDER BY s;
@@ -220,7 +220,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s NOT IN (
 -- while a top-level-only test sees two tuples and reports no collapse.
 -- `enable_nullable_tuple_type` is set per statement so it does not leak into the rest of the file.
 SELECT 'Tuple key, collapsing element type, declined';
-DROP TABLE IF EXISTS t_tc SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_tc;
 CREATE TABLE t_tc (k Tuple(String, UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_tc SELECT tuple('a', 1);
 INSERT INTO t_tc SELECT tuple(concat('a', char(0)), 1);
@@ -245,7 +245,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tc WHERE k NOT IN (
 -- fully exact; before this case group the fix left them merely relaxed, which does not protect the
 -- positive `IN` direction.
 SELECT 'Decimal key, integer source, declined';
-DROP TABLE IF EXISTS t_di SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_di;
 CREATE TABLE t_di (d Decimal(10, 4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_di VALUES (1.0000), (1.2345), (2.0000);
 -- Both 1.0 and 1.2345 have whole part 1, so both match the set value 1 at runtime.
@@ -261,7 +261,7 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_di WHERE d IN (SELE
 -- being gated on `key_scale > 0`: no digits are dropped, the loss is float mantissa precision, and
 -- 16777217 collapses onto 16777216 in `Float32`.
 SELECT 'Decimal key, float source, declined';
-DROP TABLE IF EXISTS t_df SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_df;
 CREATE TABLE t_df (d Decimal(20, 0)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_df VALUES (16777216), (16777217), (99);
 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL) ORDER BY d;
@@ -270,7 +270,7 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELE
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d IN (SELECT CAST(16777216, 'Nullable(Float32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 -- `Float64` collapses at its own mantissa boundary, so the arm must not be keyed on `Float32`.
 SELECT 'Decimal key, Float64 source, declined';
-DROP TABLE IF EXISTS t_dw SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dw;
 CREATE TABLE t_dw (d Decimal(30, 0)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_dw VALUES (9007199254740992), (9007199254740993), (99);
 SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL) ORDER BY d;
@@ -281,7 +281,7 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dw WHERE d IN (SELE
 -- Whether `Set::execute` additionally masks the fractional rows at runtime is beside the point: the
 -- pruning set built here is an under-approximation either way, so the atom must decline.
 SELECT 'Time64 key, integer source, declined';
-DROP TABLE IF EXISTS t_t64 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_t64;
 CREATE TABLE t_t64 (d Time64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_t64 VALUES ('00:00:01.0000'), ('00:00:01.5000'), ('00:00:02.0000');
 SELECT d FROM t_t64 WHERE d IN (SELECT CAST(1, 'Nullable(UInt64)') UNION ALL SELECT NULL) ORDER BY d;
@@ -323,7 +323,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_df WHERE d NOT IN (
 -- declining every cross-type conversion. Exactness is asserted where it is claimed: only the `NOT IN`
 -- part count distinguishes an exact atom (`Parts: 2/3`) from a relaxed one (`Parts: 3/3`).
 SELECT 'Injective numeric narrowing stays exact';
-DROP TABLE IF EXISTS t_nn SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_nn;
 CREATE TABLE t_nn (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_nn VALUES (10), (50000), (90000);
 SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL) ORDER BY k;
@@ -339,7 +339,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k NOT IN (
 -- these either -- the strict `accurate::convertNumeric` path requires an integer or float SOURCE -- so
 -- the casts succeed silently. These are wrong results on master too.
 SELECT 'DateTime key, Date source, declined';
-DROP TABLE IF EXISTS t_dd SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_dd;
 CREATE TABLE t_dd (d DateTime) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 -- Two timestamps on the SAME day (both cast to '2020-01-01') plus one on another day, so `Parts: 3/3`
 -- is meaningful and the collapse is exhibited rather than assumed.
@@ -361,7 +361,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELE
 -- Case C19: the same date-dropping direction through the SCALED family. Both sides report a scale and
 -- the key's is not coarser, so the scale arm cannot see it: the lost component is the calendar date.
 SELECT 'DateTime64 key, Time64 source, declined';
-DROP TABLE IF EXISTS t_d64 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_d64;
 CREATE TABLE t_d64 (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_d64 VALUES ('2020-01-01 00:00:00.0000'), ('2020-01-01 12:34:56.0000'), ('2020-01-02 00:00:00.0000');
 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL) ORDER BY d;
@@ -371,7 +371,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SEL
 -- Case C20: the temporal arm must recurse into composites like the text and scale arms, so a
 -- `Tuple(DateTime, UInt64)` key collapses on its FIRST element exactly as C17 does.
 SELECT 'Tuple key, collapsing temporal element, declined';
-DROP TABLE IF EXISTS t_td SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_td;
 CREATE TABLE t_td (k Tuple(DateTime, UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_td SELECT tuple(toDateTime('2020-01-01 00:00:00'), 1);
 INSERT INTO t_td SELECT tuple(toDateTime('2020-01-01 12:34:56'), 1);
@@ -405,6 +405,21 @@ SELECT s FROM t_np WHERE NOT has([CAST('', 'Nullable(String)'), NULL], s) ORDER 
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE NOT has([CAST('', 'Nullable(String)'), NULL], s) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%in 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE NOT has([CAST('', 'Nullable(String)'), NULL], s) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%Parts: 2/3%';
 
+-- Case E2: Case E's conversion is `String -> String`, which IS equality-preserving, so it never
+-- reaches the relaxation and leaves `tryPrepareSetIndexForHas`'s own `set_is_approximate` arm
+-- unasserted. This carries a conversion that is NOT equality-preserving through the `has` caller,
+-- so that arm is load-bearing here. `UInt8 -> Int64` is used rather than a text pair because `has`
+-- requires a supertype for the key and the element, which `String` and `UInt64` do not have.
+-- Rows are correct either way; only `Parts: 3/3` separates the relaxed atom from an exact one that
+-- would prune a part.
+SELECT 'Cross-type UInt8 key NOT has Nullable(Int64), relaxed';
+DROP TABLE IF EXISTS t_cth;
+CREATE TABLE t_cth (k UInt8) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_cth VALUES (1), (2), (3);
+SELECT k FROM t_cth WHERE NOT has([CAST(1, 'Nullable(Int64)')], k) ORDER BY k SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_cth WHERE NOT has([CAST(1, 'Nullable(Int64)')], k) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_cth WHERE NOT has([CAST(1, 'Nullable(Int64)')], k) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%Parts: 3/3%';
+
 -- Case F: `LowCardinality(Nullable(T))` source reaches the same block through the LowCardinality
 -- unwrap, so the wrapper must behave like the bare Nullable source.
 SELECT 'LowCardinality(Nullable(String)) source NOT IN, partition pruning';
@@ -415,7 +430,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE s NOT IN (
 -- Case H: multi-column set. A NULL in one component drops the whole row, so every set column stays
 -- aligned; the surviving single tuple is exact and prunes.
 SELECT 'Multi-column set NOT IN, one component NULL';
-DROP TABLE IF EXISTS t_mc SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_mc;
 CREATE TABLE t_mc (a String, b UInt64) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
 INSERT INTO t_mc VALUES ('x', 1), ('y', 2), ('', 0);
 SELECT a, b FROM t_mc WHERE (a, b) NOT IN (SELECT tuple(CAST('x', 'Nullable(String)'), CAST(1, 'Nullable(UInt64)')) UNION ALL SELECT tuple(CAST(NULL, 'Nullable(String)'), CAST(2, 'Nullable(UInt64)'))) ORDER BY a;
@@ -437,7 +452,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_mc WHERE (a, b) 
 -- reached through `totalRowsByPartitionPredicate`, which only the old analyzer uses for this shape, and
 -- `optimize_trivial_count_query` is randomized, so both are pinned per statement.
 SELECT 'Multi-column set, final set empty after the shared filter';
-DROP TABLE IF EXISTS t_me SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_me;
 CREATE TABLE t_me (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
 INSERT INTO t_me VALUES (1, 2), (3, 4), (0, 0);
 SELECT a, b FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)'))) ORDER BY a;
@@ -465,7 +480,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE s IN (SELE
 -- is outer-NON-Nullable so no source-NULL row is ever produced and nothing changes for it. An
 -- outer-NULL tuple element matches nothing; a `(NULL, NULL)` tuple element matches `(NULL, NULL)`.
 SELECT 'Tuple(Nullable, Nullable) key unchanged';
-DROP TABLE IF EXISTS t_tk SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_tk;
 CREATE TABLE t_tk (k Tuple(Nullable(UInt32), Nullable(UInt32))) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
 INSERT INTO t_tk VALUES ((1, 2)), ((NULL, NULL)), ((3, NULL));
 SELECT k FROM t_tk WHERE k NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt32)'), CAST(10, 'Nullable(UInt32)'))) ORDER BY k;
@@ -478,7 +493,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tk WHERE k IN (SELE
 -- Case K: the pre-existing relaxation for a non 1:1 key mapping must survive. `tuple(i, i)` maps
 -- both set elements onto one key column, so the atom is still relaxed and nothing is pruned.
 SELECT 'Duplicate key mapping stays relaxed';
-DROP TABLE IF EXISTS t_k SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_k;
 CREATE TABLE t_k (i UInt64) ENGINE = MergeTree ORDER BY i PARTITION BY i;
 INSERT INTO t_k VALUES (1), (2), (3);
 SELECT i FROM t_k WHERE tuple(i, i) NOT IN (tuple(1, 2)) ORDER BY i;
@@ -490,7 +505,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT i FROM t_k WHERE tuple(i, i)
 -- A Nullable key must keep working and keep using the set index; NULL on the left matches NULL
 -- in the set under transform_null_in=1. This shape declines before the changed block.
 SELECT 'Nullable(String) key IN';
-DROP TABLE IF EXISTS t_nk SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_nk;
 CREATE TABLE t_nk (s Nullable(String)) ENGINE = MergeTree ORDER BY s SETTINGS allow_nullable_key = 1;
 INSERT INTO t_nk VALUES ('a'), ('b'), ('c'), (NULL);
 SELECT s FROM t_nk WHERE s IN (SELECT s FROM t_nk) ORDER BY s;
@@ -502,7 +517,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nk WHERE s IN (SELE
 -- is what preserves the target's `Nullable`, so the cast is judged safe and a set condition is built.
 -- Without that, the atom degrades to `Condition: true` and no partition is pruned at all.
 SELECT 'LowCardinality(Nullable(String)) array, Nullable(String) key has';
-DROP TABLE IF EXISTS t_nkp SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_nkp;
 CREATE TABLE t_nkp (s Nullable(String)) ENGINE = MergeTree ORDER BY s PARTITION BY s SETTINGS allow_nullable_key = 1;
 INSERT INTO t_nkp VALUES ('a'), ('b'), (NULL);
 SELECT s FROM t_nkp WHERE has([CAST('a', 'LowCardinality(Nullable(String))')], s) ORDER BY s SETTINGS optimize_rewrite_has_to_in = 0;
@@ -522,6 +537,7 @@ DROP TABLE t_nopk;
 DROP TABLE t_np;
 DROP TABLE t_ip;
 DROP TABLE t_ct;
+DROP TABLE t_cth;
 DROP TABLE t_mc;
 DROP TABLE t_tk;
 DROP TABLE t_k;

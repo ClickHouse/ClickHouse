@@ -2495,34 +2495,9 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
-/// Index preparation casts set values INTO the key type, while runtime membership
-/// (`Set::execute`) casts the KEY into the set's type with `castColumnAccurate`. The set-index
-/// atom may only be treated as exact when neither direction can lose a match.
-/// `canBeSafelyCast(set -> key)` covers the first direction; this predicate covers the second by
-/// asking whether the runtime `key -> set` cast can map two DISTINCT key values onto ONE set
-/// value *silently*.
-///
-/// The classes it currently detects are:
-///   - a text key against a set element of a DIFFERENT type, text or not;
-///   - a scaled key (Decimal / DateTime64 / Time64) whose runtime cast goes through
-///     `DecimalUtils::convertToImpl`, which rejects only on range overflow: a coarser target scale
-///     divides the extra digits away (1.2345 and 1.2300 both become 1.23), an integer target takes
-///     the whole part, and a float target loses mantissa precision;
-///   - a temporal key whose target cannot represent one of its components: casting a timestamp into
-///     `Date`/`Date32` throws off the time of day, and casting a date or timestamp into `Time`/`Time64`
-///     throws off the calendar date.
-///
-/// It is a detector, not an exhaustive account of the conversions that can collapse. A conversion
-/// it does not classify is treated as merely approximate by the caller, which is weaker than
-/// declining but still stricter than the exact treatment the atom would otherwise get. Note that
-/// failing `canBeSafelyCast` at the call site does NOT by itself make an atom decline: the only
-/// path that acts on a safe forward cast is the early exit that casts the set values directly, and
-/// failing it falls through to `castColumnAccurateOrNull`, which still builds a live atom.
-/// The known residual is a non-`Nullable` set element, which takes the `else` branch below and is
-/// tracked separately.
-///
-/// Composite types are walked elementwise so this predicate has the same reach as
-/// `canBeSafelyCast`, the counterpart it complements.
+/// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
+/// can map two distinct key values onto one set value silently. Detects only the classes below, and
+/// the caller consults it only where the forward `canBeSafelyCast` was rejected.
 static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
 {
     auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
@@ -2531,8 +2506,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     auto key_which = WhichDataType(key_unwrapped);
     auto set_which = WhichDataType(set_unwrapped);
 
-    /// Walk matching composites elementwise, mirroring `canBeSafelyCast`. A shape mismatch is not
-    /// itself a collapse, so it is left to the approximate treatment rather than declined here.
+    /// A shape mismatch is not itself a collapse, so it falls through rather than declining.
     if (key_which.isArray() && set_which.isArray())
         return keyToSetConversionMayCollapse(
             assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
@@ -2560,27 +2534,13 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         return false;
     }
 
-    /// A text key is only safe against a set element of the SAME text type. Distinct text types do
-    /// not share a value representation: the runtime cast of the KEY into `FixedString(N)`
-    /// right-pads with '\0' (`toFixedString`), while building the set casts `FixedString(N)` into
-    /// `String` trimming trailing zeros, so `'a'` and `'a\0'` collapse onto one set value. A
-    /// non-text set element loses the textual representation outright (`accurateCast('01', 'UInt8')`
-    /// and `accurateCast('1', 'UInt8')` are both 1). The comparison path in this file already
-    /// declines the same padding class for a `FixedString` constant against a text key.
+    /// A text key is equality-preserving only against the same text type: `FixedString` padding and
+    /// text-to-numeric parsing both merge distinct keys.
     if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
         return true;
 
-    /// A temporal conversion between two temporal types collapses whenever the TARGET cannot
-    /// represent a component the KEY carries. `Date`/`Date32` carry a calendar date only,
-    /// `Time`/`Time64` a time of day only, `DateTime`/`DateTime64` both. Casting a timestamp into
-    /// `Date` "throws off the time component" (`ConvertImpl`'s own words), so a whole day of keys maps
-    /// onto one set value; casting a date or a timestamp into `Time` throws off the calendar date, so
-    /// every key sharing a clock reading collapses. Unlike same-family numeric narrowing there is no
-    /// round-trip check to reject the lossy value: `can_apply_accurate_cast` requires an integer or
-    /// float SOURCE, so a temporal source never reaches the strict `accurate::convertNumeric` path and
-    /// the conversion always succeeds silently. This is a component test, not a scale test -- the scale
-    /// arm below cannot see it, because neither `Date` nor `DateTime` nor `Time` reports a scale, and
-    /// for `DateTime64`/`Time64` the collapsing component is not the sub-second one.
+    /// A temporal target that cannot represent a component the key carries merges every key sharing
+    /// the surviving component, and no round-trip check rejects it.
     if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
         && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
     {
@@ -2594,43 +2554,24 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return true;
     }
 
-    /// A scaled key (`Decimal`, `DateTime64`, `Time64`) is cast at runtime through
-    /// `DecimalUtils::convertToImpl`, which rejects only on RANGE overflow. Two of its branches lose
-    /// information silently, and they need different tests because they lose different things.
+    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range
+    /// overflow, so each branch below loses a different part of the value silently.
     if (auto key_scale = tryGetDecimalScale(*key_unwrapped))
     {
+        /// Coarser target scale divides the extra digits away.
         if (auto set_scale = tryGetDecimalScale(*set_unwrapped))
         {
-            /// Same family, coarser target scale: `getWholePart`-style division drops the extra
-            /// digits, so 1.2345 and 1.2300 both become 1.23.
             if (*key_scale > *set_scale)
                 return true;
         }
+        /// An integer target keeps only the whole part; at scale 0 that division is the identity.
         else if (set_which.isInteger() && *key_scale > 0)
-        {
-            /// The integer branch takes `getWholePart`, i.e. integer division by the scale
-            /// multiplier, so every value sharing a whole part collapses onto it. A key scale of 0
-            /// makes that division the identity, which is why the test is on the scale and not
-            /// merely on the key being a `Decimal`.
             return true;
-        }
+        /// A float target loses mantissa precision at any scale.
         else if (set_which.isFloat())
-        {
-            /// The float branch is `static_cast<To>(static_cast<Float64>(value) / multiplier)` with
-            /// no strictness check of any kind, so a key past the target's mantissa range collapses
-            /// onto its neighbour. This happens for a key scale of 0 too, hence no scale test here.
             return true;
-        }
     }
 
-    /// The conversions this predicate does not classify are treated as merely approximate by the
-    /// caller. Of those, same-family numeric narrowing is genuinely injective:
-    /// `accurate::convertNumeric` is instantiated with `strict = true` and compares the round trip,
-    /// so `accurateCast(4294967297::UInt64, 'UInt32')` throws CANNOT_CONVERT_TYPE rather than
-    /// truncating, and the query fails loudly instead of answering from a collapsed set. That
-    /// strictness is what the arms above are enumerating exceptions to, and it is available only when
-    /// the SOURCE is an integer or a float (`can_apply_accurate_cast`), which is why the temporal arm
-    /// above cannot rely on it.
     return false;
 }
 
@@ -2802,13 +2743,9 @@ static bool tryPrepareSetColumnsForIndex(
         for (size_t set_element_index = 0; set_element_index < transformed_set_columns.size(); ++set_element_index)
             set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
 
-        /// An empty set is exact by construction (`NOT IN ()` is universally true, `IN ()` universally
-        /// false), and it MUST NOT be marked approximate: `extractPlainRanges` bails on any relaxed
-        /// atom before it can reach its size-0 branches, so relaxing an empty set would silently give
-        /// up the exact-range fast paths it exists to enable. Decide this only here, after the shared
-        /// filter has been applied to every column: the filter is built across all of them, so a later
-        /// column's failed cast can remove the last row that was still surviving when an earlier
-        /// column set the flag.
+        /// An empty set is exact by construction, and `extractPlainRanges` gives up its size-0 fast
+        /// paths on any relaxed atom. Emptiness is only settled here, once the filter shared by every
+        /// column has been applied.
         if (any_column_conversion_is_approximate && !set_columns.front()->empty())
             set_is_approximate = true;
     }
@@ -2915,8 +2852,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///
     /// - `set_is_approximate`
     ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
-    ///    the predicate: `k NOT IN (Nullable(String) '01')` builds the set `{1}` for a `UInt64` key even
-    ///    though `toUInt64(1) IN ('01')` is false at runtime.
+    ///    the predicate.
     if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 
@@ -3025,8 +2961,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///
     /// - `set_is_approximate`
     ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
-    ///    the predicate: `NOT has([Nullable(String) '01'], k)` builds the set `{1}` for a `UInt64` key
-    ///    even though `has(['01'], toUInt64(1))` is false at runtime.
+    ///    the predicate.
     if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 

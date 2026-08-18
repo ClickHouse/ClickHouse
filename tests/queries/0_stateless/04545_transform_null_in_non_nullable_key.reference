@@ -178,6 +178,11 @@ a
 b
 1
 1
+Cross-type UInt8 key NOT has Nullable(Int64), relaxed
+2
+3
+1
+1
 LowCardinality(Nullable(String)) source NOT IN, partition pruning
 a
 b
