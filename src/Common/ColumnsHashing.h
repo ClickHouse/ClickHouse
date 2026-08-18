@@ -404,6 +404,10 @@ struct HashMethodSerialized
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
+    /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
+    /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
+    /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
+    mutable PaddedPODArray<char> serialize_scratch;
 
     /// Per-row canonical hashes computed from `serialized_keys` using the hash table's hash function.
     /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
@@ -558,8 +562,8 @@ struct HashMethodSerialized
             return ArenaKeyHolder{serialized_keys[row], pool};
         else
         {
-            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
-            char * memory = holder.get();
+            serialize_scratch.resize(row_sizes[row]);
+            char * memory = serialize_scratch.data();
             std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
@@ -569,7 +573,7 @@ struct HashMethodSerialized
                     memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
-            return ArenaKeyHolder{key, pool, std::move(holder)};
+            return ArenaKeyHolder{key, pool};
         }
     }
 
