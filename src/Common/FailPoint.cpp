@@ -298,6 +298,7 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
+    ONCE(grace_hash_join_fail_in_delayed_block_read) \
     PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     ONCE(attach_to_group_failure) \
