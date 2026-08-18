@@ -4232,16 +4232,32 @@ BackupsWorker & Context::getBackupsWorker() const
     return *shared->backups_worker;
 }
 
-void Context::waitAllBackupsAndRestores() const
+void Context::stopAcceptingNewBackupsAndRestores() const
 {
-    if (shared->backups_worker)
-        shared->backups_worker->waitAll();
+    /// Goes through getBackupsWorker() rather than testing `shared->backups_worker`: the worker is
+    /// created on first use, so the flag has to land on the instance any later caller will get.
+    getBackupsWorker().stopAcceptingNewOperations();
 }
 
-void Context::cancelAllBackupsAndRestores() const
+bool Context::waitAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
 {
     if (shared->backups_worker)
-        shared->backups_worker->cancelAll();
+        return shared->backups_worker->waitAll(deadline);
+    return true;
+}
+
+bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
+{
+    if (shared->backups_worker)
+        return shared->backups_worker->cancelAll(/* wait_= */ true, deadline);
+    return true;
+}
+
+bool Context::hasUnfinishedBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        return shared->backups_worker->hasUnfinishedOperations();
+    return false;
 }
 
 std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()

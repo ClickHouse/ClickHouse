@@ -30,6 +30,7 @@
 
 #include "config.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -1260,8 +1261,17 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
-    void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
+
+    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
+    void stopAcceptingNewBackupsAndRestores() const;
+
+    /// Both return false if `deadline` was reached while some operation was still running.
+    bool waitAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+
+    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
+    bool hasUnfinishedBackupsAndRestores() const;
+
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
