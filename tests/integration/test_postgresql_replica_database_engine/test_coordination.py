@@ -2166,6 +2166,22 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
         )
         assert "has not finished starting replication yet" in error, error
 
+        # The storage-level guard rejects before `InterpreterDropQuery` flushes the nested table. Resume
+        # startup and prove the rejected permanent detach left it replicating.
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        check_tables_are_synchronized(instance, "test_table")
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 10)"
+        )
+        check_tables_are_synchronized(instance, "test_table")
+
+        # Re-enter the startup window to exercise the cleanup-only DROP path below. The runtime override
+        # does not survive a restart, so the configured failpoint is active again.
+        instance.stop_clickhouse()
+        instance.start_clickhouse()
+
         # The drop runs with the handler still null; the publication and the replication slot must
         # not be leaked in PostgreSQL.
         instance.query("DROP DATABASE test_database SYNC")

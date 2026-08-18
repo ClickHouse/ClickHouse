@@ -317,9 +317,10 @@ private:
     /// and removing it (the post-data teardown, once the local nested tables are actually gone).
     bool unregisterReplicaAndCheckLast(bool keep_registration_when_not_last);
 
-    /// Remove the coordination-owned Keeper nodes (leader, replicas, snapshot marker). Does not touch
-    /// <keeper_path>/tables: the nested replicated tables remove their own trees when they are dropped.
-    void removeCoordinationNodes();
+    /// Remove the coordination-owned Keeper nodes. The snapshot marker must be removed before deleting the
+    /// last local copy, while the naming and table-set fences stay authoritative until that deletion succeeds.
+    /// Does not touch <keeper_path>/tables: nested replicated tables remove their own trees when dropped.
+    void removeCoordinationNodes(bool remove_metadata);
 
     /// The durable "initial snapshot finished" marker. An existing replication slot alone does not
     /// prove that the previous active worker finished copying the pre-slot table contents: it may have

@@ -180,6 +180,11 @@ public:
     /// so that `checkTableCanBeDetached` / `checkTableCanBeDropped` refuse DETACH/DROP of individual tables.
     void setCoordinated(bool value) { is_coordinated = value; }
 
+    /// A database-engine wrapper has no replication handler of its own. The database publishes this only
+    /// after its shared handler has been built, so a permanent DETACH can refuse in the startup window
+    /// before `InterpreterDropQuery` shuts the nested table down.
+    void setDatabaseReplicationReady() { database_replication_ready = true; }
+
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
@@ -209,6 +214,8 @@ private:
 
     /// Set for wrappers that belong to a coordinated (Keeper-managed) MaterializedPostgreSQL database.
     bool is_coordinated = false;
+
+    std::atomic<bool> database_replication_ready = false;
 
     /// Single-table engine only: the coordinated pre-data teardown has already run successfully for the
     /// in-flight DROP - normally in `shutdown(/* is_drop */ true)`, before the handler and the nested table

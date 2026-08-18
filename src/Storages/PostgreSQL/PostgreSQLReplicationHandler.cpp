@@ -2616,7 +2616,7 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
             /// before the caller drops the last local copy. The shared PostgreSQL slot/publication are cleaned up
             /// authoritatively in shutdownFinal (a leaked slot/publication is recoverable, and with the marker
             /// already gone a recreate correctly redoes the snapshot rather than resuming into empty tables).
-            removeCoordinationNodes();
+            removeCoordinationNodes(/* remove_metadata */ false);
         }
     }
     catch (...)
@@ -2821,7 +2821,7 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast(bool keep_regis
 }
 
 
-void PostgreSQLReplicationHandler::removeCoordinationNodes()
+void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::removeCoordinationNodes");
 
@@ -2846,13 +2846,14 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
     remove_checked(coordination_keeper_path + "/leader");
     remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
     remove_checked(coordination_keeper_path + "/snapshot_completed");
-    /// The naming fingerprint and the table set go AFTER the marker and the replicas: if this teardown dies
-    /// partway, the surviving state must keep them, or a replica with different naming settings or a
-    /// different table set could adopt the leftover publication/marker unchecked. The safe failure direction
-    /// is a leftover /naming or /table_set node, which merely rejects a recreate with different settings
-    /// until removed manually.
-    remove_checked(coordination_keeper_path + "/naming");
-    remove_checked(coordination_keeper_path + "/table_set");
+    /// The naming fingerprint and table set remain until the local nested tables are actually gone. A refused
+    /// DROP then restarts against their authoritative coordinated identity instead of treating the still-live
+    /// publication as a leak and deriving a different set from the current PostgreSQL schema.
+    if (remove_metadata)
+    {
+        remove_checked(coordination_keeper_path + "/naming");
+        remove_checked(coordination_keeper_path + "/table_set");
+    }
     /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
     /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
     /// dropped after this handler shuts down, so this removal may legitimately fail as not-empty,
@@ -2868,14 +2869,18 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
 
 bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState()
 {
-    /// Whether any coordination state of this setup survives in Keeper: the `snapshot_completed` marker or
-    /// at least one registered replica. Used to distinguish a live shared publication (to adopt) from one
+    /// Whether any coordination state of this setup survives in Keeper: the `snapshot_completed` marker, a
+    /// registered replica, or metadata held across a refused last-replica drop. Used to distinguish a live
+    /// shared publication (to adopt) from one
     /// leaked by a failed final teardown (to drop). Keeper errors propagate: adopting or dropping a shared
     /// publication on an unverified guess must not happen (fail-close), the caller retries.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::hasSurvivingCoordinationState");
 
     auto zookeeper = getContext()->getZooKeeper();
     if (zookeeper->exists(coordination_keeper_path + "/snapshot_completed"))
+        return true;
+
+    if (zookeeper->exists(coordination_keeper_path + "/table_set"))
         return true;
 
     Strings replicas;
@@ -3240,7 +3245,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
             /// absence would be read as "another replica was last" and wrongly skip the shared PostgreSQL
             /// cleanup below. Remove the coordination nodes again (idempotent) and fall through to drop the
             /// shared slot/publication.
-            removeCoordinationNodes();
+            removeCoordinationNodes(/* remove_metadata */ true);
         }
         else
         {
@@ -3258,7 +3263,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
             /// before dropping the shared PostgreSQL slot/publication below, so that even if that cleanup fails a
             /// later recreate on the same keeper path finds no marker and correctly redoes the initial snapshot
             /// instead of resuming into empty tables. A leaked PostgreSQL slot/publication is recoverable manually.
-            removeCoordinationNodes();
+            removeCoordinationNodes(/* remove_metadata */ true);
         }
 
         /// The shared PostgreSQL slot/publication below are dropped by NAME, so the drop must still own the

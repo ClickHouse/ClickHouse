@@ -323,6 +323,11 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
 
 void StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently() const
 {
+    if (is_materialized_postgresql_database && !database_replication_ready.load())
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot remove table from replication: the database has not finished starting replication yet. "
+            "Retry once synchronization has started");
+
     /// `DETACH TABLE ... PERMANENTLY` is the supported per-table removal operation for a plain
     /// MaterializedPostgreSQL database. It must pass this pre-shutdown check and is handled by
     /// `DatabaseMaterializedPostgreSQL::detachTablePermanently` after `flushAndShutdown`.
