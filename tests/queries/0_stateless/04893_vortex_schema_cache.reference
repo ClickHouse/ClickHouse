@@ -4,8 +4,8 @@ n	UInt64
 s	String					
 n	Nullable(UInt64)					
 s	Nullable(String)					
-n	Nullable(UInt64)					
-s	Nullable(String)					
-n	Nullable(UInt64)					
-s	Nullable(String)					
+n	UInt64					
+s	String					
+n	UInt64					
+s	String					
 4
