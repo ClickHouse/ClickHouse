@@ -7,36 +7,36 @@
       "versionId": "92f722745b09bb777c04a44a2ab974484bf5992a93f74c5c1368248b43b427f0",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-08-18T14:58:37.046Z",
+          "updatedAt": "2026-08-18T15:55:49.111Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-18T14:58:38.050Z",
+          "updatedAt": "2026-08-18T15:55:50.196Z",
           "fileName": "docs.json",
           "postProcessHash": "e7db14ee7c6b5c94289879639ca36c1ef7fa850b9ea622247f16a335461390d7"
         },
         "es": {
-          "updatedAt": "2026-08-18T14:58:36.186Z",
+          "updatedAt": "2026-08-18T15:55:48.336Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-18T14:58:36.773Z",
+          "updatedAt": "2026-08-18T15:55:48.853Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-18T14:58:37.830Z",
+          "updatedAt": "2026-08-18T15:55:49.912Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-18T14:58:37.563Z",
+          "updatedAt": "2026-08-18T15:55:49.644Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-18T14:58:36.506Z",
+          "updatedAt": "2026-08-18T15:55:48.615Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-18T14:58:37.306Z",
+          "updatedAt": "2026-08-18T15:55:49.375Z",
           "fileName": "docs.json"
         }
       },
@@ -37149,47 +37149,47 @@
     },
     {
       "fileId": "b07d4727a0a75ef56ed8a8d67c3a7c9743c1aac44943923d8cc26f34dd89fdbb",
-      "versionId": "e3b0c49271f1ea0a6febb4548f174d3646ea2e6e1512271dda6c30d2980c26e4",
+      "versionId": "c541237bbdf527b5f5ff6dcffdd1f4edb461cfe2563e5afb088a3e941aedaaaa",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-18T13:56:12.276Z",
-          "fileName": "es/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "d867f607c210eebc9647e818578ae3a92e6e6bd436de5e5e1b5eec5b528ae0ea"
-        },
-        "ar": {
-          "updatedAt": "2026-08-18T13:56:12.304Z",
-          "fileName": "ar/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "c9b60f709a20d2670b39df5b692ae079220f9c8852649838dc9e760da1d4c323"
-        },
-        "zh": {
-          "updatedAt": "2026-08-18T13:56:12.331Z",
-          "fileName": "zh/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "8aafaccffe1e0f29b82f172b798508b57c9ae42b05de0b79f0bb6794976e02b1"
-        },
         "ja": {
-          "updatedAt": "2026-08-18T13:56:12.601Z",
+          "updatedAt": "2026-08-18T15:55:55.200Z",
           "fileName": "ja/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "430ec5e7c207498af1708e036cd355c459b451f2f9516c185bb3e3cdc0378a3a"
-        },
-        "ko": {
-          "updatedAt": "2026-08-18T13:56:14.501Z",
-          "fileName": "ko/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "a3e7aaa308fcf10779287fc34ca4459bac9c1c2e0e9454c3c5ced0e6ee195942"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-18T13:56:14.517Z",
-          "fileName": "pt-BR/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "e74ae3f30bf319093bc1071f630d8dc133875629cb3586c2013d8e4ff421d1f2"
-        },
-        "ru": {
-          "updatedAt": "2026-08-18T13:56:14.526Z",
-          "fileName": "ru/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "ab106b1ba7eb5c09237e8eee3b2de419028df6d170edc728b6aa1be405fa375a"
+          "postProcessHash": "9fa4502f1be1a373df069ca2f060443e30fc54d962d5713dcf34d0f69cbdd738"
         },
         "fr": {
-          "updatedAt": "2026-08-18T13:56:14.593Z",
+          "updatedAt": "2026-08-18T15:55:55.201Z",
           "fileName": "fr/integrations/clickpipes/kafka/reference.mdx",
-          "postProcessHash": "c494c30cfb9d58518812047a458b5ac18be42992271c89aff47595b251727a6b"
+          "postProcessHash": "68000b9ccaac100b5613b6709ab2ff923b051d895b0531bacd78b1ab5f230797"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-18T15:55:55.202Z",
+          "fileName": "pt-BR/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "4c2c41700ca54b5a339d28e37a3929936bdf740ea7398ef1bfb0cfb3e772abb1"
+        },
+        "zh": {
+          "updatedAt": "2026-08-18T15:55:55.202Z",
+          "fileName": "zh/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "a81d02d9635c09fa820d51b24378ee39212c212aa14d3f311665441648a1e478"
+        },
+        "ru": {
+          "updatedAt": "2026-08-18T15:55:55.218Z",
+          "fileName": "ru/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "1e2a56c08e2d493af1c2ffc07cf71d667f65b73e701af258fe3791f54cb89caa"
+        },
+        "es": {
+          "updatedAt": "2026-08-18T15:55:55.218Z",
+          "fileName": "es/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "88148affa682141b7db3213ac00d7f9f29469ce7c6d8e2a7ae2e935bdfac991e"
+        },
+        "ko": {
+          "updatedAt": "2026-08-18T15:55:55.219Z",
+          "fileName": "ko/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "9ffc6eb5bd1cfb4d076d9b31529326c65c9ef8a8f125e818ce8ec845c9994407"
+        },
+        "ar": {
+          "updatedAt": "2026-08-18T15:55:55.220Z",
+          "fileName": "ar/integrations/clickpipes/kafka/reference.mdx",
+          "postProcessHash": "644177796a2b70f0ae58985fba48ac4f2aa218052ae2728d854a1825ad8de0cc"
         }
       },
       "fileName": "integrations/clickpipes/kafka/reference.mdx",
