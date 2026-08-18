@@ -86,6 +86,11 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
+        # The merge queue's non-sanitizer flaky check also runs here, so a test
+        # that is only too slow (or only flaky) without a sanitizer is reported
+        # in the PR rather than first bouncing it from the merge queue. Same job
+        # config as in `ci/workflows/merge_queue.py`.
+        *JobConfigs.stateless_tests_flaky_mq_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
         # both amd64 and aarch64). Each per-arch variant has
@@ -209,6 +214,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
@@ -235,6 +241,7 @@ workflow = Workflow.Config(
     enable_slack_feed=True,
     pre_hooks=[
         can_be_tested,
+        "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",

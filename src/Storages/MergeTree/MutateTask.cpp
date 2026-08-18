@@ -48,6 +48,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/thread_local_rng.h>
+#include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
@@ -106,6 +108,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
@@ -198,12 +201,16 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
 static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
-    const MutationsInterpreter * interpreter)
+    const MutationsInterpreter * interpreter,
+    MergeTreeDataPartStorageType future_storage_type)
 {
     return haveMutationsOfDynamicColumns(source_part, commands_for_part)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
         || !isWidePart(source_part)
         || !isFullPartStorage(source_part->getDataPartStorage())
+        /// Per-file hardlink reuse needs source and result to share the storage format; a differing
+        /// format (e.g. the packing threshold changed) needs a full rewrite.
+        || source_part->getDataPartStorage().getType() != future_storage_type
         || (interpreter && interpreter->isAffectingAllColumns());
 }
 
@@ -1378,31 +1385,63 @@ static NameToNameVector collectFilesForRenames(
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
 
-                String escaped_name_from = escapeForFileName(command.column_name);
-                String escaped_name_to = escapeForFileName(command.rename_to);
-
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(command.column_name);
+                if (substreams)
                 {
+                    /// Use columns_substreams.txt as the source of truth for substream file names.
+                    /// This way the file renames stay consistent with the new columns_substreams.txt
+                    /// produced by addRenamedColumnToColumnsSubstreams (both use getFileNameForRenamedColumnStream
+                    /// on the same source names).
                     auto storage_settings = source_part->storage.getSettings();
-
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                    String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
-
-                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
-                    if (!stream_from)
-                        return;
-
-                    String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
-
-                    if (stream_from != stream_to)
+                    for (const auto & substream : *substreams)
                     {
-                        add_rename(*stream_from + ".bin", stream_to + ".bin");
-                        add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
-                    }
-                };
+                        auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part->checksums);
+                        if (!stream_from)
+                            continue;
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                    serialization->enumerateStreams(callback);
+                        String renamed = ISerialization::getFileNameForRenamedColumnStream(
+                            command.column_name, command.rename_to, substream);
+                        String stream_to = replaceFileNameToHashIfNeeded(
+                            renamed, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    }
+                }
+                else
+                {
+                    /// Fallback for parts without columns_substreams.txt (discarded due to corruption or old parts).
+                    /// Use getStreamNameForColumn with bidirectional fallback to find the actual file
+                    /// regardless of whether the part was written with a different escape_variant_subcolumn_filenames value.
+                    String escaped_name_from = escapeForFileName(command.column_name);
+                    String escaped_name_to = escapeForFileName(command.rename_to);
+
+                    ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        auto storage_settings = source_part->storage.getSettings();
+
+                        String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                        String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
+
+                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, storage_settings);
+                        if (!stream_from)
+                            return;
+
+                        String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+
+                        if (*stream_from != stream_to)
+                        {
+                            add_rename(*stream_from + ".bin", stream_to + ".bin");
+                            add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
+                        }
+                    };
+
+                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                        serialization->enumerateStreams(callback);
+                }
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
@@ -2591,8 +2630,7 @@ private:
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
 
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
             }
         }
 
@@ -2917,8 +2955,7 @@ private:
                     }
                 }
 
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
+                ctx->new_data_part->getDataPartStorage().checkpointTransaction();
             }
         }
 
@@ -3289,8 +3326,7 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
-            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
+        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn, std::nullopt);
         /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
         /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
         /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
@@ -3724,6 +3760,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 bool MutateTask::prepare()
 {
     FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_prepare);
+    fiu_do_on(FailPoints::mutate_task_random_sleep_in_prepare,
+    {
+        /// Deliberate fault injection for stress tests: widen the window between an ALTER and the
+        /// part rewrite, so concurrent queries routinely read parts the mutation has not rewritten
+        /// yet. The delay is bounded, so tests that wait for mutations finish only a little later.
+        sleepForMilliseconds(thread_local_rng() % 3000);
+    });
 
     ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     ctx->checkOperationIsNotCanceled();
@@ -3862,7 +3905,9 @@ bool MutateTask::prepare()
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
-                ctx->txn);
+                ctx->txn,
+                /*patch_part_index=*/ std::nullopt);
+
             /// Keep the temporary-directory holder alive until the part is renamed/committed, so
             /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
             /// directory, keeping the holder authoritative for every createEmptyPart caller.
@@ -3975,7 +4020,7 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get());
+        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),

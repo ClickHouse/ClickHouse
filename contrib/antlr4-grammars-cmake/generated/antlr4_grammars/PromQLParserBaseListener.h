@@ -123,9 +123,6 @@ public:
   virtual void enterLabelNameList(PromQLParser::LabelNameListContext * /*ctx*/) override { }
   virtual void exitLabelNameList(PromQLParser::LabelNameListContext * /*ctx*/) override { }
 
-  virtual void enterGroupingLabel(PromQLParser::GroupingLabelContext * /*ctx*/) override { }
-  virtual void exitGroupingLabel(PromQLParser::GroupingLabelContext * /*ctx*/) override { }
-
   virtual void enterMetricName(PromQLParser::MetricNameContext * /*ctx*/) override { }
   virtual void exitMetricName(PromQLParser::MetricNameContext * /*ctx*/) override { }
 
