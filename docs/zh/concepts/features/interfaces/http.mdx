@@ -36,7 +36,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; 是 [`http_server_default_response`](/zh/reference/settings/server-settings/settings#http_server_default_response) 中定义的默认值，可按需更改。
+&quot;Ok.&quot; 是 [`http_server_default_response`](/zh/reference/settings/server-settings/settings/http#http_server_default_response) 中定义的默认值，可按需更改。
 
 另请参见：[HTTP 响应代码注意事项](#http_response_codes_caveats)。
 
@@ -294,11 +294,11 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
   ## 压缩
 </div>
 
-压缩可用于在传输大量数据时减少网络流量，也可用于创建压缩后的转储文件。
+压缩可用于在传输大量数据时减少网络流量，也可用于创建会立即压缩的转储文件。
 
 传输数据时，您可以使用 ClickHouse 的内部压缩格式。压缩后的数据采用非标准格式，因此需要使用 `clickhouse-compressor` 程序来处理。该程序默认随 `clickhouse-client` 软件包一起安装。
 
-为提高数据插入效率，请使用 [`http_native_compression_disable_checksumming_on_decompress`](/zh/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress) 设置禁用服务器端的校验和验证。
+为提高数据插入效率，请使用 [`http_native_compression_disable_checksumming_on_decompress`](/zh/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress) 设置禁用服务器端的校验和验证。
 
 如果您在 URL 中指定 `compress=1`，服务器会压缩发送给您的数据。如果您在 URL 中指定 `decompress=1`，服务器会解压您通过 `POST` 方法传入的数据。
 
@@ -317,7 +317,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 要让 ClickHouse 压缩响应，请在请求中附加 `Accept-Encoding: compression_method` 请求头。
 
-您可以使用 [`http_zlib_compression_level`](/zh/reference/settings/session-settings#http_zlib_compression_level) 设置，为所有压缩方法配置数据压缩级别。
+您可以使用 [`http_zlib_compression_level`](/zh/reference/settings/session-settings/http#http_zlib_compression_level) 设置，为所有压缩方法配置数据压缩级别。
 
 <Info>
   某些 HTTP 客户端可能默认会解压来自服务器的数据 (如 `gzip` 和 `deflate`) ，因此即使您正确使用了压缩设置，也可能收到解压后的数据。
@@ -450,7 +450,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 要检查会话状态，请使用 `session_check=1` 参数。单个会话中一次只能执行一个查询。
 
-你可以在 `X-ClickHouse-Progress` 响应请求头中获取有关查询进度的信息。为此，请启用 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings#send_progress_in_http_headers)。
+你可以在 `X-ClickHouse-Progress` 响应请求头中获取有关查询进度的信息。为此，请启用 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings/send#send_progress_in_http_headers)。
 
 下面是一个请求头序列示例：
 
@@ -462,24 +462,24 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 可能的请求头字段如下：
 
-| 请求头字段                | 说明                                 |
-| -------------------- | ---------------------------------- |
-| `read_rows`          | 已读取的行数。                            |
-| `read_bytes`         | 已读取的数据量 (字节) 。                     |
-| `total_rows_to_read` | 待读取的总行数。                           |
-| `written_rows`       | 已写入的行数。                            |
-| `written_bytes`      | 已写入的数据量 (字节) 。                     |
-| `elapsed_ns`         | 查询运行时间 (纳秒) 。                      |
-| `memory_usage`       | 查询使用的内存 (字节) 。 (**自 v25.11 起可用**)  |
+| 请求头字段                | 说明                                |
+| -------------------- | --------------------------------- |
+| `read_rows`          | 已读取的行数。                           |
+| `read_bytes`         | 已读取的数据量 (字节) 。                    |
+| `total_rows_to_read` | 待读取的总行数。                          |
+| `written_rows`       | 已写入的行数。                           |
+| `written_bytes`      | 已写入的数据量 (字节) 。                    |
+| `elapsed_ns`         | 查询运行时间 (纳秒) 。                     |
+| `memory_usage`       | 查询使用的内存 (字节) 。 (**自 v25.11 起可用**) |
 
 如果 HTTP 连接丢失，正在运行的请求不会自动停止。解析和数据格式化都在服务器端完成，因此通过网络传输可能效率较低。
 
 以下可选参数可用：
 
-| 参数                     | 说明                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `query_id` (optional)  | 可作为查询 ID 传入 (任意字符串) 。[`replace_running_query`](/zh/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (optional) | 可作为配额键传入 (任意字符串) 。[&quot;Quotas&quot;](/zh/concepts/features/configuration/server-config/quotas)              |
+| 参数                     | 说明                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (optional)  | 可作为查询 ID 传入 (任意字符串) 。[`replace_running_query`](/zh/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (optional) | 可作为配额键传入 (任意字符串) 。[&quot;Quotas&quot;](/zh/concepts/features/configuration/server-config/quotas)                                    |
 
 HTTP 接口支持传递外部数据 (外部临时表) 用于查询。更多信息，请参阅[&quot;External data for query processing&quot;](/zh/reference/engines/table-engines/special/external-data)。
 
@@ -487,15 +487,15 @@ HTTP 接口支持传递外部数据 (外部临时表) 用于查询。更多信�
   ## 响应缓冲
 </div>
 
-服务端可以启用响应缓冲。为此提供了以下 URL 参数：
+服务器端可以启用响应缓冲。为此提供了以下 URL 参数：
 
 * `buffer_size`
 * `wait_end_of_query`
 
 也可以使用以下设置：
 
-* [`http_response_buffer_size`](/zh/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/zh/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/zh/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/zh/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` 用于指定在服务器内存中为结果缓冲的字节数。如果结果体大于该阈值，缓冲区中的内容会写入 HTTP 通道，其余数据将直接发送到 HTTP 通道。
 
@@ -547,7 +547,7 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 在这种情况下，`?role=my_role&role=my_other_role` 的效果类似于在执行该语句之前先执行 `SET ROLE my_role, my_other_role`。
 
 <div id="http_response_codes_caveats">
-  ## HTTP 响应状态码注意事项
+  ## HTTP 响应码注意事项
 </div>
 
 由于 HTTP 协议本身的限制，HTTP 200 响应码并不保证查询已成功。
@@ -567,13 +567,13 @@ Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while 
 
 这种行为与所使用的格式无关，无论是 `Native`、`TSV` 还是 `JSON`；错误消息总是会出现在响应流的中间。
 
-你可以通过启用 `wait_end_of_query=1` ([响应缓冲](#response-buffering)) 来缓解这个问题。在这种情况下，HTTP 请求头会延迟到整个查询处理完成后才发送。不过，这并不能彻底解决问题，因为结果仍然必须能够容纳在 [`http_response_buffer_size`](/zh/reference/settings/session-settings#http_response_buffer_size) 中，而且像 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings#send_progress_in_http_headers) 这样的其他设置也可能会影响请求头的延迟发送。
+你可以通过启用 `wait_end_of_query=1` ([响应缓冲](#response-buffering)) 来缓解这个问题。在这种情况下，HTTP 请求头会延迟到整个查询处理完成后才发送。不过，这并不能彻底解决问题，因为结果仍然必须能够容纳在 [`http_response_buffer_size`](/zh/reference/settings/session-settings/http-response#http_response_buffer_size) 中，而且像 [`send_progress_in_http_headers`](/zh/reference/settings/session-settings/send#send_progress_in_http_headers) 这样的其他设置也可能会影响请求头的延迟发送。
 
 <Tip>
   要捕获所有错误，唯一的方法是在按所需格式解析 HTTP body 之前先对其进行分析。
 </Tip>
 
-当 `http_write_exception_in_output_format=0` (默认值) 时，ClickHouse 中这类异常都会采用如下所示的一致格式，而与所使用的格式无关 (例如 `Native`、`TSV`、`JSON` 等) 。这使得客户端更容易解析并提取错误消息。
+当 `http_write_exception_in_output_format=0` (默认值) 时，ClickHouse 中这类异常都会采用如下所示的一致格式，而与所使用的格式无关 (例如 `Native`、`TSV`、`JSON` 等)。这使得客户端更容易解析并提取错误消息。
 
 ```text
 \r\n
@@ -821,7 +821,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 的值是 `predefined_query_handler` 的预定义查询；当 HTTP 请求匹配时，ClickHouse 会执行该查询并返回查询结果。这是必填配置项。
 
-以下示例定义了 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 和 [`max_final_threads`](/zh/reference/settings/session-settings#max_final_threads) 这两个设置的值，然后查询系统表，以检查这些设置是否已成功生效。
+以下示例定义了 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 和 [`max_final_threads`](/zh/reference/settings/session-settings/max#max_final_threads) 这两个设置的值，然后查询系统表，以检查这些设置是否已成功生效。
 
 <Note>
   要保留默认的 `handlers`，例如 `query`、`play`、`ping`，请添加 `<defaults/>` 规则。
@@ -903,7 +903,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 
 ClickHouse 会从 HTTP 请求的 URL 中提取与 `query_param_name` 对应的值并执行。`query_param_name` 的默认值为 `/query`。这是一个可选配置；如果配置文件中未定义，就不会传递该参数。
 
-要试用此功能，下面的示例定义了 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 和 `max_final_threads` 的值，并查询这些设置是否已成功生效。
+要试用此功能，下面的示例定义了 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 和 `max_final_threads` 的值，并查询这些设置是否已成功生效。
 
 示例：
 
@@ -1187,7 +1187,7 @@ ClickHouse 允许你配置自定义 HTTP 响应头，并将其应用于任何可
 
 通过 HTTP 执行查询时，如果部分数据已经发送，可能会发生异常。通常，异常会以纯文本形式发送给客户端。
 即使数据输出时使用了特定格式，输出结果也可能因此不再是符合该格式的有效数据。
-为避免这种情况，你可以使用设置 [`http_write_exception_in_output_format`](/zh/reference/settings/session-settings#http_write_exception_in_output_format) (默认禁用) ，该设置会指示 ClickHouse 以指定格式写出异常 (当前支持 XML 和 JSON* 格式) 。
+为避免这种情况，你可以使用设置 [`http_write_exception_in_output_format`](/zh/reference/settings/session-settings/http#http_write_exception_in_output_format) (默认禁用) ，该设置会指示 ClickHouse 以指定格式写出异常 (当前支持 XML 和 JSON* 格式) 。
 
 示例：
 
