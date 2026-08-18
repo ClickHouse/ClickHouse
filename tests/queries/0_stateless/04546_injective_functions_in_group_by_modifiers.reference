@@ -99,7 +99,4 @@
 7
 8
 9
-SELECT number
-FROM numbers(10)
-GROUP BY number
-SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1
+SELECT number\nFROM numbers(10)\nGROUP BY number\nSETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1

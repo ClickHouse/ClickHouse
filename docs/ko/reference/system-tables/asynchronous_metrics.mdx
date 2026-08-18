@@ -810,6 +810,18 @@ ClickHouse Keeper에서 키의 메모리 아레나 크기를 바이트 단위로
 
 ClickHouse Keeper에서 마지막으로 커밋된 로그의 인덱스입니다.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+이 ClickHouse Keeper 인스턴스가 leader가 되면서 종료된, 로컬에서 가장 최근에 관찰된 leader 부재 윈도우의 기간(밀리초)입니다. 샘플링된 leader 부재 state가 나타나지 않는 리더십 전환은 기록되지 않습니다. 이 인스턴스가 활성 leader가 아니거나 완료된 윈도우가 기록되어 있지 않으면 `0`입니다.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+이 ClickHouse Keeper leader에서 로컬로 관찰된 가장 최근의 leader 부재 윈도우 지속 시간(밀리초)입니다. 이 instance가 활성 leader가 아니거나 완료된 leader 부재 윈도우가 기록되어 있지 않으면 `0`입니다.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>

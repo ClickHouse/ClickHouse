@@ -11,11 +11,29 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
-ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+# Functional tests with sanitizers are trimmed down in pull requests: instead of
+# the full suite, their `selected tests` counterparts run only the tests selected
+# for the change. The full suite still runs here in the debug and plain binary
+# flavors, the sanitizer builds are still exercised by the stress tests, and the
+# master workflow keeps running the full suite in every flavor.
+# See ClickHouse/ClickHouse#114725.
+SANITIZERS = ("asan_ubsan", "tsan", "msan")
+
+FUNCTIONAL_TESTS_JOBS = [
+    job
+    for job in JobConfigs.functional_tests_jobs
+    if not any(sanitizer in job.name for sanitizer in SANITIZERS)
+    # All existing Wasm UDF functional tests are `no-msan`, so selected test
+    # discovery cannot provide a representative WasmEdge smoke test. Keep the
+    # established full-suite MSan/WasmEdge lanes until that coverage exists.
+    or "amd_msan, WasmEdge" in job.name
+] + JobConfigs.stateless_tests_selected_pr_jobs
+
+ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
 
 CORE_BLOCKING_JOB_NAMES = [
     job.name
-    for job in JobConfigs.functional_tests_jobs
+    for job in FUNCTIONAL_TESTS_JOBS
     if any(
         substr in job.name
         for substr in (
@@ -118,7 +136,7 @@ workflow = Workflow.Config(
                 if j.name not in CORE_BLOCKING_JOB_NAMES
                 else []
             )
-            for j in JobConfigs.functional_tests_jobs
+            for j in FUNCTIONAL_TESTS_JOBS
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -214,6 +232,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
