@@ -130,6 +130,14 @@ bool containsEnum(const DataTypePtr & type)
     });
 }
 
+bool containsTuple(const DataTypePtr & type)
+{
+    return containsType(*type, [](const IDataType & nested_type)
+    {
+        return WhichDataType(nested_type).isTuple();
+    });
+}
+
 bool containsVariant(const DataTypePtr & type)
 {
     return containsType(*type, [](const IDataType & nested_type)
@@ -157,7 +165,7 @@ bool containsDateOrTime(const DataTypePtr & type)
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
 /// have the same stored representation.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
-/// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum`, `Object` / `JSON`, mixed date/time-family types,
+/// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum` / `Tuple`, `Object` / `JSON`, mixed date/time-family types,
 /// or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
@@ -173,7 +181,7 @@ bool canReplaceColumnWithConstantAfterFilter(
         return false;
 
     if (containsString(result_type)
-        && (containsFixedString(constant_type) || containsEnum(constant_type) || constant_type_is_dynamic))
+        && (containsFixedString(constant_type) || containsEnum(constant_type) || containsTuple(constant_type) || constant_type_is_dynamic))
         return false;
 
     if (containsFixedString(result_type) && !result_type->equals(*constant_type))
