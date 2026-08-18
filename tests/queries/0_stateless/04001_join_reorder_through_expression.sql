@@ -9,16 +9,16 @@ SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 64;
 SET explain_query_plan_default = 'legacy';
 
-CREATE TABLE t0 (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t0 (id UInt64, val String) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 INSERT INTO t0 VALUES (0, 'aa'), (1, 'bb'), (2, 'cc');
 
-CREATE TABLE t1 (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t1 (id UInt64, val String) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 INSERT INTO t1 VALUES (1, 'ODD'), (2, 'EVEN'), (3, 'ODD');
 
-CREATE TABLE t2 (id UInt64, attr UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, attr UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 INSERT INTO t2 VALUES (1, 10), (2, 20), (3, 30);
 
-CREATE TABLE t3 (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t3 (id UInt64, val String) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 INSERT INTO t3 VALUES (11, 'A'), (21, 'B'), (31, 'C');
 
 SET enable_join_runtime_filters = 0;
