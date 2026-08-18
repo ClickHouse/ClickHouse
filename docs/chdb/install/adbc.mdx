@@ -7,6 +7,10 @@ keywords: ['chdb', 'adbc', 'arrow', 'driver', 'clickhouse', 'sql', 'olap']
 doc_type: 'guide'
 ---
 
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
 <Warning>
 The ADBC driver is experimental. Its behavior and options may change between releases.
 </Warning>
@@ -23,7 +27,7 @@ Install the driver from the ADBC Driver Foundry with [`dbc`](https://docs.column
 dbc install chdb
 ```
 
-The first published `dbc` package for chDB is version 26.7.0. To check the available versions:
+The first published `dbc` package for chDB is version 26.7.0. To check the available versions run:
 
 ```bash
 dbc search -v chdb
