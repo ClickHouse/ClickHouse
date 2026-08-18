@@ -200,16 +200,11 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
 {
     for (const auto & [name, value] : extra_headers)
     {
-        if (name.starts_with("x-amz-"))
+        if (name.size() >= 6 && equalsCaseInsensitive(name.substr(0, 6), "x-amz-"))
         {
             request.SetAdditionalCustomHeaderValue(name, value);
         }
     }
-}
-
-bool hasCreateOnlyHeader(const HTTPHeaderEntry & header)
-{
-    return header.name.starts_with("x-amz-meta-") || header.name == "x-amz-server-side-encryption";
 }
 
 template <bool IsReadMethod>
@@ -265,7 +260,7 @@ std::optional<std::string> expectedMultipartETag(const Aws::S3::Model::Completed
 
 bool Client::hasExtraHeadersRequiringFullWriteIdentity() const
 {
-    return std::ranges::any_of(client_configuration.extra_headers, hasCreateOnlyHeader);
+    return std::ranges::any_of(client_configuration.extra_headers, [](const auto & header) { return isCreateOnlyHeader(header.name); });
 }
 
 std::unique_ptr<Client> Client::create(

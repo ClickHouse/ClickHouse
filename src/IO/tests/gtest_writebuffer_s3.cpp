@@ -1068,7 +1068,7 @@ TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadata
 /// alone cannot prove that a recovered completion created the requested object.
 TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadataExtraHeader)
 {
-    client = MockS3::Client::CreateClient(bucket, {{"x-amz-meta-write-id", "new"}});
+    client = MockS3::Client::CreateClient(bucket, {{"X-Amz-Meta-Write-Id", "new"}});
     setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
 
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part

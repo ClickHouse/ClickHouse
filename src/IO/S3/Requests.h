@@ -7,6 +7,8 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 
+#include <Common/StringUtils.h>
+
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
@@ -29,10 +31,18 @@
 
 #include <base/defines.h>
 
+#include <string_view>
+
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+
+inline bool isCreateOnlyHeader(std::string_view header_name)
+{
+    return (header_name.size() >= 11 && equalsCaseInsensitive(header_name.substr(0, 11), "x-amz-meta-"))
+        || equalsCaseInsensitive(header_name, "x-amz-server-side-encryption");
+}
 
 /// Used only for S3Express
 namespace RequestChecksum
