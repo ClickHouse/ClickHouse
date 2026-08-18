@@ -31,12 +31,21 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
 {
     ostr << "APPLY" << " ";
 
-    if (!column_name_prefix.empty())
+    /// A lambda must be bracketed: without the brackets the parser hands the tail to
+    /// ParserExpression, and a matcher-valued lambda body absorbs the transformer that follows.
+    const bool with_round_brackets = lambda || !column_name_prefix.empty();
+
+    if (with_round_brackets)
         ostr << "(";
 
     if (lambda)
     {
-        lambda->format(ostr, settings, state, frame);
+        /// The brackets above delimit the lambda, so ASTFunction must not add its own
+        /// (it does for a lambda at a list position or under need_parens).
+        auto lambda_frame = frame;
+        lambda_frame.need_parens = false;
+        lambda_frame.list_element_index = 0;
+        lambda->format(ostr, settings, state, lambda_frame);
     }
     else
     {
@@ -53,7 +62,10 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
 
     if (!column_name_prefix.empty())
-        ostr << ", '" << column_name_prefix << "')";
+        ostr << ", '" << column_name_prefix << "'";
+
+    if (with_round_brackets)
+        ostr << ")";
 }
 
 void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const

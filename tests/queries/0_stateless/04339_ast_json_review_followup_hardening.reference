@@ -4,7 +4,7 @@ ALTER TABLE t (RENAME COLUMN a TO b)
 ALTER TABLE t (MODIFY SETTING s = 1)
 UPDATE t SET a = 1 WHERE b = 2
 INSERT INTO t (a, b) SELECT 1, 2
-SELECT * APPLY x -> (x + 1)
+SELECT * APPLY (x -> (x + 1))
 SELECT * APPLY quantile(0.9)
 SELECT arrayMap(x -> (x + 1), [1, 2, 3])
 SHOW TABLES FROM db
