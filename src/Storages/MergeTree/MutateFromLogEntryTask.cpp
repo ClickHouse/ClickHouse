@@ -384,6 +384,12 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
+
+    /// Move index to cache and reset it here because we need
+    /// a correct part name after rename for a key of cache entry.
+    if (auto index_cache = storage.getPrimaryIndexCache())
+        new_part->moveIndexToCache(*index_cache);
+
     write_part_log({});
 
     return true;

@@ -135,6 +135,11 @@ bool MutatePlainMergeTreeTask::executeStep()
                     transaction.commit(lock);
                 }
 
+                /// Move index to cache and reset it here because we need
+                /// a correct part name after rename for a key of cache entry.
+                if (auto index_cache = storage.getPrimaryIndexCache())
+                    new_part->moveIndexToCache(*index_cache);
+
                 mutate_task->updateProfileEvents();
 
                 /// Write the part log entry before reporting the mutation as done, otherwise a
