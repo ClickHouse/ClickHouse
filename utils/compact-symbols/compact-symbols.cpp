@@ -62,13 +62,13 @@ public:
         if (fstat(fd, &file_stat) != 0)
         {
             int error = errno;
-            close(fd);
+            [[maybe_unused]] int close_result = close(fd);
             fd = -1;
             throw std::runtime_error(std::string("Cannot stat input ELF: ") + strerror(error));
         }
         if (file_stat.st_size <= 0)
         {
-            close(fd);
+            [[maybe_unused]] int close_result = close(fd);
             fd = -1;
             throw std::runtime_error("Input ELF has an invalid size");
         }
@@ -78,7 +78,7 @@ public:
         if (mapped == MAP_FAILED)
         {
             int error = errno;
-            close(fd);
+            [[maybe_unused]] int close_result = close(fd);
             fd = -1;
             throw std::runtime_error(std::string("Cannot mmap input ELF: ") + strerror(error));
         }
@@ -90,7 +90,7 @@ public:
         if (data)
             munmap(const_cast<char *>(data), size);
         if (fd >= 0)
-            close(fd);
+            [[maybe_unused]] int close_result = close(fd);
     }
 
     MappedFile(const MappedFile &) = delete;
@@ -199,7 +199,7 @@ void writeFile(const char * file_name, std::span<const char> data)
         if (result <= 0)
         {
             int error = errno;
-            close(fd);
+            [[maybe_unused]] int close_result = close(fd);
             throw std::runtime_error(std::string("Cannot write output blob: ") + strerror(error));
         }
         written += static_cast<size_t>(result);
