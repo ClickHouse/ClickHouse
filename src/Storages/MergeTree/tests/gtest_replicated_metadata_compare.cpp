@@ -192,6 +192,11 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalO
     local_indices.front().is_implicitly_created = true;
     auto implicit_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, local_indices, getContext().context);
     EXPECT_TRUE(implicit_metadata.skip_indices.empty());
+
+    /// A joining replica with automatic indices disabled has no local counterpart. The exact
+    /// canonical pre-25.12 implicit definition must still be removed.
+    auto disabled_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(serialized, columns, {}, getContext().context);
+    EXPECT_TRUE(disabled_metadata.skip_indices.empty());
 }
 
 TEST(ReplicatedMergeTreeTableMetadataCompare, TTLSemanticsOutsideExpressionAreSignificant)

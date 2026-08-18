@@ -395,14 +395,28 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
     bool has_implicit = false;
     for (auto & index : parsed)
     {
-        /// The name is not sufficient to identify an implicit index: users may explicitly create
-        /// an index with the `auto_minmax_index_` prefix while the automatic-index settings are
-        /// disabled. The local metadata preserves the actual origin of every index, so only drop
-        /// a Keeper index when its local counterpart is marked implicit.
+        /// A local index with the same name preserves the actual origin, which is necessary
+        /// because users may explicitly create an index with the `auto_minmax_index_` prefix
+        /// while the automatic-index settings are disabled.
         if (local_indices.has(index.name) && local_indices.getByName(index.name).isImplicitlyCreated())
         {
             index.is_implicitly_created = true;
             has_implicit = true;
+        }
+        else if (!local_indices.has(index.name)
+            && index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+        {
+            const auto column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+            /// A joining replica may have automatic indices disabled, leaving it without a local
+            /// counterpart for an index written implicitly by a pre-25.12 replica. Recognize
+            /// only the exact canonical implicit definition; a local explicit declaration above
+            /// continues to take precedence over this compatibility path.
+            if (columns.has(column_name)
+                && sameAST(index.definition_ast, createImplicitMinMaxIndexAST(column_name)))
+            {
+                index.is_implicitly_created = true;
+                has_implicit = true;
+            }
         }
     }
 
