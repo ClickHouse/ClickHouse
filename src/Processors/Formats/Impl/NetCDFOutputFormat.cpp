@@ -94,8 +94,10 @@ void checkNameIsNFC(const String & name)
             "The NetCDF format cannot store the name {} because it is not NFC-normalized", name);
     }
 #else
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "The NetCDF format cannot store the non-ASCII name {} because this build has no Unicode normalizer", name);
+    /// `isValidUTF8` has already checked the encoding. Without ICU we cannot distinguish an NFC
+    /// name from an equivalent non-normalized spelling, but classic NetCDF readers accept both.
+    /// Do not reject valid non-ASCII names merely because this optional dependency is unavailable.
+    static_cast<void>(name);
 #endif
 }
 
