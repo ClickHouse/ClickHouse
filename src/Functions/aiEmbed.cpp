@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
 
+#include <base/scope_guard.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -28,8 +30,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event AIInputTokens;
-    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -39,15 +39,10 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -55,7 +50,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -68,12 +62,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_)
-    {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
-    }
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -132,11 +121,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -170,8 +156,17 @@ public:
             inputs.push_back(value);
         }
 
-        auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+        /// One text per row here, so the text counts are the row counts. Increment upon destruction,
+        /// to avoid underreporting on error.
+        FunctionBaseAI::EmbeddingResult embedding_result;
+        SCOPE_EXIT({
+            ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
+            ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
+        });
+
+        FunctionBaseAI::embedTexts(
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
+            timeouts, embedding_result);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -202,11 +197,6 @@ public:
         /// fill final empties (pre-filtered tail rows and any trailing skipped inputs)
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
-
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
-        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
-        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
@@ -249,12 +239,12 @@ requests a vector of the given size; otherwise the model's native size is return
         .arguments
         = {{"text", "Text to embed.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
         = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
            {"With explicit dimensions", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
-           {"Embed a column of texts", "SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
+           {"Embed a column of texts", "CREATE TABLE articles (title String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');\nSELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
 

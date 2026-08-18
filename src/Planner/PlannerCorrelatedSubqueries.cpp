@@ -33,6 +33,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -268,6 +269,18 @@ QueryPlan decorrelateQueryPlan(
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
+        /// Needed to simulate the Duplicate Eliminating Join. Runs with internal unbounded limits so
+        /// that a user's max_rows_in_distinct / distinct_overflow_mode can never truncate the domain.
+        {
+            SizeLimits distinct_limits(/*max_rows_=*/0, /*max_bytes_=*/0, OverflowMode::THROW);
+            rhs_plan.addStep(std::make_unique<DistinctStep>(
+                rhs_plan.getCurrentHeader(),
+                distinct_limits,
+                /*limit_hint_=*/0,
+                context.correlated_subquery.correlated_column_identifiers,
+                /*pre_distinct_=*/false));
+        }
+
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);
 
@@ -290,7 +303,7 @@ QueryPlan decorrelateQueryPlan(
             output_columns,
             std::unordered_map<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
-            JoinSettings(settings),
+            JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
         makeInternalDecorrelationJoinUnbounded(*decorrelated_join);
@@ -465,8 +478,7 @@ QueryPlan decorrelateQueryPlan(
             SortDescription{} /*group_by_sort_description_*/,
             aggeregating_step->shouldProduceResultsInBucketOrder(),
             aggeregating_step->usingMemoryBoundMerging(),
-            aggeregating_step->explicitSortingRequired(),
-            false /*enable_sharding_aggregator_*/
+            aggeregating_step->explicitSortingRequired()
         );
         result_step->setStepDescription(*aggeregating_step);
 
@@ -602,7 +614,7 @@ QueryPlan buildLogicalJoin(
         output_columns,
         std::unordered_map<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
-        JoinSettings(settings),
+        JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);

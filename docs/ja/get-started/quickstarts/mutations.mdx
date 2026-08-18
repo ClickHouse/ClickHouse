@@ -1,6 +1,7 @@
 ---
 slug: /guides/developer/mutations
 sidebarTitle: 'データの更新と削除'
+searchable: true
 keywords: ['UPDATE', 'DELETE', 'ミューテーション']
 title: 'ClickHouseデータの更新と削除'
 description: 'ClickHouseで更新および削除操作を実行する方法を説明します'
@@ -122,7 +123,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 論理削除に関する補足:
 
 * この機能は、`MergeTree` テーブルエンジンファミリーでのみ利用できます。
-* 論理削除はデフォルトで同期的に実行され、すべてのレプリカが削除を処理するまで待機します。この動作は、[`lightweight_deletes_sync` 設定](/ja/reference/settings/session-settings#lightweight_deletes_sync) で制御されます。
+* 論理削除はデフォルトで同期的に実行され、すべてのレプリカが削除を処理するまで待機します。この動作は、[`lightweight_deletes_sync` 設定](/ja/reference/settings/session-settings/lightweight#lightweight_deletes_sync) で制御されます。
 
 <div className="mt-8">
   <BackToQuickstarts />

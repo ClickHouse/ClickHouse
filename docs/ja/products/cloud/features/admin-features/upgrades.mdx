@@ -26,7 +26,7 @@ ClickHouse Cloud なら、パッチ適用やアップグレードを気にする
   ## バージョン互換性
 </div>
 
-サービスを作成すると、[`compatibility`](/ja/reference/settings/session-settings#compatibility) 設定には、そのサービスが初回プロビジョニングされた時点で ClickHouse Cloud が提供している最新の ClickHouse バージョンが設定されます。
+サービスを作成すると、[`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定には、そのサービスが初回プロビジョニングされた時点で ClickHouse Cloud が提供している最新の ClickHouse バージョンが設定されます。
 
 `compatibility` 設定を使用すると、以前のバージョンにおける設定のデフォルト値を利用できます。サービスが新しいバージョンにアップグレードされても、`compatibility` 設定で指定したバージョンは変わりません。つまり、サービスを最初に作成した時点で存在していた設定のデフォルト値は変わりません (すでにそれらのデフォルト値を上書きしている場合は、その値がアップグレード後も維持されます) 。
 

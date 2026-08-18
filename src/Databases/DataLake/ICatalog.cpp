@@ -1,5 +1,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -242,6 +243,7 @@ void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)
     if (!with_schema)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
 
+    DB::validateLakeSchemaColumnNames(schema_, "data lake catalog");
     schema = schema_;
 }
 
@@ -396,6 +398,11 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
+}
+
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
 
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const

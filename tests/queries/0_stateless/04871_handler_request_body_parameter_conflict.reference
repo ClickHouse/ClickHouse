@@ -1,0 +1,8 @@
+=== a handler combining input() with the _request_body parameter is rejected ===
+BAD_ARGUMENTS
+=== a handler whose only body use is _request_body is accepted and receives the raw body ===
+hello body
+=== ALTER HANDLER cannot swap its query to a conflicting one either ===
+BAD_ARGUMENTS
+=== a handler whose only body use is its own input() is accepted and receives the uploaded rows ===
+66
