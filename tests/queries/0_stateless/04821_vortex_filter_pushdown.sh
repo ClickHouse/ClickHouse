@@ -24,28 +24,43 @@ $CLICKHOUSE_LOCAL -q "
 # filter stopped reaching the Vortex scan, because ClickHouse reapplies WHERE.
 PUSHDOWN_DATA_FILE=$CUR_DIR/pushdown_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 $CLICKHOUSE_LOCAL -q "
-    SELECT number AS n, concat(toString(number), repeat('x', 512)) AS payload
+    SELECT
+        number AS n,
+        toString(number) AS s,
+        toFloat64(number) / 4 AS f,
+        concat(toString(number), repeat('x', 512)) AS payload
     FROM numbers(50000)
     FORMAT Vortex" > "$PUSHDOWN_DATA_FILE"
 
 get_read_bytes() {
     local push_down=$1
+    local predicate=$2
     $CLICKHOUSE_LOCAL -q "
         SELECT sum(length(payload))
         FROM file('$PUSHDOWN_DATA_FILE', 'Vortex')
-        WHERE n = 1
+        WHERE $predicate
         SETTINGS input_format_vortex_filter_push_down = $push_down
         FORMAT JSON" | jq -r '.statistics.bytes_read'
 }
 
-read_bytes_with_pushdown=$(get_read_bytes 1)
-read_bytes_without_pushdown=$(get_read_bytes 0)
-if [ "$read_bytes_with_pushdown" -lt "$read_bytes_without_pushdown" ]; then
-    echo "Pushdown reduces scan bytes: ok"
-else
-    echo "Pushdown did not reduce scan bytes: on=$read_bytes_with_pushdown off=$read_bytes_without_pushdown"
-    exit 1
-fi
+assert_scan_pushdown() {
+    local label=$1
+    local predicate=$2
+    local read_bytes_with_pushdown
+    local read_bytes_without_pushdown
+    read_bytes_with_pushdown=$(get_read_bytes 1 "$predicate")
+    read_bytes_without_pushdown=$(get_read_bytes 0 "$predicate")
+    if [ "$read_bytes_with_pushdown" -lt "$read_bytes_without_pushdown" ]; then
+        echo "$label: ok"
+    else
+        echo "$label did not reduce scan bytes: on=$read_bytes_with_pushdown off=$read_bytes_without_pushdown"
+        exit 1
+    fi
+}
+
+assert_scan_pushdown "Integer pushdown reduces scan bytes" "n = 1"
+assert_scan_pushdown "String pushdown reduces scan bytes" "s = '1'"
+assert_scan_pushdown "Float pushdown reduces scan bytes" "f = 0.25"
 
 # Runs the query twice: with the filter pushdown enabled and disabled. The two results must be
 # identical, so every case below prints its result twice.

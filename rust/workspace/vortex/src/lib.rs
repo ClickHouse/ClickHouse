@@ -20,7 +20,7 @@
 
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use arrow_array::cast::AsArray;
 use arrow_array::ffi::{from_ffi, to_ffi, FFI_ArrowArray, FFI_ArrowSchema};
@@ -60,6 +60,9 @@ pub struct VortexFFIReader {
     runtime: CurrentThreadRuntime,
     file: VortexFile,
     schema: SchemaRef,
+    /// Serializes scanner construction and iteration for this reader. The callback context is a
+    /// ClickHouse `ReadBuffer`, and therefore cannot be driven by two sibling scanners at once.
+    scanner_mutex: Arc<Mutex<()>>,
 }
 
 pub struct VortexFFIScanner {
@@ -67,6 +70,9 @@ pub struct VortexFFIScanner {
     /// The canonical Arrow schema of the projected columns.
     schema: SchemaRef,
     chunks: Box<dyn Iterator<Item = VortexResult<ArrayRef>>>,
+    /// Keeps the reader's callback context and current-thread runtime exclusive while this
+    /// scanner advances.
+    scanner_mutex: Arc<Mutex<()>>,
 }
 
 /// A node of a filter expression built through `vortex_ffi_expr_*`.
@@ -221,7 +227,13 @@ pub unsafe extern "C" fn vortex_ffi_reader_open(
                     .to_arrow_schema(file.dtype())
                     .map_err(|e| e.to_string())?,
             );
-            Ok(Box::into_raw(Box::new(VortexFFIReader { session, runtime, file, schema })))
+            Ok(Box::into_raw(Box::new(VortexFFIReader {
+                session,
+                runtime,
+                file,
+                schema,
+                scanner_mutex: Arc::new(Mutex::new(())),
+            })))
         })
     }
 }
@@ -266,6 +278,7 @@ pub unsafe extern "C" fn vortex_ffi_scanner_create(
     unsafe {
         ffi_wrap(error, std::ptr::null_mut(), || {
             let reader = &*reader;
+            let _scanner_guard = reader.scanner_mutex.lock().map_err(|e| e.to_string())?;
             let mut builder = reader.file.scan().map_err(|e| e.to_string())?;
 
             let schema = if columns.is_null() {
@@ -313,6 +326,7 @@ pub unsafe extern "C" fn vortex_ffi_scanner_create(
                 session: reader.session.clone(),
                 schema,
                 chunks: Box::new(chunks),
+                scanner_mutex: reader.scanner_mutex.clone(),
             })))
         })
     }
@@ -343,6 +357,7 @@ pub unsafe extern "C" fn vortex_ffi_scanner_next(
     unsafe {
         ffi_wrap(error, -1, || {
             let scanner = &mut *scanner;
+            let _scanner_guard = scanner.scanner_mutex.lock().map_err(|e| e.to_string())?;
             match scanner.chunks.next() {
                 None => Ok(0),
                 Some(chunk) => {
