@@ -178,6 +178,14 @@ class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMul
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+
+    void setRequiresFullWriteIdentity() { requires_full_write_identity = true; }
+    bool requiresFullWriteIdentity() const { return requires_full_write_identity; }
+
+private:
+    /// Multipart completion does not carry attributes set by CreateMultipartUpload. If any were
+    /// requested, an ETag comparison alone cannot prove that the object belongs to this write.
+    bool requires_full_write_identity = false;
 };
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;

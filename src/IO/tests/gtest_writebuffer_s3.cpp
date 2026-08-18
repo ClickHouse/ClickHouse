@@ -716,7 +716,9 @@ public:
         return *async_policy;
     }
 
-    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(String file_name = "file")
+    std::unique_ptr<WriteBufferFromS3> getWriteBuffer(
+        String file_name = "file",
+        std::optional<ObjectAttributes> object_metadata = std::nullopt)
     {
         S3::S3RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */true, /* validate_settings */false);
@@ -732,7 +734,7 @@ public:
                     DBMS_DEFAULT_BUFFER_SIZE,
                     request_settings,
                     nullptr,
-                    std::nullopt,
+                    std::move(object_metadata),
                     getAsyncPolicy().getScheduler());
     }
 
@@ -1037,6 +1039,28 @@ TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadForOwnObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["complete_multipart_upload_absorb_own_object"], "A");
     EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A matching ETag does not prove the create-time metadata was committed. The replay recovery
+/// must therefore remain fail-closed whenever the multipart upload has attributes outside its
+/// completed part list.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadata) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer(
+            "complete_multipart_upload_with_metadata",
+            ObjectAttributes{{"write-id", "new"}});
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
 }
 
 /// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier

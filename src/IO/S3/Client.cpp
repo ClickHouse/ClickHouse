@@ -596,7 +596,8 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    if (!outcome.IsSuccess()
+    if (!request.requiresFullWriteIdentity()
+        && !outcome.IsSuccess()
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
     {
         auto check_request = HeadObjectRequest()

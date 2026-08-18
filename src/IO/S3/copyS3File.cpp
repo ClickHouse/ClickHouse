@@ -194,6 +194,11 @@ namespace
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
 
+            if (object_metadata.has_value()
+                || !request_settings[S3RequestSetting::storage_class_name].value.empty()
+                || client_ptr->hasKMSHeaders())
+                request.setRequiresFullWriteIdentity();
+
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
