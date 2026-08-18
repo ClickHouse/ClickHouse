@@ -403,13 +403,21 @@ struct TimeWindowImpl<HOP>
             wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
             ToType wend_latest;
 
-            if (wstart > wend)
+            /// Subtracting a whole positive window must make the time strictly smaller: equality
+            /// means the span of the window wrapped around to a multiple of 2^32 seconds, which
+            /// would dodge the greater-than check.
+            if (wstart >= wend)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
 
             do
             {
                 wend_latest = wend;
                 wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
+
+                /// The subtraction of the hop wrapped around zero: no further iteration would ever
+                /// get below time_data[i], and the loop would spin forever.
+                if (wend > wend_latest)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
