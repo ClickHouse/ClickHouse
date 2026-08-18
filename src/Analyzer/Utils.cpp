@@ -44,7 +44,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ConstantValue.h>
+#include <Core/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -485,13 +485,15 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
         {
-            ASTStreamSettings ast_stream_settings;
+            auto ast_stream_settings = make_intrusive<ASTStreamSettings>();
+            ast_stream_settings->setSubscribeForUpdates(stream_settings->subscribe_for_updates);
+            ast_stream_settings->setUnordered(stream_settings->unordered);
             if (stream_settings->cursor)
-                ast_stream_settings.cursor = stream_settings->cursor->clone();
+                ast_stream_settings->setCursor(stream_settings->cursor->clone());
             if (stream_settings->watermark)
-                ast_stream_settings.watermark = stream_settings->watermark->clone();
+                ast_stream_settings->setWatermark(stream_settings->watermark->clone());
 
-            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->stream_settings = std::move(ast_stream_settings);
             result_table_expression->children.push_back(result_table_expression->stream_settings);
         }
     }
@@ -949,6 +951,13 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
+            return;
+        /// 'exists' is resolved outside FunctionFactory (via FunctionExists, a special correlated-subquery
+        /// function created by the rewrite_in_to_join path). Calling
+        /// FunctionFactory::instance().get("exists", ...) would throw UNKNOWN_FUNCTION.
+        /// The FunctionNode already carries the correct return type and implementation from the original
+        /// resolution, so no re-resolution is needed — same rationale as 'grouping' above.
+        if (name == "exists")
             return;
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
