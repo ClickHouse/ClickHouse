@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -95,7 +96,7 @@ void DistributionEnforcer::EnforcerEnumerator::addEnforcer(QueryPlanStepPtr step
     output_properties.distribution = required_properties.distribution;
     output_properties.sorting = std::move(output_sorting);
     auto enforcer_expr = makeEnforcerExpression(
-        expression, std::move(step), std::move(input_required), std::move(output_properties), EnforcerAxis::Distribution);
+        expression, std::move(step), std::move(input_required), std::move(output_properties), EnforcedProperty::Distribution);
 
     rule.addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
 }

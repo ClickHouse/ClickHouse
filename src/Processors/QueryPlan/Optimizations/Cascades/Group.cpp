@@ -70,8 +70,8 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     /// chain with no acyclic alternative, so an enforcer never suppresses or evicts a distinct base.
     auto enforcer_over_provides_for = [](const GroupExpressionPtr & enforcer_candidate, const GroupExpressionPtr & base_candidate)
     {
-        return enforcer_candidate->enforcer_axis != EnforcerAxis::None
-            && base_candidate->enforcer_axis == EnforcerAxis::None
+        return enforcer_candidate->enforced_property != EnforcedProperty::None
+            && base_candidate->enforced_property == EnforcedProperty::None
             && !(enforcer_candidate->properties == base_candidate->properties);
     };
 
@@ -145,14 +145,14 @@ ExpressionWithCost Group::selectInputImplementation(
         if (!required_properties.isSatisfiedBy(candidate->properties))
             return false;
 
-        if (input_is_self_referential && candidate->enforcer_axis != EnforcerAxis::None)
+        if (input_is_self_referential && candidate->enforced_property != EnforcedProperty::None)
         {
             /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
             if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
                 return false;
             /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
             /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
-            if (candidate->enforcer_axis == EnforcerAxis::Distribution
+            if (candidate->enforced_property == EnforcedProperty::Distribution
                 && required_properties.distribution.columns.empty()
                 && (!candidate->properties.distribution.columns.empty()
                     || !candidate->properties.distribution.hash_type_names.empty()))

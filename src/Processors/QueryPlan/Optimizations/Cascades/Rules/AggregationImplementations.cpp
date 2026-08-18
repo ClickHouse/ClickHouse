@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
@@ -158,7 +159,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 {
     DistributionDescription dist;
     dist.node_count = node_count;
-    addAlternative(std::make_shared<PartialAggregationStrategy>(), dist, dist);
+    addAlternative(strategySingleton<PartialAggregationStrategy>(), dist, dist);
 }
 
 /// Local - gather all input to one node, aggregate there.
@@ -166,7 +167,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 void AggregationImplementation::StrategyEnumerator::addLocalAggregation()
 {
     DistributionDescription single_node;    /// node_count=1 (default)
-    addAlternative(std::make_shared<LocalAggregationStrategy>(), single_node, single_node,
+    addAlternative(strategySingleton<LocalAggregationStrategy>(), single_node, single_node,
         fmt::format("Local {}", agg_step.getStepDescription()));
 }
 
@@ -186,7 +187,7 @@ void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t
     for (const auto & key : agg_step.getParams().keys)
         by_keys.columns.push_back({key});
 
-    addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_keys, by_keys,
+    addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_keys, by_keys,
         fmt::format("Shuffle {}", agg_step.getStepDescription()));
 }
 
@@ -204,7 +205,7 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
             by_single_key.node_count = candidate_node_count;
             by_single_key.columns.push_back({single_key});
 
-            addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
+            addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
                 fmt::format("Shuffle (by {}) {}", single_key, agg_step.getStepDescription()));
         }
     }

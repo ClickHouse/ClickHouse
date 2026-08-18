@@ -16,6 +16,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -44,9 +45,6 @@ static String dumpQueryPlanShort(const QueryPlan & query_plan)
     query_plan.explainPlan(out, {.estimates = true});
     return out.str();
 }
-
-/// Default task budget for one optimization; see the comment at the search loop.
-static constexpr size_t DEFAULT_TASK_LIMIT = 100000;
 
 static ContextPtr getQueryContextOrThrow()
 {
@@ -289,7 +287,7 @@ void CascadesOptimizer::optimize()
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Microsoft SQL Server's optimizer team describes this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
-    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, DEFAULT_TASK_LIMIT);
+    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, CascadesDefaults::DEFAULT_TASK_LIMIT);
     size_t executed_tasks_count = 0;
     for (; !tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
     {

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -67,7 +68,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
         std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings),
         input_required,
         std::move(output_properties),
-        EnforcerAxis::Sorting);
+        EnforcedProperty::Sorting);
 
     return addPhysicalToMemo(sort_expr, required_properties, memo);
 }

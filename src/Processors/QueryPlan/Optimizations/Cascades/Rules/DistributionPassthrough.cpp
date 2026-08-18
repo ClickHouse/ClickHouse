@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
