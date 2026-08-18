@@ -3147,6 +3147,26 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
+/// A filter over this column is defined by the query-wide part numbering which is not constant
+static bool filterDependsOnPartNumbering(const SelectQueryInfo & query_info)
+{
+    auto dag_has_input = [](const ActionsDAG & dag)
+    {
+        for (const auto * input : dag.getInputs())
+        {
+            if (input->result_name == "_part_starting_offset")
+                return true;
+        }
+        return false;
+    };
+
+    if (query_info.filter_actions_dag && dag_has_input(*query_info.filter_actions_dag))
+        return true;
+    if (query_info.prewhere_info && dag_has_input(query_info.prewhere_info->prewhere_actions))
+        return true;
+    return false;
+}
+
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
@@ -3357,6 +3377,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (table_has_unique_key)
         reader_settings.use_query_condition_cache = false;
 
+    const bool filter_depends_on_part_numbering = filterDependsOnPartNumbering(query_info_);
+    if (filter_depends_on_part_numbering)
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -3386,11 +3410,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        /// Consult/skip side of the query-condition cache. Disabled for UK reads (see above) and for a
-        /// read whose step turned the cache off (`allow_query_condition_cache`): that flag means this
-        /// read neither consults nor populates the cache, so it must also not skip granules based on
-        /// entries written by other queries.
-        if (!table_has_unique_key && allow_query_condition_cache_)
+        /// Consult/skip side of the query-condition cache.
+        ///
+        /// Disabled for:
+        /// - Unique key reads (see above)
+        /// - Filtering by _part_starting_offset
+        /// - And for a read whose step turned the cache off (`allow_query_condition_cache`),
+        ///   that flag means this read neither consults nor populates the cache, so it must also not
+        ///   skip granules based on entries written by other queries.
+        if (!table_has_unique_key && !filter_depends_on_part_numbering && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
@@ -4751,6 +4779,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
     /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
     if (result.sampling.use_sampling)
+        reader_settings.use_query_condition_cache = false;
+
+    if (filterDependsOnPartNumbering(query_info))
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
