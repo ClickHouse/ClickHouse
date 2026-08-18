@@ -18,7 +18,7 @@ SET dialect='mongo';
 db.wrapper_parity.insertOne({"id": 1, "events": [{"name": "start", "when": {"$date": {"$numberLong": "0"}}}]});
 db.wrapper_parity.insertOne({"id": 2, "events": [{"name": "legacy", "when": {"$date": 1546300800000}}]});
 db.wrapper_parity.insertOne({"id": 3, "events": [{"name": "id", "ref": {"$oid": "5f2a1b3c4d5e6f7a8b9c0d1e"}, "price": {"$numberDecimal": "1.50"}}]});
-db.wrapper_parity.updateMany({"id": 1}, {"$push": {"events": {"name": "stop", "price": {"$numberDecimal": "2.50"}}}}});
+db.wrapper_parity.updateMany({"id": 1}, {"$push": {"events": {"name": "stop", "price": {"$numberDecimal": "2.50"}}}});
 
 SET dialect='clickhouse';
 
