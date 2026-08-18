@@ -195,3 +195,15 @@ ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用
 请注意，`_raw_message` 列仅建议用于 JSON 数据。
 对于只需要 JSON 字符串的使用场景 (例如使用 ClickHouse [`JsonExtract*`](/zh/reference/functions/regular-functions/json-functions#jsonextract-functions) 函数来
 填充下游 materialized view) ，删除所有“非虚拟”列可能会提升 ClickPipes 性能。
+
+<div id="structured-message-keys">
+  ### 结构化消息键
+</div>
+
+将 `_key` 映射到 `String` 列会存储原始 Kafka 消息键。此映射会跳过键解码和 schema 查找。要从结构化键中提取字段，请映射以 `_key.` 开头的源字段。例如，对于 JSON 键 `{"customer":{"id":42}}`，可将 `_key.customer.id` 映射到 `customer_id` 等目标端列。
+
+对于 `_key.*` 映射，或将 `_key` 直接映射到 `String` 以外类型的情况，ClickPipes 会先检查该键是否使用配置的 Schema Registry 编码。如果未使用，ClickPipes 会检查该键是否为 JSON 对象。使用 registry 编码的键必须与记录值使用相同的格式和 registry 家族，但可以使用不同的 schema ID。键的 schema 变更会自动检测。
+
+启用解码后，原始键、JSON 标量或数组以及格式错误的 JSON 都不会填充嵌套键字段；相应的目标端列会使用该类型的默认值。如果 ClickPipes 识别出使用 registry 编码的键，但无法获取或应用其 schema，则会将 Kafka 记录写入 ClickPipes error table。
+
+Avro 键还可以使用非记录根 schema，例如基本类型、数组、map 或 fixed 类型。要解码此类键，请将 `_key` 直接映射到 `String` 以外的兼容目标类型。非记录 schema 无法填充嵌套键字段。

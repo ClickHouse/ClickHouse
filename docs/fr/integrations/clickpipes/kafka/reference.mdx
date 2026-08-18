@@ -195,3 +195,15 @@ Les colonnes virtuelles suivantes sont prises en charge pour les sources de donn
 Notez que la colonne `_raw_message` n’est recommandée que pour les données JSON.
 Pour les cas d’usage où seule la chaîne JSON est requise (par exemple, lors de l’utilisation des fonctions ClickHouse [`JsonExtract*`](/fr/reference/functions/regular-functions/json-functions#jsonextract-functions) pour
 alimenter une vue matérialisée en aval), la suppression de toutes les colonnes « non virtuelles » peut améliorer les performances de ClickPipes.
+
+<div id="structured-message-keys">
+  ### Clés de messages structurées
+</div>
+
+La mise en correspondance de `_key` vers une colonne `String` stocke la clé du message Kafka d’origine. Cette mise en correspondance contourne le décodage de la clé et la recherche de schéma. Pour extraire des champs d’une clé structurée, mettez les champs source commençant par `_key.` en correspondance. Par exemple, pour la clé JSON `{"customer":{"id":42}}`, mettez `_key.customer.id` en correspondance avec une colonne de destination telle que `customer_id`.
+
+Pour les mises en correspondance `_key.*` ou une mise en correspondance directe de `_key` vers un type autre que `String`, ClickPipes vérifie d’abord si la clé a été encodée à l’aide du registre de schémas configuré. Si ce n’est pas le cas, ClickPipes vérifie si la clé est un objet JSON. Une clé encodée à l’aide d’un registre doit utiliser le même format et la même famille de registres que la valeur de l’enregistrement, mais peut utiliser un ID de schéma différent. Les modifications du schéma de la clé sont détectées automatiquement.
+
+Lorsque le décodage est activé, les clés brutes, les scalaires ou tableaux JSON et les JSON mal formés ne renseignent pas les champs de clé imbriqués ; leurs colonnes de destination reçoivent les valeurs par défaut de leur type. Si ClickPipes reconnaît une clé encodée à l’aide d’un registre, mais ne peut pas récupérer ou appliquer son schéma, il écrit l’enregistrement Kafka dans la table d’erreurs de ClickPipes.
+
+Une clé Avro peut également avoir un schéma racine autre qu’un enregistrement, tel qu’un type primitif, un tableau, une map ou un type fixe. Pour la décoder, mettez `_key` directement en correspondance avec un type de destination compatible autre que `String`. Les schémas qui ne sont pas des enregistrements ne peuvent pas renseigner les champs de clé imbriqués.

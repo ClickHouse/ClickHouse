@@ -195,3 +195,15 @@ Las siguientes columnas virtuales son compatibles con las fuentes de datos de st
 Ten en cuenta que la columna `_raw_message` solo se recomienda para datos JSON.
 En los casos de uso en los que solo se necesita la cadena JSON (por ejemplo, al usar las funciones [`JsonExtract*`](/es/reference/functions/regular-functions/json-functions#jsonextract-functions) de ClickHouse para
 poblar una vista materializada de destino), eliminar todas las columnas &quot;no virtuales&quot; puede mejorar el rendimiento de ClickPipes.
+
+<div id="structured-message-keys">
+  ### Claves de mensajes estructurados
+</div>
+
+La asignación de `_key` a una columna `String` almacena la clave original del mensaje de Kafka. Esta asignación omite la decodificación de la clave y la consulta del esquema. Para extraer campos de una clave estructurada, asigne campos de origen que comiencen por `_key.`. Por ejemplo, para la clave JSON `{"customer":{"id":42}}`, asigne `_key.customer.id` a una columna de destino como `customer_id`.
+
+Para las asignaciones `_key.*` o una asignación directa de `_key` a un tipo distinto de `String`, ClickPipes comprueba primero si la clave se codificó mediante el registro de esquemas configurado. Si no es así, ClickPipes comprueba si la clave es un objeto JSON. Una clave codificada mediante un registro debe usar el mismo formato y la misma familia de registros que el valor del registro, aunque puede usar un ID de esquema diferente. Los cambios en el esquema de la clave se detectan automáticamente.
+
+Cuando la decodificación está habilitada, las claves sin procesar, los escalares o arrays JSON y los JSON malformados no rellenan los campos de clave anidados; sus columnas de destino reciben los valores predeterminados del tipo. Si ClickPipes reconoce una clave codificada mediante un registro, pero no puede recuperar o aplicar su esquema, escribe el registro de Kafka en la tabla de errores de ClickPipes.
+
+Una clave Avro también puede tener un esquema raíz que no sea de registro, como un tipo primitivo, array, map o fijo. Para decodificarla, asigne `_key` directamente a un tipo de destino compatible distinto de `String`. Los esquemas que no son de registro no pueden rellenar campos de clave anidados.

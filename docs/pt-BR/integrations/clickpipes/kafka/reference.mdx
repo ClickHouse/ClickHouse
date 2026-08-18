@@ -195,3 +195,15 @@ As colunas virtuais a seguir são compatíveis com fontes de dados de streaming 
 Observe que a coluna `_raw_message` é recomendada apenas para dados JSON.
 Para casos de uso em que apenas a string JSON é necessária (como ao usar funções [`JsonExtract*`](/pt-BR/reference/functions/regular-functions/json-functions#jsonextract-functions) do ClickHouse para
 alimentar uma visão materializada downstream), remover todas as colunas &quot;não virtuais&quot; pode melhorar o desempenho do ClickPipes.
+
+<div id="structured-message-keys">
+  ### Chaves de mensagens estruturadas
+</div>
+
+Mapear `_key` para uma coluna `String` armazena a chave original da mensagem do Kafka. Esse mapeamento ignora a decodificação da chave e a consulta ao esquema. Para extrair campos de uma chave estruturada, mapeie campos de origem que começam com `_key.`. Por exemplo, para a chave JSON `{"customer":{"id":42}}`, mapeie `_key.customer.id` para uma coluna de destino, como `customer_id`.
+
+Para mapeamentos `_key.*` ou um mapeamento direto de `_key` para um tipo diferente de `String`, o ClickPipes primeiro verifica se a chave foi codificada usando o esquema registry configurado. Caso contrário, o ClickPipes verifica se a chave é um objeto JSON. Uma chave codificada pelo registry deve usar o mesmo formato e a mesma família de registry que o valor do registro, mas pode usar um ID de esquema diferente. Alterações no esquema da chave são detectadas automaticamente.
+
+Quando a decodificação está habilitada, chaves brutas, escalares ou arrays JSON e JSON malformado não preenchem campos de chave aninhados; as respectivas colunas de destino recebem os valores padrão do tipo. Se o ClickPipes reconhecer uma chave codificada pelo registry, mas não conseguir recuperar ou aplicar seu esquema, ele grava o registro do Kafka na tabela de erro do ClickPipes.
+
+Uma chave Avro também pode ter um esquema raiz que não seja de registro, como um tipo primitivo, array, map ou fixo. Para decodificá-la, mapeie `_key` diretamente para um tipo de destino compatível diferente de `String`. Esquemas que não são de registro não podem preencher campos de chave aninhados.
