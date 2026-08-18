@@ -75,7 +75,7 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
-    void createTable(
+    bool createTable(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,

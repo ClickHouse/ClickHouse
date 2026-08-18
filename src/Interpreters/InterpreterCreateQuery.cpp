@@ -2207,7 +2207,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
+    bool created;
+    try
+    {
+        created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
+    }
+    catch (const Exception & e)
+    {
+        /// A `DataLakeCatalog` is shared with other clients and nodes, so the existence check inside
+        /// `doCreateTable` can be stale by the time the create reaches the catalog. Both create paths
+        /// (engine-less and explicit `ENGINE = Iceberg*`) report that lost race as `TABLE_ALREADY_EXISTS`
+        /// and leave nothing behind, so `IF NOT EXISTS` means here what it means for the local check: the
+        /// query created nothing, and `CREATE TABLE IF NOT EXISTS ... AS SELECT` must not fill the table
+        /// the winner of the race created.
+        if (!create.if_not_exists || e.code() != ErrorCodes::TABLE_ALREADY_EXISTS || !database || !database->isDatalakeCatalog())
+            throw;
+        created = false;
+    }
 
     if (!created)   /// Table already exists
     {

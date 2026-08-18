@@ -649,7 +649,7 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
 }
 
-void GlueCatalog::createTable(
+bool GlueCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
@@ -692,7 +692,7 @@ void GlueCatalog::createTable(
             /// The write is guarded by `If-None-Match: *`, so S3 answers `PreconditionFailed` once the
             /// initial metadata file is there - someone else created this table first.
             if (if_not_exists && e.code() == DB::ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                return;
+                return false;
             throw;
         }
 
@@ -734,10 +734,13 @@ void GlueCatalog::createTable(
 
         auto response = glue_client->CreateTable(request);
 
-        /// `AlreadyExistsException` means someone else registered the table first.
-        if (!response.IsSuccess()
-            && !(if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS))
+        if (!response.IsSuccess())
+        {
+            /// `AlreadyExistsException` means someone else registered the table first.
+            if (if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS)
+                return false;
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+        }
     }
     catch (...)
     {
@@ -750,6 +753,8 @@ void GlueCatalog::createTable(
         }
         throw;
     }
+
+    return true;
 }
 
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const

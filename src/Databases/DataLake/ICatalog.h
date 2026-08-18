@@ -257,7 +257,12 @@ public:
     /// only meaningful for catalogs that write the initial metadata file themselves (i.e. when
     /// `new_metadata_path` is empty): they must name the file `v1.<ext>.metadata.json` and compress its
     /// contents accordingly, exactly like `DB::Iceberg::IcebergMetadata::createInitial` does.
-    virtual void createTable(
+    /// Returns `true` when this call created the table. Returns `false` only when `if_not_exists` is set
+    /// and the catalog answered that the table is already there - the catalog is shared, so another client
+    /// can win the name race after the caller checked that the table does not exist. Callers must not
+    /// report that as a creation: `CREATE TABLE IF NOT EXISTS ... AS SELECT` must not fill a table the
+    /// winner of the race created.
+    virtual bool createTable(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,

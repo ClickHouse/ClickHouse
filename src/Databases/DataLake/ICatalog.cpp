@@ -414,7 +414,7 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
     return {};
 }
 
-void ICatalog::createTable(
+bool ICatalog::createTable(
     const String & /*namespace_name*/,
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,

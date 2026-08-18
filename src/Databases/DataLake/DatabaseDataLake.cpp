@@ -141,6 +141,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace FailPoints
@@ -1185,7 +1186,18 @@ void DatabaseDataLake::createTable(
         namespace_location.resize(namespace_location.size() - table_suffix.size());
     catalog->createNamespaceIfNotExists(namespace_name, namespace_location);
 
-    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method, create.if_not_exists);
+    const bool created = catalog->createTable(
+        namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method, create.if_not_exists);
+    if (!created)
+    {
+        /// `IF NOT EXISTS`, and the catalog answered that the table is already there: it is shared, so
+        /// another client can create the same name between the existence check in `doCreateTable` and
+        /// this call. Nothing was created here, and the caller must be able to tell - report it exactly
+        /// like the local existence check does, so that `CREATE TABLE IF NOT EXISTS ... AS SELECT` does
+        /// not insert the selected rows into the table the other client created.
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "Table {}.{} already exists in the catalog", namespace_name, table_name);
+    }
 
     LOG_INFO(log, "Created table {}.{}", namespace_name, table_name);
 }

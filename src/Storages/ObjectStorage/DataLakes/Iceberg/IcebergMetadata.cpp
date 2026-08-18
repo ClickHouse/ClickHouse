@@ -887,7 +887,16 @@ void IcebergMetadata::createInitial(
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
             + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists);
+        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
+        {
+            /// `IF NOT EXISTS`, and another client registered this table in the shared catalog first. The
+            /// metadata file written above belongs to no table, so leave `success` false and let the scope
+            /// guard remove it. Reporting the lost race as `TABLE_ALREADY_EXISTS` also lets
+            /// `InterpreterCreateQuery` tell that nothing was created, so `CREATE TABLE IF NOT EXISTS ...
+            /// AS SELECT` does not fill the table the other client created.
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists in the catalog", namespace_name, table_name);
+        }
     }
 
     success = true;
