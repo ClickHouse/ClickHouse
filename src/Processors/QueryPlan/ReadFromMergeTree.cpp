@@ -2166,7 +2166,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-/// Names of the physical columns that a merge of a Summing table aggregates.
+/// Names of the columns that a merge of a Summing table aggregates.
 /// The merge removes a row when the values in all of these columns are zero after summation,
 /// so a FINAL read has to fetch every one of them even when the query itself needs only
 /// a subset. Otherwise `SummingSortedTransform` would decide the removal by the visible
@@ -2183,10 +2183,36 @@ static NameSet getColumnsAggregatedForSummingFinal(
 
     const auto & columns_to_sum = merging_params.columns_to_sum;
 
-    NameSet aggregated_columns;
-    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+    /// `SummingSortedAlgorithm` flattens tuple columns before it chooses the columns to
+    /// aggregate. Do the same here: adding a whole Tuple would make FINAL read unrelated
+    /// leaves (for example, a String sibling of a numeric tuple element) that the merge
+    /// only copies and never consults when it decides whether to remove a row.
+    auto header = metadata_snapshot->getSampleBlock();
+    std::vector<Strings> flatten_ancestors;
+    if (merging_params.allow_tuple_element_aggregation)
+        header = Nested::flattenTupleRecursive(header, &flatten_ancestors);
+    else
+        flatten_ancestors.resize(header.columns());
+
+    const auto is_column_or_ancestor_in = [&header, &flatten_ancestors](size_t index, const Names & names)
     {
+        const auto & column_name = header.safeGetByPosition(index).name;
+        if (std::ranges::find(names, column_name) != names.end())
+            return true;
+        return std::ranges::any_of(flatten_ancestors[index], [&names](const auto & ancestor)
+        {
+            return std::ranges::find(names, ancestor) != names.end();
+        });
+    };
+
+    NameSet aggregated_columns;
+    for (size_t index = 0; index < header.columns(); ++index)
+    {
+        const auto & column = header.safeGetByPosition(index);
         if (not_aggregated.contains(column.name))
+            continue;
+        if (is_column_or_ancestor_in(index, metadata_snapshot->getColumnsRequiredForSortingKey())
+            || is_column_or_ancestor_in(index, metadata_snapshot->getColumnsRequiredForPartitionKey()))
             continue;
         if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
             continue;
@@ -2195,22 +2221,28 @@ static NameSet getColumnsAggregatedForSummingFinal(
         {
             /// An entry of `columns_to_sum` may name the column itself, the Nested table the column
             /// belongs to, or (with allow_tuple_element_aggregation) an element of a Tuple column.
-            const auto nested_table_name = Nested::extractTableName(column.name);
+            const auto nested_table_name = merging_params.allow_tuple_element_aggregation
+                ? Nested::splitName(column.name, /*reverse=*/true).first
+                : Nested::extractTableName(column.name);
             /// A real top-level Nested `...Map` column is always handled by `sumMap`, even when
             /// `columns_to_sum` is explicit. This is the same special case as in
             /// `SummingSortedAlgorithm::defineColumns`.
-            if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map"))
+            const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
+                || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
+            if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map")
+                && is_real_tuple_map
+                && (!merging_params.allow_tuple_element_aggregation || is_column_or_ancestor_in(index, columns_to_sum)))
             {
                 aggregated_columns.insert(column.name);
                 continue;
             }
-            for (const auto & name : columns_to_sum)
+
+            const bool is_simple_aggregate_function
+                = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
+            if ((column.type->isSummable() || WhichDataType(column.type).isAggregateFunction() || is_simple_aggregate_function)
+                && is_column_or_ancestor_in(index, columns_to_sum))
             {
-                if (name == column.name || name == nested_table_name || name.starts_with(column.name + "."))
-                {
-                    aggregated_columns.insert(column.name);
-                    break;
-                }
+                aggregated_columns.insert(column.name);
             }
             continue;
         }
@@ -2222,12 +2254,13 @@ static NameSet getColumnsAggregatedForSummingFinal(
         if (!aggregated && WhichDataType(column.type).isArray())
         {
             /// Arrays of a Nested table whose name ends with "Map" are merged with sumMap.
-            const auto nested_table_name = Nested::extractTableName(column.name);
-            aggregated = nested_table_name != column.name && endsWith(nested_table_name, "Map");
+            const auto nested_table_name = merging_params.allow_tuple_element_aggregation
+                ? Nested::splitName(column.name, /*reverse=*/true).first
+                : Nested::extractTableName(column.name);
+            const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
+                || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
+            aggregated = nested_table_name != column.name && endsWith(nested_table_name, "Map") && is_real_tuple_map;
         }
-        if (!aggregated && merging_params.allow_tuple_element_aggregation)
-            aggregated = WhichDataType(column.type).isTuple();
-
         if (aggregated)
             aggregated_columns.insert(column.name);
     }
@@ -4164,9 +4197,12 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
             const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
-            /// Preserve physical-column order. It matters for `Nested ...Map`: `sumMap` receives
-            /// its key and value arrays as a group, and iterating a `NameSet` would scramble them.
-            for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+            /// Preserve merge-header order. It matters for `Nested ...Map`: `sumMap` receives
+            /// its key and value arrays as a group, and tuple leaves are in flattening order.
+            auto header = storage_snapshot->metadata->getSampleBlock();
+            if (data.merging_params.allow_tuple_element_aggregation)
+                header = Nested::flattenTupleRecursive(header);
+            for (const auto & column : header)
             {
                 if (aggregated_columns.contains(column.name) && names.emplace(column.name).second)
                     column_names_to_read.push_back(column.name);
