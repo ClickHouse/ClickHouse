@@ -37,8 +37,9 @@ EXTS = (".mdx", ".md", ".jsx", ".tsx", ".js")
 # a repo-relative doc path, so it is out of scope for the locale check.
 SKIP_PREFIXES = ("/images/", "/assets/", "/_site/", "/.well-known/", "/docs/")
 SKIP_EXACT = {"/docs", "/"}
-# `href: "/x"`, `href="/x"`, `href={'/x'}`, `to: "/x"`, ...
-HREF = re.compile(r"""\b(?:href|to)\s*[:=]\s*\{?\s*(['"`])(/[^'"`\s]+)\1""")
+# `href: "/x"`, `href="/x"`, `href={'/x'}`, `to: "/x"`, ...; a `$` belongs
+# to a template literal handled by `TEMPLATE`, not a static href.
+HREF = re.compile(r"""\b(?:href|to)\s*[:=]\s*\{?\s*(['"`])(/[^'"`\s$]+)\1""")
 # A template literal whose static prefix is a doc path, e.g.
 # `` `/get-started/quickstarts/${f.id}` `` -- the href fallbacks in
 # QuickStartsGrid/KBExplorer. lychee and the static HREF pattern both miss these,
