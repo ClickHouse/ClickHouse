@@ -10,4 +10,8 @@ nested JSON nullable null	[1]
 nested JSON array size	[2]
 array JSON variant subcolumn	[2]
 map tuple values descendant	[2]
-Granules: 0/2
+path equals	[1,2]
+path in	[1,2]
+descendant equals	[1,2]
+descendant in	[1,2]
+Granules: 0/3
