@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -35,11 +36,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Blocks in the cache are accounted in the memory tracker of the query, and the cache is only
+/// an optimization. Therefore it may use only this fraction of the memory limit of the query.
+static constexpr UInt64 PATCH_RANGES_CACHE_MEMORY_LIMIT_DIVISOR = 4;
+
 static PatchRangesCachePtr createPatchRangesCache(const ContextPtr & context)
 {
-    size_t max_bytes = context->getSettingsRef()[Setting::apply_patch_parts_ranges_cache_max_bytes];
+    UInt64 max_bytes = context->getSettingsRef()[Setting::apply_patch_parts_ranges_cache_max_bytes];
+
+    if (auto memory_limit = getCurrentQueryHardLimit())
+        max_bytes = std::min(max_bytes, *memory_limit / PATCH_RANGES_CACHE_MEMORY_LIMIT_DIVISOR);
+
     if (max_bytes == 0)
         return nullptr;
+
     return std::make_shared<PatchRangesCache>(max_bytes);
 }
 

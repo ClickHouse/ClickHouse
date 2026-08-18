@@ -19,6 +19,7 @@ OPTIMIZE TABLE t_lwu_memory PARTITION ID 'patch-0b8180d2b2c708974ce0eb17c07c1a0c
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_memory' AND active = 1;
 -- The limit is coupled to the row count: applying the patch streams in ~55 MiB, while buffering the
 -- whole patch part (~90 MiB uncompressed at 2000000 rows) must exceed it. Rescale both together.
+-- It also checks that the cache of ranges of patch parts fits in a part of the memory limit of the query.
 SELECT sum(id), sum(toUInt64(value)) FROM t_lwu_memory SETTINGS max_memory_usage = '100M', max_threads = 4;
 
 DROP TABLE t_lwu_memory SYNC;
