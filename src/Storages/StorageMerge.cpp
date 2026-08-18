@@ -908,7 +908,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     size_t total_streams = 0;
     for (const auto & table : selected_tables)
     {
-        const size_t child_streams = std::get<1>(table)->getMaxReadStreams(streams_per_table);
+        const size_t child_streams = std::get<1>(table)->getMaxReadStreams(streams_per_table, context);
         if (child_streams > max_streams_for_merge_read - total_streams)
             throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                 "Too many streams for a `Merge` table read (the maximum is {}). "
@@ -997,9 +997,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             remaining_streams -= current_streams;
             current_streams = std::max(1uz, current_streams);
 
-            /// `StorageFile` reports its path-based bound above. Its optional output resize would
-            /// otherwise recreate the raw stream request, so preserve the reported bound here.
-            if (storage->getMaxReadStreams(current_streams) < current_streams)
+            /// Storages with a tighter source bound may otherwise recreate the raw stream request
+            /// with their optional output resize, so preserve the reported bound here.
+            if (storage->getMaxReadStreams(current_streams, context) < current_streams)
                 modified_context->setSetting("parallelize_output_from_storages", Field(0));
 
             bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;

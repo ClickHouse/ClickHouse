@@ -961,7 +961,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
-size_t StorageLog::getMaxReadStreams(size_t num_streams)
+size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr)
 {
     if (!use_marks_file)
         return 1;

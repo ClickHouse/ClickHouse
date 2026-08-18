@@ -1271,7 +1271,7 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
-size_t StorageFile::getMaxReadStreams(size_t num_streams)
+size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 {
     const size_t files_to_read = archive_info ? archive_info->paths_to_archives.size() : paths.size();
     return std::min(num_streams, std::max(1uz, files_to_read));
