@@ -598,7 +598,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
   ## Дополнительные порты
 </div>
 
-Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
+Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его публичном headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001`/`9002` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Порты `interserver` и management дополнительно открыты через внутренние Service каждой реплики, чтобы реплики и оператор могли обмениваться данными до того, как реплика станет готовой. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +611,8 @@ spec:
       port: 9100
 ```
 
-Оператор добавляет эти порты в `containerPorts` пода и в headless Service. Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+Оператор добавляет эти порты в `containerPorts` пода и в публичный headless Service.
+Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` открывает порты только на стороне Kubernetes. Он **не** настраивает сервер ClickHouse на прослушивание этих портов. Также нужно включить соответствующий протокол в `spec.settings.extraConfig.protocols`. Иначе порт будет открыт на Service, но внутри пода на нём ничего не будет отвечать.
@@ -978,6 +979,12 @@ spec:
 ```
 
 Когда эта настройка включена, оператор синхронизирует таблицы Replicated и интеграционные таблицы на новые реплики.
+
+Каждый под реплики несёт readiness gate `clickhouse.com/ReplicaInitialized`, поэтому новая реплика публикуется через публичный headless Service только после того, как оператор завершит её инициализацию: база данных `default` переводится на движок Replicated и синхронизируется схема. До этого момента оператор и другие реплики обращаются к ней через её внутренний Service. При `enableDatabaseSync: false` оператор помечает реплики инициализированными сразу, поэтому готовность определяется только пробами контейнера.
+
+Оператор никогда не удаляет заполненную non-Replicated базу данных `default`. Такая реплика всё равно начинает обслуживать клиентский трафик после подготовки схемы, но кластер сообщает `SchemaInSync=False` с причиной `DefaultDatabaseNotReplicated`, пока вы самостоятельно не решите вопрос с этой базой.
+
+Прежде чем удалить реплику при уменьшении масштаба, оператор сначала снимает с неё клиентский трафик, ждёт, пока она перестанет публиковаться, реплицирует её оставшиеся данные на выжившие реплики и только затем удаляет её.
 
 <div id="server-logging">
   ### Логирование сервера

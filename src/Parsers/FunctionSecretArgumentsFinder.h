@@ -105,9 +105,16 @@ protected:
     static constexpr std::string_view s3_secret_keys[]
         = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
+    /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
+    /// rather than as a path to it. They are secret and have to be hidden the same way a password is.
+    static constexpr std::string_view tls_credentials_secret_keys[]
+        = {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
+    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
+    /// before the overrides are validated, so the old spelling has to stay masked.
     static constexpr std::string_view nats_secret_keys[]
         = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials"};
 
@@ -152,6 +159,7 @@ protected:
 
     void findOrdinaryFunctionSecretArguments();
     void findMySQLFunctionSecretArguments();
+    void findTLSCredentialsSecretArguments(size_t start);
     void findMongoDBSecretArguments();
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
@@ -191,6 +199,7 @@ protected:
     void findAzureBlobStorageTableEngineSecretArguments();
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
+    void findBigQuerySecretArguments();
     void findNATSTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
