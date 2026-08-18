@@ -1,0 +1,9 @@
+ascending	1	1
+descending	1	1
+ascending limit	[0,1,2,3,4]
+descending limit	[999999,999998,999997,999996,999995]
+filtered	1	1
+two replicas	1	1
+no local plan	1	1
+small segments	1	1
+small segments descending	1	1

@@ -12,6 +12,12 @@ namespace DB
 class UncompressedCache;
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
 
+/// Picks the size (in granules) of the mark segments the parallel replicas coordinator distributes
+/// between replicas by consistent hash. Shared by both parallel replicas pools so that the same
+/// table is always cut into the same segments no matter which coordination mode a query uses.
+size_t chooseParallelReplicasMarkSegmentSize(
+    LoggerPtr log, size_t mark_segment_size, size_t min_marks_per_task, size_t threads, size_t sum_marks, size_t number_of_replicas);
+
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:

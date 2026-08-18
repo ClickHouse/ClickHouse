@@ -1,5 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
 namespace ProfileEvents
 {
 extern const Event ParallelReplicasReadMarks;
@@ -7,6 +10,11 @@ extern const Event ParallelReplicasReadMarks;
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+}
 
 namespace ErrorCodes
 {
@@ -60,6 +68,17 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
+
+    /// The same segmentation the `Default` coordination mode uses, so that a part is always cut
+    /// into the same segments and every segment is hashed onto the same replica regardless of the
+    /// mode a particular query happens to read in.
+    mark_segment_size = chooseParallelReplicasMarkSegmentSize(
+        log,
+        context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
+        min_marks_per_task,
+        pool_settings.threads,
+        pool_settings.sum_marks,
+        extension.getTotalNodesCount());
 
     for (const auto & part : parts_ranges)
     {

@@ -36,6 +36,7 @@ public:
 
     CoordinationMode getCoordinationMode() const { return mode; }
     size_t getMinMarksPerRequest() const { return min_marks_per_request; }
+    size_t getMarkSegmentSize() const { return mark_segment_size; }
 
 private:
     /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
@@ -59,6 +60,7 @@ private:
 
     size_t min_marks_per_task{0};
     size_t min_marks_per_request{0};
+    size_t mark_segment_size{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;

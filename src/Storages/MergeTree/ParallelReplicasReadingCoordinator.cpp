@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <algorithm>
+#include <deque>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <set>
 #include <string>
@@ -33,6 +35,30 @@ namespace
 size_t roundDownToMultiple(size_t num, size_t multiple)
 {
     return (num / multiple) * multiple;
+}
+
+enum class ScanMode : uint8_t
+{
+    /// Main working set for the replica
+    TakeWhatsMineByHash,
+    /// We need to steal to optimize tail latency, let's do it by hash nevertheless
+    TakeWhatsMineForStealing,
+    /// All bets are off, we need to steal "for correctness" - to not leave any segments unread
+    TakeEverythingAvailable
+};
+
+/// The placement rule every coordinator obeys: a part is cut into segments of `mark_segment_size`
+/// granules starting from the 0-th one, and the segment always belongs to the replica this hash
+/// points at. It depends on nothing but the part name and the position inside the part, so the
+/// same segment lands on the same replica across queries - that is what makes replicas hit their
+/// own caches instead of pulling the same data everywhere.
+size_t computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode, size_t replicas_count)
+{
+    auto hash = SipHash();
+    hash.update(part_name);
+    hash.update(segment_begin);
+    hash.update(scan_mode);
+    return ConsistentHashing(hash.get64(), replicas_count);
 }
 
 size_t
@@ -362,16 +388,6 @@ private:
     void initializeReadingState(InitialAllRangesAnnouncement announcement);
 
     void updateQueryProgress();
-
-    enum class ScanMode : uint8_t
-    {
-        /// Main working set for the replica
-        TakeWhatsMineByHash,
-        /// We need to steal to optimize tail latency, let's do it by hash nevertheless
-        TakeWhatsMineForStealing,
-        /// All bets are off, we need to steal "for correctness" - to not leave any segments unread
-        TakeEverythingAvailable
-    };
 
     void selectPartsAndRanges(
         size_t replica_num,
@@ -842,11 +858,7 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const RangesInDataPartD
 size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const
 {
     chassert(segment_begin % mark_segment_size == 0);
-    auto hash = SipHash();
-    hash.update(part_name);
-    hash.update(segment_begin);
-    hash.update(scan_mode);
-    return ConsistentHashing(hash.get64(), replicas_count);
+    return ::computeConsistentHash(part_name, segment_begin, scan_mode, replicas_count);
 }
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
@@ -954,6 +966,41 @@ bool DefaultCoordinator::isReadingCompleted() const
 }
 
 
+/// Distribution of a single part between replicas.
+///
+/// In-order reading hands a replica one sorted stream per part, so a replica can only ever be given
+/// marks that come after everything it has already been given. That rules out the free-form work
+/// stealing `DefaultCoordinator` does, but not the placement rule itself: the part is cut into
+/// `mark_segment_size` segments and every segment belongs to the replica `computeConsistentHash`
+/// points at. A segment met while looking for the requesting replica's own ones is parked in its
+/// owner's queue instead of being handed to whoever asked first - that is what makes repeated
+/// in-order queries read the same data on the same replica and hit the caches it already has warm.
+struct InOrderPartDistribution
+{
+    InOrderPartDistribution(size_t replicas_count, bool reverse)
+        : pending(replicas_count)
+        , served_up_to(replicas_count, reverse ? std::numeric_limits<size_t>::max() : 0)
+        , is_done(replicas_count, false)
+    {
+    }
+
+    /// Segments owned by a replica but not handed out yet, in the order it will read them.
+    std::vector<std::deque<MarkRange>> pending;
+
+    /// How far into the part a replica has already been served: `end` of the last range given to it
+    /// in `WithOrder` mode, `begin` of the last one in `ReverseOrder`. Anything behind that point
+    /// can no longer be given to it without breaking the order of its stream.
+    std::vector<size_t> served_up_to;
+
+    /// The replica was told this part has nothing left for it, which ends its source for the part,
+    /// so it must never be given ranges for the part again.
+    std::vector<bool> is_done;
+
+    /// Segments whose owner turned out to be unable to read the part only after other replicas had
+    /// been served past them. Offered to every requester that can still read them in order.
+    std::deque<MarkRange> unassigned;
+};
+
 class InOrderCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
@@ -988,6 +1035,75 @@ public:
     bool state_initialized{false};
 
     LoggerPtr log;
+
+private:
+    static constexpr size_t no_replica = std::numeric_limits<size_t>::max();
+
+    bool isReverse() const { return mode == CoordinationMode::ReverseOrder; }
+
+    /// True when `segment` is still ahead of everything the replica has been served for the part.
+    bool canServe(const InOrderPartDistribution & distribution, size_t replica, const MarkRange & segment) const
+    {
+        return isReverse() ? segment.end <= distribution.served_up_to[replica] : segment.begin >= distribution.served_up_to[replica];
+    }
+
+    /// `lhs` is read before `rhs` by a single replica.
+    bool precedes(const MarkRange & lhs, const MarkRange & rhs) const
+    {
+        return isReverse() ? lhs.begin > rhs.begin : lhs.begin < rhs.begin;
+    }
+
+    void insertInReadOrder(std::deque<MarkRange> & queue, const MarkRange & segment) const
+    {
+        auto comparator = [this](const auto & lhs, const auto & rhs) { return precedes(lhs, rhs); };
+        queue.insert(std::upper_bound(queue.begin(), queue.end(), segment, comparator), segment);
+    }
+
+    /// Cuts the next `mark_segment_size`-aligned segment off the side of the part the current mode
+    /// reads from. The part is always consumed strictly in reading order, so a segment parked for
+    /// its owner is always ahead of everything parked before it.
+    std::optional<MarkRange> takeNextSegment(MarkRanges & ranges) const;
+
+    /// Moves up to `needed` marks of `segment` into `result`, keeping `result` in reading order,
+    /// and cuts what was taken off `segment`. Returns the number of marks taken.
+    size_t takeFromSegment(MarkRange & segment, size_t needed, RangesInDataPartDescription & result) const;
+
+    /// A replica may be given segments of the part only while it is alive, still reading the part
+    /// and known to have it. A replica that hasn't announced yet is assumed to have it - the same
+    /// optimism `DefaultCoordinator::possiblyCanReadPart` has; `redistributeFrom` fixes the
+    /// placement up if the announcement proves otherwise.
+    bool isEligible(const std::set<size_t> & part_replicas, const InOrderPartDistribution & distribution, size_t replica) const
+    {
+        return !stats[replica].is_unavailable && !replica_status[replica].is_finished && !distribution.is_done[replica]
+            && (!replica_status[replica].is_announcement_received || part_replicas.contains(replica));
+    }
+
+    /// The replica a segment of the part belongs to, or `no_replica` when nobody can read it.
+    size_t chooseOwner(
+        const String & part_name,
+        const std::set<size_t> & part_replicas,
+        const InOrderPartDistribution & distribution,
+        const MarkRange & segment) const;
+
+    /// Parks a segment in the queue of the replica that owns it now, or in `unassigned` when that
+    /// replica has already been served past it.
+    void parkSegment(
+        const String & part_name,
+        const std::set<size_t> & part_replicas,
+        InOrderPartDistribution & distribution,
+        const MarkRange & segment) const;
+
+    /// Fills `result` with up to `budget` marks of the part for the replica.
+    void servePart(size_t replica_num, const Part & part, size_t budget, RangesInDataPartDescription & result);
+
+    /// Re-homes everything parked for a replica that cannot read the part anymore.
+    void redistributeFrom(size_t replica_num, bool only_invisible_parts);
+
+    size_t mark_segment_size{0};
+    size_t finished_replicas{0};
+
+    /// Keyed by `RangesInDataPartDescription::getPartOrProjectionName`.
+    std::unordered_map<String, InOrderPartDistribution> distributions;
 };
 
 bool InOrderCoordinator::isReadingCompleted() const
@@ -995,6 +1111,17 @@ bool InOrderCoordinator::isReadingCompleted() const
     for (const auto & part : all_parts_to_read)
         if (!part.description.ranges.empty())
             return false;
+
+    for (const auto & [_, distribution] : distributions)
+    {
+        if (!distribution.unassigned.empty())
+            return false;
+
+        for (const auto & queue : distribution.pending)
+            if (!queue.empty())
+                return false;
+    }
+
     return true;
 }
 
@@ -1006,6 +1133,142 @@ void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 
         stats[replica_number].is_unavailable = true;
         ++unavailable_replicas_count;
+
+        redistributeFrom(replica_number, /*only_invisible_parts=*/false);
+    }
+}
+
+std::optional<MarkRange> InOrderCoordinator::takeNextSegment(MarkRanges & ranges) const
+{
+    if (ranges.empty())
+        return {};
+
+    if (isReverse())
+    {
+        auto & range = ranges.back();
+        const size_t segment_begin = std::max(range.begin, roundDownToMultiple(range.end - 1, mark_segment_size));
+        const MarkRange segment{segment_begin, range.end};
+        range.end = segment_begin;
+        if (range.getNumberOfMarks() == 0)
+            ranges.pop_back();
+        return segment;
+    }
+
+    auto & range = ranges.front();
+    const size_t segment_end = std::min(range.end, roundDownToMultiple(range.begin, mark_segment_size) + mark_segment_size);
+    const MarkRange segment{range.begin, segment_end};
+    range.begin = segment_end;
+    if (range.getNumberOfMarks() == 0)
+        ranges.pop_front();
+    return segment;
+}
+
+size_t InOrderCoordinator::takeFromSegment(MarkRange & segment, size_t needed, RangesInDataPartDescription & result) const
+{
+    chassert(needed);
+    const size_t taken = std::min(needed, segment.getNumberOfMarks());
+
+    if (isReverse())
+    {
+        const MarkRange range_we_take{segment.end - taken, segment.end};
+        if (!result.ranges.empty() && result.ranges.front().begin == range_we_take.end)
+            result.ranges.front().begin = range_we_take.begin;
+        else
+            result.ranges.emplace_front(range_we_take);
+        segment.end = range_we_take.begin;
+    }
+    else
+    {
+        const MarkRange range_we_take{segment.begin, segment.begin + taken};
+        if (!result.ranges.empty() && result.ranges.back().end == range_we_take.begin)
+            result.ranges.back().end = range_we_take.end;
+        else
+            result.ranges.emplace_back(range_we_take);
+        segment.begin = range_we_take.end;
+    }
+
+    return taken;
+}
+
+size_t InOrderCoordinator::chooseOwner(
+    const String & part_name,
+    const std::set<size_t> & part_replicas,
+    const InOrderPartDistribution & distribution,
+    const MarkRange & segment) const
+{
+    const size_t segment_begin = roundDownToMultiple(segment.begin, mark_segment_size);
+
+    auto is_eligible = [&](size_t replica) { return isEligible(part_replicas, distribution, replica); };
+
+    const size_t owner = computeConsistentHash(part_name, segment_begin, ScanMode::TakeWhatsMineByHash, replicas_count);
+    if (is_eligible(owner))
+        return owner;
+
+    /// The same second choice `DefaultCoordinator` makes, so that a part missing on its owner ends
+    /// up on the same replica no matter which mode the query reads in.
+    const size_t stealer = computeConsistentHash(part_name, segment_begin, ScanMode::TakeWhatsMineForStealing, replicas_count);
+    if (is_eligible(stealer))
+        return stealer;
+
+    for (size_t i = 1; i < replicas_count; ++i)
+        if (const size_t candidate = (owner + i) % replicas_count; is_eligible(candidate))
+            return candidate;
+
+    return no_replica;
+}
+
+void InOrderCoordinator::parkSegment(
+    const String & part_name,
+    const std::set<size_t> & part_replicas,
+    InOrderPartDistribution & distribution,
+    const MarkRange & segment) const
+{
+    const size_t owner = chooseOwner(part_name, part_replicas, distribution, segment);
+
+    if (owner != no_replica && canServe(distribution, owner, segment))
+    {
+        insertInReadOrder(distribution.pending[owner], segment);
+        return;
+    }
+
+    /// The owner has already been served past this point, so it can no longer read the segment in
+    /// order. Anybody who hasn't will do - this only happens after a replica turned out not to have
+    /// the part, and losing the placement for a handful of segments is better than not reading them.
+    for (size_t replica = 0; replica < replicas_count; ++replica)
+    {
+        if (isEligible(part_replicas, distribution, replica) && canServe(distribution, replica, segment))
+        {
+            insertInReadOrder(distribution.pending[replica], segment);
+            return;
+        }
+    }
+
+    insertInReadOrder(distribution.unassigned, segment);
+}
+
+void InOrderCoordinator::redistributeFrom(size_t replica_num, bool only_invisible_parts)
+{
+    for (const auto & part : all_parts_to_read)
+    {
+        if (only_invisible_parts && part.replicas.contains(replica_num))
+            continue;
+
+        const auto part_name = part.description.getPartOrProjectionName();
+        auto it = distributions.find(part_name);
+        if (it == distributions.end())
+            continue;
+
+        auto & distribution = it->second;
+
+        /// Nothing may be parked here anymore, so the replica must not be picked as an owner again.
+        distribution.is_done[replica_num] = true;
+
+        auto orphaned = std::exchange(distribution.pending[replica_num], {});
+        for (const auto & segment : orphaned)
+            parkSegment(part_name, part.replicas, distribution, segment);
+
+        if (!orphaned.empty())
+            LOG_TRACE(log, "Re-homed {} segments of {} parked for replica {}", orphaned.size(), part_name, replica_num);
     }
 }
 
@@ -1077,7 +1340,22 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     }
 #endif
 
+    if (!state_initialized)
+    {
+        /// Replicas that predate segmented in-order distribution announce zero here, because they
+        /// used to read a part front to back and had nothing to segment. Fall back to the smallest
+        /// segment size the pools ever choose so that a rolling upgrade keeps working.
+        mark_segment_size = announcement.mark_segment_size ? announcement.mark_segment_size : 128;
+
+        LOG_TRACE(log, "Reading state is fully initialized: {}, mark_segment_size: {}, min_marks_per_request: {}",
+                  fmt::join(all_parts_to_read, "; "), mark_segment_size, announced_min_marks_per_request);
+    }
+
     state_initialized = true;
+
+    /// Now that we know what this replica really has, everything parked for it in a part it doesn't
+    /// see has to go to somebody else.
+    redistributeFrom(announcement.replica_num, /*only_invisible_parts=*/true);
 
     // progress_callback is not set when local plan is used for initiator
     if (progress_callback && new_rows_to_read > 0)
@@ -1090,6 +1368,78 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
         LOG_TRACE(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
     }
+}
+
+void InOrderCoordinator::servePart(size_t replica_num, const Part & part, size_t budget, RangesInDataPartDescription & result)
+{
+    const auto part_name = part.description.getPartOrProjectionName();
+    auto & distribution = distributions.try_emplace(part_name, replicas_count, isReverse()).first->second;
+
+    if (distribution.is_done[replica_num])
+        return;
+
+    size_t collected = 0;
+
+    auto serve_from_queue = [&](std::deque<MarkRange> & queue)
+    {
+        while (!queue.empty() && collected < budget)
+        {
+            auto & segment = queue.front();
+            collected += takeFromSegment(segment, budget - collected, result);
+            if (segment.getNumberOfMarks() == 0)
+                queue.pop_front();
+        }
+    };
+
+    /// 1. Segments left without an owner - take the ones we can still read in order. They are older
+    /// than anything else we might hand out below, so they have to go first.
+    for (auto it = distribution.unassigned.begin(); it != distribution.unassigned.end();)
+    {
+        if (canServe(distribution, replica_num, *it))
+        {
+            insertInReadOrder(distribution.pending[replica_num], *it);
+            it = distribution.unassigned.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    /// 2. Our own segments parked by the requests of other replicas.
+    serve_from_queue(distribution.pending[replica_num]);
+
+    /// 3. Read the part further, taking our own segments and parking the rest for their owners.
+    while (collected < budget)
+    {
+        auto segment = takeNextSegment(part.description.ranges);
+        if (!segment)
+            break;
+
+        if (chooseOwner(part_name, part.replicas, distribution, *segment) == replica_num)
+            collected += takeFromSegment(*segment, budget - collected, result);
+
+        if (segment->getNumberOfMarks() != 0)
+            parkSegment(part_name, part.replicas, distribution, *segment);
+    }
+
+    /// Note that there is deliberately no work stealing here. A replica reads a part as one sorted
+    /// stream, so by the time a replica runs out of its own work it is already past everything a
+    /// slower replica still has queued, and taking that work over would break the order of its
+    /// stream. Whatever is left in this part belongs to somebody else and will be served to them.
+    if (collected == 0)
+    {
+        /// The response carries no ranges for this part, which ends the replica's source for it.
+        distribution.is_done[replica_num] = true;
+        return;
+    }
+
+    stats[replica_num].assigned_to_me += collected;
+
+    if (isReverse())
+        distribution.served_up_to[replica_num] = result.ranges.front().begin;
+    else
+        distribution.served_up_to[replica_num] = result.ranges.back().end;
 }
 
 ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest request)
@@ -1129,59 +1479,48 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
         /// Propagate min_marks_per_task from the coordinator's stored data (set by the first announcement).
         part.min_marks_per_task = global_part_it->description.min_marks_per_task;
 
-        size_t current_mark_size = 0;
-
-        /// Now we can recommend to read more intervals
-        if (mode == CoordinationMode::ReverseOrder)
-        {
-            while (!global_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
-            {
-                auto & range = global_part_it->description.ranges.back();
-                const size_t needed = effective_min_marks_per_request - current_mark_size;
-
-                if (range.getNumberOfMarks() > needed)
-                {
-                    auto range_we_take = MarkRange{range.end - needed, range.end};
-                    part.ranges.emplace_front(range_we_take);
-                    current_mark_size += range_we_take.getNumberOfMarks();
-
-                    range.end -= needed;
-                    break;
-                }
-
-                part.ranges.emplace_front(range);
-                current_mark_size += range.getNumberOfMarks();
-                global_part_it->description.ranges.pop_back();
-            }
-        }
-        else if (mode == CoordinationMode::WithOrder)
-        {
-            while (!global_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
-            {
-                auto & range = global_part_it->description.ranges.front();
-                const size_t needed = effective_min_marks_per_request - current_mark_size;
-
-                if (range.getNumberOfMarks() > needed)
-                {
-                    auto range_we_take = MarkRange{range.begin, range.begin + needed};
-                    part.ranges.emplace_back(range_we_take);
-                    current_mark_size += range_we_take.getNumberOfMarks();
-
-                    range.begin += needed;
-                    break;
-                }
-
-                part.ranges.emplace_back(range);
-                current_mark_size += range.getNumberOfMarks();
-                global_part_it->description.ranges.pop_front();
-            }
-        }
-
-        overall_number_of_marks += current_mark_size;
+        servePart(request.replica_num, *global_part_it, effective_min_marks_per_request, part);
+        overall_number_of_marks += part.ranges.getNumberOfMarks();
     }
 
     if (!overall_number_of_marks)
+    {
         response.finish = true;
+
+        /// The replica stops asking after this, so nothing may be parked for it anymore.
+        for (const auto & part : all_parts_to_read)
+            if (auto it = distributions.find(part.description.getPartOrProjectionName()); it != distributions.end())
+                it->second.is_done[request.replica_num] = true;
+
+        if (++finished_replicas == replicas_count - unavailable_replicas_count)
+        {
+            /// Nobody will come to process any more data
+            for (const auto & part : all_parts_to_read)
+            {
+                if (!part.description.ranges.empty())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Some segments were left unread for the part {}", part.description.describe());
+
+                auto it = distributions.find(part.description.getPartOrProjectionName());
+                if (it == distributions.end())
+                    continue;
+
+                if (!it->second.unassigned.empty())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Some orphaned segments of the part {} were left unread",
+                        part.description.describe());
+
+                for (size_t replica = 0; replica < replicas_count; ++replica)
+                    if (!it->second.pending[replica].empty())
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Segments of the part {} assigned to replica {} were left unread",
+                            part.description.describe(),
+                            replica);
+            }
+        }
+    }
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += overall_number_of_marks;

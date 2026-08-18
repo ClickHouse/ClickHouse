@@ -866,7 +866,7 @@ Pipe ReadFromMergeTree::readInOrder(
         auto response = extension.sendInitialRequest(
             mode,
             in_order_pool->buildAnnouncementDescriptions(),
-            /*mark_segment_size=*/0,
+            in_order_pool->getMarkSegmentSize(),
             in_order_pool->getMinMarksPerRequest());
 
         if (response)

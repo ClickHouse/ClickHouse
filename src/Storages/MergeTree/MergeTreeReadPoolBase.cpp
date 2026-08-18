@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
+#include <ranges>
+
 namespace ProfileEvents
 {
     extern const Event ReadPoolRangeRefinerDroppedMarks;
@@ -32,6 +34,65 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+size_t chooseParallelReplicasMarkSegmentSize(
+    LoggerPtr log, size_t mark_segment_size, size_t min_marks_per_task, size_t threads, size_t sum_marks, size_t number_of_replicas)
+{
+    /// Mark segment size determines the granularity of work distribution between replicas.
+    /// Namely, coordinator will take mark segments of size `mark_segment_size` granules, calculate hash of this segment and assign it to corresponding replica.
+    /// Small segments are good when we read a small random subset of a table, big - when we do full-scan over a large table.
+    /// With small segments there is a problem: consider a query like `select max(time) from wikistat`. Average size of `time` per granule is ~5KB. So when we
+    /// read 128 granules we still read only ~0.5MB of data. With default fs cache segment size of 4MB it means a lot of data will be downloaded and written
+    /// in cache for no reason. General case will look like this:
+    ///
+    ///                                    +---------- useful data
+    ///                                    v
+    ///                           +------+--+------+
+    ///                           |------|++|      |
+    ///                           |------|++|      |
+    ///                           +------+--+------+
+    ///                               ^
+    /// predownloaded data -----------+
+    ///
+    /// Having large segments solves all the problems in this case. Also bigger segments mean less requests (especially for big tables and full-scans).
+    /// These three values below chosen mostly intuitively. 128 granules is 1M rows - just a good starting point, 16384 seems to still make sense when reading
+    /// billions of rows and 1024 - is a reasonable point in between. We limit our choice to only these three options because when we change segment size
+    /// we essentially change distribution of data between replicas and of course we don't want to use simultaneously tens of different distributions, because
+    /// it would be a huge waste of cache space.
+    constexpr std::array<size_t, 3> borders{128, 1024, 16384};
+
+    LOG_TRACE(
+        log,
+        "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
+        mark_segment_size,
+        min_marks_per_task * threads,
+        sum_marks / number_of_replicas / number_of_replicas);
+
+    /// Here we take max of two numbers:
+    /// * (min_marks_per_task * threads) = the number of marks we request from the coordinator each time - there is no point to have segments smaller than one unit of work for a replica
+    /// * (sum_marks / number_of_replicas^2) - we use consistent hashing for work distribution (including work stealing). If we have a really slow replica
+    ///   everything except (1/number_of_replicas) portion of its work will be stolen by other replicas. And it owns (1/number_of_replicas) share of total number of marks.
+    ///   Also important to note here that sum_marks is calculated after PK analysis, it means in particular that different segment sizes might be used for the
+    ///   same table for different queries (it is intentional).
+    ///
+    /// Positive `mark_segment_size` means it is a user provided value, we have to preserve it.
+    if (mark_segment_size == 0)
+        mark_segment_size = std::max(min_marks_per_task * threads, sum_marks / number_of_replicas / number_of_replicas);
+
+    /// Squeeze the value to the borders.
+    mark_segment_size = std::clamp(mark_segment_size, borders.front(), borders.back());
+    /// After we calculated a hopefully good value for segment_size let's just find the maximal border that is not bigger than the chosen value.
+    for (auto border : borders | std::views::reverse)
+    {
+        if (mark_segment_size >= border)
+        {
+            LOG_TRACE(log, "Chosen segment size: {}", border);
+            return border;
+        }
+    }
+
+    UNREACHABLE();
 }
 
 
