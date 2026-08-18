@@ -18,6 +18,7 @@ ATTACH TABLE test_04909_glob_hive;
 SELECT 2;
 
 SET compatibility = '26.4';
+SET file_like_engine_default_partition_strategy = 'wildcard';
 
 CREATE TABLE test_04909_glob_wildcard (d Date, x UInt64)
 ENGINE = S3('s3://bucket/test_04909/**.parquet', 'Parquet')
