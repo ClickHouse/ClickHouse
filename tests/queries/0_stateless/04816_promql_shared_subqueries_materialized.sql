@@ -3,7 +3,7 @@
 -- Tag no-parallel-replicas: the test asserts on the query plan shape (the number of reads of the samples table).
 
 -- The SQL generated from a PromQL query may reference a named subquery more than once: the left side of `or`
--- feeds both the per-group counting step and the final merge join, and the topk/bottomk/limitk operand grid
+-- feeds both the per-group presence-mask step and the final merge join, and the topk/bottomk/limitk operand grid
 -- feeds both the group-selecting aggregation and the value-masking join. Such subqueries must be marked
 -- AS MATERIALIZED and evaluated once, while subqueries referenced once must stay inlined and must not be materialized.
 
