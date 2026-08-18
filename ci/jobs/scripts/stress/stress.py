@@ -59,6 +59,12 @@ class RandomDisruptor:
     _SYSTEM_STATEMENT_TIMEOUT = 15
     _SYSTEM_STATEMENT_PAUSE_MIN = 1.0
     _SYSTEM_STATEMENT_PAUSE_MAX = 10.0
+    # Retries for the restart only: a failed stop is harmless (the pause just does not
+    # happen), but a start that never lands leaves the operation stopped until
+    # `prepare_for_hung_check` runs at the very end of the run. Skipped once shutdown is
+    # requested, since that teardown is about to retry the same statement anyway.
+    _SYSTEM_STATEMENT_RESTART_ATTEMPTS = 3
+    _SYSTEM_STATEMENT_RESTART_BACKOFF = 2.0
     # (stop, start) pairs the pause branch picks from uniformly. Only add a pair whose start
     # fully undoes its stop and that `prepare_for_hung_check` also restarts, since that
     # teardown is the last-resort net for a start this thread never managed to run.
@@ -75,7 +81,10 @@ class RandomDisruptor:
     _JOIN_TIMEOUT = (
         max(
             _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT,
-            2 * _SYSTEM_STATEMENT_TIMEOUT + _SYSTEM_STATEMENT_PAUSE_MAX,
+            _SYSTEM_STATEMENT_TIMEOUT
+            + _SYSTEM_STATEMENT_PAUSE_MAX
+            + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
+            + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF,
         )
         + 5
     )
@@ -258,10 +267,25 @@ class RandomDisruptor:
         finally:
             # Always run the start: on shutdown, and also when the stop above reported a
             # failure, since a client-side timeout does not mean the server skipped the
-            # statement. Leaving the operation stopped would starve it for the rest of the
-            # run. `prepare_for_hung_check` issues its own start as a last resort.
-            if not self._run_system_statement(start_statement):
-                logging.error("Failed to run SYSTEM %s after a stress pause", start_statement)
+            # statement. Retried, so one failed attempt does not leave the operation
+            # stopped until `prepare_for_hung_check`'s own retry at the very end of the run.
+            for attempt in range(1, self._SYSTEM_STATEMENT_RESTART_ATTEMPTS + 1):
+                if self._run_system_statement(start_statement):
+                    if attempt > 1:
+                        logging.info("SYSTEM %s succeeded on attempt %d", start_statement, attempt)
+                    break
+                attempts_left = self._SYSTEM_STATEMENT_RESTART_ATTEMPTS - attempt
+                if not attempts_left or self._stop_event.is_set():
+                    logging.error(
+                        "Failed to run SYSTEM %s after %d attempt%s%s",
+                        start_statement,
+                        attempt,
+                        "" if attempt == 1 else "s",
+                        "" if attempts_left == 0 else " (shutting down, deferring to prepare_for_hung_check)",
+                    )
+                    break
+                # Interruptible, so shutdown does not wait out the full backoff.
+                self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
