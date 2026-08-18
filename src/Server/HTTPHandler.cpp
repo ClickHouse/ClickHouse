@@ -415,19 +415,21 @@ void HTTPHandler::processQuery(
         /// So, we construct settings_changes (including profile) and then we apply them to a temporary context,
         /// which was copied from the session context.
         /// And from that we derive the effective value of run_query_in_background.
-        /// For HTTP handler, run_query_in_background cannot be enabled via query (i.e. in the SETTINGS clause).
+        /// For HTTP handler, run_query_in_background cannot be enabled in the SETTINGS clause of the query.
 
         auto tmp_context = Context::createCopy(session->sessionContext());
         SettingsChanges settings_changes_copy = settings_changes;
 
         tmp_context->checkSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
         tmp_context->applySettingsChanges(settings_changes_copy);
+
         const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
+        const bool throw_on_unsupported_query_inside_transaction = tmp_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction];
 
         context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
 
         if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
-            && session->sessionContext()->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+            && throw_on_unsupported_query_inside_transaction)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries inside transactions are not supported");
     }
     context->setQueryParameters(query_parameters);

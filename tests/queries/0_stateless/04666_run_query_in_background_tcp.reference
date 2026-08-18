@@ -20,6 +20,10 @@ no output
 denied asynchronously
 --- a settings constraint of the user is enforced on a background query
 SETTING_CONSTRAINT_VIOLATION
+--- the database setting is applied before the target table of a background query is checked
+no output
+rows land in the database of the setting
+no output
 === native ===
 --- an INSERT whose data streams over the connection is rejected synchronously
 BAD_ARGUMENTS

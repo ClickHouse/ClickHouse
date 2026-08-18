@@ -20,6 +20,10 @@ no output
 denied asynchronously
 --- a settings constraint of the user is enforced on a background query
 SETTING_CONSTRAINT_VIOLATION
+--- the database setting is applied before the target table of a background query is checked
+no output
+rows land in the database of the setting
+no output
 === http ===
 --- server-minted query_id is returned in the header and inline body data is inserted
 query_id header present
