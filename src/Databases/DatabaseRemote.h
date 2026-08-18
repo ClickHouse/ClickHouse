@@ -95,7 +95,7 @@ public:
 
     /// The engine is a read-through view of the remote server; it does not manage the remote schema.
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
-    void dropTable(ContextPtr, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr, const String & table_name, bool sync, bool if_exists) override;
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 

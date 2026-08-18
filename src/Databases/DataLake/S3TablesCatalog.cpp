@@ -230,7 +230,7 @@ bool S3TablesCatalog::tryGetTableMetadata(
     return true;
 }
 
-void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
+void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data, bool /*if_exists*/) const
 {
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-delete.html
     if (!delete_data)

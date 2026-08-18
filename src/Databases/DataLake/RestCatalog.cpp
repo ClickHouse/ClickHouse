@@ -1931,7 +1931,7 @@ bool RestCatalog::updateSchema(
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
     const auto state_snapshot = state.get();
     /// Same URL shape as createTable / updateMetadata / getTableMetadataImpl.
@@ -1946,6 +1946,9 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     }
     catch (const DB::HTTPException & ex)
     {
+        /// The catalog answers `404` when the table is already gone - someone else dropped it first.
+        if (if_exists && ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            return;
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());
     }
 }

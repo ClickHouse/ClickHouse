@@ -533,7 +533,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     table_iter->second.second->is_detached = true;
 }
 
-void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/, bool /*if_exists*/)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");

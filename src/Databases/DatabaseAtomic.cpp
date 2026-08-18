@@ -189,7 +189,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     return detached_table;
 }
 
-void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
+void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync, bool /*if_exists*/)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::dropTable");
     waitDatabaseStarted();

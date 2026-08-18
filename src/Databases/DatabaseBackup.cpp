@@ -205,6 +205,7 @@ void DatabaseBackup::detachTablePermanently(ContextPtr, const String &)
 void DatabaseBackup::dropTable(
     ContextPtr,
     const String &,
+    bool,
     bool)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DROP TABLE is not supported for Backup database");

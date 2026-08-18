@@ -59,7 +59,8 @@ void DatabaseMemory::createTable(
 void DatabaseMemory::dropTable(
     ContextPtr /*context*/,
     const String & table_name,
-    bool /*sync*/)
+    bool /*sync*/,
+    bool /*if_exists*/)
 {
     StoragePtr table;
     {

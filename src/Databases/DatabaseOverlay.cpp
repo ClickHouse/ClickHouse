@@ -72,13 +72,13 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
         getEngineName());
 }
 
-void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
+void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync, bool if_exists)
 {
     for (auto & db : databases)
     {
         if (db->isTableExist(table_name, context_))
         {
-            db->dropTable(context_, table_name, sync);
+            db->dropTable(context_, table_name, sync, if_exists);
             return;
         }
     }

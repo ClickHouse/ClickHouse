@@ -1193,13 +1193,14 @@ void DatabaseDataLake::createTable(
 void DatabaseDataLake::dropTable( /// NOLINT
     ContextPtr context_,
     const String & name,
-    bool /*sync*/)
+    bool /*sync*/,
+    bool if_exists)
 {
     auto catalog = getCatalog();
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     bool purge = context_->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
-    catalog->dropTable(namespace_name, table_name, purge);
+    catalog->dropTable(namespace_name, table_name, purge, if_exists);
 
     /// A catalog-side drop removes remote metadata and, when purge is set, can request deletion of the
     /// underlying data. Log it at an operational level so accidental drops/purges leave an audit trail.

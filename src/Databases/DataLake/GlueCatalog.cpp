@@ -799,7 +799,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
     /// We drop only via Glue's `DeleteTable`, which removes the catalog entry but leaves the data files in
     /// object storage; deleting them (the client-side purge that e.g. Iceberg's own GlueCatalog performs) is
@@ -818,7 +818,9 @@ void GlueCatalog::dropTable(const String & namespace_name, const String & table_
 
     auto response = glue_client->DeleteTable(request);
 
-    if (!response.IsSuccess())
+    /// `EntityNotFoundException` means the table is already gone - someone else dropped it first.
+    if (!response.IsSuccess()
+        && !(if_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND))
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Can not delete table from glue catalog: {}",

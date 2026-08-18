@@ -287,7 +287,7 @@ public:
 
     /// Drop table from catalog.
     /// If purge, the catalog is requested to also delete underlying data files.
-    virtual void dropTable(const String & namespace_name, const String & table_name, bool purge) const;
+    virtual void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".

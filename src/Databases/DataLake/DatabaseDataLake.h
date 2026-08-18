@@ -83,7 +83,8 @@ public:
     void dropTable( /// NOLINT
         ContextPtr context_,
         const String & name,
-        bool /*sync*/) override;
+        bool /*sync*/,
+        bool if_exists) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 

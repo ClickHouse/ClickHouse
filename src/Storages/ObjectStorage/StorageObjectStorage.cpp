@@ -887,7 +887,9 @@ void StorageObjectStorage::drop()
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, delete_data);
+        /// This runs in the background, after the query has finished, so a missing table cannot be
+        /// reported as a no-op to the user anyway: keep reporting it as an error in the log.
+        catalog->dropTable(namespace_name, table_name, delete_data, /* if_exists */ false);
     }
     configuration->drop(delete_data);
 }
