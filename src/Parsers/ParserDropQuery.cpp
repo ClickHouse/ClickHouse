@@ -208,7 +208,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Drop)
 {
-    factory.registerStatement("DROP", "",
+    factory.registerStatement("DROP",
     {
         .description = R"(
 Deletes an existing entity. If the `IF EXISTS` clause is specified, the query does not return an error if the entity
@@ -235,7 +235,7 @@ DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     });
 
-    factory.registerStatement("DETACH", "",
+    factory.registerStatement("DETACH",
     {
         .description = R"(
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
@@ -254,7 +254,7 @@ DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
         .related = {"ATTACH", "DROP"},
     });
 
-    factory.registerStatement("TRUNCATE", "",
+    factory.registerStatement("TRUNCATE",
     {
         .description = R"(
 Quickly removes all data from a table or from all tables of a database, while preserving their structure.

@@ -1139,7 +1139,7 @@ namespace DB
 
 REGISTER_STATEMENTS(System)
 {
-    factory.registerStatement("SYSTEM", "",
+    factory.registerStatement("SYSTEM",
     {
         .description = R"(
 Performs an administrative operation on the server: reloads the configuration, the users or the dictionaries, drops a

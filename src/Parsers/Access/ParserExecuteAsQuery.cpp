@@ -83,7 +83,7 @@ namespace DB
 
 REGISTER_STATEMENTS(ExecuteAs)
 {
-    factory.registerStatement("EXECUTE AS", "",
+    factory.registerStatement("EXECUTE AS",
     {
         .description = R"(
 Executes queries on behalf of a different user. The `IMPERSONATE` privilege on the target user is required. Without a

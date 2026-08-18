@@ -58,7 +58,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Use)
 {
-    factory.registerStatement("USE", "",
+    factory.registerStatement("USE",
     {
         .description = R"(
 Sets the current database of the session. The current database is used to look up the tables which are not qualified

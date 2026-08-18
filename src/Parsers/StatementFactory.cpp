@@ -17,9 +17,9 @@ StatementFactory & StatementFactory::instance()
     return factory;
 }
 
-void StatementFactory::registerStatement(const String & name, const String & parent, Documentation documentation)
+void StatementFactory::registerStatement(const String & name, Documentation documentation)
 {
-    if (!statements.emplace(name, StatementDocumentation{std::move(documentation), parent}).second)
+    if (!statements.emplace(name, std::move(documentation)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement {} is registered twice", name);
 }
 

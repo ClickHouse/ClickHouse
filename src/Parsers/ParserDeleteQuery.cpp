@@ -101,7 +101,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Delete)
 {
-    factory.registerStatement("DELETE", "",
+    factory.registerStatement("DELETE",
     {
         .description = R"(
 Removes the rows matching the filter expression from a table. It is only available for tables of the `*MergeTree`

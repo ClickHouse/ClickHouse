@@ -582,7 +582,7 @@ namespace DB
 
 REGISTER_STATEMENTS(PipeOperators)
 {
-    factory.registerStatement("PIPE OPERATORS", "SELECT",
+    factory.registerStatement("PIPE OPERATORS",
     {
         .description = R"(
 Allow writing a query as a linear chain of transformations which reads from top to bottom. Any `SELECT` query can be
@@ -601,6 +601,7 @@ FROM orders
 |> ORDER BY total DESC
 |> LIMIT 3
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT"},
     });
 }

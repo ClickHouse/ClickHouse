@@ -4094,7 +4094,7 @@ namespace DB
 
 REGISTER_STATEMENTS(In)
 {
-    factory.registerStatement("IN", "",
+    factory.registerStatement("IN",
     {
         .description = R"(
 Checks whether the left side of the operator is contained in the right side. The left side is either a single column or

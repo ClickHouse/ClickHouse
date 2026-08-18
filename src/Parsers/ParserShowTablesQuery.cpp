@@ -216,7 +216,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Show)
 {
-    factory.registerStatement("SHOW", "",
+    factory.registerStatement("SHOW",
     {
         .description = R"(
 Shows the information about the objects of the server. Most `SHOW` statements are shorthands for a query over a system

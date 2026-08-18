@@ -51,7 +51,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Union)
 {
-    factory.registerStatement("UNION", "SELECT",
+    factory.registerStatement("UNION",
     {
         .description = R"(
 Combines the results of several queries. The queries must produce the same number of columns, in the same order and of
@@ -66,10 +66,11 @@ SELECT 1 AS x
 UNION ALL
 SELECT 2 AS x;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "INTERSECT", "EXCEPT", "DISTINCT", "JOIN"},
     });
 
-    factory.registerStatement("INTERSECT", "SELECT",
+    factory.registerStatement("INTERSECT",
     {
         .description = R"(
 Returns only the rows which result from both the first and the second query. The queries must produce the same number
@@ -86,10 +87,11 @@ SELECT number FROM numbers(10)
 INTERSECT
 SELECT number FROM numbers(5);
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "UNION", "EXCEPT", "IN"},
     });
 
-    factory.registerStatement("EXCEPT", "SELECT",
+    factory.registerStatement("EXCEPT",
     {
         .description = R"(
 Returns only the rows which result from the first query without the second. The queries must produce the same number
@@ -106,6 +108,7 @@ SELECT number FROM numbers(10)
 EXCEPT
 SELECT number FROM numbers(5);
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "UNION", "INTERSECT", "EXCEPT modifier"},
     });
 }

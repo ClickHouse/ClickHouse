@@ -125,7 +125,7 @@ namespace DB
 
 REGISTER_STATEMENTS(HypotheticalIndex)
 {
-    factory.registerStatement("HYPOTHETICAL INDEX", "",
+    factory.registerStatement("HYPOTHETICAL INDEX",
     {
         .description = R"(
 Hypothetical indexes are virtual, session-scoped skipping indexes which can be attached to a table of the `MergeTree`

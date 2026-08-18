@@ -384,7 +384,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Insert)
 {
-    factory.registerStatement("INSERT INTO", "",
+    factory.registerStatement("INSERT INTO",
     {
         .description = R"(
 Inserts data into a table. The data can be given inline with a `VALUES` clause, in an arbitrary input format, or be the

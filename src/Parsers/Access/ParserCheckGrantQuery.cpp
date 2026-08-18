@@ -35,7 +35,7 @@ namespace DB
 
 REGISTER_STATEMENTS(CheckGrant)
 {
-    factory.registerStatement("CHECK GRANT", "",
+    factory.registerStatement("CHECK GRANT",
     {
         .description = R"(
 Checks whether the current user or role has been granted a specific privilege. Returns `1` if the privilege is granted

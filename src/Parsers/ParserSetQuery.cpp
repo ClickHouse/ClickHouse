@@ -419,7 +419,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Set)
 {
-    factory.registerStatement("SET", "",
+    factory.registerStatement("SET",
     {
         .description = R"(
 Assigns a value to a setting for the current session. Server settings cannot be changed this way. Assigning a value to

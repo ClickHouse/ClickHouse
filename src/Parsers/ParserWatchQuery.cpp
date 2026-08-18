@@ -83,7 +83,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Watch)
 {
-    factory.registerStatement("WATCH", "",
+    factory.registerStatement("WATCH",
     {
         .description = R"(
 Returns the successive results of a live view as they change. This statement is deprecated together with live views and

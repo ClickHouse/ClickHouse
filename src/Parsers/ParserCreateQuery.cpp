@@ -2090,7 +2090,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Create)
 {
-    factory.registerStatement("CREATE", "",
+    factory.registerStatement("CREATE",
     {
         .description = R"(
 `CREATE` queries create a new entity, for example a database, a table, a view, a dictionary, a user-defined function,
@@ -2109,7 +2109,7 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
     });
 
-    factory.registerStatement("CREATE DATABASE", "CREATE",
+    factory.registerStatement("CREATE DATABASE",
     {
         .description = R"(
 Creates a new database. The database engine determines how and where the metadata of the tables of the database is
@@ -2119,10 +2119,11 @@ stored; by default it is `Atomic`.
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 )",
         .examples = {{"Create a database with a comment", "CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';", ""}},
+        .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "DROP"},
     });
 
-    factory.registerStatement("CREATE TABLE", "CREATE",
+    factory.registerStatement("CREATE TABLE",
     {
         .description = R"(
 Creates a new table. By default, tables are created only on the current server; use the `ON CLUSTER` clause to create
@@ -2148,10 +2149,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
             {"Create a table with an explicit schema", "CREATE TABLE test (x UInt64, s String) ENGINE = MergeTree ORDER BY x;", ""},
             {"Create a table from a SELECT query", "CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;", ""},
         },
+        .parent = "CREATE",
         .related = {"CREATE", "CREATE TEMPORARY TABLE", "REPLACE TABLE", "CODEC", "ALTER", "DROP"},
     });
 
-    factory.registerStatement("CREATE TEMPORARY TABLE", "CREATE TABLE",
+    factory.registerStatement("CREATE TEMPORARY TABLE",
     {
         .description = R"(
 Creates a temporary table, which exists only for the lifetime of the current session and is dropped when the session
@@ -2166,10 +2168,11 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 ) [ENGINE = engine]
 )",
         .examples = {{"Create a temporary table", "CREATE TEMPORARY TABLE test (x UInt64);", ""}},
+        .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "DROP"},
     });
 
-    factory.registerStatement("REPLACE TABLE", "CREATE TABLE",
+    factory.registerStatement("REPLACE TABLE",
     {
         .description = R"(
 Atomically replaces a table with a new one: the table is created under a temporary name, filled by the query, and then
@@ -2180,10 +2183,11 @@ exchanged with the target table. `CREATE OR REPLACE TABLE` creates the table if 
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 )",
         .examples = {{"Replace a table with the result of a query", R"(REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n AS SELECT number FROM numbers(10);)", ""}},
+        .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "EXCHANGE", "RENAME"},
     });
 
-    factory.registerStatement("CODEC", "CREATE TABLE",
+    factory.registerStatement("CODEC",
     {
         .description = R"(
 Specifies the compression codec of a column. By default, ClickHouse applies `lz4` compression in the self-managed
@@ -2206,10 +2210,11 @@ ENGINE = MergeTree ORDER BY dt;
 )", ""},
             {"Reset a column to the default compression", "ALTER TABLE codec_example MODIFY COLUMN value CODEC(Default);", ""},
         },
+        .parent = "CREATE TABLE",
         .related = {"CREATE TABLE", "ALTER TABLE ... COLUMN"},
     });
 
-    factory.registerStatement("CREATE VIEW", "CREATE",
+    factory.registerStatement("CREATE VIEW",
     {
         .description = R"(
 Creates a new view. Views can be normal, parameterized, materialized, refreshable materialized, and window views.
@@ -2233,10 +2238,11 @@ AS SELECT ...
             {"Create a normal view", "CREATE VIEW view AS SELECT * FROM numbers(10);", ""},
             {"Create a materialized view", "CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY x AS SELECT number AS x FROM source;", ""},
         },
+        .parent = "CREATE",
         .related = {"CREATE", "CREATE TABLE", "ALTER TABLE ... MODIFY QUERY", "DROP", "WATCH"},
     });
 
-    factory.registerStatement("CREATE DICTIONARY", "CREATE",
+    factory.registerStatement("CREATE DICTIONARY",
     {
         .description = R"(
 Creates a dictionary, which is a mapping (`key -> attributes`) that is convenient for various types of reference
@@ -2266,10 +2272,11 @@ SOURCE(CLICKHOUSE(TABLE 'source'))
 LAYOUT(FLAT())
 LIFETIME(0);
 )", ""}},
+        .parent = "CREATE",
         .related = {"CREATE", "DROP", "SYSTEM"},
     });
 
-    factory.registerStatement("CREATE NAMED COLLECTION", "CREATE",
+    factory.registerStatement("CREATE NAMED COLLECTION",
     {
         .description = R"(
 Creates a named collection - a named set of key-value pairs which can be referenced instead of spelling out
@@ -2281,10 +2288,11 @@ CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
 )",
         .examples = {{"Create a named collection", "CREATE NAMED COLLECTION foobar AS a = '1', b = '2';", ""}},
+        .parent = "CREATE",
         .related = {"CREATE", "ALTER NAMED COLLECTION", "DROP"},
     });
 
-    factory.registerStatement("ATTACH", "",
+    factory.registerStatement("ATTACH",
     {
         .description = R"(
 Attaches a table, a view, a dictionary or a database, for example when moving a database to another server. The query

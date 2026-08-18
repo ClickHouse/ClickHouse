@@ -91,7 +91,7 @@ namespace DB
 
 REGISTER_STATEMENTS(SetRole)
 {
-    factory.registerStatement("SET ROLE", "",
+    factory.registerStatement("SET ROLE",
     {
         .description = R"(
 Activates roles for the current user. `SET DEFAULT ROLE` sets the roles which are activated by default when a user

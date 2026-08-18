@@ -398,7 +398,7 @@ namespace DB
 
 REGISTER_STATEMENTS(TablesInSelect)
 {
-    factory.registerStatement("FROM", "SELECT",
+    factory.registerStatement("FROM",
     {
         .description = R"(
 Specifies the source to read the data from: a table, a subquery, a table function, or a `VALUES` clause. The `FINAL`
@@ -415,10 +415,11 @@ FROM [db.]table SELECT ...
             {"Read from a VALUES clause", "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);", ""},
             {"Write the FROM clause first", "FROM numbers(3) SELECT *;", ""},
         },
+        .parent = "SELECT",
         .related = {"SELECT", "JOIN", "ARRAY JOIN", "SAMPLE", "WHERE"},
     });
 
-    factory.registerStatement("JOIN", "SELECT",
+    factory.registerStatement("JOIN",
     {
         .description = R"(
 Produces a new table by combining the columns of one or several tables, using the values common to each of them. The
@@ -436,10 +437,11 @@ SELECT table_1.id, table_2.value
 FROM table_1
 LEFT JOIN table_2 ON table_1.id = table_2.id;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "FROM", "ARRAY JOIN", "IN", "UNION"},
     });
 
-    factory.registerStatement("ARRAY JOIN", "SELECT",
+    factory.registerStatement("ARRAY JOIN",
     {
         .description = R"(
 Unfolds an array column: for every element of the array, a row is produced in which the values of the other columns
@@ -454,10 +456,11 @@ FROM <left_subquery>
 ...
 )",
         .examples = {{"Unfold an array column", "SELECT s, arr FROM arrays_test ARRAY JOIN arr;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "JOIN", "FROM"},
     });
 
-    factory.registerStatement("SAMPLE", "SELECT",
+    factory.registerStatement("SAMPLE",
     {
         .description = R"(
 Enables approximated query processing: the query is executed not over all the data, but only over a fraction of it.
@@ -475,6 +478,7 @@ FROM hits_distributed
 SAMPLE 0.1
 GROUP BY Title;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
     });
 }

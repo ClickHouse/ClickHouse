@@ -393,7 +393,7 @@ namespace DB
 
 REGISTER_STATEMENTS(CreateFunction)
 {
-    factory.registerStatement("CREATE FUNCTION", "CREATE",
+    factory.registerStatement("CREATE FUNCTION",
     {
         .description = R"(
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of the parameters of the
@@ -407,6 +407,7 @@ CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> e
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 )", ""}},
+        .parent = "CREATE",
         .related = {"CREATE", "DROP", "SHOW"},
     });
 }

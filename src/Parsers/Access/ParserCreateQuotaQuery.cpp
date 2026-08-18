@@ -413,7 +413,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Quota)
 {
-    factory.registerStatement("CREATE QUOTA", "CREATE",
+    factory.registerStatement("CREATE QUOTA",
     {
         .description = R"(
 Creates a quota, which limits the resource consumption of users and roles over a time interval, for example the number
@@ -430,10 +430,11 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
         .examples = {{"Limit the number of queries of the current user", "CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;", ""}},
+        .parent = "CREATE",
         .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
     });
 
-    factory.registerStatement("ALTER QUOTA", "ALTER",
+    factory.registerStatement("ALTER QUOTA",
     {
         .description = R"(
 Changes a quota: renames it, changes its key, its intervals and limits, and the roles and users it applies to.
@@ -449,6 +450,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
         .examples = {{"Change the limits of a quota", "ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE QUOTA", "ALTER", "SHOW"},
     });
 }

@@ -235,7 +235,7 @@ namespace DB
 
 REGISTER_STATEMENTS(MaskingPolicy)
 {
-    factory.registerStatement("CREATE MASKING POLICY", "CREATE",
+    factory.registerStatement("CREATE MASKING POLICY",
     {
         .description = R"(
 Creates a masking policy, which dynamically transforms or masks the values of columns for specific users or roles when
@@ -255,10 +255,11 @@ UPDATE salary = 0
 WHERE salary > 100000
 TO analyst;
 )", ""}},
+        .parent = "CREATE",
         .related = {"ALTER MASKING POLICY", "CREATE ROW POLICY", "DROP", "SHOW"},
     });
 
-    factory.registerStatement("ALTER MASKING POLICY", "ALTER",
+    factory.registerStatement("ALTER MASKING POLICY",
     {
         .description = R"(
 Modifies an existing masking policy. All clauses are optional; only the specified clauses are changed.
@@ -271,6 +272,7 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
     [PRIORITY priority_number]
 )",
         .examples = {{"Change the roles a masking policy applies to", "ALTER MASKING POLICY mask_high_salaries ON employees TO analyst, accountant;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE MASKING POLICY", "ALTER", "SHOW"},
     });
 }

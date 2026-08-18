@@ -138,7 +138,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Optimize)
 {
-    factory.registerStatement("OPTIMIZE", "",
+    factory.registerStatement("OPTIMIZE",
     {
         .description = R"(
 Tries to initiate an unscheduled merge of the data parts of a table. `FINAL` merges the data even if there is only one

@@ -171,7 +171,7 @@ namespace DB
 
 REGISTER_STATEMENTS(DescribeTable)
 {
-    factory.registerStatement("DESCRIBE TABLE", "",
+    factory.registerStatement("DESCRIBE TABLE",
     {
         .description = R"(
 Returns the information about the columns of a table: the name, the type, the kind and the expression of the default

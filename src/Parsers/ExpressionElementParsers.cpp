@@ -2808,7 +2808,7 @@ namespace DB
 
 REGISTER_STATEMENTS(ColumnsTransformers)
 {
-    factory.registerStatement("APPLY modifier", "SELECT",
+    factory.registerStatement("APPLY modifier",
     {
         .description = R"(
 Invokes a function for each column returned by the expression it is applied to, which is usually the asterisk or a
@@ -2818,10 +2818,11 @@ columns matcher.
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 )",
         .examples = {{"Apply a function to every column", "SELECT * APPLY(max) FROM columns_transformers;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
     });
 
-    factory.registerStatement("EXCEPT modifier", "SELECT",
+    factory.registerStatement("EXCEPT modifier",
     {
         .description = R"(
 Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the
@@ -2831,10 +2832,11 @@ output.
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 )",
         .examples = {{"Exclude a column from the result", "SELECT * EXCEPT (i) FROM columns_transformers;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
     });
 
-    factory.registerStatement("REPLACE modifier", "SELECT",
+    factory.registerStatement("REPLACE modifier",
     {
         .description = R"(
 Specifies one or more expression aliases. Each alias must match a column name of the `SELECT *` statement, and the
@@ -2845,6 +2847,7 @@ order of the columns, but it can change the values and their types.
 SELECT <expr> REPLACE( <expr> AS col_name) FROM [db.]table_name
 )",
         .examples = {{"Replace the expression of a column", "SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
     });
 }

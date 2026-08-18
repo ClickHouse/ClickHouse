@@ -168,7 +168,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Role)
 {
-    factory.registerStatement("CREATE ROLE", "CREATE",
+    factory.registerStatement("CREATE ROLE",
     {
         .description = R"(
 Creates new roles. A role is a set of privileges; a user assigned a role gets all the privileges of this role.
@@ -182,10 +182,11 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 CREATE ROLE accountant;
 GRANT SELECT ON db.* TO accountant;
 )", ""}},
+        .parent = "CREATE",
         .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
     });
 
-    factory.registerStatement("ALTER ROLE", "ALTER",
+    factory.registerStatement("ALTER ROLE",
     {
         .description = R"(
 Changes roles: renames them and changes their settings and settings profiles.
@@ -200,6 +201,7 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 )",
         .examples = {{"Change a setting of a role", "ALTER ROLE accountant SETTINGS max_memory_usage = 100000000;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
     });
 }

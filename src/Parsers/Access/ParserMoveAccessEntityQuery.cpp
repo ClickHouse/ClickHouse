@@ -99,7 +99,7 @@ namespace DB
 
 REGISTER_STATEMENTS(MoveAccessEntity)
 {
-    factory.registerStatement("MOVE", "",
+    factory.registerStatement("MOVE",
     {
         .description = R"(
 Moves an access entity from one access storage to another. The available access storages are `local_directory`,

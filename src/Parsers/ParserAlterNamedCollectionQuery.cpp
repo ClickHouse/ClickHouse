@@ -104,7 +104,7 @@ namespace DB
 
 REGISTER_STATEMENTS(AlterNamedCollection)
 {
-    factory.registerStatement("ALTER NAMED COLLECTION", "ALTER",
+    factory.registerStatement("ALTER NAMED COLLECTION",
     {
         .description = R"(
 Changes an existing named collection: sets the values of its keys, or deletes keys from it.
@@ -118,6 +118,7 @@ ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 ALTER NAMED COLLECTION foobar SET a = '2' OVERRIDABLE, c = '3';
 ALTER NAMED COLLECTION foobar DELETE b;
 )", ""}},
+        .parent = "ALTER",
         .related = {"CREATE NAMED COLLECTION", "ALTER", "DROP"},
     });
 }

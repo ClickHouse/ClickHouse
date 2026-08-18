@@ -819,7 +819,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Select)
 {
-    factory.registerStatement("SELECT", "",
+    factory.registerStatement("SELECT",
     {
         .description = R"(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in
@@ -850,7 +850,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
         .related = {"FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "UNION", "INSERT INTO", "FORMAT"},
     });
 
-    factory.registerStatement("DISTINCT", "SELECT",
+    factory.registerStatement("DISTINCT",
     {
         .description = R"(
 Removes duplicates from the result: only a single row remains out of all the sets of fully matching rows. The list of
@@ -861,10 +861,11 @@ columns are not specified, all of them are taken into account.
 SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 )",
         .examples = {{"Remove duplicate rows", "SELECT DISTINCT * FROM t1;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "ALL", "GROUP BY", "LIMIT BY"},
     });
 
-    factory.registerStatement("ALL", "SELECT",
+    factory.registerStatement("ALL",
     {
         .description = R"(
 If there are multiple matching rows in a table, `ALL` returns all of them. `SELECT ALL` is identical to `SELECT`
@@ -875,10 +876,11 @@ aggregate function, where it has no effect on the result.
 SELECT ALL expr_list ...
 )",
         .examples = {{"Use ALL inside an aggregate function", "SELECT sum(ALL number) FROM numbers(10);", "45"}},
+        .parent = "SELECT",
         .related = {"SELECT", "DISTINCT"},
     });
 
-    factory.registerStatement("PREWHERE", "SELECT",
+    factory.registerStatement("PREWHERE",
     {
         .description = R"(
 Filters the data before reading all the columns of the query: ClickHouse first reads only the columns needed to
@@ -894,10 +896,11 @@ SELECT ... PREWHERE expr ...
         .examples = {{"Filter before reading the other columns", R"(
 SELECT id, value FROM table_1 PREWHERE id >= 2 ORDER BY id;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "WHERE", "EXPLAIN"},
     });
 
-    factory.registerStatement("WHERE", "SELECT",
+    factory.registerStatement("WHERE",
     {
         .description = R"(
 Filters the data which comes from the `FROM` clause. The expression must have type `UInt8`; the rows for which it
@@ -910,10 +913,11 @@ the condition are read.
 SELECT ... WHERE expr ...
 )",
         .examples = {{"Filter rows by a condition", "SELECT * FROM t_null WHERE y IS NULL;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "PREWHERE", "HAVING", "QUALIFY"},
     });
 
-    factory.registerStatement("GROUP BY", "SELECT",
+    factory.registerStatement("GROUP BY",
     {
         .description = R"(
 Switches the query into aggregation mode: the rows are grouped by the values of the grouping key, and the aggregate
@@ -925,10 +929,11 @@ SELECT ... GROUP BY expr_list [WITH ROLLUP | WITH CUBE] [WITH TOTALS] ...
 SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS ( ... ) ...
 )",
         .examples = {{"Calculate subtotals", "SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "HAVING", "DISTINCT", "ORDER BY"},
     });
 
-    factory.registerStatement("HAVING", "SELECT",
+    factory.registerStatement("HAVING",
     {
         .description = R"(
 Filters the aggregation results produced by `GROUP BY`. It is similar to the `WHERE` clause, but `WHERE` is performed
@@ -944,10 +949,11 @@ FROM sales
 GROUP BY region
 HAVING total_sales > 10000;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "GROUP BY", "WHERE", "QUALIFY"},
     });
 
-    factory.registerStatement("QUALIFY", "SELECT",
+    factory.registerStatement("QUALIFY",
     {
         .description = R"(
 Filters the results of window functions. It is similar to the `WHERE` clause, but `WHERE` is performed before the
@@ -963,10 +969,11 @@ FROM numbers(10)
 QUALIFY partition_count = 4
 ORDER BY number;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "WHERE", "HAVING"},
     });
 
-    factory.registerStatement("ORDER BY", "SELECT",
+    factory.registerStatement("ORDER BY",
     {
         .description = R"(
 Sorts the result. The sorting key can be a list of expressions, a list of numbers referring to the columns of the
@@ -979,10 +986,11 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
     [WITH FILL [FROM expr] [TO expr] [STEP expr] [STALENESS expr]] [INTERPOLATE [(expr_list)]] ...
 )",
         .examples = {{"Sort with a collation", "SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
     });
 
-    factory.registerStatement("LIMIT", "SELECT",
+    factory.registerStatement("LIMIT",
     {
         .description = R"(
 Controls how many rows are returned. `LIMIT m` returns the first `m` rows, `LIMIT n, m` and `LIMIT m OFFSET n` skip
@@ -998,10 +1006,11 @@ SELECT ... LIMIT m OFFSET n [WITH TIES]
 SELECT TOP m ...
 )",
         .examples = {{"Return the first 10 rows", "SELECT * FROM numbers(100) LIMIT 10;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "OFFSET FETCH", "LIMIT BY", "ORDER BY"},
     });
 
-    factory.registerStatement("LIMIT BY", "SELECT",
+    factory.registerStatement("LIMIT BY",
     {
         .description = R"(
 Selects the first `n` rows for each distinct value of the expressions of the clause. `LIMIT BY` is applied before
@@ -1012,10 +1021,11 @@ SELECT ... LIMIT [offset_value, ]n BY expressions ...
 SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 )",
         .examples = {{"Take two rows per group", "SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "DISTINCT", "ORDER BY"},
     });
 
-    factory.registerStatement("OFFSET FETCH", "SELECT",
+    factory.registerStatement("OFFSET FETCH",
     {
         .description = R"(
 Retrieves the result by portions: skips `offset_row_count` rows and returns the next `fetch_row_count` rows. This is
@@ -1027,6 +1037,7 @@ SELECT ... [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_ro
 SELECT ... [LIMIT [n, ]m] [OFFSET offset_row_count]
 )",
         .examples = {{"Skip one row and fetch three rows", "SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "ORDER BY"},
     });
 }

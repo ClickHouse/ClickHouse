@@ -103,7 +103,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Update)
 {
-    factory.registerStatement("UPDATE", "",
+    factory.registerStatement("UPDATE",
     {
         .description = R"(
 Updates the rows matching the filter expression in a table.

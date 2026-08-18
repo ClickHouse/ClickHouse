@@ -197,7 +197,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Explain)
 {
-    factory.registerStatement("EXPLAIN", "",
+    factory.registerStatement("EXPLAIN",
     {
         .description = R"(
 Shows the execution plan of a statement instead of executing it. Depending on the kind, it shows the abstract syntax

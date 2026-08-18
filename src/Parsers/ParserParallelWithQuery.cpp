@@ -51,7 +51,7 @@ namespace DB
 
 REGISTER_STATEMENTS(ParallelWith)
 {
-    factory.registerStatement("PARALLEL WITH", "",
+    factory.registerStatement("PARALLEL WITH",
     {
         .description = R"(
 Executes several statements in parallel. It can be useful for statements which take a long time and do not depend on

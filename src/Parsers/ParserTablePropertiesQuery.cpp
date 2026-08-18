@@ -150,7 +150,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Exists)
 {
-    factory.registerStatement("EXISTS", "",
+    factory.registerStatement("EXISTS",
     {
         .description = R"(
 Returns a single column of type `UInt8` with a single value: `1` if the table, the dictionary or the database exists,

@@ -1261,7 +1261,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Alter)
 {
-    factory.registerStatement("ALTER", "",
+    factory.registerStatement("ALTER",
     {
         .description = R"(
 Changes the structure, the settings or the data of a table, of a database, of a view, or of an access entity.
@@ -1282,7 +1282,7 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
             "CREATE", "SYSTEM"},
     });
 
-    factory.registerStatement("ALTER TABLE ... COLUMN", "ALTER",
+    factory.registerStatement("ALTER TABLE ... COLUMN",
     {
         .description = R"(
 Changes the structure of a table: adds, drops, renames, clears, comments, modifies or materializes columns. A single
@@ -1308,10 +1308,11 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
             {"Add a column after another column", "ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;", ""},
             {"Change the type of a column", "ALTER TABLE alter_test MODIFY COLUMN Added2 UInt64;", ""},
         },
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
     });
 
-    factory.registerStatement("ALTER TABLE ... PARTITION", "ALTER",
+    factory.registerStatement("ALTER TABLE ... PARTITION",
     {
         .description = R"(
 Manipulates partitions and parts of a table: detaches, drops, attaches, replaces, moves, freezes, unfreezes and
@@ -1338,10 +1339,11 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
             {"Detach a partition", "ALTER TABLE mt DETACH PARTITION '2020-11-21';", ""},
             {"Drop a part", "ALTER TABLE mt DROP PART 'all_4_4_0';", ""},
         },
+        .parent = "ALTER",
         .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
     });
 
-    factory.registerStatement("ALTER TABLE ... DELETE", "ALTER",
+    factory.registerStatement("ALTER TABLE ... DELETE",
     {
         .description = R"(
 Deletes the rows matching the filter expression. Implemented as a mutation: every data part containing matching rows
@@ -1352,10 +1354,11 @@ is rewritten, therefore this is a heavyweight operation. For deleting a small am
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 )",
         .examples = {{"Delete rows by a condition", "ALTER TABLE test DELETE WHERE x = 1;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
     });
 
-    factory.registerStatement("ALTER TABLE ... UPDATE", "ALTER",
+    factory.registerStatement("ALTER TABLE ... UPDATE",
     {
         .description = R"(
 Updates the columns of the rows matching the filter expression. Implemented as a mutation: every data part containing
@@ -1366,10 +1369,11 @@ lightweight `UPDATE` statement.
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 )",
         .examples = {{"Update a column by a condition", "ALTER TABLE test UPDATE x = 2 WHERE 1;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
     {
         .description = R"(
 Changes the sorting key of the table. The primary key remains the same. The command is lightweight in the sense that
@@ -1380,10 +1384,11 @@ not in the primary key.
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
         .examples = {{"Extend the sorting key", "ALTER TABLE test MODIFY ORDER BY (x, y);", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
     {
         .description = R"(
 Changes or removes the sampling key of the table. The command is lightweight in the sense that it only changes
@@ -1394,10 +1399,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 )",
         .examples = {{"Remove the sampling key", "ALTER TABLE test REMOVE SAMPLE BY;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY TTL", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY TTL",
     {
         .description = R"(
 Changes or removes the `TTL` of the table. Removing the `TTL` does not delete the rows which the expired `TTL` rule
@@ -1408,10 +1414,11 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 )",
         .examples = {{"Remove the TTL of a table", "ALTER TABLE table_with_ttl REMOVE TTL;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY SETTING", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
     {
         .description = R"(
 Changes the settings of a table or resets them to their default values. A single query can change several settings at
@@ -1422,10 +1429,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [
 ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 )",
         .examples = {{"Change a table setting", "ALTER TABLE test MODIFY SETTING max_part_loading_threads = 8;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "SET"},
     });
 
-    factory.registerStatement("ALTER TABLE ... CONSTRAINT", "ALTER",
+    factory.registerStatement("ALTER TABLE ... CONSTRAINT",
     {
         .description = R"(
 Adds, modifies or drops a constraint of a table. Constraints are only checked for newly inserted rows, the existing
@@ -1437,10 +1445,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constra
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name
 )",
         .examples = {{"Add a constraint", "ALTER TABLE test ADD CONSTRAINT c CHECK x > 0;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE"},
     });
 
-    factory.registerStatement("ALTER TABLE ... INDEX", "ALTER",
+    factory.registerStatement("ALTER TABLE ... INDEX",
     {
         .description = R"(
 Adds, drops, materializes or clears a data skipping index of a table. `ADD`, `DROP` and `CLEAR` are lightweight
@@ -1457,10 +1466,11 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 ALTER TABLE test ADD INDEX idx x TYPE minmax GRANULARITY 1;
 ALTER TABLE test MATERIALIZE INDEX idx;
 )", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
     });
 
-    factory.registerStatement("ALTER TABLE ... PROJECTION", "ALTER",
+    factory.registerStatement("ALTER TABLE ... PROJECTION",
     {
         .description = R"(
 Adds, drops, materializes or clears a projection of a table. A projection stores the data of the table in another
@@ -1477,10 +1487,11 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 ALTER TABLE visits_order ADD PROJECTION user_name_projection (SELECT * ORDER BY user_name);
 ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection;
 )", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
     });
 
-    factory.registerStatement("ALTER TABLE ... STATISTICS", "ALTER",
+    factory.registerStatement("ALTER TABLE ... STATISTICS",
     {
         .description = R"(
 Adds, modifies, drops, materializes or clears the statistics of the columns of a table. Column statistics help the
@@ -1494,10 +1505,11 @@ ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)
 ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 )",
         .examples = {{"Change the statistics of columns", "ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
     {
         .description = R"(
 Adds, modifies or removes the comment of a table, regardless of whether it was set before or not. The comment is
@@ -1507,10 +1519,11 @@ shown in `system.tables` and in the result of `SHOW CREATE TABLE`.
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .examples = {{"Change the comment of a table", "ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
     });
 
-    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT", "ALTER",
+    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
     {
         .description = R"(
 Adds, modifies or removes the comment of a database, regardless of whether it was set before or not. The comment is
@@ -1520,10 +1533,11 @@ shown in `system.databases` and in the result of `SHOW CREATE DATABASE`.
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
         .examples = {{"Change the comment of a database", "ALTER DATABASE database_with_comment MODIFY COMMENT 'new comment on a database';", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
     });
 
-    factory.registerStatement("ALTER TABLE ... MODIFY QUERY", "ALTER",
+    factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
     {
         .description = R"(
 Changes the `SELECT` query of a materialized view without interrupting the ingestion process. The query was specified
@@ -1539,10 +1553,11 @@ ALTER TABLE mv MODIFY QUERY
     FROM events
     GROUP BY ts, event_type;
 )", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "CREATE VIEW"},
     });
 
-    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK", "ALTER",
+    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
     {
         .description = R"(
 Applies the mask created by lightweight deletes and forcefully removes the rows marked as deleted from disk. The
@@ -1552,10 +1567,11 @@ command is a heavyweight mutation; it is semantically equal to `ALTER TABLE [db.
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 )",
         .examples = {{"Materialize lightweight deletes", "ALTER TABLE my_table APPLY DELETED MASK;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
     });
 
-    factory.registerStatement("ALTER TABLE ... APPLY PATCHES", "ALTER",
+    factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
     {
         .description = R"(
 Manually triggers the materialization of the patch parts created by lightweight `UPDATE` statements. It forcefully
@@ -1565,6 +1581,7 @@ applies the pending patches to the data parts by rewriting only the affected col
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 )",
         .examples = {{"Materialize lightweight updates", "ALTER TABLE my_table APPLY PATCHES;", ""}},
+        .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
     });
 }

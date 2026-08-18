@@ -196,7 +196,7 @@ namespace DB
 
 REGISTER_STATEMENTS(SettingsProfile)
 {
-    factory.registerStatement("CREATE SETTINGS PROFILE", "CREATE",
+    factory.registerStatement("CREATE SETTINGS PROFILE",
     {
         .description = R"(
 Creates a settings profile - a named set of settings with optional constraints, which can be assigned to users and
@@ -212,10 +212,11 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
         .examples = {{"Create a settings profile and assign it to a user", R"(
 CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin;
 )", ""}},
+        .parent = "CREATE",
         .related = {"ALTER SETTINGS PROFILE", "CREATE USER", "CREATE ROLE", "SET", "DROP", "SHOW"},
     });
 
-    factory.registerStatement("ALTER SETTINGS PROFILE", "ALTER",
+    factory.registerStatement("ALTER SETTINGS PROFILE",
     {
         .description = R"(
 Changes a settings profile: renames it, changes its settings and constraints, and the users and roles it is assigned
@@ -235,6 +236,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
 )",
         .examples = {{"Replace the settings of a profile", "ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE SETTINGS PROFILE", "ALTER", "SET", "SHOW"},
     });
 }

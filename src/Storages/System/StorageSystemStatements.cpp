@@ -25,16 +25,14 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
 
 void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    for (const auto & [name, statement] : StatementFactory::instance().getAllStatements())
+    for (const auto & [name, documentation] : StatementFactory::instance().getAllStatements())
     {
-        const auto & documentation = statement.documentation;
-
         size_t i = 0;
         res_columns[i++]->insert(name);
         res_columns[i++]->insert(documentation.syntaxAsString());
         res_columns[i++]->insert(documentation.description);
         res_columns[i++]->insert(documentation.examplesAsString());
-        res_columns[i++]->insert(statement.parent);
+        res_columns[i++]->insert(documentation.parent);
 
         Array related;
         for (const auto & related_name : documentation.related)

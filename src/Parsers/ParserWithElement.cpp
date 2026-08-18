@@ -95,7 +95,7 @@ namespace DB
 
 REGISTER_STATEMENTS(With)
 {
-    factory.registerStatement("WITH", "SELECT",
+    factory.registerStatement("WITH",
     {
         .description = R"(
 Defines common table expressions (CTE), common scalar expressions and recursive queries, which can be referenced by
@@ -110,6 +110,7 @@ WITH RECURSIVE <identifier> AS <subquery expression>
 WITH t AS (SELECT number AS n FROM numbers(10))
 SELECT sum(n) FROM t;
 )", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
     });
 }

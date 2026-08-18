@@ -86,7 +86,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Undrop)
 {
-    factory.registerStatement("UNDROP", "",
+    factory.registerStatement("UNDROP",
     {
         .description = R"(
 Cancels the dropping of a table. A table of an `Atomic` database can be recovered during the period set by the server

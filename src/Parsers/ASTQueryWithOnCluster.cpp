@@ -42,7 +42,7 @@ namespace DB
 
 REGISTER_STATEMENTS(OnCluster)
 {
-    factory.registerStatement("ON CLUSTER", "",
+    factory.registerStatement("ON CLUSTER",
     {
         .description = R"(
 Executes a DDL query on all the servers of a cluster instead of only on the server which received it. The query is put

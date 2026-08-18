@@ -215,7 +215,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Grant)
 {
-    factory.registerStatement("GRANT", "",
+    factory.registerStatement("GRANT",
     {
         .description = R"(
 Grants privileges to user accounts or roles, or assigns roles to user accounts or to other roles.
@@ -235,7 +235,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
         .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
     });
 
-    factory.registerStatement("REVOKE", "",
+    factory.registerStatement("REVOKE",
     {
         .description = R"(
 Revokes privileges from users or roles, or removes the assignment of a role. `ADMIN OPTION FOR` revokes only the right

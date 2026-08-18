@@ -771,7 +771,7 @@ namespace DB
 
 REGISTER_STATEMENTS(User)
 {
-    factory.registerStatement("CREATE USER", "CREATE",
+    factory.registerStatement("CREATE USER",
     {
         .description = R"(
 Creates user accounts. A user can be identified by a password, by a certificate, by an SSH key, or by an external
@@ -789,10 +789,11 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 )",
         .examples = {{"Create a user with a password", "CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';", ""}},
+        .parent = "CREATE",
         .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
     });
 
-    factory.registerStatement("ALTER USER", "ALTER",
+    factory.registerStatement("ALTER USER",
     {
         .description = R"(
 Changes user accounts: renames them, changes their authentication methods, allowed hosts, default roles, default
@@ -810,6 +811,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [SETTINGS variable [= value] ... | PROFILE 'profile_name'] [,...]
 )",
         .examples = {{"Change the default roles of a user", "ALTER USER user DEFAULT ROLE role1, role2;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
     });
 }

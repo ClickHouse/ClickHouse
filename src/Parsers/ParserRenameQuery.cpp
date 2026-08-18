@@ -116,7 +116,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Rename)
 {
-    factory.registerStatement("RENAME", "",
+    factory.registerStatement("RENAME",
     {
         .description = R"(
 Renames databases, tables or dictionaries. Several entities can be renamed in a single query, but the query is then not
@@ -129,7 +129,7 @@ RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
         .related = {"EXCHANGE", "CREATE", "ALTER"},
     });
 
-    factory.registerStatement("EXCHANGE", "",
+    factory.registerStatement("EXCHANGE",
     {
         .description = R"(
 Exchanges the names of two tables or two dictionaries atomically. The same can be achieved with a `RENAME` query using

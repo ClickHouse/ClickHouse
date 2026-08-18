@@ -99,7 +99,7 @@ namespace DB
 
 REGISTER_STATEMENTS(Check)
 {
-    factory.registerStatement("CHECK TABLE", "",
+    factory.registerStatement("CHECK TABLE",
     {
         .description = R"(
 Performs a validation check on a table or on its partitions or parts. It verifies the checksums and the other internal
@@ -112,7 +112,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
         .related = {"CHECK DATABASE", "SYSTEM", "OPTIMIZE"},
     });
 
-    factory.registerStatement("CHECK DATABASE", "",
+    factory.registerStatement("CHECK DATABASE",
     {
         .description = R"(
 Verifies the health of a database. Its primary use is with the `DataLakeCatalog` database engine, where it checks that

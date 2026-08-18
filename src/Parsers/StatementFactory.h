@@ -12,19 +12,6 @@
 namespace DB
 {
 
-/** Documentation of a single SQL statement of ClickHouse.
-  *
-  * It is the `Documentation` of the statement, plus the name of the statement it is a part of, if any.
-  * For example, `ALTER TABLE ... UPDATE` is a part of `ALTER`, and `WHERE` is a part of `SELECT`.
-  */
-struct StatementDocumentation
-{
-    Documentation documentation;
-
-    /// The name of the enclosing statement, e.g. `SELECT` for the `WHERE` clause. Empty for a top-level statement.
-    String parent;
-};
-
 /** A registry of all SQL statements of ClickHouse, along with their embedded documentation.
   *
   * The documentation of a statement is registered by the parser of that statement (see `REGISTER_STATEMENTS`),
@@ -39,15 +26,16 @@ public:
     static StatementFactory & instance();
 
     /// Registers the documentation of a statement. Statement names are unique; registering a name twice is an error.
-    /// `parent` is the name of the enclosing statement, or empty for a top-level statement.
-    void registerStatement(const String & name, const String & parent, Documentation documentation);
+    /// The `parent` field of the documentation is the name of the enclosing statement, or empty for a top-level
+    /// statement. For example, `ALTER TABLE ... UPDATE` is a part of `ALTER`, and `WHERE` is a part of `SELECT`.
+    void registerStatement(const String & name, Documentation documentation);
 
     /// All registered statements, ordered by name.
-    const std::map<String, StatementDocumentation> & getAllStatements() const { return statements; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::map<String, Documentation> & getAllStatements() const { return statements; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     /// An ordered map, so that `system.statements` and the callers of `getAllStatements` see a deterministic order.
-    std::map<String, StatementDocumentation> statements; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::map<String, Documentation> statements; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 using StatementRegisterFunctionPtr = void (*)(StatementFactory &);
@@ -81,6 +69,6 @@ void registerStatements();
 ///
 ///     REGISTER_STATEMENTS(Drop)
 ///     {
-///         factory.registerStatement("DROP", "", { .description = ..., .syntax = ... });
+///         factory.registerStatement("DROP", { .description = ..., .syntax = ... });
 ///     }
 #define REGISTER_STATEMENTS(fn) REGISTER_STATEMENTS_IMPL(fn, registerStatements##fn, REGISTER_STATEMENTS_##fn)

@@ -268,7 +268,7 @@ namespace DB
 
 REGISTER_STATEMENTS(QueryWithOutput)
 {
-    factory.registerStatement("FORMAT", "SELECT",
+    factory.registerStatement("FORMAT",
     {
         .description = R"(
 Specifies the format in which the result of the query is serialized. See `system.formats` for the list of the
@@ -278,10 +278,11 @@ supported formats. The format can also be specified by the setting `output_forma
 SELECT ... FORMAT format
 )",
         .examples = {{"Return the result as JSON", "SELECT * FROM numbers(3) FORMAT JSONEachRow;", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
     });
 
-    factory.registerStatement("INTO OUTFILE", "SELECT",
+    factory.registerStatement("INTO OUTFILE",
     {
         .description = R"(
 Redirects the result of the query to a file on the client side. Compressed files are supported; the compression type is
@@ -292,6 +293,7 @@ additionally prints the result to the standard output, and `APPEND` appends to a
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 )",
         .examples = {{"Write the result to a compressed file", "SELECT * FROM numbers(3) INTO OUTFILE 'result.tsv.gz';", ""}},
+        .parent = "SELECT",
         .related = {"SELECT", "FORMAT", "INSERT INTO"},
     });
 }

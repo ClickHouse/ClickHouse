@@ -67,7 +67,7 @@ namespace DB
 
 REGISTER_STATEMENTS(KillQuery)
 {
-    factory.registerStatement("KILL", "",
+    factory.registerStatement("KILL",
     {
         .description = R"(
 Terminates the queries or the mutations which match the filter expression. The queries to terminate are selected from

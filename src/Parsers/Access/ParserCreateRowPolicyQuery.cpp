@@ -322,7 +322,7 @@ namespace DB
 
 REGISTER_STATEMENTS(RowPolicy)
 {
-    factory.registerStatement("CREATE ROW POLICY", "CREATE",
+    factory.registerStatement("CREATE ROW POLICY",
     {
         .description = R"(
 Creates a row policy, i.e. a filter which determines which rows a user can read from a table. Row policies only make
@@ -343,10 +343,11 @@ CREATE ROW POLICY pol1 ON table1
     FOR SELECT USING id = 1
     TO accountant;
 )", ""}},
+        .parent = "CREATE",
         .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
     });
 
-    factory.registerStatement("ALTER ROW POLICY", "ALTER",
+    factory.registerStatement("ALTER ROW POLICY",
     {
         .description = R"(
 Changes a row policy: renames it and changes its condition, its kind (permissive or restrictive) and the roles and
@@ -363,6 +364,7 @@ ALTER [ROW] POLICY [IF EXISTS] name [, ...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 )",
         .examples = {{"Rename a row policy", "ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;", ""}},
+        .parent = "ALTER",
         .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
     });
 }
