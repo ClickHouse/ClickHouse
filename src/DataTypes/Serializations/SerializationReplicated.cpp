@@ -232,7 +232,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Binary bulk deserialization of ColumnReplicated is supported only for Native format");
 
     if (!column.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading into non-empty column ColumnReplicated is not supported in Native format");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Reading into non-empty column ColumnReplicated is not supported in Native format");
 
     auto & column_replicated = assert_cast<ColumnReplicated &>(column);
 
