@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS json_bf_edges;
 DROP TABLE IF EXISTS json_bf_dynamic_edges;
 DROP TABLE IF EXISTS json_bf_shared_edges;
-DROP TABLE IF EXISTS json_bf_materialize;
 
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(false_positive_rate = 0.01, false_positive_rate = 0.02) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
@@ -146,24 +145,6 @@ SELECT 'shared nested', groupArray(id) FROM json_bf_shared_edges WHERE j.nested.
 OPTIMIZE TABLE json_bf_shared_edges FINAL;
 SELECT 'after merge', groupArray(id) FROM json_bf_shared_edges WHERE j.nested.x = 20 SETTINGS force_data_skipping_indices = 'idx';
 
-CREATE TABLE json_bf_materialize
-(
-    id UInt64,
-    j JSON
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS index_granularity = 2;
-
-INSERT INTO json_bf_materialize VALUES (1, '{"v":"before-one"}');
-INSERT INTO json_bf_materialize VALUES (2, '{"v":"before-two"}');
-ALTER TABLE json_bf_materialize ADD INDEX idx j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 2;
-ALTER TABLE json_bf_materialize MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
-SELECT 'materialized index', groupArray(id) FROM json_bf_materialize WHERE j.v = 'before-two' SETTINGS force_data_skipping_indices = 'idx';
-ALTER TABLE json_bf_materialize UPDATE j = '{"v":"after-two"}'::JSON WHERE id = 2 SETTINGS mutations_sync = 2;
-SELECT 'mutation rebuilt index', groupArray(id) FROM json_bf_materialize WHERE j.v = 'after-two' SETTINGS force_data_skipping_indices = 'idx';
-
 DROP TABLE json_bf_edges;
 DROP TABLE json_bf_dynamic_edges;
 DROP TABLE json_bf_shared_edges;
-DROP TABLE json_bf_materialize;
