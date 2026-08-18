@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -1031,8 +1032,23 @@ void MergeTreeData::checkProperties(
             {
                 const auto column = metadata.columns.tryGetColumnDescription(
                     GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-                if (column && column->codec
-                    && CompressionCodecFactory::instance().get(column->codec, column->type)->isLossyCompression())
+                if (!column || !column->codec)
+                    continue;
+
+                /// A codec applies to `Array(Float64)` through its float substream, not through the outer
+                /// type, so lossiness is resolved per substream the way the part writer resolves it.
+                bool lossy = false;
+                ISerialization::StreamCallback callback = [&](const auto & substream_path)
+                {
+                    if (lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                        return;
+                    const auto & substream_type = substream_path.back().data.type;
+                    lossy = CompressionCodecFactory::instance()
+                                .get(column->codec, substream_type.get())->isLossyCompression();
+                };
+                column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+
+                if (lossy)
                     result.emplace(name, column->codec->formatWithSecretsOneLine());
             }
             return result;
