@@ -19,10 +19,30 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
 {
+    [[noreturn]] void throwReadFailure(
+        const google::cloud::Status & status,
+        const String & bucket,
+        const String & key,
+        const std::optional<Int64> & expected_generation,
+        const String & context)
+    {
+        if (expected_generation && status.code() == google::cloud::StatusCode::kFailedPrecondition)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "GCS object {}/{} was replaced during read (IfGenerationMatch on generation {} failed); "
+                "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+                bucket,
+                key,
+                *expected_generation);
+
+        throwFromGCSStatus(status, context);
+    }
+
     void logGCSReadFailure(
         const BlobStorageLogWriterPtr & blob_storage_log,
         const String & bucket,
@@ -141,7 +161,7 @@ void ReadBufferFromGCS::initialize()
     {
         read_failed = true;
         logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
-        throwFromGCSStatus(read_stream->status(),
+        throwReadFailure(read_stream->status(), bucket, key, expected_generation,
             fmt::format("while opening a read stream for '{}' in bucket '{}' at offset {}{}", key, bucket, offset,
                 expected_generation
                     ? fmt::format(" (pinned to generation {}; a precondition failure means the object was overwritten during the read)",
@@ -193,7 +213,11 @@ bool ReadBufferFromGCS::nextImpl()
         {
             read_failed = true;
             logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
-            throwFromGCSStatus(read_stream->status(),
+            throwReadFailure(
+                read_stream->status(),
+                bucket,
+                key,
+                expected_generation,
                 fmt::format("while reading '{}' in bucket '{}' at offset {}", key, bucket, offset));
         }
         return false;
