@@ -83,7 +83,7 @@ SELECT 'Test nondeterministic functions fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(1) WHERE throwIf(randConstant() % 1 = 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'Test comparison non-placeholder expressions stay eager';
-SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1));
+SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)) AS non_literal_comparison;
 
 SELECT 'Test view-backed count subqueries fall back to normal analysis';
 DROP VIEW IF EXISTS test_03562_view;
@@ -108,6 +108,7 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 0 OR (0 AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT true AND (true OR (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
+SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)) AS non_literal_comparison%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 
 SELECT 'Test folded scalar subquery in an aggregate projection';
 SELECT DISTINCT (1 OR ((SELECT count(*) FROM test_03562) > 1)), count() IGNORE NULLS AS `count()` FROM test_03562 LIMIT 7;
