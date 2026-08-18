@@ -3,11 +3,18 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
+#include <Common/Arena.h>
+#include <Common/CompactSymbols.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
+#include <cstring>
+#include <mutex>
+#include <numeric>
 #include <optional>
+#include <stdexcept>
+#include <unordered_map>
 
 #include <filesystem>
 
@@ -90,6 +97,27 @@ extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t
 
 namespace DB
 {
+
+class CompactSymbolTable
+{
+public:
+    explicit CompactSymbolTable(std::string_view data)
+        : reader(data)
+    {
+    }
+
+    CompactSymbols::Reader reader;
+};
+
+struct SymbolIndex::NameStorage
+{
+    std::mutex mutex;
+    std::unordered_map<uint64_t, const char *> retained_names;
+    Arena arena;
+    uint32_t cached_source_index = std::numeric_limits<uint32_t>::max();
+    uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
+    std::vector<std::string> cached_names;
+};
 
 namespace
 {
@@ -240,7 +268,7 @@ void collectSymbolsFromProgramHeaders(
                         elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value + elf_sym[sym_index].size);
-                    symbol.name = sym_name;
+                    symbol.setName(sym_name);
 
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].size)
@@ -308,7 +336,7 @@ void collectSymbolsFromELFSymbolTable(
             symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(
             symbol_table_entry->value + symbol_table_entry->size);
-        symbol.name = symbol_name;
+        symbol.setName(symbol_name);
 
         if (symbol_table_entry->size)
             symbols.push_back(symbol);
@@ -343,11 +371,46 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 }
 
 
+bool searchAndCollectCompactSymbols(const Elf & elf, SymbolIndex::Data & data)
+{
+    auto section = elf.findSectionByName(CompactSymbols::section_name.data());
+    if (!section)
+        return false;
+
+    try
+    {
+        auto table = std::make_shared<CompactSymbolTable>(std::string_view(section->begin(), section->size()));
+        auto addresses = table->reader.decodeAddresses();
+        if (data.compact_symbol_tables.size() >= uint64_t{1} << 31)
+            return true;
+
+        uint32_t source_index = static_cast<uint32_t>(data.compact_symbol_tables.size());
+        data.compact_symbol_tables.push_back(table);
+        data.symbols.reserve(data.symbols.size() + addresses.size());
+        for (const auto & address : addresses)
+        {
+            if (!address.address || !address.size || address.size > std::numeric_limits<uint64_t>::max() - address.address)
+                continue;
+
+            SymbolIndex::Symbol symbol{};
+            symbol.offset_begin = reinterpret_cast<const void *>(address.address);
+            symbol.offset_end = reinterpret_cast<const void *>(address.address + address.size);
+            symbol.setCompactName(source_index, address.name_index);
+            data.symbols.push_back(symbol);
+        }
+    }
+    catch (const std::runtime_error &)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+
 void collectSymbolsFromELF(
     DynamicLinkingProgramHeaderInfo * info,
-    std::vector<SymbolIndex::Symbol> & symbols,
-    std::vector<SymbolIndex::Object> & objects,
-    String & self_build_id)
+    SymbolIndex::Data & data)
 {
     String object_name;
     String build_id;
@@ -355,7 +418,7 @@ void collectSymbolsFromELF(
 #if defined (USE_MUSL)
     object_name = "/proc/self/exe";
     build_id = Elf(object_name).getBuildID();
-    self_build_id = build_id;
+    data.self_build_id = build_id;
 #else
     /// MSan does not know that the program segments in memory are initialized.
     __msan_unpoison(info, sizeof(*info));
@@ -373,8 +436,8 @@ void collectSymbolsFromELF(
         if (build_id.empty())
             build_id = Elf(object_name).getBuildID();
 
-        if (self_build_id.empty())
-            self_build_id = build_id;
+        if (data.self_build_id.empty())
+            data.self_build_id = build_id;
     }
 #endif
 
@@ -458,13 +521,14 @@ void collectSymbolsFromELF(
     object.address_begin = reinterpret_cast<const void *>(info->addr);
     object.address_end = reinterpret_cast<const void *>(info->addr + object.elf->size());
     object.name = object_name;
-    objects.push_back(std::move(object));
+    data.objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+    if (!searchAndCollectCompactSymbols(*data.objects.back().elf, data))
+        searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data.symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data.symbols);
 #endif
 }
 
@@ -478,7 +542,7 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_p
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.self_build_id);
+    collectSymbolsFromELF(info, data);
 
     /* Continue iterations */
     return 0;
@@ -603,7 +667,7 @@ void collectSymbolsFromMachOImage(
         /// relative offsets. findSymbol skips the address-to-offset conversion on macOS.
         symbol.offset_begin = reinterpret_cast<const void *>(sym.n_value + slide);
         symbol.offset_end = symbol.offset_begin; /// Size will be computed below
-        symbol.name = sym_name;
+        symbol.setName(sym_name);
 
         local_symbols.push_back(symbol);
     }
@@ -700,6 +764,15 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 }
 
 
+SymbolIndex::SymbolIndex()
+{
+    load();
+    if (!data.compact_symbol_tables.empty())
+        name_storage = std::make_unique<NameStorage>();
+}
+
+SymbolIndex::~SymbolIndex() = default;
+
 void SymbolIndex::load()
 {
 #if defined(__ELF__)
@@ -718,6 +791,33 @@ void SymbolIndex::load()
     {
         return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
     }), data.symbols.end());
+
+    bool has_compact_symbols = std::any_of(data.symbols.begin(), data.symbols.end(), [](const Symbol & symbol)
+    {
+        return symbol.hasCompactName();
+    });
+    if (has_compact_symbols)
+    {
+        if (data.symbols.size() > std::numeric_limits<uint32_t>::max())
+            throw std::runtime_error("Too many symbols for SymbolIndex scan order");
+
+        data.symbol_scan_order.resize(data.symbols.size());
+        std::iota(data.symbol_scan_order.begin(), data.symbol_scan_order.end(), 0);
+        std::sort(data.symbol_scan_order.begin(), data.symbol_scan_order.end(), [this](uint32_t lhs_index, uint32_t rhs_index)
+        {
+            const auto & lhs = data.symbols[lhs_index];
+            const auto & rhs = data.symbols[rhs_index];
+            if (lhs.hasCompactName() != rhs.hasCompactName())
+                return !lhs.hasCompactName();
+            if (!lhs.hasCompactName())
+                return lhs_index < rhs_index;
+            if (lhs.compactSourceIndex() != rhs.compactSourceIndex())
+                return lhs.compactSourceIndex() < rhs.compactSourceIndex();
+            if (lhs.compactNameIndex() != rhs.compactNameIndex())
+                return lhs.compactNameIndex() < rhs.compactNameIndex();
+            return lhs_index < rhs_index;
+        });
+    }
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
@@ -749,6 +849,95 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
     /// On macOS, symbols use absolute virtual addresses, so search directly.
 
     return find(offset, data.symbols);
+}
+
+const char * SymbolIndex::getSymbolName(const Symbol & symbol) const
+{
+    if (!symbol.hasCompactName())
+        return symbol.directName();
+
+    uint32_t source_index = symbol.compactSourceIndex();
+    uint32_t name_index = symbol.compactNameIndex();
+    if (!name_storage || source_index >= data.compact_symbol_tables.size())
+        return nullptr;
+
+    uint64_t key = (static_cast<uint64_t>(source_index) << 32) | name_index;
+    std::lock_guard lock(name_storage->mutex);
+    if (auto it = name_storage->retained_names.find(key); it != name_storage->retained_names.end())
+        return it->second;
+
+    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
+    if (source_index != name_storage->cached_source_index || granule_index != name_storage->cached_granule_index)
+    {
+        name_storage->cached_source_index = source_index;
+        name_storage->cached_granule_index = granule_index;
+        try
+        {
+            name_storage->cached_names = data.compact_symbol_tables[source_index]->reader.decodeNameGranule(granule_index);
+        }
+        catch (const std::runtime_error &)
+        {
+            name_storage->cached_names.clear();
+        }
+    }
+
+    size_t name_in_granule = name_index % CompactSymbols::names_per_granule;
+    if (name_in_granule >= name_storage->cached_names.size())
+        return nullptr;
+
+    const std::string & name = name_storage->cached_names[name_in_granule];
+    char * retained_name = name_storage->arena.alloc(name.size() + 1);
+    memcpy(retained_name, name.data(), name.size());
+    retained_name[name.size()] = '\0';
+    name_storage->retained_names.emplace(key, retained_name);
+    return retained_name;
+}
+
+bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view & name)
+{
+    size_t symbols_size = index.data.symbol_scan_order.empty() ? index.data.symbols.size() : index.data.symbol_scan_order.size();
+    if (position >= symbols_size)
+        return false;
+
+    size_t symbol_index = index.data.symbol_scan_order.empty() ? position : index.data.symbol_scan_order[position];
+    ++position;
+    symbol = &index.data.symbols[symbol_index];
+    if (!symbol->hasCompactName())
+    {
+        const char * direct_name = symbol->directName();
+        name = direct_name ? std::string_view(direct_name) : std::string_view();
+        return true;
+    }
+
+    uint32_t source_index = symbol->compactSourceIndex();
+    uint32_t name_index = symbol->compactNameIndex();
+    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
+    if (source_index >= index.data.compact_symbol_tables.size())
+    {
+        name = {};
+        return true;
+    }
+
+    if (source_index != cached_source_index || granule_index != cached_granule_index)
+    {
+        cached_source_index = source_index;
+        cached_granule_index = granule_index;
+        try
+        {
+            cached_names = index.data.compact_symbol_tables[source_index]->reader.decodeNameGranule(granule_index);
+        }
+        catch (const std::runtime_error &)
+        {
+            cached_names.clear();
+        }
+    }
+
+    size_t name_in_granule = name_index % CompactSymbols::names_per_granule;
+    if (name_in_granule < cached_names.size())
+        name = cached_names[name_in_granule];
+    else
+        name = {};
+    return true;
 }
 
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const

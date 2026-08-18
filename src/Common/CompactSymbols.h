@@ -1,0 +1,59 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace DB::CompactSymbols
+{
+
+inline constexpr std::string_view section_name = ".clickhouse.symbols";
+inline constexpr uint32_t format_version = 1;
+inline constexpr uint32_t names_per_granule = 4096;
+inline constexpr int compression_level = 19;
+
+struct Symbol
+{
+    uint64_t address;
+    uint64_t size;
+    std::string_view name;
+};
+
+struct AddressEntry
+{
+    uint64_t address;
+    uint64_t size;
+    uint32_t name_index;
+};
+
+std::vector<char> encode(std::span<const Symbol> symbols);
+
+class Reader
+{
+public:
+    explicit Reader(std::string_view data_);
+
+    uint64_t nameCount() const { return name_count; }
+    uint64_t addressCount() const { return address_count; }
+    uint32_t granuleCount() const { return granule_count; }
+
+    std::vector<AddressEntry> decodeAddresses() const;
+    std::vector<std::string> decodeNameGranule(uint32_t granule_index) const;
+
+private:
+    std::string_view data;
+    uint64_t name_count;
+    uint64_t address_count;
+    uint32_t granule_count;
+    uint64_t marks_offset;
+    uint64_t marks_size;
+    uint64_t names_offset;
+    uint64_t names_size;
+    uint64_t addresses_offset;
+    uint64_t addresses_size;
+};
+
+}

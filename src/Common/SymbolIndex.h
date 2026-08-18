@@ -1,12 +1,19 @@
 #pragma once
 
-#include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <string>
-#include <Common/Elf.h>
+#include <string_view>
+#include <vector>
 #include <boost/noncopyable.hpp>
+#include <Common/Elf.h>
 
 namespace DB
 {
+
+class CompactSymbolTable;
 
 #if defined(OS_DARWIN)
 /// Forward declaration to avoid pulling heavy MachO.h (and MMapReadBufferFromFile) into every includer.
@@ -20,9 +27,11 @@ class MachO;
 class SymbolIndex : private boost::noncopyable
 {
 protected:
-    SymbolIndex() { load(); }
+    SymbolIndex();
 
 public:
+    ~SymbolIndex();
+
     static const SymbolIndex & instance();
 
     struct Symbol
@@ -30,7 +39,47 @@ public:
         /// Here addresses are relative to objects.
         const void * offset_begin;
         const void * offset_end;
-        const char * name;
+
+        void setName(const char * name) { name_reference = reinterpret_cast<uintptr_t>(name); }
+        const char * directName() const { return reinterpret_cast<const char *>(name_reference); }
+
+        void setCompactName(uint32_t source_index, uint32_t name_index)
+        {
+            name_reference = compact_name_mask | (static_cast<uint64_t>(source_index) << 32) | name_index;
+        }
+
+        bool hasCompactName() const { return name_reference & compact_name_mask; }
+        uint32_t compactSourceIndex() const { return static_cast<uint32_t>((name_reference >> 32) & 0x7fffffff); }
+        uint32_t compactNameIndex() const { return static_cast<uint32_t>(name_reference); }
+
+    private:
+        static constexpr uint64_t compact_name_mask = uint64_t{1} << 63;
+        uint64_t name_reference{};
+    };
+
+    class SymbolIterator
+    {
+    public:
+        SymbolIterator(SymbolIterator &&) noexcept = default;
+        SymbolIterator & operator=(SymbolIterator &&) = delete;
+        SymbolIterator(const SymbolIterator &) = delete;
+        SymbolIterator & operator=(const SymbolIterator &) = delete;
+
+        /// `name` remains valid until the next call to `next`.
+        bool next(const Symbol *& symbol, std::string_view & name);
+
+    private:
+        friend class SymbolIndex;
+        explicit SymbolIterator(const SymbolIndex & index_)
+            : index(index_)
+        {
+        }
+
+        const SymbolIndex & index;
+        size_t position = 0;
+        uint32_t cached_source_index = std::numeric_limits<uint32_t>::max();
+        uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
+        std::vector<std::string> cached_names;
     };
 
     struct Object
@@ -49,6 +98,9 @@ public:
     };
 
     const Symbol * findSymbol(const void * address) const;
+    /// Names returned for compact symbols remain valid for the process lifetime.
+    const char * getSymbolName(const Symbol & symbol) const;
+    SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
     const Object * findObject(const void * address) const;
     const Object * thisObject() const;
 
@@ -63,11 +115,17 @@ public:
     {
         std::vector<Symbol> symbols;
         std::vector<Object> objects;
+        std::vector<std::shared_ptr<const CompactSymbolTable>> compact_symbol_tables;
+        std::vector<uint32_t> symbol_scan_order;
         /// BuildID from the Object corresponding to main executable (as opposed to dynamic libraries).
         String self_build_id;
     };
+
 private:
+    struct NameStorage;
+
     Data data;
+    std::unique_ptr<NameStorage> name_storage;
 
     void load();
 };
