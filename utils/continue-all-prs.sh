@@ -717,10 +717,13 @@ prepare_worktree_for_task()
     git -C "$wt" reset --hard -q HEAD
     git -C "$wt" checkout --detach -q HEAD
     remove_registered_descendants "$wt"
+    # `git submodule foreach` visits only initialized submodules. Always clean
+    # those existing worktrees: `--skip-submodules` avoids initialization, but
+    # must not let dirt from an earlier non-skipped run leak into the next PR.
+    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
+    git -C "$wt" submodule foreach --quiet --recursive \
+        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
     if (( ! SKIP_SUBMODULES )); then
-        # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
-        git -C "$wt" submodule foreach --quiet --recursive \
-            'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
         git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
     fi
     # Integration tests can leave root-owned artifacts, and stale servers can
@@ -1081,6 +1084,11 @@ ${STEER_PROMPT} ${build_steer}"
         fi
         (( ec != 0 )) && break
     done
+
+    if [[ -n "$codex_home" ]]; then
+        rm -rf -- "$codex_home"
+        unset CODEX_ACCESS_TOKEN
+    fi
 
     return "$ec"
 }
