@@ -20,6 +20,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -255,6 +256,33 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
         || function_name == "multiMatchAny";
+}
+
+bool MergeTreeIndexConditionText::acceptsTokenizerArgument(const String & function_name)
+{
+    /// hasToken is excluded: its third argument is a start position, not a tokenizer.
+    return function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+}
+
+bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const RPNBuilderTreeNode & node) const
+{
+    /// A postprocessor transforms the tokens after tokenization, so the index stores something the
+    /// bare tokenizer of the argument does not produce and the two cannot answer the same predicate.
+    if (has_postprocessor)
+        return false;
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    if (!node.tryGetConstant(const_value, const_type) || const_value.getType() != Field::Types::String)
+        return false;
+
+    /// Canonical descriptions, not raw strings: spelling variants and registered aliases of one
+    /// tokenizer compare equal, while parameters still distinguish e.g. ngrams(3) from ngrams(4).
+    auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
+    return argument_tokenizer->getDescription() == tokenizer->getDescription();
 }
 
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
@@ -640,8 +668,17 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
-        if (function_arguments_size != 2)
+        if (function_arguments_size == 3)
+        {
+            /// The third argument is a tokenizer definition. The index path tokenizes needles with the
+            /// index tokenizer, so it can answer the predicate only when both tokenizers agree.
+            if (!acceptsTokenizerArgument(function_name) || !tokenizerArgumentMatchesIndex(function.getArgumentAt(2)))
+                return false;
+        }
+        else if (function_arguments_size != 2)
+        {
             return false;
+        }
 
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);

@@ -161,6 +161,12 @@ private:
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
+    /// Whether the function takes an optional tokenizer definition as its third argument.
+    static bool acceptsTokenizerArgument(const String & function_name);
+
+    /// Whether the node is a constant tokenizer definition that denotes the index tokenizer.
+    bool tokenizerArgumentMatchesIndex(const RPNBuilderTreeNode & node) const;
+
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
