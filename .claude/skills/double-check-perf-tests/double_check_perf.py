@@ -322,9 +322,12 @@ class ChangedQuery:
     # column, where CHANGED_THRESHOLD_FLOOR applies.
     changed_threshold: Optional[float] = None
     # CI flagged this query and then demoted it in its own confirmation rerun.
-    # Its numbers come from report.html, since compare.sh retracts demoted
-    # queries from all-query-metrics.tsv.
     ci_unconfirmed: bool = False
+    # The numbers came from report.html because the TSV had no row for this
+    # query. Only such a row is missing a changed_threshold CI *did* export;
+    # an old shard predating the column is a different case, and keeps the
+    # floor.
+    numbers_from_html: bool = False
     # Set when the per-query threshold CI used could not be recovered. Such a
     # query gets no verdict: judging it by the bare floor would apply a weaker
     # gate than CI's and could call a noisy query CONFIRMED.
@@ -493,6 +496,7 @@ def find_changed_queries(
         for test, qi in sorted(flagged):
             row = timings.get((test, qi))
             unconfirmed = False
+            from_html = row is None
             if row is None:
                 # compare.sh retracts a demoted query from the TSV. Its numbers
                 # are still in the report, and it is precisely the kind of
@@ -528,6 +532,7 @@ def find_changed_queries(
                     query_display_name=row["query_display_name"],
                     changed_threshold=row.get("changed_threshold"),
                     ci_unconfirmed=unconfirmed,
+                    numbers_from_html=from_html,
                 )
             )
     return changed, read_ok, unresolved
@@ -732,7 +737,8 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
 # with `today()` left as a parameter: the window is anchored on the day the run
 # happened, not on today, so the numbers are the ones that run actually used.
 HISTORICAL_THRESHOLDS_QUERY = """\
-SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff
+SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+    any(query_display_name) AS query_display_name
 FROM query_metrics_v2
 WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
         AND toDate('{day}') - INTERVAL 1 WEEK
@@ -762,25 +768,34 @@ def play_query(query: str, what: str) -> Optional[str]:
     return None
 
 
-def fetch_historical_thresholds(run_day: str) -> Optional[dict[tuple[str, int], float]]:
+def fetch_historical_thresholds(
+    run_day: str,
+) -> Optional[dict[tuple[str, int, str], float]]:
     """The `max_diff` per query that CI's own threshold computation used.
 
     Only needed for queries CI demoted: compare.sh retracts those from the TSV,
     taking the exported `changed_threshold` with them, and judging them by the
     bare 0.15 floor instead would apply a weaker gate than the one CI used to
-    flag them in the first place."""
+    flag them in the first place.
+
+    Keyed by (test, query_index, query_display_name) because that is the join
+    compare.sh performs. The index alone is not an identity: it is positional,
+    so an edited query body at the same index would otherwise inherit the
+    learned threshold of the query that used to be there. Under CI's join such
+    a query simply finds no historical row and falls back to the floor, and
+    keying the same way reproduces that."""
     out = play_query(
         HISTORICAL_THRESHOLDS_QUERY.format(day=run_day), "fetch historical thresholds"
     )
     if out is None:
         return None
-    thresholds: dict[tuple[str, int], float] = {}
+    thresholds: dict[tuple[str, int, str], float] = {}
     for line in out.splitlines():
         cols = line.split("\t")
-        if len(cols) < 3:
+        if len(cols) < 4:
             continue
         try:
-            thresholds[(cols[0], int(cols[1]))] = float(cols[2])
+            thresholds[(cols[0], int(cols[1]), cols[3])] = float(cols[2])
         except ValueError:
             continue
     return thresholds
@@ -804,11 +819,12 @@ def ci_changed_threshold(historical: float, per_test: float) -> float:
     return math.ceil(max(CHANGED_THRESHOLD_FLOOR, historical, per_test) * 100) / 100
 
 
-def fetch_run_day(pr_sha: str, perf_arch: str) -> Optional[str]:
+def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     """The date CI ran this comparison, which anchors the historical window."""
     out = play_query(
         "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
-        f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' FORMAT TSV",
+        f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
+        f"AND pr_number = {pr_number} FORMAT TSV",
         "find the run date",
     )
     if not out:
@@ -817,7 +833,7 @@ def fetch_run_day(pr_sha: str, perf_arch: str) -> Optional[str]:
     return day if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) else None
 
 
-def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
+def fetch_reference_sha(pr_number: int, pr_sha: str, perf_arch: str) -> str:
     """Find the reference (left/baseline) git SHA used in the CI run.
 
     The CI uploads each perf-test row to ``query_metrics_v2`` on
@@ -837,6 +853,11 @@ def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
     query = (
         "SELECT old_sha, toString(max(event_time)) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
+        # Scoped to this pull request as well: the same commit measured under
+        # another run (a master-track run uses pr_number = 0) would otherwise
+        # be eligible, and "newest row wins" would then hand back a baseline
+        # from a different comparison than the report being checked.
+        f"AND pr_number = {pr_number} "
         "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:
@@ -868,8 +889,8 @@ def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
     if not rows or not re.fullmatch(r"[0-9a-f]{40}", rows[0][0]):
         die(
             f"play.clickhouse.com returned no row for new_sha={pr_sha} "
-            f"arch={perf_arch} (got: {out.strip()!r}); pass --reference-sha "
-            "explicitly"
+            f"arch={perf_arch} pr={pr_number} (got: {out.strip()!r}); pass "
+            "--reference-sha explicitly"
         )
     ref_sha = rows[0][0]
     if len(rows) > 1:
@@ -2302,9 +2323,16 @@ def main() -> int:
     # Queries CI demoted come from report.html, which does not carry the
     # per-query threshold CI applied. Recover it the way compare.sh builds it,
     # anchoring the historical window on the day the run happened.
-    demoted = [cq for cq in changed if cq.changed_threshold is None]
+    # Only rows whose numbers came from report.html: a shard old enough to
+    # predate the changed_threshold column also has no threshold, but CI never
+    # exported one for it either, so the documented 0.15 floor applies rather
+    # than a reconstruction or a refusal to judge.
+    demoted = [
+        cq for cq in changed
+        if cq.numbers_from_html and cq.changed_threshold is None
+    ]
     if demoted:
-        run_day = fetch_run_day(pr_sha, perf_arch)
+        run_day = fetch_run_day(pr_number, pr_sha, perf_arch)
         historical = fetch_historical_thresholds(run_day) if run_day else None
         if historical is None:
             log(
@@ -2318,7 +2346,9 @@ def main() -> int:
                 cq.threshold_unknown = True
                 continue
             cq.changed_threshold = ci_changed_threshold(
-                historical.get((cq.test, cq.query_index), 0.0),
+                historical.get(
+                    (cq.test, cq.query_index, cq.query_display_name), 0.0
+                ),
                 test_report_threshold(xml),
             )
             log(
@@ -2328,7 +2358,9 @@ def main() -> int:
             )
 
     # Find the reference SHA
-    ref_sha = args.reference_sha or fetch_reference_sha(pr_sha, perf_arch)
+    ref_sha = args.reference_sha or fetch_reference_sha(
+        pr_number, pr_sha, perf_arch
+    )
     log(f"reference SHA: {ref_sha}")
 
     if args.dry_run:

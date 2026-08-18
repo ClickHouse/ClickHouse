@@ -38,8 +38,11 @@ skill:
    querying `query_metrics_v2` on `play.clickhouse.com` for the row with
    `new_sha = <pr-sha>` (the `report.html` "Tested Commits" section is
    unreliable — for official builds `clickhouse --version` does not embed
-   the git hash). A commit that was measured more than once has one
-   reference per run, so the newest one is taken — that is the run the
+   the git hash). The lookup is scoped to the pull request as well as the
+   commit and architecture, so a run of the same commit under a different
+   `pr_number` cannot supply the baseline. Within that scope, a commit
+   measured more than once has one reference per run, so the newest one is
+   taken — that is the run the
    S3 report reflects, since it is overwritten in place — and the script
    warns when the choice was not unique.
 7. Downloads both binaries from `clickhouse-builds`:
@@ -175,7 +178,13 @@ threshold is therefore rebuilt the way `compare.sh` builds it,
 `ceil(greatest(0.15, historical p99 x 1.5, the test's
 max_ignored_relative_change), 2)`, running CI's own historical-thresholds
 query against `play.clickhouse.com` with the window anchored on the day that
-run happened rather than today. If it cannot be recovered the query is
+run happened rather than today, and keyed by
+`(test, query_index, query_display_name)` — the join `compare.sh` performs,
+so an edited query body at the same positional index falls back to the floor
+instead of inheriting the learned threshold of the query that used to be
+there. This applies only to rows read from `report.html`; a shard old enough
+to predate the `changed_threshold` column keeps the documented 0.15 floor,
+since CI exported no threshold for it either. If it cannot be recovered the query is
 reported with **no verdict** instead of being judged under a weaker rule.
 
 `stat_threshold` is the q99 of the balanced-split null — the measurement
