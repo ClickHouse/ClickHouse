@@ -47,7 +47,7 @@ OPTIMIZE TABLE t_lwu_span FINAL;
 SELECT count() > 1 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_lwu_span' AND active AND startsWith(name, 'patch');
 
-ALTER TABLE t_lwu_span DETACH PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE t_lwu_span DETACH PARTITION ID 'all';
 
 SELECT id, c1, c2 FROM t_lwu_span ORDER BY id;
 
