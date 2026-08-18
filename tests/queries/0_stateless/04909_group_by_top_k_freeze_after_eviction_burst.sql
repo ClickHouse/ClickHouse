@@ -26,9 +26,13 @@ CREATE TABLE t_freeze_burst (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 -- the heap grows past its trim threshold (1500) exactly once and evicts ~501
 -- keys.  The remaining rows all hit the best surviving group, so the heap
 -- neither skips nor evicts through the rest of the observation window.
-INSERT INTO t_freeze_burst SELECT 10000 + number FROM numbers(1000);
-INSERT INTO t_freeze_burst SELECT 1 + number FROM numbers(501);
-INSERT INTO t_freeze_burst SELECT 1 FROM numbers(100000);
+-- Everything goes into a single part in a single insert block: parts can be
+-- read in any order, and the phases must reach the aggregation in this order.
+SET max_insert_threads = 1;
+SET min_insert_block_size_rows = 1000000;
+INSERT INTO t_freeze_burst
+SELECT multiIf(number < 1000, 10000 + number, number < 1501, 1 + (number - 1000), 1)
+FROM numbers(501501);
 
 SELECT k, count() FROM t_freeze_burst GROUP BY k ORDER BY k ASC LIMIT 1000
 SETTINGS log_comment = '04909_burst_then_quiet' FORMAT Null;
@@ -40,7 +44,7 @@ DROP TABLE t_freeze_burst;
 DROP TABLE IF EXISTS t_freeze_churn;
 CREATE TABLE t_freeze_churn (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO t_freeze_churn SELECT 1000000 - number FROM numbers(200000);
+INSERT INTO t_freeze_churn SELECT 1000000 - number FROM numbers(200000) SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000;
 
 SELECT k, count() FROM t_freeze_churn GROUP BY k ORDER BY k ASC LIMIT 1000
 SETTINGS log_comment = '04909_sustained_eviction' FORMAT Null;
