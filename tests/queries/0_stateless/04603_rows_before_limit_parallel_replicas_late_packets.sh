@@ -197,6 +197,12 @@ check_field "remote GROUP BY JSONColumnsWithMetadata HTTP" "rows_before_aggregat
 OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT JSON SETTINGS ${AGG_SETTINGS}, output_format_write_statistics=0")
 check_field "remote GROUP BY JSON HTTP no-stats" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
 
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT JSONColumnsWithMetadata SETTINGS ${AGG_SETTINGS}, output_format_write_statistics=0")
+check_field "remote GROUP BY JSONColumnsWithMetadata HTTP no-stats" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT XML SETTINGS ${AGG_SETTINGS}, output_format_write_statistics=0")
+check_field_xml "remote GROUP BY XML HTTP no-stats" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
 # --- output_format_write_statistics=0: rows_before_limit_at_least is emitted outside the
 # "statistics" object, so it is still printed even when the statistics object is disabled. It must
 # reflect the post-drain value, which means the trailer must be deferred regardless of
