@@ -13633,6 +13633,8 @@ function tokensBeforeInlineInsertPayload(tokens)
     let saw_insert = false;
     let leading_with = false;
     let leading_explain = false;
+    let with_depth = -1;
+    let alias_follows = false;
     let saw_select_source = false;
     let select_reads_inline_data = false;
     for (let i = 0; i < tokens.length; ++i) {
@@ -13647,17 +13649,37 @@ function tokensBeforeInlineInsertPayload(tokens)
             select_reads_inline_data = true;
         }
         if (OPENING_BRACKETS.has(t.type)) {
+            alias_follows = false;
             ++depth;
             continue;
         }
         if (CLOSING_BRACKETS.has(t.type)) {
+            alias_follows = false;
             if (depth > 0) --depth;
             continue;
         }
-        if (depth !== 0 || t.type !== TT.BareWord) continue;
+        if (depth !== 0 || t.type !== TT.BareWord) {
+            alias_follows = false;
+            continue;
+        }
 
         const lower = t.token.toLowerCase();
         if (!saw_insert) {
+            /// A leading `WITH` may use any bare word as an explicit alias, including `insert`.
+            /// Skip aliases positionally, as `statementIsReadOnly` does, before deciding whether a
+            /// top-level `insert` is the statement keyword.
+            if (leading_with && depth === with_depth) {
+                if (alias_follows) {
+                    alias_follows = false;
+                    continue;
+                }
+                if (lower === 'as') {
+                    alias_follows = true;
+                    continue;
+                }
+                const next = tokens[i + 1];
+                if (next && next.type === TT.BareWord && next.token.toLowerCase() === 'as') continue;
+            }
             if (lower === 'insert') {
                 saw_insert = true;
                 continue;
@@ -13667,6 +13689,7 @@ function tokensBeforeInlineInsertPayload(tokens)
             /// as soon as they resolve to a non-insert statement such as `WITH ... SELECT`.
             if (!leading_with && !leading_explain && lower === 'with') {
                 leading_with = true;
+                with_depth = depth;
                 continue;
             }
             if (!leading_with && !leading_explain && lower === 'explain') {
