@@ -863,13 +863,18 @@ void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
 
 }
 
+void QueryPipelineBuilder::dropTotalsAndExtremesViaTransform()
+{
+    DB::dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+}
+
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    DB::dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -888,7 +893,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    DB::dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(

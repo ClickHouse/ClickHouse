@@ -571,6 +571,9 @@ QueryPlan buildLogicalJoin(
 
     auto lhs_plan = std::move(decorrelated_plan);
     auto rhs_plan = std::move(input_stream_plan);
+    /// Track which side the subquery plan ends up on, so it follows the swap below rather than being
+    /// re-derived from the setting that drives it.
+    auto decorrelated_subquery_side = JoinTableSide::Left;
 
     NameSet output_columns;
     output_columns.insert_range(rhs_plan_header->getNames());
@@ -588,6 +591,7 @@ QueryPlan buildLogicalJoin(
         std::swap(lhs_plan, rhs_plan);
         std::swap(lhs_plan_header, rhs_plan_header);
         std::swap(get_lhs_column_name, get_rhs_column_name);
+        decorrelated_subquery_side = JoinTableSide::Right;
     }
 
     JoinExpressionActions join_expression_actions(
@@ -619,6 +623,8 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
+    /// The result join only: the inner CROSS join does not produce the subquery's result stream.
+    result_join->setDecorrelatedSubquerySide(decorrelated_subquery_side);
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (uses_in_memory_buffer)

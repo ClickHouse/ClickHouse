@@ -95,6 +95,11 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
+    /// Same, but the dropping node stays connected to the data path instead of being a childless
+    /// `NullSink`. Required when the pipeline may contain a gated source sub-pipeline, which
+    /// `ExecutingGraph::initializeExecution` would otherwise seed and pull too early.
+    void dropTotalsAndExtremesViaTransform();
+
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
 

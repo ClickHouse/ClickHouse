@@ -314,6 +314,11 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+
+    /// Names an input, so it has to follow the inputs.
+    if (decorrelated_subquery_side.has_value())
+        decorrelated_subquery_side
+            = *decorrelated_subquery_side == JoinTableSide::Left ? JoinTableSide::Right : JoinTableSide::Left;
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -1850,7 +1855,8 @@ void JoinStepLogical::buildPhysicalJoin(
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
         .result_rows_estimation = join_step->result_rows_estimation,
-        .locality = join_step->join_operator.locality
+        .locality = join_step->join_operator.locality,
+        .decorrelated_subquery_side = join_step->decorrelated_subquery_side
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2268,6 +2274,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->decorrelated_subquery_side = decorrelated_subquery_side;
 
     return result_step;
 }

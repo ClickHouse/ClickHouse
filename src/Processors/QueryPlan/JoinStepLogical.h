@@ -193,6 +193,9 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
+    std::optional<JoinTableSide> getDecorrelatedSubquerySide() const { return decorrelated_subquery_side; }
+    void setDecorrelatedSubquerySide(JoinTableSide side) { decorrelated_subquery_side = side; }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -225,6 +228,12 @@ protected:
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
+
+    /// Set only on the decorrelation result join, and names which of its two inputs carries the
+    /// subquery. That input's totals and extremes are dropped rather than propagated
+    /// (`JoinStep::updatePipeline`), so the value is meaningful only while the join has two inputs.
+    /// Not serialized: an absent value drops no streams, it never names the wrong input.
+    std::optional<JoinTableSide> decorrelated_subquery_side = {};
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;

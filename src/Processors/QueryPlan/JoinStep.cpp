@@ -143,6 +143,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
 
+    /// Must precede the `swap_streams` swap and algorithm dispatch: only here does `pipelines[i]` still
+    /// correspond to this step's declared inputs. The other input keeps its totals and extremes.
+    if (decorrelated_subquery_side.has_value())
+        pipelines[*decorrelated_subquery_side == JoinTableSide::Left ? 0 : 1]->dropTotalsAndExtremesViaTransform();
+
     if (swap_streams)
         std::swap(pipelines[0], pipelines[1]);
 
@@ -408,6 +413,7 @@ void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
     join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
     result_rows_estimation = logical_join_info.result_rows_estimation;
     locality = logical_join_info.locality;
+    decorrelated_subquery_side = logical_join_info.decorrelated_subquery_side;
 }
 
 void JoinStep::updateOutputHeader()

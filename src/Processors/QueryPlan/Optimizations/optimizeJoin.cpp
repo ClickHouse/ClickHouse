@@ -814,6 +814,9 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             /// type changes being applied at the wrong step and the exception
             /// "Cannot fold actions for projection".
             allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
+            /// Likewise, a recorded decorrelated subquery side names one of exactly two inputs, so such a
+            /// join must not be flattened. Its own clamp does not cover this: we run with the OUTER limit.
+            allow_child_join_kind = allow_child_join_kind && !child_join_step->getDecorrelatedSubquerySide().has_value();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
@@ -1116,7 +1119,15 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+/// `decorrelated_subquery_side`, when set, is the side of the ORIGINAL two-input join that carries a
+/// decorrelated correlated subquery. Its two-input boundary is preserved by the caller's
+/// `query_graph_size_limit = 2` clamp, so the graph has exactly two relations and one reconstructed
+/// join; the side is re-derived below because that join may still be flipped.
+static QueryPlan::Node chooseJoinOrder(
+    QueryGraphBuilder query_graph_builder,
+    QueryPlan::Nodes & nodes,
+    JoinStrictness join_strictness,
+    std::optional<JoinTableSide> decorrelated_subquery_side = {})
 {
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
@@ -1471,6 +1482,16 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
+            /// The graph is clamped to 2 for such a join, so its relations are unflattened and in child
+            /// order: relation 0 is the original left input, 1 the right. Derived rather than copied, so
+            /// that the flip above (which swaps `left_rels`/`right_rels`) is reflected.
+            if (decorrelated_subquery_side.has_value() && left_rels.count() == 1 && right_rels.count() == 1)
+            {
+                const size_t carrier_relation = *decorrelated_subquery_side == JoinTableSide::Left ? 0 : 1;
+                join_step->setDecorrelatedSubquerySide(
+                    left_rels.test(carrier_relation) ? JoinTableSide::Left : JoinTableSide::Right);
+            }
+
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
 
             auto & new_node = nodes.emplace_back();
@@ -1548,10 +1569,13 @@ static void collectJoinGraphRelationHeaders(
         child_join_step && !child_join_step->isOptimized())
     {
         const auto child_join_kind = child_join_step->getJoinOperator().kind;
+        /// Mirrors `addChildQueryGraph`, including its refusal to flatten a decorrelation join whose
+        /// recorded subquery side needs the two-input boundary. Both run with the OUTER join's limit.
         const bool allow_child_join_kind
             = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
             && child_join_step->getJoinOperator().strictness == JoinStrictness::All
-            && child_join_step->typeChangingSides().empty();
+            && child_join_step->typeChangingSides().empty()
+            && !child_join_step->getDecorrelatedSubquerySide().has_value();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
@@ -1628,8 +1652,14 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
+    /// Clamped below like the swap-only joins: the recorded side names one of exactly two inputs. The
+    /// strictness test alone is not enough, since a first-pass rewrite can turn this ANY join into
+    /// ALL/INNER before the second pass reaches here.
+    auto decorrelated_subquery_side = join_step->getDecorrelatedSubquerySide();
+
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind) || decorrelated_subquery_side.has_value())
+        && query_graph_size_limit > 2)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
@@ -1647,7 +1677,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, decorrelated_subquery_side);
 }
 
 }
