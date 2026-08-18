@@ -92,6 +92,21 @@ TEST(IcebergCountShortcuts, StalePositionDeletesAfterRewriteMustNotUseSummarySho
     EXPECT_EQ(*snapshot.getTotalRows(), 80u);
 }
 
+/// Live deletion vectors: Spark DELETE on v3 MOR sets total-equality-deletes=0 while
+/// total-position-deletes reflects DV cardinality. Summary subtraction must not feed the
+/// trivial COUNT shortcut (getTotalRows still computes the arithmetic for mismatch warnings).
+TEST(IcebergCountShortcuts, LiveDeletionVectorSummaryMustNotUseShortcut)
+{
+    Iceberg::IcebergDataSnapshot snapshot;
+    snapshot.total_rows = 100;
+    snapshot.total_position_delete_rows = 10;
+    snapshot.total_equality_delete_rows = 0;
+
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_EQ(*snapshot.getTotalRows(), 90u);
+}
+
 TEST(IcebergCountShortcuts, GetTotalRowsFailsClosedWhenPositionDeletesExceedRows)
 {
     Iceberg::IcebergDataSnapshot snapshot;

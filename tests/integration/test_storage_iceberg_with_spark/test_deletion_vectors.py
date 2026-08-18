@@ -507,6 +507,141 @@ def test_deletion_vectors_count_after_rewrite_data_files(
     )
 
 
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_trivial_count_fails_closed_with_live_deletes(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Live DVs / equality deletes must not use snapshot-summary trivial COUNT.
+
+    Summary fields are optional and can disagree with manifests. With any live
+    position deletes (puffin DVs) the summary shortcut must stay closed:
+    IcebergTrivialCountOptimizationApplied == 0, and count() must match a scan.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_dv_trivial_count_closed_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (
+            id bigint,
+            data string
+        ) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        SELECT id, concat('row-', CAST(id AS STRING)) FROM range(100)
+        """
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE id % 10 = 0")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+    settings = {
+        "optimize_trivial_count_query": 1,
+        "use_iceberg_metadata_files_cache": 0,
+    }
+    expected_after_dv = [x for x in range(100) if x % 10 != 0]
+
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    query_id_dv = f"{table_name}-dv-{uuid.uuid4()}"
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                query_id=query_id_dv,
+                settings=settings,
+            )
+        )
+        == len(expected_after_dv)
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM (SELECT * FROM {expression})",
+                settings={"use_iceberg_metadata_files_cache": 0},
+            )
+        )
+        == len(expected_after_dv)
+    )
+    assert get_array(
+        instance.query(
+            f"SELECT id FROM {expression}",
+            settings={"use_iceberg_metadata_files_cache": 0},
+        )
+    ) == expected_after_dv
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert (
+        int(
+            instance.query(
+                f"""
+                SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied']
+                FROM system.query_log
+                WHERE query_id = '{query_id_dv}' AND type = 'QueryFinish'
+                """
+            )
+        )
+        == 0
+    )
+
+    # Equality deletes whose optional summary field may stay 0 must still fail closed
+    # while the DV remains live (and after, while equality-delete files remain).
+    add_equality_deletes_by_id(spark, table_name, [1, 5])
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    expected_after_eq = [x for x in expected_after_dv if x not in (1, 5)]
+
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    query_id_eq = f"{table_name}-eq-{uuid.uuid4()}"
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                query_id=query_id_eq,
+                settings=settings,
+            )
+        )
+        == len(expected_after_eq)
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM (SELECT * FROM {expression})",
+                settings={"use_iceberg_metadata_files_cache": 0},
+            )
+        )
+        == len(expected_after_eq)
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert (
+        int(
+            instance.query(
+                f"""
+                SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied']
+                FROM system.query_log
+                WHERE query_id = '{query_id_eq}' AND type = 'QueryFinish'
+                """
+            )
+        )
+        == 0
+    )
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
