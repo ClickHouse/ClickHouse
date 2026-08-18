@@ -170,9 +170,9 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     DataTypes argument_types = {std::make_shared<DataTypeUInt8>()};
     AggregateFunctionProperties properties;
     auto aggregate_function = AggregateFunctionFactory::instance().get("groupBitmap", NullsAction::EMPTY, argument_types, {}, properties);
-    auto state_type_v0 = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, Array{}, /*version=*/0);
+    auto state_type_v1 = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, Array{}, /*version=*/1);
 
-    auto bitmap = state_type_v0->createColumn();
+    auto bitmap = state_type_v1->createColumn();
     auto & bitmap_column = assert_cast<ColumnAggregateFunction &>(*bitmap);
     auto values = ColumnUInt8::create();
     values->insert(1);
@@ -184,20 +184,64 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     aggregate_function->add(bitmap_column.getData()[1], arguments, 1, &bitmap_column.createOrGetArena());
 
     ColumnsWithTypeAndName function_arguments;
-    function_arguments.emplace_back(bitmap->getPtr(), state_type_v0, "lhs");
+    function_arguments.emplace_back(bitmap->getPtr(), state_type_v1, "lhs");
     auto rhs = bitmap->cloneResized(2);
-    function_arguments.emplace_back(rhs->getPtr(), state_type_v0, "rhs");
+    function_arguments.emplace_back(rhs->getPtr(), state_type_v1, "rhs");
     auto resolver = FunctionFactory::instance().get("bitmapAnd", getContext().context);
     auto function = resolver->build(function_arguments);
     auto result = function->execute(function_arguments, function->getResultType(), /*input_rows_count=*/2, /*dry_run=*/false);
 
     const auto & result_column = assert_cast<const ColumnAggregateFunction &>(*result);
-    const auto & input_column = assert_cast<const ColumnAggregateFunction &>(*bitmap);
-    const auto version_0_size = serializedStateSize(*aggregate_function, input_column.getData()[0], /*version=*/0);
-    const auto default_version_size = serializedStateSize(*aggregate_function, input_column.getData()[0], std::nullopt);
-    ASSERT_NE(version_0_size, default_version_size);
     const Field serialized_result = result_column[0];
-    EXPECT_EQ(serialized_result.safeGet<AggregateFunctionStateData>().data.size(), version_0_size);
+    EXPECT_EQ(serialized_result.safeGet<AggregateFunctionStateData>().name, state_type_v1->getName());
+
+    auto target_v1 = state_type_v1->createColumn();
+    EXPECT_NO_THROW(target_v1->insert(serialized_result));
+
+    auto target_default = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, Array{})->createColumn();
+    EXPECT_THROW(target_default->insert(serialized_result), Exception);
+}
+
+TEST(AggregatorStateSizeEstimate, BitmapAndVersionZeroRoundTripsEmptyIntersection)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypes bitmap_argument_types = {std::make_shared<DataTypeUInt8>()};
+    AggregateFunctionProperties properties;
+    auto bitmap_function = AggregateFunctionFactory::instance().get("groupBitmap", NullsAction::EMPTY, bitmap_argument_types, {}, properties);
+    auto bitmap_state_type = std::make_shared<DataTypeAggregateFunction>(bitmap_function, bitmap_argument_types, Array{}, /*version=*/0);
+    auto bitmap_states = bitmap_state_type->createColumn();
+    auto & bitmap_column = assert_cast<ColumnAggregateFunction &>(*bitmap_states);
+    auto values = ColumnUInt8::create();
+    values->insert(1);
+    values->insert(2);
+    const IColumn * bitmap_arguments[] = {values.get()};
+    for (size_t row = 0; row < 2; ++row)
+    {
+        bitmap_column.insertDefault();
+        bitmap_function->add(bitmap_column.getData()[row], bitmap_arguments, row, &bitmap_column.createOrGetArena());
+    }
+
+    DataTypes bitmap_and_argument_types = {bitmap_state_type};
+    auto bitmap_and_function = AggregateFunctionFactory::instance().get("groupBitmapAnd", NullsAction::EMPTY, bitmap_and_argument_types, {}, properties);
+    auto empty_intersection = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
+    const IColumn * bitmap_state_arguments[] = {bitmap_states.get()};
+    empty_intersection->insertDefault();
+    bitmap_and_function->add(empty_intersection->getData()[0], bitmap_state_arguments, 0, &empty_intersection->createOrGetArena());
+    bitmap_and_function->add(empty_intersection->getData()[0], bitmap_state_arguments, 1, &empty_intersection->createOrGetArena());
+
+    const Field serialized_empty_intersection = (*empty_intersection)[0];
+    auto round_tripped = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
+    round_tripped->insert(serialized_empty_intersection);
+
+    auto non_empty_intersection = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
+    non_empty_intersection->insertDefault();
+    bitmap_and_function->add(non_empty_intersection->getData()[0], bitmap_state_arguments, 0, &non_empty_intersection->createOrGetArena());
+    round_tripped->insertMergeFrom(*non_empty_intersection, 0);
+
+    auto cardinality = ColumnUInt8::create();
+    bitmap_and_function->insertResultInto(round_tripped->getData()[0], *cardinality, &round_tripped->createOrGetArena());
+    EXPECT_EQ(cardinality->getData()[0], 0);
 }
 
 TEST(AggregatorStateSizeEstimate, BitmapBuildPreservesDefaultStateVersion)

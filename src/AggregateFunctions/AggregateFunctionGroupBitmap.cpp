@@ -156,10 +156,12 @@ public:
             DB::readBoolText(this->data(place).init, buf);
         this->data(place).roaring_bitmap_with_small_set.read(buf);
 
-        /// Version 0 did not serialize `init`. A non-empty bitmap was necessarily initialized,
-        /// so restore that invariant before a later merge copies the state.
+        /// Version 0 did not serialize `init`. States emitted by `groupBitmapAnd` have been
+        /// initialized at least once, including a disjoint intersection represented by an empty
+        /// bitmap. Treating empty states as uninitialized changes `empty AND non_empty` to
+        /// `non_empty` after a round trip.
         if (*version == 0)
-            this->data(place).init = this->data(place).roaring_bitmap_with_small_set.size() != 0;
+            this->data(place).init = true;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
