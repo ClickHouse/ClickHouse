@@ -152,6 +152,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
     ONCE(framing_throw_after_writing_packet) \
@@ -297,11 +298,13 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
+    ONCE(grace_hash_join_fail_in_delayed_block_read) \
     PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(mt_pause_before_register_mutation) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
@@ -323,7 +326,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause)
 
 namespace FailPoints
 {

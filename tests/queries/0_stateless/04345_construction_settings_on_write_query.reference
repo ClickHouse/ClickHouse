@@ -1,0 +1,19 @@
+-- a `limit` on the source SELECT is effective: only 2 rows are inserted
+2
+-- a `filter` on the source SELECT is effective: only rows with x >= 7 are inserted
+3
+7
+8
+9
+-- a construction setting in a nested subquery of the source is effective for that subquery
+2
+-- a construction setting on the INSERT statement itself does not propagate to the SELECT (all 10 rows)
+10
+-- a non-construction setting on INSERT ... SELECT still works (all 10 rows)
+10
+-- an explicit LIMIT clause in the source SELECT still works
+3
+-- CREATE ... AS SELECT with a construction setting on the SELECT is effective (9 rows: x > 0)
+9
+-- CREATE ... AS SELECT without construction settings still works (all 10 rows)
+10

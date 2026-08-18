@@ -84,12 +84,14 @@ namespace ErrorCodes
   * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
   *  but we are not going to do it, because settings are used everywhere as static struct fields.
   *
-  * `flags` can include a Tier (BETA | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
+  * `flags` can include a Tier (BETA | PRIVATE_PREVIEW | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
   * The default (0) means a PRODUCTION ready setting
   *
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
-  * Tiers:
+  * Tiers, in increasing order of maturity:
   * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
+  * PRIVATE_PREVIEW: The feature is on a clear path to general availability, but its applicability is still
+  * limited and it is not recommended for production use.
   * BETA: There are no known bugs problems in the functionality, but the outcome of using it together with other
   * features/components is unknown and correctness is not guaranteed.
   * PRODUCTION (Default): The feature is safe to use along with other features from the PRODUCTION tier.
@@ -3697,7 +3699,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -3760,7 +3762,7 @@ Possible values:
 
  The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
- The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+ The position in the list sets the priority: listed after other algorithms, as in the default value, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -4296,8 +4298,8 @@ Possible values:
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+    DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
 When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
@@ -6808,21 +6810,27 @@ Possible values:
 - Positive integer.
 )", 0) \
     \
-    DECLARE(UInt64, limit, 0, R"(
-Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/reference/statements/select/limit) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
+    DECLARE(Double, limit, 0, R"(
+Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/reference/statements/select/limit) clause. The value is passed through to `LIMIT` and accepts everything that `LIMIT` accepts, including negative values (count from the end of the result) and fractions in `(0, 1)` (interpreted as a share of the result).
 
 Possible values:
 
 - 0 — The number of rows is not limited.
-- Positive integer.
+- Positive integer — exact number of rows.
+- Negative integer — return the last N rows.
+- A real number in the open range `(0, 1)` — return that fraction of the result.
+
+This setting shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
 )", 0) \
-    DECLARE(UInt64, offset, 0, R"(
-Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](/reference/statements/select/offset) clause, so that these two values are summarized.
+    DECLARE(Double, offset, 0, R"(
+Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](/reference/statements/select/offset) clause. The value is passed through to `OFFSET` and accepts everything that `OFFSET` accepts, including negative values and fractions in `(0, 1)`.
 
 Possible values:
 
-- 0 — No rows are skipped .
+- 0 — No rows are skipped.
 - Positive integer.
+- Negative integer.
+- A real number in the open range `(0, 1)` — skip that fraction of the result.
 
 **Example**
 
@@ -6849,6 +6857,89 @@ Result:
 │ 109 │
 └─────┘
 ```
+
+This setting shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+)", 0) \
+    \
+    DECLARE(Double, page, 0, R"(
+Sets the page number for paginated results. Equivalent to `offset = limit * (page - 1)`. Can only be specified when `limit` is set and `offset` is not. Pages are 1-based. Inherits the same negative/fractional support as `limit` and `offset`.
+
+This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+)", 0) \
+    DECLARE(String, select, "", R"(
+Wraps the query as a subquery with an explicit `SELECT` expression list. When non-empty, the result-producing query is wrapped as `SELECT <expr_list> FROM (<query>)`.
+
+This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+)", 0) \
+    DECLARE(String, order, "", R"(
+Adds an `ORDER BY` clause to the query as a wrapping subquery. Accepts an arbitrary expression list.
+
+This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+)", 0) \
+    DECLARE(String, sort, "", R"(
+Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a comma-separated list of identifiers or positional column references (positive integers) with an optional `+` (ASC) or `-` (DESC) prefix. Example: `sort=a,-b` orders by `a` ascending and `b` descending; `sort=1,-2` orders by the first column ascending and the second descending. Cannot be combined with `order`.
+
+This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+)", 0) \
+    DECLARE(String, filter, "", R"(
+Adds a `WHERE` clause to the query as a wrapping subquery. Multiple filters are combined with AND. The HTTP interface allows multiple `filter` URL parameters which are combined with AND in order, and with the value of this setting.
+
+This is a query-construction setting applied by the engine on the parsed query (wrapping it as a derived table), so it composes with the existing query and works on every protocol: it can be supplied via the HTTP URL parameter, an in-query `SETTINGS` clause, or a user profile.
+
+It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSERT … SELECT`, `CREATE … AS SELECT`) it takes effect only when the source `SELECT` carries it in its own `SETTINGS` clause; a value inherited from a profile or session, or set on the `INSERT` / `CREATE` statement itself, does not propagate into the source `SELECT` — the same non-propagation rule that applies to any other setting.
+
+:::danger
+`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/operations/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
+:::
+)", 0) \
+    DECLARE(String, database, "", R"(
+Sets the current database for the query — the database in which unqualified table names are resolved, the same effect as `USE <database>`. Unlike the `USE` statement, this is an ordinary session setting: like any other setting it accepts a value without validating it, and an unknown database is reported when the setting takes effect (when a query runs), not at `SET` time. It follows the privilege contract of the client-supplied default database (which it generalizes), not of `USE`: selecting the current database does not require the `SHOW_DATABASES` privilege, while access to the tables inside it is checked as usual. Used as the destination for the HTTP interface `database` URL parameter and the `X-ClickHouse-Database` header.
+)", 0) \
+    DECLARE(String, default_format, "", R"(
+Specifies the format of the query result when the query has no `FORMAT` clause and no other format override is applied.
+)", 0) \
+    DECLARE(String, format, "", R"(
+Overrides the `FORMAT` of the query for both input and output. Wins over the format specified in the query and in the file extension. The more specific `input_format` and `output_format` settings take precedence over this generic `format` setting for their respective direction.
+)", 0) \
+    DECLARE(String, input_format, "", R"(
+Overrides the input format of the query. Wins over the format specified in the query.
+)", 0) \
+    DECLARE(String, output_format, "", R"(
+Overrides the output format of the query. Wins over the format specified in the query, in the file extension, or via `default_format`.
+)", 0) \
+    DECLARE(String, compression, "", R"(
+Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+
+This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
+)", 0) \
+    DECLARE(Bool, http_allow_database_as_path, false, R"(
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+
+This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (off by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be enabled selectively per user, role, or profile.
+)", 0) \
+    DECLARE(Bool, http_allow_table_as_file, false, R"(
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+
+Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
+)", 0) \
+    DECLARE(Bool, http_allow_filters_as_path, false, R"(
+If enabled, the HTTP interface recognizes `/name=value/` components in the path (hive partitioning style) and translates them to filters combined with AND. Operators `>`, `<`, `>=`, `<=`, `!=`, `<>` are also recognized.
+
+Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
+)", 0) \
+    DECLARE(Bool, http_allow_filters_as_unrecognized_url_parameters, false, R"(
+If enabled, any URL parameter not recognized as a known parameter, setting, or `param_*` prefix is treated as a filter and combined with AND. Two forms are accepted:
+
+- A plain `name=value` becomes the equality `` `name` = 'value' `` (the identifier is back-quoted, the value is quoted as a string literal).
+- A comparison operator (`!=`, `>`, `<`, `>=`, `<=`, `<>`) makes it a comparison: either split across the parameter (`?a!=2`, `?a>=2`) or written inline when the URL has no `=` to split on (`?a<>2`, `?f(x)>3`), in which case the reassembled `name[=value]` is parsed as a full SQL expression.
 )", 0) \
     \
     DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(
@@ -8212,7 +8303,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 - cross to inner join optimization
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
-Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. The derived comparisons are wrapped in `indexHint`: they participate in index analysis (primary key, partition key, skipping indexes) and prune the read set, but cost nothing per row and do not affect PREWHERE. A comparison derived through expressions of different tables stays executable (`(t1.a < t2.b) AND (t2.b < 5)` derives plain `t1.a < 5`): it is the only condition that can be pushed below the join, where it filters a join input the original chain cannot reach. Derived comparisons that contradict an existing condition are also added as plain conditions, so the `AND` folds to `false`.
 )", 0) \
     DECLARE(Bool, optimize_redundant_comparisons, true, R"(
 Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
@@ -8749,9 +8840,11 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
@@ -8770,6 +8863,7 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
@@ -8785,6 +8879,10 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_cascades_optimizer, false, R"(
+Enable the Cascades cost-based optimizer for distributed query plans.
+Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
@@ -9215,7 +9313,12 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
-        bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
+        /// Some setting names collide with long-standing top-level config sections.
+        /// `compression` is a top-level config block describing default codec selection rules
+        /// (see `CompressionCodecSelector`).
+        bool should_skip_check = name == "max_table_size_to_drop"
+            || name == "max_partition_size_to_drop"
+            || name == "compression";
         if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
@@ -9376,6 +9479,11 @@ Field Settings::get(std::string_view name) const
 void Settings::set(std::string_view name, const Field & value)
 {
     impl->set(name, value);
+}
+
+void Settings::setCustom(std::string_view name, const Field & value)
+{
+    impl->setCustom(name, value);
 }
 
 void Settings::setDefaultValue(std::string_view name)
@@ -9542,6 +9650,10 @@ std::map<String, String> Settings::changedToMap() const
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 {
+    /// Query parameters are user-chosen names, not settings. Each is written as a custom
+    /// (string-valued) field so a parameter whose name collides with a built-in setting
+    /// (e.g. `format` / `database` / `filter` / `select` / `page`) is not parsed as that setting's
+    /// type. `readQueryParameters` reads them back and SQL-unquotes each value.
     for (const auto & [name, value] : parameters)
     {
         BaseSettingsHelpers::writeString(name, out);
@@ -9585,7 +9697,33 @@ void Settings::writeEmpty(WriteBuffer & out)
 
 void Settings::addToProgramOptions(boost::program_options::options_description & options)
 {
-    addProgramOptions(*impl, options);
+    /// A few settings share a name with a client-side CLI option that's already registered (e.g.
+    /// `--database` / `-d` declared by `clickhouse-client` so the short alias appears in
+    /// `--help` next to the other main options). Skip the setting registration when the option
+    /// name is already taken — the client-side declaration is canonical for boost's parser, and
+    /// `ClientBase::addOptionsToTheClientConfiguration` copies the value into `cmd_settings`
+    /// after parsing so the setting still takes effect per query.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & field : impl->all())
+    {
+        std::string_view name = field.getName();
+        if (!existing.contains(std::string(name)))
+            addProgramOption(*impl, options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOption(*impl, options, alias, field);
+            }
+        }
+    }
 }
 
 void Settings::addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options)
@@ -9604,7 +9742,28 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
 {
-    addProgramOptionsAsMultitokens(*impl, options);
+    /// Same duplicate-skip strategy as `Settings::addToProgramOptions` — see the comment there.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & field : impl->all())
+    {
+        std::string_view name = field.getName();
+        if (!existing.contains(std::string(name)))
+            addProgramOptionAsMultitoken(*impl, options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOptionAsMultitoken(*impl, options, alias, field);
+            }
+        }
+    }
 }
 
 void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, const boost::program_options::variables_map &options, bool repeated_settings) const
@@ -9612,12 +9771,21 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.contains(name))
+        if (!options.contains(name))
+            continue;
+        try
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());
             else
                 config.setString(name, options[name].as<String>());
+        }
+        catch (const boost::bad_any_cast &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: the setting and a client-side command-line option share a name but use different
+            /// `boost::program_options` value types (e.g. the client owns `--database`). The
+            /// duplicate-skip in `addToProgramOptions[AsMultitokens]` already declined to add the
+            /// setting variant, so reading the value here as the setting's type would also fail.
         }
     }
 }
