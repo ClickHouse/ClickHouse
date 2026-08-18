@@ -63,9 +63,10 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         const size_t num_trailing = variant == GroupingVariant::Ordinary ? 2 : 3;
-        if (arguments.size() <= num_trailing)
+        const size_t num_leading = variant == GroupingVariant::Ordinary ? 0 : 1;
+        if (arguments.size() < num_leading + 1 + num_trailing)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least {} arguments", name, num_trailing + 1);
+                "Function {} requires at least {} arguments", name, num_leading + 1 + num_trailing);
 
         /// The analyzer always satisfies the checks below, but the function can also be called
         /// directly with arbitrary arguments; reject those that would break the execution.
@@ -77,6 +78,13 @@ public:
         const size_t tail = arguments.size() - num_trailing;
         const auto arguments_indexes = getIndexes(arguments[tail]);
         const bool force_compatibility = getConstant(arguments.back()).safeGet<UInt64>() != 0;
+
+        /// One index per key argument; without the check the result would describe a different
+        /// argument list than the one the query spells.
+        const size_t num_keys = arguments.size() - num_leading - num_trailing;
+        if (arguments_indexes.size() != num_keys)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} has {} key arguments but {} argument indexes", name, num_keys, arguments_indexes.size());
 
         /// `FunctionGroupingBase::executeImpl` builds the result one bit per argument; without
         /// this check a wider mask would silently drop the high bits.
