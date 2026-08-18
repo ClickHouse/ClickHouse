@@ -1102,7 +1102,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | 원격 디스크의 데이터를 읽으려 할 때의 최대 대기 시간     | `10000`초 |
 | `remote_fs_read_backoff_max_tries`  | 백오프를 사용해 읽기를 시도하는 최대 횟수            | `5`      |
 
-쿼리가 `DB:Exception Unreachable URL` 예외와 함께 실패하면 다음 설정을 조정해 볼 수 있습니다: [http&#95;connection&#95;timeout](/ko/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/ko/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/ko/reference/settings/server-settings/settings#keep_alive_timeout).
+쿼리가 `DB:Exception Unreachable URL` 예외와 함께 실패하면 다음 설정을 조정해 볼 수 있습니다: [http&#95;connection&#95;timeout](/ko/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/ko/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/ko/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
 업로드할 파일을 가져오려면 다음을 실행하십시오:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path`는 쿼리 `SELECT data_paths FROM system.tables WHERE name = 'table_name'`로 확인할 수 있습니다).

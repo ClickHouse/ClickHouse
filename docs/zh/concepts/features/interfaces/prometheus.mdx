@@ -28,8 +28,8 @@ ClickHouse 可以暴露自身指标，供 Prometheus 抓取：
     <dimensional_metrics>true</dimensional_metrics>
 </prometheus>
 
-`<prometheus.handlers>` 部分可用于配置更复杂的处理程序。
-该部分与 [<http_handlers>](/concepts/features/interfaces/http) 类似，但适用于 Prometheus 协议：
+Section `<prometheus.handlers>` can be used to make more extended handlers.
+This section is similar to [<http_handlers>](/concepts/features/interfaces/http) but works for prometheus protocols:
 
 ```xml
 <prometheus>
@@ -45,6 +45,10 @@ ClickHouse 可以暴露自身指标，供 Prometheus 抓取：
                 <errors>true</errors>
                 <histograms>true</histograms>
                 <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
             </handler>
         </my_rule_1>
     </handlers>
@@ -53,17 +57,18 @@ ClickHouse 可以暴露自身指标，供 Prometheus 抓取：
 
 设置：
 
-| 名称                           | 默认值        | 描述                                                                                            |
-| ---------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `port`                       | 无          | 用于提供指标暴露协议服务的端口。                                                                              |
-| `endpoint`                   | `/metrics` | 供 Prometheus 服务器抓取指标的 HTTP 端点。以 `/` 开头。不得与 `<handlers>` 部分一起使用。                               |
-| `url` / `headers` / `method` | 无          | 用于查找与请求匹配的处理程序的过滤条件。类似于 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中的同名字段。     |
-| `metrics`                    | true       | 导出 [system.metrics](/zh/reference/system-tables/metrics) 表中的指标。                                  |
-| `asynchronous_metrics`       | true       | 导出 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表中的当前指标值。 |
-| `events`                     | true       | 导出 [system.events](/zh/reference/system-tables/events) 表中的指标。                                    |
-| `errors`                     | true       | 导出自上次服务器重启以来按错误代码统计的错误数。也可从 [system.errors](/zh/reference/system-tables/errors) 中获取该信息。          |
-| `histograms`                 | true       | 导出 [system.histogram&#95;metrics](/zh/reference/system-tables/histogram_metrics) 中的直方图指标         |
-| `dimensional_metrics`        | true       | 导出 [system.dimensional&#95;metrics](/zh/reference/system-tables/dimensional_metrics) 中的带维度指标     |
+| 名称                           | 默认值        | 描述                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | 无          | 用于提供指标暴露协议服务的端口。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `endpoint`                   | `/metrics` | 供 Prometheus 服务器抓取指标的 HTTP 端点。以 `/` 开头。不得与 `<handlers>` 部分一起使用。                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `url` / `headers` / `method` | 无          | 用于查找与请求匹配的处理程序的过滤条件。类似于 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中的同名字段。                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `metrics`                    | true       | 导出 [system.metrics](/zh/reference/system-tables/metrics) 表中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `asynchronous_metrics`       | true       | 导出 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表中的当前指标值。                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `events`                     | true       | 导出 [system.events](/zh/reference/system-tables/events) 表中的指标。                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `errors`                     | true       | 导出自上次服务器重启以来按错误代码统计的错误数。也可从 [system.errors](/zh/reference/system-tables/errors) 中获取该信息。                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `histograms`                 | true       | 导出 [system.histogram&#95;metrics](/zh/reference/system-tables/histogram_metrics) 中的直方图指标                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `dimensional_metrics`        | true       | 导出 [system.dimensional&#95;metrics](/zh/reference/system-tables/dimensional_metrics) 中的带维度指标                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `labels`                     | 无          | 添加到每个导出指标的常量标记。每个子元素定义一个标记：元素名称为标记名称 (必须匹配 `[a-zA-Z_][a-zA-Z0-9_]*`) ，元素值为标记值。标记值支持标准配置替换，例如 `from_env` 属性。当标记名称以 `__` 开头 (由 Prometheus 保留) ，或会与此端点在某个已启用部分中写入的标记冲突时，该标记名称将被拒绝。因此，保留集合取决于端点当前导出的内容：启用 `histograms` 时为 `le`；启用 `info` 时为 `ClickHouse_Info` 标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) ；以及启用 `histograms` 或 `dimensional_metrics` 时，任何由导出的直方图或维度指标族使用的标记 (例如 `group`、`direction` 或 `operation_type`) 。由于这取决于端点实际导出的内容，一个名称可能在某个端点上有效，但在另一个端点上被拒绝。 |
 
 检查 (将 `127.0.0.1` 替换为你的 ClickHouse 服务器 IP 地址或主机名) ：
 

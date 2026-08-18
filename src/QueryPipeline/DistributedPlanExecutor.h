@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <atomic>
 #include <exception>
 #include <mutex>
@@ -9,6 +11,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
+#if CLICKHOUSE_CLOUD
+#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
+#endif
 
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/SettingsChanges.h>
@@ -19,6 +24,11 @@
 
 namespace DB
 {
+
+/// Node count Cascades should plan for, matching the executor's worker source:
+/// `distributed_plan_workers_num` for local/Cloud-discovery execution, else the static worker
+/// cluster size. Returns 0 when no source is available, so the caller can reject distributed planning.
+size_t getCascadesPlanningNodeCount(ContextPtr context);
 
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.
@@ -41,6 +51,8 @@ class TaskToHostMap : public boost::noncopyable
 {
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
+    /// Out-of-line so the `worker_allocation` deleter is instantiated where `StatelessWorkerAllocation` is complete.
+    ~TaskToHostMap();
 
     const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
     const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
@@ -53,6 +65,9 @@ private:
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
     UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
+#if CLICKHOUSE_CLOUD
+    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps leased workers alive for the query lifetime
+#endif
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -147,9 +162,10 @@ struct ExchangeStreamSources
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
 
-/// Minimal serialization version: v1 if every producer uses the server-level exchange port (a v1 worker
-/// derives it locally), else v2.
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
+/// Minimal serialization version for a task. A version-1 task carries no per-stream ports: the
+/// receiving worker dials every producer on its own fallback exchange port. So v1 is safe only
+/// when every producer's port equals the destination worker's exchange port; else v2.
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port);
 
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
