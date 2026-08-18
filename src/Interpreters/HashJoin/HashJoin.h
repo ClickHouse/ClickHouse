@@ -538,6 +538,9 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
+    /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
+    /// own partitioned maps, so it needs the access the join methods have.
+    friend class PartitionedHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
