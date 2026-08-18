@@ -1885,7 +1885,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
-                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*create.select);

@@ -160,7 +160,7 @@ std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens
     while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
         ++pos;
 
-    const auto name = getTableName(tokens, pos);
+    auto name = getTableName(tokens, pos);
     const auto name_end = getTableNameEnd(tokens, pos);
     if (!name || name_end == tokens.size()
         || (tokens[name_end].type != TokenType::OpeningRoundBracket && !isKeyword(tokens[name_end], "ENGINE") && !isKeyword(tokens[name_end], "AS")))
