@@ -148,7 +148,7 @@ def start_cluster():
             )
             zk.create(
                 path="/yaml_merge_override",
-                value=b"max_threads: 22\n",
+                value=b"<max_threads>22</max_threads>",
                 makepath=True,
             )
 
@@ -320,15 +320,20 @@ def test_config_zk_leaf_crlf_preprocessed_fallback(start_cluster):
     `XMLWriter` must serialize CR as a character reference; a literal CR would be normalized to
     LF by the XML parser during the fallback reload.
     """
-    cluster.stop_zookeeper_nodes(["zoo1"])
-    node_zk.restart_clickhouse()
-    assert (
-        node_zk.query(
-            "SELECT hex(value) FROM system.settings WHERE name = 'log_comment'",
-            user="zk_leaf_crlf",
+    zookeeper_nodes = ["zoo1", "zoo2", "zoo3"]
+    cluster.stop_zookeeper_nodes(zookeeper_nodes)
+    try:
+        node_zk.restart_clickhouse()
+        assert (
+            node_zk.query(
+                "SELECT hex(value) FROM system.settings WHERE name = 'log_comment'",
+                user="zk_leaf_crlf",
+            )
+            == "610D0A62\n"
         )
-        == "610D0A62\n"
-    )
+    finally:
+        cluster.start_zookeeper_nodes(zookeeper_nodes)
+        cluster.wait_zookeeper_nodes_to_start(zookeeper_nodes)
 
 
 def test_config_zk_ordinary_element_xml_subtree(start_cluster):
