@@ -3106,6 +3106,9 @@ class QueryResultElement extends HTMLElement
                     top: 0;
                     right: -0.3rem;
                     width: 0.5rem;
+                    cursor: col-resize;
+                    user-select: none;
+                    height: 100%;
                 }
 
                 /* The grip straddles the column boundary, so the LAST column's grip sticks out past
@@ -3116,9 +3119,6 @@ class QueryResultElement extends HTMLElement
                 th:last-child .resizer
                 {
                     right: var(--result-last-resizer-right, -0.3rem);
-                    cursor: col-resize;
-                    user-select: none;
-                    height: 100%;
                 }
 
                 .resizer:hover, .resizer-dragging
