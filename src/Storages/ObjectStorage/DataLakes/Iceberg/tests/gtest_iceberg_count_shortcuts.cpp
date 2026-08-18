@@ -77,6 +77,21 @@ TEST(IcebergCountShortcuts, SnapshotSummaryShortcutRequiresExplicitZeroDeletes)
     EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
 }
 
+/// Spark rewrite_data_files can leave summary as total-records=90, total-position-deletes=10
+/// after deletes were already applied into rewritten data files. getTotalRows would answer 80;
+/// the shortcut must stay closed so totalRows falls through to manifests / scan.
+TEST(IcebergCountShortcuts, StalePositionDeletesAfterRewriteMustNotUseSummaryShortcut)
+{
+    Iceberg::IcebergDataSnapshot snapshot;
+    snapshot.total_rows = 90;
+    snapshot.total_position_delete_rows = 10;
+    snapshot.total_equality_delete_rows = 0;
+
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_EQ(*snapshot.getTotalRows(), 80u);
+}
+
 TEST(IcebergCountShortcuts, GetTotalRowsFailsClosedWhenPositionDeletesExceedRows)
 {
     Iceberg::IcebergDataSnapshot snapshot;

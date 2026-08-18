@@ -41,8 +41,9 @@ struct IcebergDataSnapshot
 
     /// Summary delete totals are optional. Only trust the cheap `getTotalRows` shortcut when both
     /// equality and position deletes are present and explicitly zero. Absent or >0 falls through /
-    /// fail closed — position deletes include puffin DVs, and summary subtraction is unsafe when a
-    /// DV supersedes matching parquet position deletes (readers ignore those parquet deletes).
+    /// fail closed — position deletes include puffin DVs; summary subtraction is also unsafe after
+    /// Spark `rewrite_data_files` (summary can keep stale `total-position-deletes` while data files
+    /// already have deletes applied and no live delete files remain).
     bool allowsSnapshotTotalRowsShortcut() const
     {
         return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0

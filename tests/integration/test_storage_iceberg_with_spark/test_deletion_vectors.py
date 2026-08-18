@@ -365,12 +365,120 @@ def test_deletion_vectors_complex(started_cluster_iceberg_with_spark, storage_ty
     spark.sql(f"CALL system.rewrite_data_files(table => '{table_name}')")
     upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
     assert get_array(instance.query(f"SELECT id FROM {expression}")) == expected_ids
+    # After rewrite, snapshot summary may still report stale total-position-deletes while data
+    # files already have deletes applied. Trivial count must not subtract those and under-count.
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={
+                    "optimize_trivial_count_query": 1,
+                    "use_iceberg_metadata_files_cache": 0,
+                },
+            )
+        )
+        == len(expected_ids)
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM (SELECT * FROM {expression})",
+                settings={"use_iceberg_metadata_files_cache": 0},
+            )
+        )
+        == len(expected_ids)
+    )
 
     assert get_array(
         instance.query(
             f"SELECT id FROM {expression} WHERE id % 3 = 0"
         )
     ) == sorted([x for x in expected_ids if x % 3 == 0])
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_deletion_vectors_count_after_rewrite_data_files(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Regression: Spark rewrite can leave total-position-deletes in the snapshot summary after
+    deletes were already applied into rewritten data files. SELECT count() must still match the scan.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_dv_count_after_rewrite_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (
+            id bigint,
+            data string
+        ) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        SELECT id, concat('row-', CAST(id AS STRING)) FROM range(100)
+        """
+    )
+    spark.sql(f"DELETE FROM {table_name} WHERE id % 10 = 0")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+    expected = [x for x in range(100) if x % 10 != 0]
+    settings = {"use_iceberg_metadata_files_cache": 0}
+
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == expected
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={**settings, "optimize_trivial_count_query": 1},
+            )
+        )
+        == 90
+    )
+
+    spark.sql(
+        f"""
+        CALL system.rewrite_data_files(
+            table => '{table_name}',
+            options => map('delete-file-threshold', '1')
+        )
+        """
+    )
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == expected
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={**settings, "optimize_trivial_count_query": 1},
+            )
+        )
+        == 90
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM (SELECT * FROM {expression})",
+                settings=settings,
+            )
+        )
+        == 90
+    )
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
