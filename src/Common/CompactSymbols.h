@@ -66,6 +66,7 @@ public:
 
 private:
     std::string_view compressedNameGranule(uint32_t granule_index) const;
+    size_t nameGranuleContentSize(uint32_t granule_index) const;
 
     std::string_view data;
     uint64_t name_count;

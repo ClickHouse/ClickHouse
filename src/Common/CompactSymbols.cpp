@@ -18,6 +18,14 @@ namespace
 constexpr std::array<char, 8> magic{'C', 'H', 'S', 'Y', 'M', 'S', '\0', '\0'};
 constexpr size_t header_size = 88;
 constexpr size_t mark_size = 16;
+constexpr size_t minimum_address_entry_size = 3;
+constexpr size_t maximum_var_uint_size = (static_cast<size_t>(std::numeric_limits<uint64_t>::digits) + 6) / 7;
+constexpr size_t maximum_address_entry_size = 3 * maximum_var_uint_size;
+constexpr size_t minimum_name_entry_size = 2;
+
+/// Front-coded name granules normally expand by about 15-30x. This format cap leaves over two
+/// orders of magnitude of margin while bounding allocations derived from untrusted frame headers.
+constexpr size_t max_expansion_ratio = 1024;
 
 template <typename T>
 void appendLittleEndian(std::vector<char> & output, T value)
@@ -84,6 +92,13 @@ std::vector<char> compress(std::span<const char> input)
     return output;
 }
 
+size_t maximumFrameContentSize(size_t compressed_size)
+{
+    if (compressed_size > std::numeric_limits<size_t>::max() / max_expansion_ratio)
+        return std::numeric_limits<size_t>::max();
+    return compressed_size * max_expansion_ratio;
+}
+
 size_t frameContentSize(std::string_view input)
 {
     uint64_t decompressed_size = ZSTD_getFrameContentSize(input.data(), input.size());
@@ -93,12 +108,15 @@ size_t frameContentSize(std::string_view input)
         throw std::runtime_error("Compact symbols zstd frame has no content size");
     if (!std::in_range<size_t>(decompressed_size))
         throw std::runtime_error("Compact symbols zstd frame is too large");
-    return static_cast<size_t>(decompressed_size);
+    size_t result = static_cast<size_t>(decompressed_size);
+    if (result > maximumFrameContentSize(input.size()))
+        throw std::runtime_error("Compact symbols zstd frame exceeds the maximum expansion ratio");
+    return result;
 }
 
-std::vector<char> decompress(std::string_view input)
+std::vector<char> decompress(std::string_view input, size_t expected_size)
 {
-    std::vector<char> output(frameContentSize(input));
+    std::vector<char> output(expected_size);
     size_t result = ZSTD_decompress(output.data(), output.size(), input.data(), input.size());
     if (ZSTD_isError(result))
         throw std::runtime_error(std::string("Cannot decompress compact symbols: ") + ZSTD_getErrorName(result));
@@ -304,6 +322,8 @@ Reader::Reader(std::string_view data_)
         throw std::runtime_error("Compact symbols part is out of bounds");
     if (marks_offset < header_size || names_offset < marks_offset + marks_size || addresses_offset < names_offset + names_size)
         throw std::runtime_error("Compact symbols parts overlap");
+    if (address_count > maximumFrameContentSize(static_cast<size_t>(addresses_size)) / minimum_address_entry_size)
+        throw std::runtime_error("Compact symbol address count exceeds the compressed stream");
 
     uint64_t expected_names_offset = 0;
     for (uint32_t granule = 0; granule < granule_count; ++granule)
@@ -321,9 +341,15 @@ Reader::Reader(std::string_view data_)
 
 std::vector<AddressEntry> Reader::decodeAddresses() const
 {
-    std::vector<char> decoded = decompress(data.substr(addresses_offset, addresses_size));
-    if (address_count > decoded.size() / 3)
+    std::string_view compressed = data.substr(addresses_offset, addresses_size);
+    size_t decoded_size = frameContentSize(compressed);
+    if (address_count > decoded_size / minimum_address_entry_size)
         throw std::runtime_error("Compact symbol address count exceeds the decoded stream");
+    size_t minimum_entry_count = decoded_size / maximum_address_entry_size + (decoded_size % maximum_address_entry_size != 0);
+    if (address_count < minimum_entry_count)
+        throw std::runtime_error("Compact symbol decoded address stream exceeds the address count");
+
+    std::vector<char> decoded = decompress(compressed, decoded_size);
     const char * position = decoded.empty() ? "" : decoded.data();
     const char * end = position + decoded.size();
 
@@ -358,34 +384,39 @@ std::string_view Reader::compressedNameGranule(uint32_t granule_index) const
     return data.substr(names_offset + compressed_offset, compressed_size);
 }
 
+size_t Reader::nameGranuleContentSize(uint32_t granule_index) const
+{
+    size_t granule_size = frameContentSize(compressedNameGranule(granule_index));
+    uint64_t first_name_index = static_cast<uint64_t>(granule_index) * names_per_granule;
+    size_t count = static_cast<size_t>(std::min<uint64_t>(names_per_granule, name_count - first_name_index));
+    if (count > granule_size / minimum_name_entry_size)
+        throw std::runtime_error("Compact symbol name count exceeds the decoded granule");
+    return granule_size;
+}
+
 size_t Reader::maximumNameGranuleSize() const
 {
     size_t result = 0;
     for (uint32_t granule_index = 0; granule_index < granule_count; ++granule_index)
     {
-        size_t granule_size = frameContentSize(compressedNameGranule(granule_index));
-        if (granule_size == 0)
-            throw std::runtime_error("Compact symbol name granule is empty");
+        size_t granule_size = nameGranuleContentSize(granule_index);
         result = std::max(result, granule_size);
     }
     return result;
 }
 
-NameGranuleDecoder Reader::decodeNameGranule(
-    uint32_t granule_index,
-    ZSTD_DCtx * decompression_context,
-    std::span<char> destination) const
+NameGranuleDecoder Reader::decodeNameGranule(uint32_t granule_index, ZSTD_DCtx * decompression_context, std::span<char> destination) const
 {
     if (!decompression_context)
         throw std::runtime_error("Compact symbol decompression context is missing");
 
     std::string_view compressed = compressedNameGranule(granule_index);
-    size_t expected_size = frameContentSize(compressed);
+    size_t expected_size = nameGranuleContentSize(granule_index);
     if (destination.size() < expected_size)
         throw std::runtime_error("Compact symbol name granule destination is too small");
 
-    size_t decoded_size = ZSTD_decompressDCtx(
-        decompression_context, destination.data(), destination.size(), compressed.data(), compressed.size());
+    size_t decoded_size
+        = ZSTD_decompressDCtx(decompression_context, destination.data(), destination.size(), compressed.data(), compressed.size());
     if (ZSTD_isError(decoded_size))
         throw std::runtime_error(std::string("Cannot decompress compact symbols: ") + ZSTD_getErrorName(decoded_size));
     if (decoded_size != expected_size)

@@ -1,8 +1,10 @@
-#include <Common/CompactSymbols.h>
 #include <IO/ZstdContext.h>
+#include <Common/CompactSymbols.h>
 
 #include <algorithm>
+#include <array>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,6 +24,40 @@ struct DecodedSymbol
 
     bool operator==(const DecodedSymbol &) const = default;
 };
+
+uint64_t readLittleEndian64(const std::vector<char> & data, size_t offset)
+{
+    if (offset > data.size() || sizeof(uint64_t) > data.size() - offset)
+        throw std::runtime_error("Compact symbols test field is out of bounds");
+
+    uint64_t value = 0;
+    for (size_t byte = 0; byte < sizeof(uint64_t); ++byte)
+        value |= static_cast<uint64_t>(static_cast<unsigned char>(data[offset + byte])) << (byte * 8);
+    return value;
+}
+
+void advertiseHugeFrameContentSize(std::vector<char> & data, size_t frame_offset)
+{
+    constexpr uint64_t advertised_size = uint64_t{1} << 60;
+    constexpr std::array<char, 5> frame_header{
+        static_cast<char>(0x28),
+        static_cast<char>(0xb5),
+        static_cast<char>(0x2f),
+        static_cast<char>(0xfd),
+        static_cast<char>(0xe0),
+    };
+    constexpr size_t content_size_offset = frame_header.size();
+    constexpr size_t frame_header_size = content_size_offset + sizeof(advertised_size);
+    if (frame_offset > data.size() || frame_header_size > data.size() - frame_offset)
+        throw std::runtime_error("Compact symbols test frame is too small");
+
+    std::copy(frame_header.begin(), frame_header.end(), data.data() + frame_offset);
+    for (size_t byte = 0; byte < sizeof(advertised_size); ++byte)
+        data[frame_offset + content_size_offset + byte] = static_cast<char>(advertised_size >> (byte * 8));
+
+    if (ZSTD_getFrameContentSize(data.data() + frame_offset, data.size() - frame_offset) != advertised_size)
+        throw std::runtime_error("Compact symbols test frame does not advertise the expected size");
+}
 
 std::vector<std::string> decodeNames(const Reader & reader, std::vector<size_t> * granule_sizes = nullptr)
 {
@@ -128,6 +164,30 @@ TEST(CompactSymbols, NameGranuleBoundaries)
     EXPECT_EQ(reader.granuleCount(), 2);
     EXPECT_EQ(granule_sizes, (std::vector<size_t>{names_per_granule, 1}));
     EXPECT_EQ(decoded_names, expected);
+}
+
+TEST(CompactSymbols, RejectsHugeAdvertisedAddressFrameSize)
+{
+    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
+    auto encoded = encode(symbols);
+    constexpr size_t addresses_offset_field = 72;
+    size_t addresses_offset = static_cast<size_t>(readLittleEndian64(encoded, addresses_offset_field));
+    advertiseHugeFrameContentSize(encoded, addresses_offset);
+
+    Reader reader(std::string_view(encoded.data(), encoded.size()));
+    EXPECT_THROW(reader.decodeAddresses(), std::runtime_error);
+}
+
+TEST(CompactSymbols, RejectsHugeAdvertisedNameGranuleSize)
+{
+    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
+    auto encoded = encode(symbols);
+    constexpr size_t names_offset_field = 56;
+    size_t names_offset = static_cast<size_t>(readLittleEndian64(encoded, names_offset_field));
+    advertiseHugeFrameContentSize(encoded, names_offset);
+
+    Reader reader(std::string_view(encoded.data(), encoded.size()));
+    EXPECT_THROW(reader.maximumNameGranuleSize(), std::runtime_error);
 }
 
 }
