@@ -7,36 +7,36 @@
       "versionId": "92f722745b09bb777c04a44a2ab974484bf5992a93f74c5c1368248b43b427f0",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-08-18T19:28:47.684Z",
+          "updatedAt": "2026-08-18T19:57:03.785Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-18T19:28:48.689Z",
+          "updatedAt": "2026-08-18T19:57:04.913Z",
           "fileName": "docs.json",
           "postProcessHash": "e7db14ee7c6b5c94289879639ca36c1ef7fa850b9ea622247f16a335461390d7"
         },
         "es": {
-          "updatedAt": "2026-08-18T19:28:46.955Z",
+          "updatedAt": "2026-08-18T19:57:02.846Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-18T19:28:47.449Z",
+          "updatedAt": "2026-08-18T19:57:03.491Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-18T19:28:48.430Z",
+          "updatedAt": "2026-08-18T19:57:04.601Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-18T19:28:48.192Z",
+          "updatedAt": "2026-08-18T19:57:04.349Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-18T19:28:47.208Z",
+          "updatedAt": "2026-08-18T19:57:03.180Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-18T19:28:47.935Z",
+          "updatedAt": "2026-08-18T19:57:04.073Z",
           "fileName": "docs.json"
         }
       },
@@ -18765,47 +18765,47 @@
     },
     {
       "fileId": "074c3792d799afdb4a74fd9976e3a8b913b813304b5a1fc803300430970f77d7",
-      "versionId": "e5fd7f327fc64e1a5201fea82e9f93d981380b4a6878effe7adc82d029e20a3f",
+      "versionId": "75cb5b6207e183e43074cf7f2b008155e8ded5454b57302b0c7846939f869332",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.821Z",
-          "fileName": "fr/reference/statements/explain.mdx",
-          "postProcessHash": "f5bd9074b6f4d71ffe230dc44f7a9f01938d945e8300cc59db2001b83a341f25"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.822Z",
-          "fileName": "ar/reference/statements/explain.mdx",
-          "postProcessHash": "1aa98ba3102d91a64272160cbb54bcecf8fbcab96b3eba7268fcdf01c5592781"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.822Z",
-          "fileName": "pt-BR/reference/statements/explain.mdx",
-          "postProcessHash": "6bfe4860364e965dd110392d064d059bb5ff7714835c4264c2542497b212d670"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.822Z",
-          "fileName": "ko/reference/statements/explain.mdx",
-          "postProcessHash": "eac7a2dcc5d5ad9bc1313907a8862080507131e5993477a1d8cffcf6565ba25d"
-        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.822Z",
+          "updatedAt": "2026-08-18T19:57:09.774Z",
           "fileName": "es/reference/statements/explain.mdx",
-          "postProcessHash": "fb1f4774961cae5c7a3159f90fab48d63fea6d242f87406fd3ce8dddfdccb9d1"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.823Z",
-          "fileName": "ru/reference/statements/explain.mdx",
-          "postProcessHash": "3786cec240859a2b43c254700f1a4ecc322327855a785e6c380e37458c21f507"
+          "postProcessHash": "4edf32107f5413f4b2b9b4ac9f99c3842934975c18ec994e41478835f96ec3ed"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.823Z",
+          "updatedAt": "2026-08-18T19:57:09.775Z",
           "fileName": "zh/reference/statements/explain.mdx",
-          "postProcessHash": "dfedfceb5a67e4a4943e2edd296f26f3eb3eac7b070d61e0fedca30cab5a3c2e"
+          "postProcessHash": "7068a2d788894adef80a79e661ac979fe60a6d6eaf1b5e628aebb9daf26018ea"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-18T19:57:09.776Z",
+          "fileName": "pt-BR/reference/statements/explain.mdx",
+          "postProcessHash": "c6913383c637140eba39bf7db5a8aebf880aa6a8e28592f0e35d3e16c42ec7a2"
+        },
+        "ru": {
+          "updatedAt": "2026-08-18T19:57:09.777Z",
+          "fileName": "ru/reference/statements/explain.mdx",
+          "postProcessHash": "8c306e92f5c2fbf0f89da801dfb92c223b1d05917d46431afe7a23d072090ff1"
+        },
+        "fr": {
+          "updatedAt": "2026-08-18T19:57:09.778Z",
+          "fileName": "fr/reference/statements/explain.mdx",
+          "postProcessHash": "bad815c92d432682acb188108d273f21a2a58e362c2847cc03daea16624172de"
+        },
+        "ko": {
+          "updatedAt": "2026-08-18T19:57:09.779Z",
+          "fileName": "ko/reference/statements/explain.mdx",
+          "postProcessHash": "af41f9a8b5d32683e5b41991a850aa3c90ddfa93bc63b0f801508a7cbf90008c"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.823Z",
+          "updatedAt": "2026-08-18T19:57:09.780Z",
           "fileName": "ja/reference/statements/explain.mdx",
-          "postProcessHash": "bd82f03b3ee143f8551a8dcc32fa7b10102af3f018ae2d8a3d25715a4226c13f"
+          "postProcessHash": "039967e9722aefe8d4e826d383d61b68366df080766cd03327d43b92d2745b73"
+        },
+        "ar": {
+          "updatedAt": "2026-08-18T19:57:09.780Z",
+          "fileName": "ar/reference/statements/explain.mdx",
+          "postProcessHash": "7d1805c6db82d5824572f22219bffee5242452d71dfba8e1ca96105a4d6f4b29"
         }
       },
       "fileName": "reference/statements/explain.mdx",
@@ -64173,47 +64173,47 @@
     },
     {
       "fileId": "1f9cadf66214cc43061d93c6cf31bb4ebd0347ade66d63764bfd922f30e95acc",
-      "versionId": "11afdf66dff420cc8bf5dde5a0f9d97f829b2153b913d4b410e268f795d5d13e",
+      "versionId": "2f2ed66e866ab90d72c9b21a75a5d9962b2054639ab148c04f551a16ec2e9c4e",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.121Z",
-          "fileName": "es/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "0587a3c433d454e70f4c28c3506862516820f26b9cb85c14c4446c1e69a5510c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.121Z",
-          "fileName": "ja/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "a25bf8483b93c435e719b270f29d8e96027db47a7dadc68b69b038098c6eb0e9"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.121Z",
-          "fileName": "ko/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "e7bd0698792b5a8d2e1b3132287f08bcfd7ddf943ef1deaa04e333cce799fc7d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.121Z",
-          "fileName": "pt-BR/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "c4eabde6da920e295b9b6d6f53e5d85ef1b8959c0c351031958727aaec87ff43"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.122Z",
-          "fileName": "ru/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "05da9a8104b3b28a5bfdacdb7d42c8414bf965839a442c5abb8ea5e76f7aa91e"
+        "ar": {
+          "updatedAt": "2026-08-18T19:57:09.764Z",
+          "fileName": "ar/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "f6c90ddcbf46b8166918054ef8c2d5e43f750b16b664ef84a3f130d71f2baa01"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.122Z",
+          "updatedAt": "2026-08-18T19:57:09.766Z",
           "fileName": "zh/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "625cf57c0cc7022df433cf7556e174241a9b251fea7aeab91dcdf36dfb3934ac"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.122Z",
-          "fileName": "ar/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "97ce2f629b8bd54a4e373f4d7c352e942e938603c57d6e55131dfea26eb73342"
+          "postProcessHash": "e56dc0a097b402a6ffbcdff41484fc3552490e31ea27a0986b6ee565cd4113ab"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.122Z",
+          "updatedAt": "2026-08-18T19:57:09.767Z",
           "fileName": "fr/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "b23d7e3ec3270a2bd492d316bb4040338ed65b8ef6fa3e0a26813a033704f1ab"
+          "postProcessHash": "4d6042646f6045e1a24aa895fb0ef2cd8b325046b8827ffb8d98247e6b73bc6c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-18T19:57:09.768Z",
+          "fileName": "pt-BR/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "8b42abf4b60cdde5db4ef5c53a828f4f4b2eea7c43167a1be9d839498c236604"
+        },
+        "es": {
+          "updatedAt": "2026-08-18T19:57:09.769Z",
+          "fileName": "es/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "8d37f06792404bc68e1aabdb0ff9f5892ac87eb0e68c995ed20cac89eb34beb8"
+        },
+        "ru": {
+          "updatedAt": "2026-08-18T19:57:09.769Z",
+          "fileName": "ru/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "b886d6d0c26d82d5679df8a32cb0257c25d8b46c6135a9ccb6e3667ffc64d9d2"
+        },
+        "ja": {
+          "updatedAt": "2026-08-18T19:57:09.770Z",
+          "fileName": "ja/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "8ef9798d8b2a31f7dd8163bdf27ec7ea81cfea3c9e585aaef13f5fd78af6a596"
+        },
+        "ko": {
+          "updatedAt": "2026-08-18T19:57:09.771Z",
+          "fileName": "ko/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "23c4478b05123b9be95eb1b7d23312261040bcfeb9c48cffd2bb31357f1989a8"
         }
       },
       "fileName": "reference/functions/table-functions/iceberg.mdx",
@@ -86205,47 +86205,47 @@
     },
     {
       "fileId": "3cab07a1a971b6352199a3da7bddb0f6e898abd21289017708d0b28f4177fae6",
-      "versionId": "8409b3342a76f3527cc824afd6f5af0fece49890e7e7e48e73a0978737827104",
+      "versionId": "a4444203437f87958c4452f98aedf5fd804865c2b6ab20f6222e76f8fb9cfe0a",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
-          "fileName": "es/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "7b357fac56d06e3d9fb619dfc99b3fb3148140bd8088297b8d617cff7ec40a8f"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
-          "fileName": "ja/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "c48b383b1e8e468957eed9d372ff62dc9998c30632891dd86215374ea0fec034"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
+          "updatedAt": "2026-08-18T19:57:09.765Z",
           "fileName": "ko/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "70cb3c7b8586fe26019041e6552a9a059287ef9ba729e74df1f3a66c03a79c9c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
-          "fileName": "pt-BR/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "40533c71aceb5d1148e57d06acab530ed79c102fbce393a6d8f71a85f3b36cf9"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
-          "fileName": "ru/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "5da848e990edfcf3ec925c61f32d217b86d7f48d7ccf280bbff8a20ed1082438"
+          "postProcessHash": "1bb776ad6e843c7fe2eb4c08ea6f66ca2da3a5fde200076066e070e91955ec79"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.171Z",
+          "updatedAt": "2026-08-18T19:57:09.767Z",
           "fileName": "zh/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "bf4d7e3b8f52b39591f35d756eb53695abb675098076dc6d7f10e4ab950e3d42"
+          "postProcessHash": "e0d5307dd3be2237fe1c75365b358c8dcba540f3171787ec41685d2db27cbbc3"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.172Z",
+          "updatedAt": "2026-08-18T19:57:09.772Z",
           "fileName": "ar/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "1698a1d2698cf92900baefe4a273ee94ae3a9cc5e35800f1f9b4c3445868797f"
+          "postProcessHash": "b0d4e2cbcb7ebb7c5075438b06787618655b6b5d9923c71ee35b4d293a56f106"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.172Z",
+          "updatedAt": "2026-08-18T19:57:09.772Z",
           "fileName": "fr/reference/engines/table-engines/integrations/iceberg.mdx",
-          "postProcessHash": "924fe04685ece8a668a10176d9c982607f4dd4082f54ec6717406adc1651f0fa"
+          "postProcessHash": "20e508bb0b56916b73b08ad87e8446264baece20dd30d73fed31329362641a85"
+        },
+        "es": {
+          "updatedAt": "2026-08-18T19:57:09.773Z",
+          "fileName": "es/reference/engines/table-engines/integrations/iceberg.mdx",
+          "postProcessHash": "80102f3dd4b300bdd9739ca5e7249696735cfa3c7adb72831a150ce50c75fea4"
+        },
+        "ja": {
+          "updatedAt": "2026-08-18T19:57:09.774Z",
+          "fileName": "ja/reference/engines/table-engines/integrations/iceberg.mdx",
+          "postProcessHash": "234082c27402061b8779750daf85b48fdc3ff83bc8f3507dd74e02785f92173b"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-18T19:57:09.775Z",
+          "fileName": "pt-BR/reference/engines/table-engines/integrations/iceberg.mdx",
+          "postProcessHash": "232aa4cac9afccf9a2a71d31f936349bb253181d9e109dbdcb46227595b14137"
+        },
+        "ru": {
+          "updatedAt": "2026-08-18T19:57:09.777Z",
+          "fileName": "ru/reference/engines/table-engines/integrations/iceberg.mdx",
+          "postProcessHash": "cf73c547069ad3591a3874e6531d609cbb966d856ac0c6e85344c75726d353a1"
         }
       },
       "fileName": "reference/engines/table-engines/integrations/iceberg.mdx",
