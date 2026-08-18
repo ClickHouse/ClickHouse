@@ -13699,7 +13699,7 @@ function tokensBeforeInlineInsertPayload(tokens)
             /// `ParserInsertQuery` accepts a leading `WITH`; `ParserExplainQuery` can wrap that
             /// insert. Keep scanning those prefixes until their top-level `INSERT`, while returning
             /// as soon as they resolve to a non-insert statement such as `WITH ... SELECT`.
-            if (!leading_with && !leading_explain && lower === 'with') {
+            if (!leading_with && lower === 'with') {
                 leading_with = true;
                 with_depth = depth;
                 continue;

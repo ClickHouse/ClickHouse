@@ -1029,12 +1029,15 @@ async function main() {
             const keywordAlias = "WITH 1 AS insert SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'";
             const keywordAliasFormat = await detectExplicitFormatClause(keywordAlias);
             const keywordAliasFraming = await detectFramingSetting(keywordAlias);
+            const explainKeywordAlias = "EXPLAIN AST WITH 1 AS insert SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'";
+            const explainKeywordAliasFormat = await detectExplicitFormatClause(explainKeywordAlias);
+            const explainKeywordAliasFraming = await detectFramingSetting(explainKeywordAlias);
             const restored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
             renderFailedSnapshot(restored, '{"exception":"each-row failure"}\\n', 'JSONEachRow', undefined, 'each-row failure');
             const transportRestored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
             renderFailedSnapshot(transportRestored, '{"exception":"ordinary row"}\\n', 'JSONEachRow', undefined, 'Network error');
             const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
-            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, keywordAliasFormat, keywordAliasFraming, restored, transportRestored, parallelWithWrite });
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, keywordAliasFormat, keywordAliasFraming, explainKeywordAliasFormat, explainKeywordAliasFraming, restored, transportRestored, parallelWithWrite });
         })()`));
         check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
             !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
@@ -1059,6 +1062,11 @@ async function main() {
                 && !res.keywordAliasFraming.user_framing
                 && res.keywordAliasFraming.user_disables_framing
                 && !res.keywordAliasFraming.has_ambiguous_post_format_settings, res);
+        check('fallback-tokenizer', 'an EXPLAIN WITH keyword-shaped alias does not turn a SELECT input() query into INSERT payload',
+            res.explainKeywordAliasFormat && res.explainKeywordAliasFormat.name === 'LineAsString'
+                && !res.explainKeywordAliasFraming.user_framing
+                && res.explainKeywordAliasFraming.user_disables_framing
+                && !res.explainKeywordAliasFraming.has_ambiguous_post_format_settings, res);
         check('failed-snapshot', 'a saved JSONEachRow HTTP exception restores as the live error alone',
             res.restored.error === 'each-row failure' && res.restored.raw === null, res);
         check('failed-snapshot', 'a transport failure preserves an ordinary JSONEachRow exception field as raw output',
