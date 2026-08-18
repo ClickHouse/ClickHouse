@@ -534,6 +534,17 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
     )
     assert [("public", "growth_a"), ("public", "growth_b")] == cursor.fetchall()
 
+    # A table that reaches the warning on restart is already in the publication. `ATTACH TABLE` must
+    # reuse that membership instead of issuing a duplicate `ALTER PUBLICATION ... ADD TABLE`.
+    cursor.execute(f'ALTER PUBLICATION "{presalt_publication}" ADD TABLE ONLY growth_c')
+    node1.restart_clickhouse()
+    assert node1.contains_in_log("also publishes the following table(s) this database does not replicate: public.growth_c")
+
+    node1.query(f"ATTACH TABLE {mat_db}.growth_c")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_c", "10")
+    cursor.execute("INSERT INTO growth_c SELECT i, i FROM generate_series(10, 19) AS i")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_c", "20")
+
     # Dropping the database removes the adopted objects.
     node1.query(f"DROP DATABASE {mat_db} SYNC")
     for _ in range(30):

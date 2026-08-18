@@ -1730,6 +1730,12 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
+    if (fetchPublishedTablePairs(ntx).contains(getNormalizedSchemaAndTableName(table_name)))
+    {
+        LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+        return;
+    }
+
     std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
