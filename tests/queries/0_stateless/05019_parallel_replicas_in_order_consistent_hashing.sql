@@ -1,5 +1,3 @@
--- Tags: no-random-merge-tree-settings
-
 -- The in-order coordinator distributes mark segments between replicas by the same consistent hash
 -- the default one uses, instead of handing the front of every part to whoever asked first. A replica
 -- reads a part as a single sorted stream, so the placement must never move a replica backwards
