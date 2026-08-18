@@ -249,7 +249,7 @@ SET output_format_csv_crlf_end_of_line = 1;
 
 ## Schema inference for CSV files {#schema-inference-for-csv-files}
 
-We might work with unknown CSV files in many cases, so we have to explore which types to use for columns. Clickhouse, by default, will try to guess data formats based on its analysis of a given CSV file.  This is known as "Schema Inference". Detected data types can be explored using the `DESCRIBE` statement in pair with the [file()](/reference/functions/table-functions/file) function:
+We might work with unknown CSV files in many cases, so we have to explore which types to use for columns. ClickHouse, by default, will try to guess data formats based on its analysis of a given CSV file.  This is known as "Schema Inference". Detected data types can be explored using the `DESCRIBE` statement in pair with the [file()](/reference/functions/table-functions/file) function:
 
 ```sql
 DESCRIBE file('data-small.csv', CSV)
@@ -374,4 +374,4 @@ ClickHouse introduces support for many formats, both text, and binary, to cover 
 - [Native and binary formats](/guides/clickhouse/data-formats/binary)
 - [SQL formats](/guides/clickhouse/data-formats/sql)
 
-And also check [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - a portable full-featured tool to work on local/remote files without the need for Clickhouse server.
+And also check [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - a portable full-featured tool to work on local/remote files without the need for ClickHouse server.
