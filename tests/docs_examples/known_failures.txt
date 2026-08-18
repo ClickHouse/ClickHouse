@@ -67,11 +67,6 @@ Function/formatDateTime#2                 unstable  # the output is not the same
 Function/fuzzBits#0                       unstable  # the output is not the same on every run
 Function/generateRandomStructure#0        unstable  # the output is not the same on every run
 Function/generateRandomStructure#1        unstable  # the output is not the same on every run
-Function/generateSerialID#0               output  # the response describes the server or the machine it runs on
-Function/generateSerialID#1               output  # the response describes the server or the machine it runs on
-Function/generateSerialID#2               output  # the response describes the server or the machine it runs on
-Function/generateSerialID#3               output  # the response describes the server or the machine it runs on
-Function/generateSerialID#4               output  # the response describes the server or the machine it runs on
 Function/generateSnowflakeID#0            unstable  # the output is not the same on every run
 Function/generateSnowflakeID#1            unstable  # the output is not the same on every run
 Function/generateSnowflakeID#2            unstable  # the output is not the same on every run
