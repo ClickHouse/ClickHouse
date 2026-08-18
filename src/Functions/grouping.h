@@ -46,7 +46,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Change it to never return LowCardinality, making it consistent when using groupingForRollup / groupingForforCube
+    /// Change it to never return LowCardinality, making it consistent when using __groupingForRollup / groupingForforCube
     /// with __grouping_set
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
@@ -105,7 +105,7 @@ public:
         : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
     {}
 
-    String getName() const override { return "groupingOrdinary"; }
+    String getName() const override { return "__groupingOrdinary"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -126,7 +126,7 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "groupingForRollup"; }
+    String getName() const override { return "__groupingForRollup"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -163,7 +163,7 @@ public:
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 
-    String getName() const override { return "groupingForCube"; }
+    String getName() const override { return "__groupingForCube"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -201,7 +201,7 @@ public:
             grouping_sets.emplace_back(set.begin(), set.end());
     }
 
-    String getName() const override { return "groupingForGroupingSets"; }
+    String getName() const override { return "__groupingForGroupingSets"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

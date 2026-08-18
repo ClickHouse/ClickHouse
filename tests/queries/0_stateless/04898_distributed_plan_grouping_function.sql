@@ -2,7 +2,7 @@
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- `grouping` under `make_distributed_plan`. The analyzer resolves it into a specialization
--- (`groupingForRollup` etc.) whose parameters travel as trailing constant arguments, so a
+-- (`__groupingForRollup` etc.) whose parameters travel as trailing constant arguments, so a
 -- serialized plan can rebuild the function from its name and arguments alone. One of the
 -- constants bakes in `force_grouping_standard_compatibility`.
 

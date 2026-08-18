@@ -127,26 +127,26 @@ public:
         {
             case GroupByKind::ORDINARY:
             {
-                specialization_name = "groupingOrdinary";
+                specialization_name = "__groupingOrdinary";
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                specialization_name = "groupingForRollup";
+                specialization_name = "__groupingForRollup";
                 state_arguments.push_back(std::make_shared<ConstantNode>(
                     Field(UInt64(aggregation_keys_size)), std::make_shared<DataTypeUInt64>()));
                 break;
             }
             case GroupByKind::CUBE:
             {
-                specialization_name = "groupingForCube";
+                specialization_name = "__groupingForCube";
                 state_arguments.push_back(std::make_shared<ConstantNode>(
                     Field(UInt64(aggregation_keys_size)), std::make_shared<DataTypeUInt64>()));
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
-                specialization_name = "groupingForGroupingSets";
+                specialization_name = "__groupingForGroupingSets";
                 Array sets_array;
                 for (const auto & grouping_set : grouping_sets_keys_indexes)
                 {

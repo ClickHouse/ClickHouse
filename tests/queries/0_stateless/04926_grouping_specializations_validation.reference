@@ -12,13 +12,13 @@ QUERY id: 0
       FUNCTION id: 5, function_name: plus, function_type: ordinary, result_type: UInt64
         ARGUMENTS
           LIST id: 6, nodes: 2
-            FUNCTION id: 7, function_name: groupingOrdinary, function_type: ordinary, result_type: UInt64
+            FUNCTION id: 7, function_name: __groupingOrdinary, function_type: ordinary, result_type: UInt64
               ARGUMENTS
                 LIST id: 8, nodes: 3
                   COLUMN id: 2, column_name: k1, result_type: String, source_id: 3
                   CONSTANT id: 9, constant_value: Array_[UInt64_0], constant_value_type: Array(UInt64)
                   CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
-            FUNCTION id: 11, function_name: groupingOrdinary, function_type: ordinary, result_type: UInt64
+            FUNCTION id: 11, function_name: __groupingOrdinary, function_type: ordinary, result_type: UInt64
               ARGUMENTS
                 LIST id: 12, nodes: 3
                   COLUMN id: 4, column_name: k2, result_type: LowCardinality(String), source_id: 3

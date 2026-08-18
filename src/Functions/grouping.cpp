@@ -168,10 +168,10 @@ private:
 REGISTER_FUNCTION(GroupingSpecializations)
 {
     for (const auto & [name, variant] : std::initializer_list<std::pair<const char *, GroupingVariant>>{
-            {"groupingOrdinary", GroupingVariant::Ordinary},
-            {"groupingForRollup", GroupingVariant::Rollup},
-            {"groupingForCube", GroupingVariant::Cube},
-            {"groupingForGroupingSets", GroupingVariant::GroupingSets}})
+            {"__groupingOrdinary", GroupingVariant::Ordinary},
+            {"__groupingForRollup", GroupingVariant::Rollup},
+            {"__groupingForCube", GroupingVariant::Cube},
+            {"__groupingForGroupingSets", GroupingVariant::GroupingSets}})
     {
         factory.registerFunction(
             name,

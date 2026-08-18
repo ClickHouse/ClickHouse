@@ -20,19 +20,19 @@ public:
             return;
 
         const auto & function_name = function->getFunctionName();
-        bool ordinary_grouping = function_name == "groupingOrdinary";
+        bool ordinary_grouping = function_name == "__groupingOrdinary";
 
         if (!ordinary_grouping
-            && function_name != "groupingForRollup"
-            && function_name != "groupingForCube"
-            && function_name != "groupingForGroupingSets")
+            && function_name != "__groupingForRollup"
+            && function_name != "__groupingForCube"
+            && function_name != "__groupingForGroupingSets")
             return;
 
 
         auto & arguments = function->getArguments().getNodes();
 
         /// The analyzer appends constant arguments carrying the specialization parameters (two for
-        /// `groupingOrdinary`, three for the rest), and for the other specializations it prepends
+        /// `__groupingOrdinary`, three for the rest), and for the other specializations it prepends
         /// the `__grouping_set` column; they must not reach the query text. The specializations
         /// are also registered functions, so a query can call them directly with any arguments;
         /// leave a node that does not match the analyzer-built shape untouched, the remote server

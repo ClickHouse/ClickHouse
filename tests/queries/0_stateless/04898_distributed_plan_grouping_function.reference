@@ -60,8 +60,8 @@ Actions: INPUT : 0 -> sum(__table1.v) UInt64 : 0
          COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 5
          ALIAS sum(__table1.v) :: 0 -> sum(v) UInt64 : 6
          ALIAS __table1.k1 : 1 -> k1 String : 0
-         FUNCTION groupingForRollup(__grouping_set :: 2, __table1.k1 :: 1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String) :: 3, _CAST(1_UInt64, \'UInt64\'_String) :: 4, 1_UInt8 :: 5) -> groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _CA... UInt64 : 7
-         ALIAS groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _CAST(1_UInt64, \'UInt64\'_String), 1_UInt8) :: 7 -> g UInt64 : 5
+         FUNCTION __groupingForRollup(__grouping_set :: 2, __table1.k1 :: 1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String) :: 3, _CAST(1_UInt64, \'UInt64\'_String) :: 4, 1_UInt8 :: 5) -> __groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _... UInt64 : 7
+         ALIAS __groupingForRollup(__grouping_set, __table1.k1, _CAST([0]_Array(UInt64), \'Array(UInt64)\'_String), _CAST(1_UInt64, \'UInt64\'_String), 1_UInt8) :: 7 -> g UInt64 : 5
 Positions: 0 5 6
   GatherExchange (sorted by (__table1.k1 ASC))
     Sorting (Sorting for ORDER BY)
