@@ -600,7 +600,7 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATETIME64:
-            ret += "'0000-01-01 00:00:00'";
+            ret += "'0001-01-01 00:00:00'";
             if (val.paren())
             {
                 ret += "::DateTime64";
