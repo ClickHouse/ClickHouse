@@ -1044,6 +1044,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        /// partitioned_hash is only implemented in the analyzer-based planner;
+        /// the legacy planner falls back to hash/parallel_hash at plan time
+        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const auto & settings = context->getSettingsRef();

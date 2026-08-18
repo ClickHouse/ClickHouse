@@ -43,6 +43,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/SpillingHashJoin.h>
 
@@ -1202,6 +1203,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        /// Covers the single-level hash-join shapes. The rest falls back to `parallel_hash`, if it
+        /// is enabled, or `hash` below - at plan time, never at execution time.
+        algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         StatsCollectingParams stats_collecting_params{
@@ -1240,6 +1244,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
                 params.join_any_take_last_row);
+        }
+
+        /// No disk-spilling integration, so with automatic external join active the spilling-capable
+        /// algorithms above win.
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join))
+        {
+            return std::make_shared<PartitionedHashJoin>(
+                table_join,
+                right_table_expression_header,
+                params.max_threads,
+                params.join_any_take_last_row,
+                stats_collecting_params);
         }
 
         if (table_join->allowParallelHashJoin())
@@ -1400,6 +1416,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
+        /// It does not support mixed conditions itself, and falls back to `hash` at plan time.
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1436,7 +1454,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
         return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
