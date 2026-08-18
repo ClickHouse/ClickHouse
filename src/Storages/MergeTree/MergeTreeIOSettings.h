@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
+#include <Storages/MergeTree/CachesToPrewarm.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -109,8 +110,7 @@ struct MergeTreeWriterSettings
         const MergeTreeDataPartPtr & data_part,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
-        bool save_marks_in_cache_,
-        bool save_primary_index_in_memory_,
+        CachesToPrewarm caches_to_prewarm_,
         bool blocks_are_granules_size_,
         bool try_adaptive_codec_);
 
@@ -130,8 +130,7 @@ struct MergeTreeWriterSettings
 
     bool can_use_adaptive_granularity{};
     bool rewrite_primary_key{};
-    bool save_marks_in_cache{};
-    bool save_primary_index_in_memory{};
+    CachesToPrewarm caches_to_prewarm;
     bool blocks_are_granules_size{};
     WriteSettings query_write_settings;
 

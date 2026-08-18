@@ -40,6 +40,9 @@ struct MergeTreeTemporaryPart
 
     MergeTreeData::MutableDataPartPtr part;
 
+    /// Computed once per part; also used to move the index and marks into the caches after commit.
+    CachesToPrewarm caches_to_prewarm;
+
     struct Stream
     {
         std::unique_ptr<MergedBlockOutputStream> stream;
@@ -115,7 +118,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         bool merge_is_needed,
-        ContextPtr context);
+        ContextPtr context,
+        const CachesToPrewarm & caches_to_prewarm);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -124,7 +128,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
-        ContextPtr context);
+        ContextPtr context,
+        const CachesToPrewarm & caches_to_prewarm);
 
     static Block mergeBlock(
         Block && block,
@@ -152,7 +157,8 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        const CachesToPrewarm & caches_to_prewarm);
 
     MergeTreeData & data;
     LoggerPtr log;

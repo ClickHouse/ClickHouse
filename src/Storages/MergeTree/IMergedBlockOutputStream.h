@@ -41,7 +41,7 @@ public:
         return writer->getIndexGranularity();
     }
 
-    MergeTreeWriterSettings getWriterSettings() const
+    const MergeTreeWriterSettings & getWriterSettings() const
     {
         return writer->getWriterSettings();
     }

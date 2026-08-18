@@ -72,7 +72,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    if (settings.save_marks_in_cache)
+    if (settings.caches_to_prewarm.saveMarksInCache())
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 

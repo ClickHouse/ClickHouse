@@ -215,7 +215,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
 
-            if (settings.save_marks_in_cache)
+            if (settings.caches_to_prewarm.saveMarksInCache())
                 cached_index_marks.emplace(on_disk_stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
@@ -234,7 +234,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
         const auto & column = index_block.getByPosition(i).column;
         index_serializations[i]->serializeBinary(*column, row, index_stream, {});
 
-        if (settings.save_primary_index_in_memory)
+        if (settings.caches_to_prewarm.savePrimaryIndexInMemory())
             index_columns[i]->insertFrom(*column, row);
     }
 }
@@ -257,7 +257,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         /// memory-tracker blocker above.
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-        if (settings.save_primary_index_in_memory && index_columns.empty())
+        if (settings.caches_to_prewarm.savePrimaryIndexInMemory() && index_columns.empty())
         {
             index_columns = primary_index_block.cloneEmptyColumns();
         }

@@ -1,0 +1,19 @@
+-- { echoOn }
+INSERT INTO t_pk_cache_proj SELECT number, number, number FROM numbers(10000);
+SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0
+SELECT sum(primary_key_bytes_in_memory) FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0
+ALTER TABLE t_pk_cache_proj UPDATE b = b + 1 WHERE 1 SETTINGS mutations_sync = 1;
+SELECT count() FROM t_pk_cache_proj WHERE b > 100;
+9900
+SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0
+SELECT sum(primary_key_bytes_in_memory) FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0
+INSERT INTO t_pk_cache_proj SELECT number, number, number FROM numbers(10000);
+OPTIMIZE TABLE t_pk_cache_proj FINAL;
+SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0
+SELECT sum(primary_key_bytes_in_memory) FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_pk_cache_proj' AND active;
+0

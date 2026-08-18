@@ -467,31 +467,26 @@ void MergeTreeTemporaryPart::finalize()
 /// because a correct path is required for the keys of caches.
 void MergeTreeTemporaryPart::prewarmCaches()
 {
-    auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
-
-    if (prewarm_caches.mark_cache)
+    if (caches_to_prewarm.mark_cache)
     {
         for (const auto & stream : streams)
         {
             auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, prewarm_caches.mark_cache.get());
+            addMarksToCache(*part, marks, caches_to_prewarm.mark_cache.get());
         }
     }
 
-    if (prewarm_caches.index_mark_cache)
+    if (caches_to_prewarm.index_mark_cache)
     {
         for (const auto & stream : streams)
         {
             auto index_marks = stream.stream->releaseCachedIndexMarks();
-            addMarksToCache(*part, index_marks, prewarm_caches.index_mark_cache.get());
+            addMarksToCache(*part, index_marks, caches_to_prewarm.index_mark_cache.get());
         }
     }
 
-    if (prewarm_caches.primary_index_cache)
-    {
-        /// Index was already set during writing. Now move it to cache.
-        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
-    }
+    /// Index was already set during writing. Now move it to cache.
+    part->moveIndexToCache(caches_to_prewarm);
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -1017,6 +1012,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
 
+    temp_part->caches_to_prewarm = data.getCachesToPrewarm(block.bytes());
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -1026,7 +1023,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
-        block.bytes(),
+        temp_part->caches_to_prewarm,
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
@@ -1065,7 +1062,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context, temp_part->caches_to_prewarm);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1113,7 +1110,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    const CachesToPrewarm & caches_to_prewarm)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1218,6 +1216,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    /// The parent part's decision: the projection is published (or not) together with it.
+    temp_part->caches_to_prewarm = caches_to_prewarm;
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -1227,7 +1228,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::NonTransactionalTID,
-        block.bytes(),
+        temp_part->caches_to_prewarm,
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
@@ -1254,7 +1255,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     bool merge_is_needed,
-    ContextPtr context)
+    ContextPtr context,
+    const CachesToPrewarm & caches_to_prewarm)
 {
     const auto & query_settings = context->getSettingsRef();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1273,7 +1275,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        caches_to_prewarm);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1284,7 +1287,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
-    ContextPtr context)
+    ContextPtr context,
+    const CachesToPrewarm & caches_to_prewarm)
 {
     const auto & table_settings = data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1304,7 +1308,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        caches_to_prewarm);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

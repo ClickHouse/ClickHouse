@@ -1558,6 +1558,7 @@ static void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
+    const CachesToPrewarm & caches_to_prewarm,
     bool sync)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
@@ -1709,7 +1710,7 @@ static void finalizeMutatedPart(
     }
 
     /// It's important to set index after index granularity.
-    if (!new_data_part->storage.getPrimaryIndexCache())
+    if (caches_to_prewarm.savePrimaryIndexInMemory())
         new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
@@ -1836,6 +1837,9 @@ struct MutationContext
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
+
+    /// Computed once per mutation; also used to move the index into the cache after commit.
+    CachesToPrewarm caches_to_prewarm;
 
     HardlinkedFiles hardlinked_files;
 
@@ -2190,7 +2194,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         projection,
         ctx->new_data_part.get(),
         ++projection_block_num,
-        ctx->context);
+        ctx->context,
+        ctx->caches_to_prewarm);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -2741,7 +2746,7 @@ private:
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::NonTransactionalTID,
-            ctx->source_part->getBytesUncompressedOnDisk(),
+            ctx->caches_to_prewarm,
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
@@ -3109,7 +3114,7 @@ private:
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                ctx->caches_to_prewarm,
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
                 /*try_adaptive_codec=*/ !is_explicit_recompression);
 
@@ -3230,6 +3235,7 @@ private:
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
+            ctx->caches_to_prewarm,
             ctx->need_sync);
     }
 
@@ -3370,6 +3376,12 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+    ctx->caches_to_prewarm = ctx->data->getCachesToPrewarm(ctx->source_part->getBytesUncompressedOnDisk());
+}
+
+const CachesToPrewarm & MutateTask::getCachesToPrewarm() const
+{
+    return ctx->caches_to_prewarm;
 }
 
 

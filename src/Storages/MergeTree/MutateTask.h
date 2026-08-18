@@ -51,6 +51,8 @@ public:
 
     const HardlinkedFiles & getHardlinkedFiles() const;
 
+    const CachesToPrewarm & getCachesToPrewarm() const;
+
 private:
 
     bool prepare();

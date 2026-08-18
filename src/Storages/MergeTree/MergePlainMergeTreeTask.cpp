@@ -163,7 +163,7 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
-    auto prewarm_caches = storage.getCachesToPrewarm(new_part->getBytesUncompressedOnDisk());
+    auto prewarm_caches = merge_task->getCachesToPrewarm();
 
     if (prewarm_caches.mark_cache)
     {
@@ -177,12 +177,7 @@ void MergePlainMergeTreeTask::finish()
         addMarksToCache(*new_part, index_marks, prewarm_caches.index_mark_cache.get());
     }
 
-    if (prewarm_caches.primary_index_cache)
-    {
-        /// Move index to cache and reset it here because we need
-        /// a correct part name after rename for a key of cache entry.
-        new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
-    }
+    new_part->moveIndexToCache(prewarm_caches);
 
     write_part_log({});
 
