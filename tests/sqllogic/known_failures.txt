@@ -3949,7 +3949,6 @@ random/aggregates/slt_good_100.test:55463
 random/aggregates/slt_good_100.test:55651
 random/aggregates/slt_good_100.test:55741
 random/aggregates/slt_good_100.test:55850
-random/aggregates/slt_good_100.test:56027
 random/aggregates/slt_good_100.test:56053
 random/aggregates/slt_good_100.test:56147
 random/aggregates/slt_good_100.test:56556

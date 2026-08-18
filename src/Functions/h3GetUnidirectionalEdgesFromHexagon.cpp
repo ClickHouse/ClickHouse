@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgesFromHexagon final : public IFunction
+class FunctionH3GetUnidirectionalEdgesFromHexagon : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgesFromHexagon";
@@ -86,7 +86,7 @@ public:
             // allocate array of size 6
             // originToDirectedEdges places 6 edges into
             // array that's passed to it
-            std::array<H3Index, 6> res{};
+            std::array<H3Index, 6> res;
 
             const UInt64 cell = data_hindex[row];
             if (!validator.validateCell(cell))
@@ -120,7 +120,7 @@ Provides all of the unidirectional edges from the provided H3Index.
         {"index", "Hexagon index number that represents a cell.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of H3 indexes representing each unidirectional edge. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.",
+        "Returns an array of H3 indexes representing each unidirectional edge.",
         {"Array(UInt64)"}
     };
     FunctionDocumentation::Examples examples = {

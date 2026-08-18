@@ -46,26 +46,8 @@ struct Dictionary
     void reset();
     bool isInitialized() const;
     double getAverageValueSize() const;
-    /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
-    /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
-    size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
-
-    /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
-    /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
-    /// pruning path in `Reader::decodeDictionaryPage`) reject an oversized dictionary before `decode()`
-    /// transiently materializes it, so the pruning path never overshoots its budget even momentarily.
-    /// `page_payload_size` is the size of the payload `decode()` will see, i.e. the size of the `data_`
-    /// span: the *decompressed* page size for a compressed column chunk, the on-disk page size for an
-    /// `UNCOMPRESSED` one. It must never be the compressed size of a compressed page: those bytes live
-    /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
-    /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
-    /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// Must be kept in sync with `decode()`.
-    static size_t decodedFootprintUpperBound(
-        parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type);
 };
 
 struct PageDecoder
@@ -142,7 +124,7 @@ struct StringConverter
 ///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
 struct PageDecoderInfo
 {
-    parq::Type::type physical_type{};
+    parq::Type::type physical_type;
 
     /// Postprocessing of decoded values. Exactly one of these is set, depending on physical_type.
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;
@@ -191,25 +173,8 @@ struct IntConverter : public FixedSizeConverter
     bool field_ipv4 = false; // IPv4
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_signed = true; // Int64, otherwise UInt64
-    /// If not Ignore, it's a date column and we should range-check it.
+    /// If not Ignore, it's a Date32 column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
-    /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
-    /// than Date32, so range-check against the narrower [0, DATE_LUT_MAX_DAY_NUM] window. The final
-    /// cast of the decoded Int32 column to Date narrows to UInt16 without checks, so an unchecked
-    /// extended Date32 value would wrap into an unrelated in-range Date.
-    bool date_target_is_date = false;
-    /// Same idea for a DateTime output type: the final context-less cast ignores
-    /// `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit into
-    /// DateTime, so range-check against the [0, MAX_DATETIME_DAY_NUM] window of ToDateTimeImpl.
-    bool date_target_is_datetime = false;
-    /// Same idea for a DateTime64 output type, except that its window is scale-dependent: the cast clamps whole
-    /// seconds the target scale cannot represent, and a scale-9 DateTime64 stops at 2262-04-11, far below the
-    /// Date32 upper bound. Holds the day range of the requested DateTime64 type, when the output is one.
-    std::optional<std::pair<Int32, Int32>> date_target_datetime64_day_range;
-
-    /// The allowed day-number window of the requested output type, and its name for error messages.
-    std::pair<Int32, Int32> dateTargetDayRange() const;
-    String dateTargetTypeName() const;
 
     bool isTrivial() const override
     {
@@ -250,14 +215,6 @@ struct FixedStringConverter : public FixedSizeConverter
     bool isTrivial() const override { return true; }
 
     void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
-};
-
-struct UUIDConverter : public FixedSizeConverter
-{
-    UUIDConverter() { input_size = 16; }
-
-    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
@@ -320,42 +277,6 @@ extern template struct BigEndianDecimalFixedSizeConverter<Int64>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int128>;
 extern template struct BigEndianDecimalFixedSizeConverter<Int256>;
 
-/// Input physical type: a `DECIMAL`-annotated `FIXED_LEN_BYTE_ARRAY`.
-/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
-/// Values are range-checked instead of truncating leading sign-extension bytes.
-template <typename T>
-struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
-{
-    explicit BigEndianDecimalWideIntegerConverter(size_t input_size_)
-    {
-        chassert(input_size_ > 0);
-        input_size = input_size_;
-    }
-
-    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
-};
-
-extern template struct BigEndianDecimalWideIntegerConverter<Int128>;
-extern template struct BigEndianDecimalWideIntegerConverter<UInt128>;
-extern template struct BigEndianDecimalWideIntegerConverter<Int256>;
-extern template struct BigEndianDecimalWideIntegerConverter<UInt256>;
-
-/// Input physical type: a `DECIMAL`-annotated `BYTE_ARRAY`.
-/// Output column and `Field` type: `T`, where `T` is `Int128`, `UInt128`, `Int256`, or `UInt256`.
-/// Values are range-checked instead of truncating leading sign-extension bytes.
-template <typename T>
-struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
-{
-    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
-};
-
-extern template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
-extern template struct BigEndianDecimalWideIntegerStringConverter<UInt128>;
-extern template struct BigEndianDecimalWideIntegerStringConverter<Int256>;
-extern template struct BigEndianDecimalWideIntegerStringConverter<UInt256>;
-
 /// Input physical type: BYTE_ARRAY.
 /// Output column type: Decimal<T>, where T = Int{32,64,128,256}.
 /// Output Field type: Decimal<T>.
@@ -385,10 +306,8 @@ struct Int96Converter : public FixedSizeConverter
 struct GeoConverter : public StringConverter
 {
     GeoColumnMetadata geo_metadata;
-    bool precise_float_parsing = true;
 
-    GeoConverter(const GeoColumnMetadata & geo_metadata_, bool precise_float_parsing_)
-        : geo_metadata(geo_metadata_), precise_float_parsing(precise_float_parsing_) {}
+    explicit GeoConverter(const GeoColumnMetadata & geo_metadata_) : geo_metadata(geo_metadata_) {}
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };

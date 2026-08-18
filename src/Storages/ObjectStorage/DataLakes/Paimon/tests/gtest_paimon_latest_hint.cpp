@@ -69,7 +69,7 @@ fs::path makePaimonTable(const fs::path & root, const std::vector<Int64> & snaps
     auto table = root / "test.db" / "test_table";
     for (Int64 snapshot_id : snapshot_ids)
     {
-        writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(snapshot_id)), "{}");
+        writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PRIFIX) + std::to_string(snapshot_id)), "{}");
     }
     writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT, latest_hint);
     return table;
@@ -87,10 +87,10 @@ public:
         std::optional<size_t> read_hint) const override
     {
         small_object_reads.fetch_add(1, std::memory_order_relaxed);
-        last_local_buffer_size.store(read_settings.local_fs_settings.buffer_size, std::memory_order_relaxed);
-        last_remote_buffer_size.store(read_settings.remote_fs_settings.buffer_size, std::memory_order_relaxed);
+        last_local_buffer_size.store(read_settings.local_fs_buffer_size, std::memory_order_relaxed);
+        last_remote_buffer_size.store(read_settings.remote_fs_buffer_size, std::memory_order_relaxed);
         last_max_size_bytes.store(max_size_bytes, std::memory_order_relaxed);
-        return LocalObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
+        return IObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
     }
 
     size_t getSmallObjectReads() const { return small_object_reads.load(std::memory_order_relaxed); }
@@ -155,7 +155,7 @@ TEST(PaimonLatestHint, ReadsConcurrentlyReplacedHintAsSmallObject)
 
         for (size_t iteration = 0; iteration < 2000; ++iteration)
         {
-            auto snapshot_info = client.getLatestTableSnapshotInfo();
+            auto snapshot_info = client.getLastestTableSnapshotInfo();
             ASSERT_TRUE(snapshot_info.has_value());
             EXPECT_EQ(snapshot_info->first, 10);
             EXPECT_TRUE(fs::exists(snapshot_info->second));
@@ -188,7 +188,7 @@ TEST(PaimonLatestHint, FallsBackToListingForInvalidHint)
     auto object_storage = makeLocalObjectStorage(temporary_directory.path);
     PaimonTableClient client(object_storage, table.string(), getContext().context);
 
-    auto snapshot_info = client.getLatestTableSnapshotInfo();
+    auto snapshot_info = client.getLastestTableSnapshotInfo();
     ASSERT_TRUE(snapshot_info.has_value());
     EXPECT_EQ(snapshot_info->first, 2);
     EXPECT_TRUE(fs::exists(snapshot_info->second));

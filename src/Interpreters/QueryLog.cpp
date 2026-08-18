@@ -20,8 +20,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
@@ -64,7 +64,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
-        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryStart` — successful start of query execution, `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
+        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Query starting date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Query starting time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
@@ -74,9 +74,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it's read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it's read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
-        {"written_rows", std::make_shared<DataTypeUInt64>(), "The number of rows written by the query, including any rows written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream rows are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client. For queries that do not write rows, it is 0."},
-        {"written_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes written by the query (uncompressed), including any bytes written by downstream inserts triggered by the pipeline, such as attached materialized views. For a synchronous insert these downstream bytes are recorded on the `query_kind` = `Insert` entry; for an asynchronous insert they are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the bytes accepted from the client. For queries that do not write data, it is 0."},
-        {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the result of a SELECT query, or the number of rows written by an insert. For a synchronous insert this includes rows written by downstream inserts triggered by the pipeline (such as attached materialized views) on the `query_kind` = `Insert` entry; for an asynchronous insert those downstream rows are recorded on the `query_kind` = `AsyncInsertFlush` entry, while the client-facing `Insert` entry records only the rows accepted from the client."},
+        {"written_rows", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written rows. For other queries, the column value is 0."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written bytes (uncompressed). For other queries, the column value is 0."},
+        {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in a result of the SELECT query, or a number of rows in the INSERT query."},
         {"result_bytes", std::make_shared<DataTypeUInt64>(), "RAM volume in bytes used to store a query result."},
         {"memory_usage", std::make_shared<DataTypeUInt64>(), "Memory consumption by the query."},
 
@@ -95,33 +95,32 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
-        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
-        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},
-        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy."},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
+        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which connection was made."},
+        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which connection was made."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy."},
-        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy."},
-        {"initial_user", low_cardinality_string, "Name of the user who ran the initial query in the same query chain."},
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
-        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
-        {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
-        {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query in the same query chain."},
-        {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query in the same query chain, with microsecond precision."},
+        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
+        {"initial_user", low_cardinality_string, "Name of the user who ran the initial query (for distributed query execution)."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
+        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
+        {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
+        {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Initial query starting time (for distributed query execution)."},
+        {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Initial query starting time with microseconds precision (for distributed query execution)."},
         {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", low_cardinality_string, "The clickhouse-client or another TCP client name."},
-        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt32>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -129,9 +128,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"distributed_depth", std::make_shared<DataTypeUInt64>(), "How many times a query was forwarded between servers."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
-
-        {"http_handler_name", std::make_shared<DataTypeString>(), "Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler."},
-        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request path (without the query string) that invoked the query. The query string is omitted so that sensitive request parameters are not persisted. Empty for non-HTTP queries."},
 
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
 
@@ -250,9 +246,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
 
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_handler_name.data(), http_handler_name.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_request_url.data(), http_request_url.size());
-
     typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 
     {
@@ -278,23 +271,14 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
+    if (query_settings)
     {
-        /// Write into the subcolumns directly: IColumn::insert(Field) reaches
-        /// ColumnUnique::uniqueInsert(Field), which clones a whole ColumnString per boxed value.
-        /// Both key and value are LowCardinality here, so that would be two clones per entry.
-        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
-        auto & offsets = column_map.getNestedColumn().getOffsets();
-        auto & tuple_column = column_map.getNestedData();
-        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
-        auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
-
-        for (const auto & [name, value] : query_settings)
-        {
-            key_column.insertData(name.data(), name.size());
-            value_column.insertData(value.data(), value.size());
-        }
-
-        offsets.push_back(offsets.back() + query_settings.size());
+        auto * column = columns[i++].get();
+        query_settings->dumpToMapColumn(column, true);
+    }
+    else
+    {
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
@@ -352,22 +336,10 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
-    {
-        /// Same as for Settings above: avoid boxing through Field. Only the key is LowCardinality.
-        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
-        auto & offsets = column_map.getNestedColumn().getOffsets();
-        auto & tuple_column = column_map.getNestedData();
-        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
-        auto & value_column = typeid_cast<ColumnUInt64 &>(tuple_column.getColumn(1));
-
-        for (const auto & [name, value] : async_read_counters)
-        {
-            key_column.insertData(name.data(), name.size());
-            value_column.getData().push_back(value);
-        }
-
-        offsets.push_back(offsets.back() + async_read_counters.size());
-    }
+    if (async_read_counters)
+        async_read_counters->dumpToMapColumn(columns[i++].get());
+    else
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }
@@ -399,7 +371,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_agent.data(), client_info.client_agent.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_major));
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_minor));

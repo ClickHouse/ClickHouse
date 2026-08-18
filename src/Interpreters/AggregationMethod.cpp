@@ -11,7 +11,7 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
     const Sizes & /*key_sizes*/,
     const IColumn::SerializationSettings *)
 {
-    ColumnFixedSizeHelper * column = nullptr;
+    ColumnFixedSizeHelper * column;
     if constexpr (nullable)
     {
         ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
@@ -42,7 +42,6 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32Key, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key, true, true>;
-template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyHash64, true, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>;
@@ -135,8 +134,8 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, c
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        IColumn * observed_column = nullptr;
-        ColumnUInt8 * null_map = nullptr;
+        IColumn * observed_column;
+        ColumnUInt8 * null_map;
 
         bool column_nullable = false;
         if constexpr (has_nullable_keys)
@@ -191,8 +190,6 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64, true>;
-template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, true>;

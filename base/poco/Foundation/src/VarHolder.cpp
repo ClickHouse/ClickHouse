@@ -34,7 +34,7 @@ VarHolder::~VarHolder()
 namespace Impl {
 
 
-static void escape(std::string& target, const std::string& source)
+void escape(std::string& target, const std::string& source)
 {
 	target = toJSON(source);
 }

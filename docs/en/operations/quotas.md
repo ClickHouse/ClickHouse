@@ -1,0 +1,140 @@
+---
+description: 'Guide to configuring and managing resource usage quotas in ClickHouse'
+sidebar_label: 'Quotas'
+sidebar_position: 51
+slug: /operations/quotas
+title: 'Quotas'
+doc_type: 'guide'
+---
+
+:::note Quotas in ClickHouse Cloud
+Quotas are supported in ClickHouse Cloud but must be created using the [DDL syntax](/sql-reference/statements/create/quota). The XML configuration approach documented below is **not supported**.
+:::
+
+Quotas allow you to limit resource usage over a period of time or track the use of resources.
+Quotas are set up in the user config, which is usually 'users.xml'.
+
+The system also has a feature for limiting the complexity of a single query. See the section [Restrictions on query complexity](../operations/settings/query-complexity.md).
+
+In contrast to query complexity restrictions, quotas:
+
+- Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
+- Account for resources spent on all remote servers for distributed query processing.
+
+Let's look at the section of the 'users.xml' file that defines quotas.
+
+```xml
+<!-- Quotas -->
+<quotas>
+    <!-- Quota name. -->
+    <default>
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+        <interval>
+            <!-- Length of the interval. -->
+            <duration>3600</duration>
+
+            <!-- Unlimited. Just collect data for the specified time interval. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+By default, the quota tracks resource consumption for each hour, without limiting usage.
+The resource consumption calculated for each interval is output to the server log after each request.
+
+```xml
+<statbox>
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+    <interval>
+        <!-- Length of the interval. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+For the 'statbox' quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted, starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval does not necessarily begin at midnight.
+
+When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
+
+Here are the amounts that can be restricted:
+
+`queries` – The total number of requests.
+
+`query_selects` – The total number of select requests.
+
+`query_inserts` – The total number of insert requests.
+
+`errors` – The number of queries that threw an exception.
+
+`result_rows` – The total number of rows given as a result.
+
+`result_bytes` - The total size of rows given as a result.
+
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
+
+`read_bytes` - The total size read from tables for running the query on all remote servers.
+
+`written_bytes` - The total size of a writing operation. 
+
+`execution_time` – The total query execution time, in seconds (wall time).
+
+`failed_sequential_authentications` - The total number of sequential authentication errors. 
+
+If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
+
+Quotas can use the "quota key" feature to report on resources for multiple keys independently. Here is an example of this:
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+    -->
+    <keyed />
+```
+
+The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
+
+For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
+
+When the server is restarted, quotas are reset.
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

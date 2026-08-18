@@ -1,11 +1,9 @@
 #pragma once
+#include "config.h"
 
-#include <chrono>
-#include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
@@ -13,7 +11,6 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/IStreamingStorage.h>
 #include <base/defines.h>
 
 
@@ -22,7 +19,7 @@ namespace DB
 class ObjectStorageQueueMetadata;
 struct ObjectStorageQueueSettings;
 
-class StorageObjectStorageQueue : public IStreamingStorage, WithContext
+class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
     StorageObjectStorageQueue(
@@ -33,7 +30,6 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
@@ -69,40 +65,6 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     ObjectStorageQueueSettings getSettings() const;
-
-    /// Block until `path` is marked as processed (or failed) in Keeper by this
-    /// queue, then return.
-    ///
-    /// Ordered-mode semantics: ordered queues track a monotonic "last processed"
-    /// pointer rather than per-file markers.  This command therefore returns as
-    /// soon as the queue pointer has advanced past `path`, not necessarily because
-    /// `path` was explicitly read.
-    ///
-    /// Known edge cases in ordered mode:
-    ///  - A path that sorts lexicographically before the current pointer returns
-    ///    immediately even if it was never uploaded.
-    ///  - A path uploaded after the pointer has already advanced past its sort
-    ///    position will be silently skipped by the queue and FLUSH will return
-    ///    immediately with a false success.
-    ///
-    /// Throws ABORTED if the path permanently failed, QUERY_WAS_CANCELLED if the
-    /// table is dropped or the query is killed, TIMEOUT_EXCEEDED if the query time
-    /// limit is reached, and BAD_ARGUMENTS if the background streaming thread is
-    /// not running or will never make progress.
-    ///
-    /// If `deadline` is set, throws TIMEOUT_EXCEEDED when the deadline is reached
-    /// (in addition to any process-list time limit on `local_context`).
-    void waitForPathToBeProcessed(
-        const std::string & path,
-        ContextPtr local_context,
-        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
-
-    /// Rebuild the object-storage S3 client under `context`, re-resolving credentials, without detaching the
-    /// table. Used by the server-internal log-pipeline bootstrap to re-apply the server-credential opt-in after
-    /// a restart loaded the table with a restricted (anonymous) client. Safe to call while streaming: the client
-    /// is hot-swapped (MultiVersion) and the running streaming task picks it up on its next object-storage
-    /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
-    void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
@@ -165,15 +127,13 @@ private:
 
     UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
+    std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
-
-    void scheduleStreamingTasksImpl() override;
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
-    std::vector<UInt64> streaming_task_refresh_epochs;
     std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
@@ -198,7 +158,6 @@ private:
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed,
-        bool is_direct_select,
         size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
@@ -208,7 +167,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    bool streamToViews(size_t streaming_tasks_index);
     /// Apply after_processing action to successfully processed files.
     void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
