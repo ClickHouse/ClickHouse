@@ -786,11 +786,14 @@ buildField(
     {
         /// A type written as an opaque `Utf8`/`Binary` column is otherwise indistinguishable from a genuine
         /// string or binary column. Declare it as an Arrow extension type carrying the original ClickHouse
-        /// type name, so a consumer can tell the two apart. A reader that does not know the extension name
-        /// sees the plain storage type, which is what every Arrow reader did before this metadata existed.
+        /// type name, so a consumer can tell the two apart. Per the Arrow extension-type convention a reader
+        /// that does not know the extension name ignores the metadata and sees the plain storage type.
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(
-            b, b.CreateString("ARROW:extension:name"), b.CreateString(OPAQUE_EXTENSION_NAME.data(), OPAQUE_EXTENSION_NAME.size())));
+            b,
+            b.CreateString("ARROW:extension:name"),
+            b.CreateString(
+                FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.data(), FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.size())));
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString(opaque_type_name)));
         custom_metadata_off = b.CreateVector(kvs);
     }

@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
@@ -247,6 +248,10 @@ public:
 
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
+        /// Without a context there is no setting to read: reject a type with no Arrow mapping rather than
+        /// silently push it to the remote server as opaque bytes.
+        if (context)
+            arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;

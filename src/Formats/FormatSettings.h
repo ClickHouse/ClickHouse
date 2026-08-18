@@ -5,6 +5,8 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <string_view>
+
 namespace DB
 {
 
@@ -178,6 +180,11 @@ struct FormatSettings
         /// Write the binary representation of each value (`serializeBinary`) as an Arrow `Binary` column.
         BINARY
     };
+
+    /// The Arrow extension name both Arrow writers put on a column written as an opaque `Utf8`/`Binary`
+    /// column by `TEXT`/`BINARY` above, with the original ClickHouse type name in the extension metadata,
+    /// so that a consumer can tell it apart from a genuine string or binary column.
+    static constexpr std::string_view ARROW_OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
 
     struct
     {

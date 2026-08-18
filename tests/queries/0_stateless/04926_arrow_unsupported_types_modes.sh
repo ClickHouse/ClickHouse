@@ -7,9 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `output_format_arrow_unsupported_types` decides what the Arrow writer does with a column whose type has
 # no first-class Arrow mapping. The values are written through `ISerialization`, not through
-# `IColumn::getDataAt`: `JSON`, `Dynamic` and `QBit` have no contiguous in-memory representation and used to
-# fail with "Method getDataAt is not supported", while `AggregateFunction` used to export the raw
-# `AggregateDataPtr` - heap addresses instead of the aggregate state.
+# `IColumn::getDataAt`, which `JSON`, `Dynamic` and `QBit` do not implement and which yields the
+# `AggregateDataPtr` (a heap address, not the state) for `AggregateFunction`.
 
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.arrows"
 
@@ -52,8 +51,7 @@ read_back "hex(x)"
 write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types = 'throw', output_format_arrow_unsupported_types_as_binary = 1"
 
 # An aggregate state written in `binary` mode is the same encoding `RowBinary` uses, so it deserializes back
-# into the original `AggregateFunction` type. Before this went through `ISerialization` the column carried
-# `AggregateDataPtr` values, which are heap addresses and cannot be read back at all.
+# into the original `AggregateFunction` type.
 echo "=== AggregateFunction binary round-trip ==="
 write "SELECT sumState(number) AS x FROM numbers(11)" "output_format_arrow_unsupported_types = 'binary'"
 ${CLICKHOUSE_LOCAL} --query "

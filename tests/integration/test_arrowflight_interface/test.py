@@ -577,6 +577,57 @@ def test_doget_cmd_select_arrow_format():
     assert actual.column("name").equals(expected_names)
 
 
+# A type with no Arrow mapping (here `JSON`) is served as an opaque column holding one serialized value
+# per row, per `output_format_arrow_unsupported_types` (`binary` by default), so that a `SELECT *` over a
+# table carrying such a column still succeeds. The field carries the `clickhouse.opaque` extension name and
+# the ClickHouse type name, so a client can tell it apart from a genuine binary column.
+def test_doget_unsupported_type_as_opaque_column():
+    node.query("CREATE TABLE mytable (id Int64, j JSON, plain String) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}', 'hello')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_path("mytable")
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    assert actual.schema.field("id").metadata is None
+    assert actual.schema.field("plain").type == pa.string()
+    assert actual.schema.field("plain").metadata is None
+
+    field = actual.schema.field("j")
+    assert field.type == pa.binary()
+    assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    assert field.metadata[b"ARROW:extension:metadata"] == b"JSON"
+    assert len(actual.column("j").to_pylist()[0]) > 0
+
+
+# `text` serves the same column as the string a client can display.
+def test_doget_unsupported_type_as_text_column():
+    node.query("CREATE TABLE mytable (id Int64, j JSON) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "SELECT j FROM mytable SETTINGS output_format_arrow_unsupported_types = 'text'"
+    )
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    field = actual.schema.field("j")
+    assert field.type == pa.string()
+    assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    assert field.metadata[b"ARROW:extension:metadata"] == b"JSON"
+    assert actual.column("j").to_pylist() == ['{"a":1}']
+
+
 # Invalid queries are handled too.
 def test_doget_invalid_query():
     client, options = get_client()

@@ -496,8 +496,12 @@ namespace DB
         std::unordered_map<String, MutableColumnPtr> & dictionary_values);
 
 
+    /// `out_opaque_type_name`, when given, is set to the ClickHouse type name of a column with no Arrow
+    /// mapping that `output_unsupported_types` wrote as an opaque `utf8`/`binary` column, so that
+    /// `calculateArrowSchema` can tag the field with the `clickhouse.opaque` Arrow extension type. Only the
+    /// pass-through wrappers (`Nullable`, `LowCardinality`) forward it, so it describes the field itself.
     static std::shared_ptr<arrow::DataType> getArrowType(
-        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder = false);
+        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder = false, String * out_opaque_type_name = nullptr);
 
 
     static std::shared_ptr<arrow::Array> buildArrowDenseUnionArrayWithVariantColumnData(
@@ -1537,7 +1541,7 @@ namespace DB
     }
 
     static std::shared_ptr<arrow::DataType> getArrowType(
-        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder)
+        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, const CHColumnToArrowColumn::Settings & settings, bool * out_is_column_nullable, bool for_builder, String * out_opaque_type_name)
     {
         if (column)
         {
@@ -1549,7 +1553,7 @@ namespace DB
         {
             DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             ColumnPtr nested_column = column ? assert_cast<const ColumnNullable *>(column.get())->getNestedColumnPtr() : nullptr;
-            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder);
+            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder, out_opaque_type_name);
             *out_is_column_nullable = true;
             return arrow_type;
         }
@@ -1621,14 +1625,14 @@ namespace DB
                 const auto & indexes_column = lc_column->getIndexesPtr();
                 return arrow::dictionary(
                     getArrowTypeForLowCardinalityIndexes(indexes_column, settings),
-                    getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder));
+                    getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder, out_opaque_type_name));
             }
             else
             {
                 auto index_arrow_type = settings.use_64_bit_indexes_for_dictionary ?
                     (settings.use_signed_indexes_for_dictionary ? arrow::int64() : arrow::uint64()) :
                     (settings.use_signed_indexes_for_dictionary ? arrow::int32() : arrow::uint32());
-                auto arrow_type = getArrowType(nested_type, nullptr, column_name, format_name, settings, out_is_column_nullable, for_builder);
+                auto arrow_type = getArrowType(nested_type, nullptr, column_name, format_name, settings, out_is_column_nullable, for_builder, out_opaque_type_name);
                 return arrow::dictionary(index_arrow_type, arrow_type);
             }
         }
@@ -1769,6 +1773,8 @@ namespace DB
                 column_type->getName(), column_name, format_name);
         /// One serialized value per row: `serializeText` into a `utf8` column, `serializeBinary` into a
         /// `binary` one. See `fillArrowArrayWithOpaqueColumnData`.
+        if (out_opaque_type_name)
+            *out_opaque_type_name = column_type->getName();
         if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT)
             return arrow::utf8();
         return arrow::binary();
@@ -1803,13 +1809,16 @@ namespace DB
             }
 
             bool is_column_nullable = false;
+            String opaque_type_name;
             auto arrow_type = getArrowType(
                 column_type,
                 column,
                 header_column.name,
                 format_name,
                 settings,
-                &is_column_nullable);
+                &is_column_nullable,
+                /*for_builder=*/false,
+                &opaque_type_name);
 
             std::shared_ptr<arrow::KeyValueMetadata> field_metadata = nullptr;
 
@@ -1826,6 +1835,18 @@ namespace DB
                     {"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"},
                     {"arrow.uuid", "", "UUID"}
                 );
+                field_metadata = field_metadata ? field_metadata->Merge(*ext_metadata) : ext_metadata;
+            }
+
+            /// A type with no Arrow mapping was written as an opaque `utf8`/`binary` column, which is
+            /// otherwise indistinguishable from a genuine string or binary one. Tag it with the same Arrow
+            /// extension type the native IPC writer uses, so that an Arrow Flight client sees the ClickHouse
+            /// type name too. (A UUID is a mapped type, so the two branches never both fire.)
+            if (!opaque_type_name.empty())
+            {
+                auto ext_metadata = arrow::key_value_metadata(
+                    {"ARROW:extension:name", "ARROW:extension:metadata"},
+                    {std::string(FormatSettings::ARROW_OPAQUE_EXTENSION_NAME), opaque_type_name});
                 field_metadata = field_metadata ? field_metadata->Merge(*ext_metadata) : ext_metadata;
             }
 
