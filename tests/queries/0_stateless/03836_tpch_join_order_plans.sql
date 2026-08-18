@@ -109,6 +109,9 @@ SET query_plan_join_swap_table = 0;
 -- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
 -- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
 SET query_plan_optimize_join_order_randomize = 0;
+-- A smaller search budget makes dpsize give up mid-search and fall back to greedy, which picks
+-- a different join order for the denser queries.
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
