@@ -13,12 +13,14 @@ ch1 = cluster.add_instance(
     "ch1",
     main_configs=["configs/config.d/clusters.xml"],
     user_configs=["configs/users.d/users.xml"],
+    macros={"shard": "1", "replica": "ch1"},
     with_zookeeper=True,
 )
 ch2 = cluster.add_instance(
     "ch2",
     main_configs=["configs/config.d/clusters.xml"],
     user_configs=["configs/users.d/users.xml"],
+    macros={"shard": "1", "replica": "ch2"},
     with_zookeeper=True,
 )
 
@@ -44,6 +46,22 @@ def table():
     ch1.query("DROP TABLE IF EXISTS t ON CLUSTER 'cluster' SYNC")
 
 
+@pytest.fixture
+def replicated_table():
+    # ch1 and ch2 are two replicas of one shard, so the two hosts share a single dataset and a
+    # single Keeper mutation log. Insert once and sync, so a doubled mutation is observable
+    # instead of being absorbed by each host owning private rows.
+    ch1.query(
+        "CREATE TABLE tr ON CLUSTER 'cluster' (key UInt64, value UInt64) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/tr', '{replica}') "
+        "ORDER BY tuple()"
+    )
+    ch1.query("INSERT INTO tr SELECT number, number FROM numbers(10)")
+    ch2.query("SYSTEM SYNC REPLICA tr")
+    yield
+    ch1.query("DROP TABLE IF EXISTS tr ON CLUSTER 'cluster' SYNC")
+
+
 def test_setting_is_constrained():
     for node in (ch1, ch2):
         assert node.query("SELECT getSetting('allow_non_metadata_alters')") == "false\n"
@@ -66,6 +84,19 @@ def test_delete_from_on_cluster_without_settings_in_entry():
     )
     for node in (ch1, ch2):
         assert node.query("SELECT count() FROM t") == "9\n"
+
+
+def test_delete_from_on_cluster_replicated_runs_once_per_shard(replicated_table):
+    ch1.query("DELETE FROM tr ON CLUSTER 'cluster' WHERE key = 1")
+    for node in (ch1, ch2):
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations "
+                "WHERE database = currentDatabase() AND table = 'tr'"
+            )
+            == "1\n"
+        )
+        assert node.query("SELECT count() FROM tr") == "9\n"
 
 
 @pytest.mark.parametrize(

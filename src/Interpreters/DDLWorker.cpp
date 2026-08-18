@@ -17,6 +17,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -825,7 +826,8 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         !ast_ddl->as<ASTOptimizeQuery>() &&
         !ast_ddl->as<ASTDropQuery>() &&
         !ast_ddl->as<ASTCreateIndexQuery>() &&
-        !ast_ddl->as<ASTDropIndexQuery>())
+        !ast_ddl->as<ASTDropIndexQuery>() &&
+        !ast_ddl->as<ASTDeleteQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
