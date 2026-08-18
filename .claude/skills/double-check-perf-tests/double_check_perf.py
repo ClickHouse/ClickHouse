@@ -727,6 +727,39 @@ def link_clickhouse_tools(side_dir: Path) -> None:
         target.symlink_to(binary.name)
 
 
+# The reference (left) binary is an older master build. A config drop-in in
+# this checkout may set a server setting that build predates, which it rejects
+# with UNKNOWN_SETTING and then fails to start -- before a single query runs.
+# ci/jobs/performance_tests.py strips such settings from keeper_port.xml with a
+# sed for exactly this reason (both sides must share an identical config
+# anyway, and these values are irrelevant to query performance). Keep this list
+# in sync with the seds in the INSTALL_CLICKHOUSE stage of that job.
+CONFIG_SETTINGS_TO_STRIP = {
+    "keeper_port.xml": ["log_readahead_commit_window_bytes"],
+}
+
+
+def strip_incompatible_settings(config_d: Path) -> None:
+    """Drop settings the reference binary may not know from the copied config
+    drop-ins. Mirrors `sed -i '/<setting>/d' <file>` in the CI job."""
+    for file_name, settings in CONFIG_SETTINGS_TO_STRIP.items():
+        target = config_d / file_name
+        if not target.is_file():
+            continue
+        lines = target.read_text().splitlines(keepends=True)
+        kept = [
+            line for line in lines
+            if not any(f"<{setting}>" in line for setting in settings)
+        ]
+        if len(kept) != len(lines):
+            dropped = len(lines) - len(kept)
+            log(
+                f"stripped {dropped} line(s) from {file_name} that the "
+                "reference binary may reject: " + ", ".join(settings)
+            )
+            target.write_text("".join(kept))
+
+
 def prepare_configs(repo_root: Path, side_dir: Path) -> None:
     cfg = side_dir / "config"
     cfg.mkdir(parents=True, exist_ok=True)
@@ -767,6 +800,8 @@ def prepare_configs(repo_root: Path, side_dir: Path) -> None:
         f = dst_cfgd / to_remove
         if f.exists():
             f.unlink()
+
+    strip_incompatible_settings(dst_cfgd)
 
 
 def hardlink_db(db_source: Path, side_db: Path) -> None:
@@ -1210,6 +1245,29 @@ def wait_for_merges(
         f"wait_for_merges: timeout after {max_seconds}s, proceeding anyway "
         "(measurements may be noisy)"
     )
+
+
+def server_start_failure(h: ServerHandle) -> str:
+    """Explain why a server did not come up, so an unknown setting is named
+    instead of leaving the user to dig through the log.
+
+    Worth singling out: CONFIG_SETTINGS_TO_STRIP is a hardcoded list mirroring
+    the CI job, so it goes stale the moment master adds another setting the
+    reference build predates."""
+    msg = f"{h.name} server failed to start; see {h.log_path}"
+    try:
+        text = h.log_path.read_text(errors="replace")
+    except OSError:
+        return msg
+    for line in text.splitlines():
+        if "UNKNOWN_SETTING" in line or "Unknown setting" in line:
+            return (
+                f"{msg}\n  {line.strip()}\n"
+                "  The reference binary predates a setting in this checkout's "
+                "config. Add it to CONFIG_SETTINGS_TO_STRIP (and check whether "
+                "ci/jobs/performance_tests.py strips it too)."
+            )
+    return msg
 
 
 def wait_server_ready(h: ServerHandle, attempts: int = 30, delay: float = 2.0) -> bool:
@@ -1773,9 +1831,9 @@ def main() -> int:
 
     try:
         if not wait_server_ready(left_h):
-            die(f"left server failed to start; see {left_h.log_path}")
+            die(server_start_failure(left_h))
         if not wait_server_ready(right_h):
-            die(f"right server failed to start; see {right_h.log_path}")
+            die(server_start_failure(right_h))
         log("both servers ready")
 
         if populate_tables:
