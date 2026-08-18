@@ -40,6 +40,12 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+-- the physical build-side choice, the runtime-filter row threshold and the pre-cascades
+-- join-order pass (which attaches the row estimates) decide the pinned push-right shapes
+-- (all three settings are randomized by the test harness)
+SET query_plan_join_swap_table = 'auto';
+SET join_runtime_filter_min_probe_rows = 1000;
+SET query_plan_optimize_join_order_limit = 10;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
@@ -96,6 +102,53 @@ SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEF
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
+
+SELECT '-- 12. push-right: RIGHT JOIN with a huge right side';
+EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key;
+
+SELECT '-- 13. push-right: INNER JOIN, cost pushes the huge right side';
+EXPLAIN SELECT count() FROM t_push_dims AS t1 INNER JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key;
+
+SELECT '-- 14. variant B: LEFT SEMI with join keys subset of GROUP BY keys, no MergingAggregated above the join';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT SEMI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+
+SELECT '-- 15. variant B: LEFT ANTI';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT ANTI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+
+SELECT '-- 16. variant B: LEFT ANY';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+
+SELECT '-- 17. variant B: RIGHT ANY, push-right';
+EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT ANY JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key;
+
+SELECT '-- 18. B-dominance negative: a GROUP BY key from the other side falls back to variant A';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name;
+
+SELECT '-- 19. variant A for LEFT SEMI: the join key is not a GROUP BY key';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT SEMI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.value;
+
+SELECT '-- 20. negative: INNER ANY emits at most one row per key, never pushed';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 INNER ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+
+SELECT '-- 21. negative: FULL JOIN never pushes';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 FULL JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
+
+SELECT '-- 22. negative: ASOF JOIN never pushes';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 ASOF JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value >= t2.threshold GROUP BY t1.key;
+
+SELECT '-- 23. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
+-- shape-insensitive (the join order is randomized); asserts only that the cascades planner
+-- produced a distributed plan without a budget exception
+SELECT countIf(explain LIKE '%Exchange%') >= 1, countIf(trimLeft(explain) LIKE 'Aggregating%') >= 1 FROM (
+  EXPLAIN SELECT count() FROM t_push_facts AS t1
+    LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key
+    LEFT JOIN t_push_dims_multi AS t3 ON t1.key = t3.key
+    LEFT JOIN t_push_dims AS t4 ON t1.key = t4.key
+  GROUP BY t1.key
+  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE t_push_facts;
 DROP TABLE t_push_dims;

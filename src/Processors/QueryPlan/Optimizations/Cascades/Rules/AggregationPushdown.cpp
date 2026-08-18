@@ -41,8 +41,17 @@ struct ConditionInputs
     Names right;
 };
 
-/// Pushes a partial aggregation below a join (eager aggregation) as a cost-based alternative,
-/// gated by `cascades_aggregation_pushdown`:
+/// Names of the join's projected output columns that are plain `INPUT` nodes, by the DAG's own
+/// side attribution. A computed output (or one with unclear attribution) binds to neither side.
+struct JoinOutputBindings
+{
+    NameSet left;
+    NameSet right;
+};
+
+/// Pushes an aggregation below a join (eager aggregation) as a cost-based alternative, gated by
+/// `cascades_aggregation_pushdown`. Variant A (partial pushdown, shown for pushed side S = L;
+/// push-right is the mirror image):
 ///
 ///     Aggregating(final, keys=G, aggs=F)      MergingAggregated(keys=G, only-merge F)
 ///             |                                            |
@@ -58,6 +67,12 @@ struct ConditionInputs
 /// side are group keys), so the join filters or duplicates whole groups uniformly, and merging
 /// `m` duplicated copies of a state equals processing the underlying rows `m` times - exactly
 /// what the original plan does.
+///
+/// Variant B (full pushdown): when every `GROUP BY` key comes from the pushed side, the join
+/// condition reads no other pushed-side columns (`J_S ⊆ G`), and the join emits each pushed row
+/// at most once (see `isFullPushdownAllowed`), the aggregation stays final below the join and
+/// the rebuilt join itself becomes the alternative - no merge above. B strictly dominates A
+/// there (same grouping, one step less), so only B is emitted when it is legal.
 class AggregationPushdown : public IOptimizationRule
 {
 public:
@@ -74,22 +89,55 @@ private:
         const GroupExpressionPtr & source_expression,
         const MatchedJoin & match,
         const ConditionInputs & condition_inputs,
+        const JoinOutputBindings & output_bindings,
         JoinTableSide side,
         Memo & memo) const;
 };
 
 /// Which (kind, strictness, side) combinations the rule may push through; extend here.
-/// Only a side the join preserves (never null/default-extends) qualifies, and only with `ALL`
-/// strictness: `ANY`/`SEMI`/`ANTI` pick or filter individual rows, which pre-aggregated groups
-/// would change; `ASOF` resolves the closest match per row.
+/// The pushed side must never be default-extended by the join - a default-extended
+/// `AggregateFunction` state is an empty state that silently contributes nothing where the
+/// original plan counts rows - so push-left forbids `isRightOrFull` kinds and push-right
+/// forbids `isLeftOrFull` (`Full`, `Cross`, `Comma` and `Paste` never qualify).
+/// Per strictness (multiplicities verified against `processMatch` in `HashJoinMethodsImpl.h`):
+/// - `All`: a pushed row is emitted once per matching other-side row (or once default-extended
+///   for an outer kind) - a function of its join-condition columns only, which are all partial
+///   group keys, so groups are duplicated uniformly and the merge above restores the result.
+/// - `Any`/`Semi`/`Anti`: legal only when the strictness filters the pushed side itself
+///   (kind == pushed side): each pushed row is then emitted at most once, kept or dropped by a
+///   predicate on its join-condition columns only. `Inner` + `Any` is excluded: it emits at
+///   most one row per join *key* (`setUsedOnce` claims the key for the first probe row), so a
+///   group of `m` raw rows contributes one raw row originally but its whole `m`-row state when
+///   pushed. `RightAny` (deduplicate right keys) is excluded for the same per-key reason, and
+///   `Asof` resolves the closest match per individual row.
 bool isPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
 {
-    if (strictness != JoinStrictness::All)
+    const JoinKind pushed_side_kind = side == JoinTableSide::Left ? JoinKind::Left : JoinKind::Right;
+    if (kind != JoinKind::Inner && kind != pushed_side_kind)
         return false;
-    if (side == JoinTableSide::Left)
-        return kind == JoinKind::Inner || kind == JoinKind::Left;
-    /// Push-right is not enabled yet.
-    return false;
+    switch (strictness)
+    {
+        case JoinStrictness::All:
+            return true;
+        case JoinStrictness::Any:
+        case JoinStrictness::Semi:
+        case JoinStrictness::Anti:
+            return kind == pushed_side_kind;
+        default:
+            return false;
+    }
+}
+
+/// Variant B additionally requires that the join can never emit a pushed row twice, so the
+/// final states need no merge: exactly the `Any`/`Semi`/`Anti` with kind == pushed side
+/// combinations above (at most one emission per pushed row). `All` duplicates rows per match
+/// and always needs the merge. The caller also checks the structural conditions (every
+/// `GROUP BY` key on the pushed side, `J_S ⊆ G`).
+bool isFullPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
+{
+    const JoinKind pushed_side_kind = side == JoinTableSide::Left ? JoinKind::Left : JoinKind::Right;
+    return kind == pushed_side_kind
+        && (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti);
 }
 
 /// Resolves the join under the aggregation, descending through at most one single-input
@@ -216,6 +264,25 @@ std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & jo
     return result;
 }
 
+/// Defense-in-depth for the name-based side resolution: every column the pushdown consumes
+/// from the join (`GROUP BY` keys, aggregate arguments) must be a projected `INPUT` node of the
+/// expected side, not a computed column that merely shadows an input name.
+JoinOutputBindings collectOutputBindings(const JoinStepLogical & join_step)
+{
+    JoinOutputBindings result;
+    for (const auto & action : join_step.getOutputActions())
+    {
+        const auto * node = action.getNode();
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            continue;
+        if (action.fromLeft())
+            result.left.insert(node->result_name);
+        else if (action.fromRight())
+            result.right.insert(node->result_name);
+    }
+    return result;
+}
+
 void remapNodes(ActionsDAG::NodeRawConstPtrs & nodes, const ActionsDAG::NodeMapping & node_map)
 {
     for (const auto *& node : nodes)
@@ -315,6 +382,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     const GroupExpressionPtr & source_expression,
     const MatchedJoin & match,
     const ConditionInputs & condition_inputs,
+    const JoinOutputBindings & output_bindings,
     JoinTableSide side,
     Memo & memo) const
 {
@@ -326,16 +394,20 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     const auto & pushed_header = *join_step.getInputHeaders()[pushed_input_index];
     const auto & other_header = *join_step.getInputHeaders()[1 - pushed_input_index];
     const Names & pushed_condition_inputs = side == JoinTableSide::Left ? condition_inputs.left : condition_inputs.right;
+    const NameSet & pushed_bindings = side == JoinTableSide::Left ? output_bindings.left : output_bindings.right;
+    const NameSet & other_bindings = side == JoinTableSide::Left ? output_bindings.right : output_bindings.left;
 
-    /// Every aggregate argument must come from the pushed side.
+    /// Every aggregate argument must come from the pushed side, and bind to a projected `INPUT`
+    /// of that side in the join's own DAG.
     for (const auto & aggregate : params.aggregates)
         for (const auto & argument_name : aggregate.argument_names)
-            if (!pushed_header.has(argument_name) || other_header.has(argument_name))
+            if (!pushed_header.has(argument_name) || other_header.has(argument_name) || !pushed_bindings.contains(argument_name))
                 return nullptr;
 
-    /// Every `GROUP BY` key must resolve to exactly one side. Other-side keys stay keys of the
-    /// top merge and must be among the join's projected outputs. Duplicate keys would break the
-    /// positional layout the merge relies on (see below) - bail out.
+    /// Every `GROUP BY` key must resolve to exactly one side, confirmed by the join DAG's own
+    /// attribution. Other-side keys stay keys of the top merge and must be among the join's
+    /// projected outputs. Duplicate keys would break the positional layout the merge relies on
+    /// (see below) - bail out.
     Names pushed_keys;
     NameSet pushed_key_set;
     NameSet other_key_set;
@@ -344,6 +416,8 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         const bool in_pushed = pushed_header.has(key);
         const bool in_other = other_header.has(key);
         if (in_pushed == in_other)
+            return nullptr;
+        if (!(in_pushed ? pushed_bindings : other_bindings).contains(key))
             return nullptr;
         if (in_pushed)
         {
@@ -357,9 +431,20 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
 
     /// The pushed side's `GROUP BY` keys become the partial keys, extended with the pushed
     /// side's join-condition columns (which participate in the condition but are not projected).
+    bool condition_extends_keys = false;
     for (const auto & name : pushed_condition_inputs)
         if (pushed_key_set.insert(name).second)
+        {
             pushed_keys.push_back(name);
+            condition_extends_keys = true;
+        }
+
+    /// Variant B: every `GROUP BY` key is on the pushed side and the join condition reads only
+    /// `GROUP BY` keys of it, so the aggregation stays final below the join and no merge is
+    /// needed above. B strictly dominates A here (same grouping, no merge) - emit only B.
+    const auto & join_operator = join_step.getJoinOperator();
+    const bool full_pushdown = other_key_set.empty() && !condition_extends_keys
+        && isFullPushdownAllowed(join_operator.kind, join_operator.strictness, side);
 
     /// The rebuilt pushed-side header (keys + aggregate state columns) must have unique names
     /// disjoint from the other side's - `JoinExpressionActions` requires it.
@@ -379,14 +464,16 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         partial_input_header->insert({column.column ? column.column : column.type->createColumn(), column.type, column.name});
 
     auto partial_step = cloneStepAs(agg_step);
-    partial_step->setFinal(false);
+    if (!full_pushdown)
+        partial_step->setFinal(false);
     /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the
     /// memory-efficient merge: bucket annotations do not survive the join anyway, and the merge
     /// treats the join output as single-level data.
     partial_step->rebaseOntoInput(std::move(partial_input_header), pushed_keys);
-    partial_step->setStepDescription(fmt::format("Partial: {}", agg_step.getStepDescription()), 200);
+    partial_step->setStepDescription(
+        fmt::format("{}: {}", full_pushdown ? "Pushed" : "Partial", agg_step.getStepDescription()), 200);
 
-    /// The join condition columns must keep their types through the partial aggregation,
+    /// The join condition columns must keep their types through the pushed aggregation,
     /// otherwise the rebuilt condition DAG would silently mix types.
     const auto & partial_header = *partial_step->getOutputHeader();
     for (const auto & name : pushed_condition_inputs)
@@ -394,9 +481,10 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
             return nullptr;
 
     /// The rebuilt join projects exactly the merge's expected positional layout: all `GROUP BY`
-    /// keys in `params.keys` order (from whichever side each comes), then the aggregate state
-    /// columns in `params.aggregates` order. The `only_merge` aggregator reads keys and states
-    /// by position (see `calculateKeysPositions`), so this order is load-bearing.
+    /// keys in `params.keys` order (from whichever side each comes), then the aggregate columns
+    /// in `params.aggregates` order. The `only_merge` aggregator reads keys and states by
+    /// position (see `calculateKeysPositions`), so this order is load-bearing for variant A;
+    /// for variant B (all columns from the pushed side) it equals `params.getHeader` order.
     Names output_names = params.keys;
     for (const auto & aggregate : params.aggregates)
         output_names.push_back(aggregate.column_name);
@@ -404,6 +492,33 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     auto new_join_step = rebuildJoinWithNewInput(join_step, pushed_input_index, partial_step->getOutputHeader(), output_names);
     if (!new_join_step)
         return nullptr;
+
+    /// The alternative must produce the aggregation's exact output columns (order is cosmetic -
+    /// plan extraction inserts name-based converting expressions). On any mismatch, emit nothing.
+    const auto & original_header = *agg_step.getOutputHeader();
+    const auto check_header = [&original_header](const Block & alternative_header)
+    {
+        if (alternative_header.columns() != original_header.columns())
+            return false;
+        for (const auto & column : original_header)
+        {
+            const auto * alternative_column = alternative_header.findByName(column.name);
+            if (!alternative_column || !alternative_column->type->equals(*column.type))
+                return false;
+        }
+        return true;
+    };
+
+    if (full_pushdown)
+    {
+        if (!check_header(*new_join_step->getOutputHeader()))
+            return nullptr;
+
+        GroupExpressionPtr pushed_expression = std::make_shared<GroupExpression>(std::move(partial_step));
+        GroupExpressionPtr join_alternative = std::make_shared<GroupExpression>(std::move(new_join_step));
+        return addEagerAggregationFullPushdown(memo, source_expression, match.join_expression, pushed_input_index,
+            std::move(pushed_expression), std::move(join_alternative));
+    }
 
     auto merge_params = agg_step.getParams();
     merge_params.only_merge = true;
@@ -423,18 +538,8 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     merge_step->allowInputWithoutAggregatedChunkInfo();
     merge_step->setStepDescription(fmt::format("Merge: {}", agg_step.getStepDescription()), 200);
 
-    /// The alternative must produce the aggregation's exact output columns (order is cosmetic -
-    /// plan extraction inserts name-based converting expressions). On any mismatch, emit nothing.
-    const auto & original_header = *agg_step.getOutputHeader();
-    const auto & merge_header = *merge_step->getOutputHeader();
-    if (merge_header.columns() != original_header.columns())
+    if (!check_header(*merge_step->getOutputHeader()))
         return nullptr;
-    for (const auto & column : original_header)
-    {
-        const auto * merge_column = merge_header.findByName(column.name);
-        if (!merge_column || !merge_column->type->equals(*column.type))
-            return nullptr;
-    }
 
     GroupExpressionPtr partial_expression = std::make_shared<GroupExpression>(std::move(partial_step));
     GroupExpressionPtr join_alternative = std::make_shared<GroupExpression>(std::move(new_join_step));
@@ -483,14 +588,16 @@ std::vector<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPt
     if (!condition_inputs)
         return {};
 
+    const auto output_bindings = collectOutputBindings(join_step);
+
     std::vector<GroupExpressionPtr> result;
     const auto & join_operator = join_step.getJoinOperator();
     for (const auto side : {JoinTableSide::Left, JoinTableSide::Right})
     {
         if (!isPushdownAllowed(join_operator.kind, join_operator.strictness, side))
             continue;
-        if (auto merge_expression = buildPushdownAlternative(expression, *match, *condition_inputs, side, memo))
-            result.push_back(std::move(merge_expression));
+        if (auto alternative = buildPushdownAlternative(expression, *match, *condition_inputs, output_bindings, side, memo))
+            result.push_back(std::move(alternative));
     }
     return result;
 }

@@ -91,6 +91,14 @@ protected:
         const GroupExpressionPtr & join_expression, size_t pushed_input_index,
         GroupExpressionPtr partial_expression, GroupExpressionPtr join_alternative_expression,
         QueryPlanStepPtr merge_step) const;
+
+    /// Registers a full eager-aggregation pushdown of `source_expression` (a final aggregation
+    /// over `join_expression`): the still-final aggregation becomes its own group over the
+    /// join's pushed input, and the rebuilt join becomes a logical alternative in the source
+    /// group - no merge above. Returns the join expression, marked with this rule.
+    GroupExpressionPtr addEagerAggregationFullPushdown(Memo & memo, const GroupExpressionPtr & source_expression,
+        const GroupExpressionPtr & join_expression, size_t pushed_input_index,
+        GroupExpressionPtr pushed_aggregation_expression, GroupExpressionPtr join_alternative_expression) const;
 };
 
 /// Clones a plan step and returns it as its concrete type; throws if the clone has another type.
