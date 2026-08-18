@@ -191,7 +191,7 @@ SELECT version()
 ```
 
 When `restore_access_entities_with_current_grants` is enabled, restored users and roles have their grants limited to what the restoring user is allowed to grant
-(the same semantics as [`GRANT CURRENT GRANTS`](/sql-reference/statements/grant)), instead of the `RESTORE`
+(the same semantics as [`GRANT CURRENT GRANTS`](/reference/statements/grant)), instead of the `RESTORE`
 failing with `ACCESS_DENIED` when the backup contains more permissions than the restoring user can grant.
 
 On versions earlier than 26.4, omit the setting.
