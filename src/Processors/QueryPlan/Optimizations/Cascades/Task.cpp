@@ -38,15 +38,15 @@ void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
     if (!group->isExplored())
     {
         /// Explore the group, then re-run `OptimizeGroupTask`
-        optimizer.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
-        optimizer.pushTask(std::make_shared<ExploreGroupTask>(group_id));
+        optimizer.pushTask(std::make_unique<OptimizeGroupTask>(group_id, required_properties));
+        optimizer.pushTask(std::make_unique<ExploreGroupTask>(group_id));
     }
     else if (!group->isOptimizedFor(required_properties))
     {
-        optimizer.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
+        optimizer.pushTask(std::make_unique<OptimizeGroupTask>(group_id, required_properties));
 
         for (auto & expression : group->logical_expressions)
-            optimizer.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties));
+            optimizer.pushTask(std::make_unique<OptimizeExpressionTask>(expression, required_properties));
 
         group->setOptimizedFor(required_properties);
     }
@@ -75,7 +75,7 @@ void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
             /// executes after all `OptimizeInputsTask` complete.  This re-run checks
             /// whether the newly created enforcer expressions need further composition.
             optimizer.pushTask(
-                std::make_shared<OptimizeGroupTask>(group_id, required_properties));
+                std::make_unique<OptimizeGroupTask>(group_id, required_properties));
 
             for (const auto & new_expression : enforcer_expressions)
                 optimizer.scheduleCosting(new_expression);
@@ -153,7 +153,7 @@ void ExploreGroupTask::execute(CascadesOptimizer & optimizer)
     group->setExplored();
 
     for (const auto & expression : group->logical_expressions)
-        optimizer.pushTask(std::make_shared<ExploreExpressionTask>(expression));
+        optimizer.pushTask(std::make_unique<ExploreExpressionTask>(expression));
 }
 
 
@@ -177,12 +177,12 @@ static void scheduleApplicableRules(
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (const auto & move : moves)
-        optimizer.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, move.second));
+        optimizer.pushTask(std::make_unique<ApplyRuleTask>(expression, required_properties, move.second));
 
     for (const auto & input : expression->inputs)
     {
         if (!optimizer.getGroup(input.group_id)->isExplored())
-            optimizer.pushTask(std::make_shared<ExploreGroupTask>(input.group_id));
+            optimizer.pushTask(std::make_unique<ExploreGroupTask>(input.group_id));
     }
 }
 
@@ -221,7 +221,7 @@ void ApplyRuleTask::execute(CascadesOptimizer & optimizer)
     {
         if (rule->isTransformation())
         {
-            optimizer.pushTask(std::make_shared<ExploreExpressionTask>(new_expression));
+            optimizer.pushTask(std::make_unique<ExploreExpressionTask>(new_expression));
         }
         else
         {
@@ -275,7 +275,7 @@ void OptimizeInputsTask::execute(CascadesOptimizer & optimizer)
         bool child_already_done = child_group->isFullyDoneFor(input.required_properties);
 
         optimizer.pushTask(
-            std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1));
+            std::make_unique<OptimizeInputsTask>(expression, input_index_to_optimize + 1));
 
         if (!child_already_done)
         {
@@ -285,7 +285,7 @@ void OptimizeInputsTask::execute(CascadesOptimizer & optimizer)
             /// Total work is bounded by the optimizer task budget, which fails closed
             /// (see CascadesOptimizer::optimize).
             optimizer.pushTask(
-                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties));
+                std::make_unique<OptimizeGroupTask>(input.group_id, input.required_properties));
         }
     }
 }

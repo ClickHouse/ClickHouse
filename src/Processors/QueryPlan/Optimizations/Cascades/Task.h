@@ -30,7 +30,7 @@ public:
     virtual String describe() const = 0;
 };
 
-using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
+using OptimizationTaskPtr = std::unique_ptr<IOptimizationTask>;
 
 /// Optimization tasks as described in "Extensible Query Optimizers in Practice":
 /// https://www.microsoft.com/en-us/research/wp-content/uploads/2024/12/Extensible-Query-Optimizers-in-Practice.pdf#section.2.3

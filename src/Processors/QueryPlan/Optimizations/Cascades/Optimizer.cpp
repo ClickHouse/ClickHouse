@@ -266,7 +266,7 @@ bool CascadesOptimizer::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 void CascadesOptimizer::scheduleCosting(GroupExpressionPtr expression)
 {
     if (!tryUpdateBestPlanDirectly(expression))
-        pushTask(std::make_shared<OptimizeInputsTask>(expression, 0));
+        pushTask(std::make_unique<OptimizeInputsTask>(expression, 0));
 }
 
 void CascadesOptimizer::optimize()
@@ -283,7 +283,7 @@ void CascadesOptimizer::optimize()
 
     LOG_TEST(log, "Initial memo:\n{}", memo.dump());
 
-    pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties));
+    pushTask(std::make_unique<OptimizeGroupTask>(root_group_id, root_required_properties));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Microsoft SQL Server's optimizer team describes this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
@@ -291,7 +291,7 @@ void CascadesOptimizer::optimize()
     size_t executed_tasks_count = 0;
     for (; !tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
     {
-        auto task = tasks.top();
+        auto task = std::move(tasks.top());
         tasks.pop();
         task->execute(*this);
     }
