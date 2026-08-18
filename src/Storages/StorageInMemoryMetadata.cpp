@@ -178,6 +178,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// Not an invoker-identity leak: the capture only accumulates the identities of objects the inner
     /// query actually reads.
     new_context->setQueryConsumedObjectSets(context->getQueryConsumedObjectSets());
+    /// The analyze mode must reach every join the report walker can reach, including the joins of
+    /// this view's inner query.
+    new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

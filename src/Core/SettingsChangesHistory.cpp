@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
@@ -64,9 +65,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"query_cache_use_only_when_data_was_not_changed", false, false, "New setting to restrict query cache entries to cases when none of the referenced tables were changed since the entry was cached."},
+            {"explain_syntax_single_record", false, true, "From 26.8, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.8 one-record-per-line output."},
             {"query_plan_optimize_count_from_text_index", false, true, "New setting"},
-            {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below materialize_statistics_on_insert_max_table_size, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
-            {"materialize_statistics_on_insert_max_table_size", 0, 26843545600, "New setting: only materialize column statistics on INSERT for tables whose current size plus the size of the inserted block is below this threshold. previous_value=0 (no limit) so `compatibility` with versions before 26.8 restores the pre-existing behavior (before this PR there was no size cap, so users who explicitly re-enable `materialize_statistics_on_insert` keep materializing statistics regardless of table size)."},
+            {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
+            {"materialize_statistics_on_insert_max_table_size", 0, 26843545600, "New setting."},
             {"throw_on_hive_partitioning_resolution_failure", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."},
             {"enable_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
             {"allow_metadata_only_named_tuple_alter", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."},
