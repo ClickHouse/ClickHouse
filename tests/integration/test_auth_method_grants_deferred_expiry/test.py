@@ -94,3 +94,47 @@ def test_expired_token_does_not_flush_deferred_insert(start_cluster):
     node.query("DROP USER u_deferred_valid")
     node.query("DROP TABLE default.t_deferred_expired")
     node.query("DROP TABLE default.t_deferred_valid")
+
+
+def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
+    node.query("DROP USER IF EXISTS u_deferred_query_runner")
+    node.query("DROP TABLE IF EXISTS default.runner_deferred_expiry")
+    node.query("DROP TABLE IF EXISTS default.t_deferred_query_runner")
+
+    node.query("CREATE TABLE default.t_deferred_query_runner (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query(
+        "CREATE TABLE default.runner_deferred_expiry (query String, settings Map(String, String)) "
+        "ENGINE = QueryRunner SETTINGS mode = 'asynchronous', threads = 1 SQL SECURITY INVOKER"
+    )
+
+    # Occupy the runner's only worker while the limited credential expires. Its queued job must then
+    # be rejected by `StorageQueryRunner::makeJobContext` before the query is executed.
+    node.query(
+        "INSERT INTO default.runner_deferred_expiry VALUES "
+        "('SELECT sleepEachRow(1) FROM numbers(8) SETTINGS max_block_size = 1', "
+        "{'log_comment': 'deferred_query_runner_blocker'})"
+    )
+
+    expiry = node.query(f"SELECT toString(now() + INTERVAL {EXPIRING_LIFETIME_S} SECOND)").strip()
+    node.query(
+        "CREATE USER u_deferred_query_runner IDENTIFIED WITH sha256_password BY 'pw' "
+        f"VALID UNTIL '{expiry}' "
+        "GRANTS (INSERT ON default.runner_deferred_expiry, INSERT ON default.t_deferred_query_runner)"
+    )
+    node.query("GRANT INSERT ON default.runner_deferred_expiry TO u_deferred_query_runner")
+    node.query("GRANT INSERT ON default.t_deferred_query_runner TO u_deferred_query_runner")
+
+    node.query(
+        "INSERT INTO default.runner_deferred_expiry VALUES "
+        "('INSERT INTO default.t_deferred_query_runner VALUES (1)', "
+        "{'log_comment': 'deferred_query_runner_expired'})",
+        user="u_deferred_query_runner",
+        password="pw",
+    )
+
+    node.query("SYSTEM WAIT QUERY RUNNER default.runner_deferred_expiry")
+    assert node.query("SELECT count() FROM default.t_deferred_query_runner").strip() == "0"
+
+    node.query("DROP USER u_deferred_query_runner")
+    node.query("DROP TABLE default.runner_deferred_expiry")
+    node.query("DROP TABLE default.t_deferred_query_runner")
