@@ -532,7 +532,7 @@ struct Reader
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
 
-    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
+    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
