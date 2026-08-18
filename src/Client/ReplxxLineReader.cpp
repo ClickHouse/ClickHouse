@@ -407,7 +407,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// before that suffix. In particular, this must not ask `Suggest` for completions
                 /// when suggestions are disabled.
                 if (!isCursorAtEndOfInput())
-                    return {};
+                    return replxx::Replxx::completions_t{};
 
                 context_size = static_cast<int>(slash_commands.prefix_length);
                 return replxx::Replxx::completions_t(slash_commands.commands.begin(), slash_commands.commands.end());
