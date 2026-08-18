@@ -1282,7 +1282,9 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     if (actual_data_snapshot->total_bytes.has_value())
         return actual_data_snapshot->total_bytes;
 
-    Int64 result = 0;
+    /// Per-manifest sums are capped at Int64::max; still guard the cross-manifest total
+    /// (same fail-closed contract as `totalRows`).
+    UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
@@ -1291,10 +1293,11 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
         if (!count.has_value())
             return {};
 
-        result += count.value();
+        if (common::addOverflow(result, static_cast<UInt64>(*count), result))
+            return {};
     }
 
-    return result;
+    return static_cast<size_t>(result);
 }
 
 std::optional<String> IcebergMetadata::partitionKey(ContextPtr context) const

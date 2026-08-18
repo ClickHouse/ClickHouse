@@ -54,6 +54,35 @@ std::optional<Int64> getRecordCountInAllFilesExcludingDeleted(
     return result;
 }
 
+std::optional<Int64> getBytesSizeInAllDataFilesExcludingDeleted(
+    const std::vector<ProcessedManifestFileEntryPtr> & files)
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        std::optional<Int64> file_bytes;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+        {
+            if (column_info.bytes_size.has_value())
+            {
+                file_bytes = *column_info.bytes_size;
+                break;
+            }
+        }
+
+        if (!file_bytes.has_value() || *file_bytes < 0)
+            return std::nullopt;
+
+        const UInt64 file_bytes_u = static_cast<UInt64>(*file_bytes);
+        const UInt64 result_u = static_cast<UInt64>(result);
+        if (result_u > static_cast<UInt64>(std::numeric_limits<Int64>::max()) - file_bytes_u)
+            return std::nullopt;
+
+        result += *file_bytes;
+    }
+    return result;
+}
+
 void requireDirectReferencedDataFileForPuffinDeletionVector(
     bool set_from_referenced_data_file_field,
     const std::optional<IcebergPathFromMetadata> & referenced_path,

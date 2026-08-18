@@ -170,4 +170,54 @@ TEST(IcebergRecordCountAggregate, OverflowFailsClosed)
     EXPECT_FALSE(total.has_value());
 }
 
+namespace
+{
+
+ColumnInfo columnBytes(Int64 bytes)
+{
+    ColumnInfo info;
+    info.bytes_size = bytes;
+    return info;
+}
+
+}
+
+TEST(IcebergBytesSizeAggregate, SumsFirstDeclaredColumnBytesSize)
+{
+    const auto total = getBytesSizeInAllDataFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/1, {{/*column_id=*/1, columnBytes(10)}}),
+        makeDataEntryForRecordCount(/*record_count=*/1, {{/*column_id=*/1, columnBytes(5)}}),
+    });
+
+    ASSERT_TRUE(total.has_value());
+    EXPECT_EQ(*total, 15);
+}
+
+TEST(IcebergBytesSizeAggregate, MissingBytesSizeFailsClosed)
+{
+    const auto total = getBytesSizeInAllDataFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/1, {{/*column_id=*/1, columnBytes(10)}}),
+        makeDataEntryForRecordCount(/*record_count=*/1),
+    });
+    EXPECT_FALSE(total.has_value());
+}
+
+TEST(IcebergBytesSizeAggregate, NegativeBytesSizeFailsClosed)
+{
+    const auto total = getBytesSizeInAllDataFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/1, {{/*column_id=*/1, columnBytes(-1)}}),
+    });
+    EXPECT_FALSE(total.has_value());
+}
+
+TEST(IcebergBytesSizeAggregate, OverflowFailsClosed)
+{
+    const auto total = getBytesSizeInAllDataFilesExcludingDeleted({
+        makeDataEntryForRecordCount(
+            /*record_count=*/1, {{/*column_id=*/1, columnBytes(std::numeric_limits<Int64>::max())}}),
+        makeDataEntryForRecordCount(/*record_count=*/1, {{/*column_id=*/1, columnBytes(1)}}),
+    });
+    EXPECT_FALSE(total.has_value());
+}
+
 #endif

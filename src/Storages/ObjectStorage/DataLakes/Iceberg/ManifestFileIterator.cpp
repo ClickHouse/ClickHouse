@@ -91,25 +91,7 @@ std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCou
 
 std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    size_t result = 0;
-    for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
-    {
-        /// Have at least one column with bytes count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.bytes_size.has_value())
-            {
-                result += *column_info.bytes_size;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
+    return getBytesSizeInAllDataFilesExcludingDeleted(getFilesWithoutDeleted(FileContentType::DATA));
 }
 
 ManifestFileIterator::ManifestFileEntriesHandle ManifestFileIterator::getFilesWithoutDeletedHandle() const
@@ -523,26 +505,7 @@ std::optional<Int64> ManifestFileIterator::getRowsCountInAllFilesExcludingDelete
 
 std::optional<Int64> ManifestFileIterator::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    Int64 result = 0;
-    auto handle = getFilesWithoutDeletedHandle();
-    for (const auto & file : handle.getFilesWithoutDeleted(FileContentType::DATA))
-    {
-        /// Have at least one column with bytes count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.bytes_size.has_value())
-            {
-                result += *column_info.bytes_size;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            return std::nullopt;
-    }
-    return result;
+    return getFilesWithoutDeletedHandle().getBytesCountInAllDataFilesExcludingDeleted();
 }
 
 }
