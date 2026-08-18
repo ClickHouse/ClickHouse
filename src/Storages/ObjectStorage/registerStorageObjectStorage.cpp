@@ -1240,9 +1240,9 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `map` | `Map` |
 | `struct` | `Tuple` |
 
-## Writing compatibility limitations {#writing-compatibility-limitations}
+## Schema and write compatibility limitations {#schema-and-write-compatibility-limitations}
 
-The data type mappings above apply to reads. The following limitations apply when writing:
+The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
 - ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation returns an `Unsupported type for Iceberg` exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
 - ClickHouse cannot write to an Iceberg table that uses a `Decimal` column as a direct partition field. The operation returns an `Unsupported type for Iceberg` exception.
