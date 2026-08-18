@@ -161,9 +161,24 @@ std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens
         ++pos;
 
     auto name = getTableName(tokens, pos);
-    const auto name_end = getTableNameEnd(tokens, pos);
-    if (!name || name_end == tokens.size()
-        || (tokens[name_end].type != TokenType::OpeningRoundBracket && !isKeyword(tokens[name_end], "ENGINE") && !isKeyword(tokens[name_end], "AS")))
+    size_t definition_pos = getTableNameEnd(tokens, pos);
+    if (!name || definition_pos == tokens.size())
+        return {};
+
+    /// Full-definition `ATTACH` accepts an optional UUID between the name and
+    /// the table definition.
+    if (isKeyword(tokens[definition_pos], "UUID"))
+    {
+        ++definition_pos;
+        if (definition_pos == tokens.size())
+            return {};
+        ++definition_pos;
+    }
+
+    if (definition_pos == tokens.size()
+        || (tokens[definition_pos].type != TokenType::OpeningRoundBracket
+            && !isKeyword(tokens[definition_pos], "ENGINE")
+            && !isKeyword(tokens[definition_pos], "AS")))
         return {};
 
     return name;
@@ -1093,9 +1108,18 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     }
 
     const auto followups = getWindowViewFollowups(tokens);
-    if (retireReboundWindowViewNames(removed_window_views, tokens, followups))
+    NameSet rebound_removed_window_views = removed_window_views;
+    if (retireReboundWindowViewNames(rebound_removed_window_views, tokens, followups))
     {
-        persistRemovedWindowViews(zookeeper);
+        /// The rebinding DDL and its tombstone retirement must commit together.
+        /// Otherwise a failed DDL could expose later legacy followups.
+        const String removed_window_views_path = database->replica_path + "/removed_window_views";
+        task->ops.emplace_back(zkutil::makeSetRequest(
+            removed_window_views_path, serializeRemovedWindowViews(rebound_removed_window_views), -1));
+        task->successful_execution_callback = [this, rebound_removed_window_views = std::move(rebound_removed_window_views)] () mutable
+        {
+            removed_window_views = std::move(rebound_removed_window_views);
+        };
     }
 
     const bool is_exchange = !tokens.empty() && isKeyword(tokens[0], "EXCHANGE");

@@ -120,6 +120,9 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
+    /// Called after the replicated DDL transaction has committed successfully.
+    std::function<void()> successful_execution_callback;
+
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;

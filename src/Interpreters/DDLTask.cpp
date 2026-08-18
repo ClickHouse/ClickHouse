@@ -743,6 +743,9 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
 
     txn->addOp(getOpToUpdateLogPointer());
 
+    if (successful_execution_callback)
+        txn->addFinalizer(std::move(successful_execution_callback));
+
     for (auto & op : ops)
         txn->addOp(std::move(op));
     ops.clear();
