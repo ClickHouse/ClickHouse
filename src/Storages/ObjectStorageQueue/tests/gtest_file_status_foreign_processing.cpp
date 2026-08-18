@@ -160,6 +160,20 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingCacheDeadlineIsPerTable)
     expectForeignProcessingCacheDeadlineIsPerTable<FileStatus>();
 }
 
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversEvictOnlyTheLeastRecentlyUsedPath)
+{
+    ObjectStorageQueueIFileMetadata::ForeignProcessingObservers observers(2);
+
+    observers.set("data/first.csv", 1);
+    observers.set("data/second.csv", 2);
+    ASSERT_EQ(observers.get("data/first.csv"), 1);
+
+    observers.set("data/third.csv", 3);
+    ASSERT_EQ(observers.get("data/first.csv"), 1);
+    ASSERT_EQ(observers.get("data/second.csv"), 0);
+    ASSERT_EQ(observers.get("data/third.csv"), 3);
+}
+
 /// The pre-Keeper state gate must keep a locally owned `Processing` state terminal.
 /// A foreign state without an observation for the asking table, on the other hand,
 /// must be retried so that the table can check whether the foreign node was released.

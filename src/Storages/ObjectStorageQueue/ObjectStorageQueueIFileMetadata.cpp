@@ -104,18 +104,32 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & file_path, time_t since)
 {
     std::lock_guard lock(mutex);
-    if (!observations.contains(file_path) && observations.size() == max_entries)
+    if (auto it = observations.find(file_path); it != observations.end())
     {
-        observations.clear();
+        it->second.since = since;
+        lru.splice(lru.begin(), lru, it->second.lru_position);
+        return;
     }
-    observations[file_path] = since;
+
+    if (observations.size() == max_entries)
+    {
+        observations.erase(lru.back());
+        lru.pop_back();
+    }
+
+    lru.push_front(file_path);
+    observations.emplace(file_path, Observation{since, lru.begin()});
 }
 
 time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path) const
 {
     std::lock_guard lock(mutex);
     const auto it = observations.find(file_path);
-    return it == observations.end() ? 0 : it->second;
+    if (it == observations.end())
+        return 0;
+
+    lru.splice(lru.begin(), lru, it->second.lru_position);
+    return it->second.since;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(ForeignProcessingObservers & observers)

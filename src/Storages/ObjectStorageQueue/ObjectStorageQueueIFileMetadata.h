@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <list>
 #include <memory>
 #include <unordered_map>
 
@@ -33,9 +34,16 @@ public:
         time_t get(const String & path) const;
 
     private:
+        struct Observation
+        {
+            time_t since;
+            std::list<String>::iterator lru_position;
+        };
+
         const size_t max_entries;
         mutable std::mutex mutex;
-        std::unordered_map<String, time_t> observations;
+        mutable std::list<String> lru;
+        mutable std::unordered_map<String, Observation> observations;
     };
 
     struct FileStatus
