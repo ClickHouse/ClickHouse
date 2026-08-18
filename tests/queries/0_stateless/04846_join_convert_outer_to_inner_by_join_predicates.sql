@@ -9,6 +9,8 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET enable_parallel_replicas = 0;
 SET join_use_nulls = 1;
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- A test case relies on this.
+SET query_plan_merge_filter_into_join_condition = 1; -- A test case relies on this.
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_outer_join_to_inner_join_by_join_predicates = 1;
 
@@ -168,6 +170,28 @@ SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT A
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANTI JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
+SELECT '-- An ANY join converted to SEMI makes the other side droppable, the below join converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANY JOIN small AS s ON m.val = s.val WHERE s.val = 1
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANY JOIN small AS s ON m.val = s.val WHERE s.val = 1;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANY JOIN small AS s ON m.val = s.val WHERE s.val = 1
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
+SELECT '-- A join condition merged into the join makes a side droppable, the below join converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN mid_nullable AS n ON f.id = n.id WHERE m.val = n.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
 
 DROP TABLE fact;

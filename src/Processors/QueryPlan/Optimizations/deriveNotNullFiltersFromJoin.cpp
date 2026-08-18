@@ -8,6 +8,8 @@
 #include <Functions/FunctionPlannerOnlyFilter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <algorithm>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -114,16 +116,7 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
     if (!join || node->children.size() != 2)
         return 0;
 
-    /// Ensure NOT NULL filter derivation is attempted once per join side.
-    auto [derived_left, derived_right] = join->notNullFiltersDerivedSides();
-    if (derived_left && derived_right)
-        return 0;
-
     auto [drop_left, drop_right] = droppedSides(join->getJoinOperator());
-    drop_left = drop_left && !derived_left;
-    drop_right = drop_right && !derived_right;
-
-    join->setNotNullFiltersDerivedSides(derived_left || drop_left, derived_right || drop_right);
 
     /// A JoinStepLogicalLookup child must stay directly below the join.
     if (typeid_cast<JoinStepLogicalLookup *>(node->children[0]->step.get()))
@@ -146,13 +139,21 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
         collectDroppedNullableColumns(rhs, left_columns, right_columns, drop_left, drop_right);
     }
 
-    bool added = false;
-    if (!left_columns.empty())
-        added |= tryAddDerivedNotNullFilter(*node, 0, left_columns, nodes);
-    if (!right_columns.empty())
-        added |= tryAddDerivedNotNullFilter(*node, 1, right_columns, nodes);
+    /// Ensure a NOT NULL filter is derived once per column.
+    const auto & derived_left = join->notNullFiltersDerivedColumns(JoinTableSide::Left);
+    const auto & derived_right = join->notNullFiltersDerivedColumns(JoinTableSide::Right);
+    std::erase_if(left_columns, [&](const auto & name) { return derived_left.contains(name); });
+    std::erase_if(right_columns, [&](const auto & name) { return derived_right.contains(name); });
 
-    return added ? 2 : 0;
+    const bool added_left = !left_columns.empty() && tryAddDerivedNotNullFilter(*node, 0, left_columns, nodes);
+    const bool added_right = !right_columns.empty() && tryAddDerivedNotNullFilter(*node, 1, right_columns, nodes);
+
+    if (added_left)
+        join->addNotNullFiltersDerivedColumns(JoinTableSide::Left, left_columns);
+    if (added_right)
+        join->addNotNullFiltersDerivedColumns(JoinTableSide::Right, right_columns);
+
+    return added_left || added_right ? 2 : 0;
 }
 
 }

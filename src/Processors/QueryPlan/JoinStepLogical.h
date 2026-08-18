@@ -193,11 +193,15 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
-    std::pair<bool, bool> notNullFiltersDerivedSides() const { return {not_null_filters_derived_left, not_null_filters_derived_right}; }
-    void setNotNullFiltersDerivedSides(bool not_null_filters_derived_left_, bool not_null_filters_derived_right_)
+    const NameSet & notNullFiltersDerivedColumns(JoinTableSide side) const
     {
-        not_null_filters_derived_left = not_null_filters_derived_left_;
-        not_null_filters_derived_right = not_null_filters_derived_right_;
+        return side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+    }
+
+    void addNotNullFiltersDerivedColumns(JoinTableSide side, const NameSet & columns)
+    {
+        auto & derived = side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+        derived.insert(columns.begin(), columns.end());
     }
 
 protected:
@@ -241,9 +245,9 @@ protected:
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
 
-    /// For which join sides an IS NOT NULL filter was already derived.
-    bool not_null_filters_derived_left = false;
-    bool not_null_filters_derived_right = false;
+    /// Columns of each input for which an IS NOT NULL filter was already derived.
+    NameSet not_null_filters_derived_left;
+    NameSet not_null_filters_derived_right;
 
 private:
 

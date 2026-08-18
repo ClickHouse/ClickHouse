@@ -68,3 +68,14 @@ Type: INNER
 Type: LEFT
 Strictness: ANTI
 Type: LEFT
+-- An ANY join converted to SEMI makes the other side droppable, the below join converts.
+10	435
+10	435
+Type: LEFT
+Strictness: SEMI
+Type: INNER
+-- A join condition merged into the join makes a side droppable, the below join converts.
+25	1125
+25	1125
+Type: INNER
+Type: INNER
