@@ -385,6 +385,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     /// filled by the claim loop below (empty for a bypass tier or a tail a concurrent downloader leads).
     struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
+    size_t next_resident = window_offset + max_serve;  /// nearest block any tier already has, ahead of the head
     for (auto & cache : cache_chain)
     {
         stats.add(Stats::CacheGetRequests);
@@ -401,6 +402,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
             {
                 if (resolution.range.offset <= window_offset && resolution.reader)
                     return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
+                next_resident = std::min(next_resident, resolution.range.offset);  /// a resident block ahead
                 break;
             }
             miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
@@ -437,10 +439,10 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         return readSource(window_offset, miss_end - window_offset);
     }
 
-    /// Fetch the whole writer ranges (across the objects they span), populate each, serve one block.
-    /// Coarse by design: with stacked filesystem caches a slower tier may already hold part of this
-    /// range, which is re-fetched from source here rather than promoted up. The thin executor does not
-    /// subtract slower-tier hits. The following development can improve this.
+    /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
+    /// Capped at `next_resident` - the nearest block a slower tier already holds - so a gathered miss run
+    /// never re-reads a suffix the filesystem cache already has; that suffix is served from the slower
+    /// tier on the next window.
     size_t fetch_lo = window_offset;
     size_t fetch_hi = window_offset;
     for (const auto & miss_tier : miss_tiers)
@@ -451,6 +453,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         fetch_hi = std::max(fetch_hi, miss_tier.range.end());
     }
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
+    fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
 
     ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();

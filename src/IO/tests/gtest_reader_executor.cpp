@@ -659,6 +659,38 @@ TEST_F(ReaderExecutorTest, CoalescesConsecutiveMissesIntoOneSourceRead)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
 }
 
+TEST_F(ReaderExecutorTest, GatheredMissRunDoesNotReReadSlowerTierHit)
+{
+    /// Stacked tiers: a fast tier misses blocks 0..1, a slower tier already holds block 1. Gathering the
+    /// fast tier's miss run must not stretch the source fetch across block 1 - it is served from the
+    /// slower tier next window, so only block 0 hits the source.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 2 * block)};
+
+    auto fast = std::make_shared<MockCacheState>(2 * block);   // tier0: all miss
+    auto slow = std::make_shared<MockCacheState>(2 * block);   // tier1: block1 resident
+    slow->resident.add(ByteRange{block, block});
+    for (size_t i = block; i < 2 * block; ++i)
+        slow->store[i] = static_cast<char>(patternByte(i));
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, fast));
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, slow));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 2 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 2 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// block1 was warm in the slower tier, so only block0 hits the source.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), block)
+        << "block1 (resident in the slower tier) must not be re-read from source";
+}
+
 TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
 {
     /// A read-only (bypass) tier - `resolve` returns writer-less misses, like `*_if_exists_otherwise_bypass = 1`
