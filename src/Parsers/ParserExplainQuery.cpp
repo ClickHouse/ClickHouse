@@ -10,6 +10,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSystemQuery.h>
+#include <Parsers/StatementFactory.h>
 
 namespace DB
 {
@@ -187,6 +188,35 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     node = std::move(explain_query);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Explain)
+{
+    factory.registerStatement("EXPLAIN", "",
+    {
+        .description = R"(
+Shows the execution plan of a statement instead of executing it. Depending on the kind, it shows the abstract syntax
+tree (`AST`), the query after the syntax analysis (`SYNTAX`), the query tree (`QUERY TREE`), the query plan (`PLAN`),
+the query pipeline (`PIPELINE`), the plan annotated with the actual execution statistics (`ANALYZE`), the estimated
+number of rows and parts to read (`ESTIMATE`), the effective table structure of a table function
+(`TABLE OVERRIDE`), or the effect of a hypothetical index (`WHATIF`).
+)",
+        .syntax = R"(
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
+)",
+        .examples = {{"Show the plan of a query", "EXPLAIN SELECT sum(number) FROM numbers(10);", ""}},
+        .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
+    });
 }
 
 }

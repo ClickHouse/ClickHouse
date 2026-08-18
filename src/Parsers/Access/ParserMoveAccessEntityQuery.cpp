@@ -6,6 +6,7 @@
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
 #include <base/range.h>
 
 
@@ -91,4 +92,25 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     return true;
 }
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(MoveAccessEntity)
+{
+    factory.registerStatement("MOVE", "",
+    {
+        .description = R"(
+Moves an access entity from one access storage to another. The available access storages are `local_directory`,
+`memory`, `replicated`, `users_xml` (read-only) and `ldap` (read-only).
+)",
+        .syntax = R"(
+MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
+)",
+        .examples = {{"Move a user to another access storage", "MOVE USER test TO local_directory;", ""}},
+        .related = {"CREATE USER", "CREATE ROLE", "SHOW"},
+    });
+}
+
 }

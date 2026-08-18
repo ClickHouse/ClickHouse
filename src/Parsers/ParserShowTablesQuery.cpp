@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
 
 #include <Common/typeid_cast.h>
 
@@ -206,6 +207,50 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     node = query;
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Show)
+{
+    factory.registerStatement("SHOW", "",
+    {
+        .description = R"(
+Shows the information about the objects of the server. Most `SHOW` statements are shorthands for a query over a system
+table, e.g. `SHOW TABLES` reads from `system.tables`, and support the `LIKE`, `NOT LIKE`, `ILIKE`, `WHERE`, `LIMIT` and
+`INTO OUTFILE` clauses.
+
+`SHOW CREATE` returns the query which was used to create the object.
+)",
+        .syntax = R"(
+SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
+SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {LIKE | ILIKE} '<pattern>' | WHERE <expr>}] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW DICTIONARIES [{FROM | IN} <db>] [LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
+SHOW [CREATE] USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | [SETTINGS] PROFILE ...
+SHOW USERS | ROLES | PROFILES | POLICIES | QUOTAS | QUOTA | ACCESS
+SHOW [SETTINGS] PROFILES
+SHOW CLUSTER '<name>' | CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [CHANGED] SETTINGS LIKE | ILIKE '<name>'
+SHOW SETTING <name>
+SHOW FILESYSTEM CACHES
+SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
+SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
+SHOW MERGES [[NOT] LIKE|ILIKE '<table_pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+)",
+        .examples = {
+            {"List the tables of a database", "SHOW TABLES FROM system LIKE 'st%';", ""},
+            {"Show how a table was created", "SHOW CREATE TABLE system.statements;", ""},
+        },
+        .related = {"DESCRIBE TABLE", "EXISTS", "SELECT", "GRANT"},
+    });
 }
 
 }

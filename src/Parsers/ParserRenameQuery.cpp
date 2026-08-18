@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -107,5 +108,40 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Rename)
+{
+    factory.registerStatement("RENAME", "",
+    {
+        .description = R"(
+Renames databases, tables or dictionaries. Several entities can be renamed in a single query, but the query is then not
+atomic; to swap the names of two entities atomically, use `EXCHANGE`.
+)",
+        .syntax = R"(
+RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
+)",
+        .examples = {{"Rename a table", "RENAME TABLE table_A TO table_A_new;", ""}},
+        .related = {"EXCHANGE", "CREATE", "ALTER"},
+    });
+
+    factory.registerStatement("EXCHANGE", "",
+    {
+        .description = R"(
+Exchanges the names of two tables or two dictionaries atomically. The same can be achieved with a `RENAME` query using
+a temporary name, but that operation is not atomic. `EXCHANGE` is supported by the `Atomic` and `Shared` database
+engines only.
+)",
+        .syntax = R"(
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+)",
+        .examples = {{"Swap the names of two tables", "EXCHANGE TABLES table_A AND table_B;", ""}},
+        .related = {"RENAME", "REPLACE TABLE", "CREATE DATABASE"},
+    });
+}
 
 }

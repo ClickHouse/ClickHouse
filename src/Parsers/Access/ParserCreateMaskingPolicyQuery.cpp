@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
 #include <Access/IAccessStorage.h>
 
 
@@ -227,4 +228,51 @@ bool ParserCreateMaskingPolicy::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     return true;
 }
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(MaskingPolicy)
+{
+    factory.registerStatement("CREATE MASKING POLICY", "CREATE",
+    {
+        .description = R"(
+Creates a masking policy, which dynamically transforms or masks the values of columns for specific users or roles when
+they query a table. Masking policies provide column-level data security by transforming sensitive data at query time,
+without modifying the stored data.
+)",
+        .syntax = R"(
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+)",
+        .examples = {{"Mask the values of a column for a role", R"(
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+)", ""}},
+        .related = {"ALTER MASKING POLICY", "CREATE ROW POLICY", "DROP", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER MASKING POLICY", "ALTER",
+    {
+        .description = R"(
+Modifies an existing masking policy. All clauses are optional; only the specified clauses are changed.
+)",
+        .syntax = R"(
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+)",
+        .examples = {{"Change the roles a masking policy applies to", "ALTER MASKING POLICY mask_high_salaries ON employees TO analyst, accountant;", ""}},
+        .related = {"CREATE MASKING POLICY", "ALTER", "SHOW"},
+    });
+}
+
 }

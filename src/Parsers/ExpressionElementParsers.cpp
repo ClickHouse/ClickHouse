@@ -45,6 +45,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/StatementFactory.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -2798,6 +2799,54 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(ColumnsTransformers)
+{
+    factory.registerStatement("APPLY modifier", "SELECT",
+    {
+        .description = R"(
+Invokes a function for each column returned by the expression it is applied to, which is usually the asterisk or a
+columns matcher.
+)",
+        .syntax = R"(
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+)",
+        .examples = {{"Apply a function to every column", "SELECT * APPLY(max) FROM columns_transformers;", ""}},
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
+    factory.registerStatement("EXCEPT modifier", "SELECT",
+    {
+        .description = R"(
+Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the
+output.
+)",
+        .syntax = R"(
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+)",
+        .examples = {{"Exclude a column from the result", "SELECT * EXCEPT (i) FROM columns_transformers;", ""}},
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+    });
+
+    factory.registerStatement("REPLACE modifier", "SELECT",
+    {
+        .description = R"(
+Specifies one or more expression aliases. Each alias must match a column name of the `SELECT *` statement, and the
+matching column is replaced by the expression in the output column list. The modifier does not change the names or the
+order of the columns, but it can change the values and their types.
+)",
+        .syntax = R"(
+SELECT <expr> REPLACE( <expr> AS col_name) FROM [db.]table_name
+)",
+        .examples = {{"Replace the expression of a column", "SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;", ""}},
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+    });
 }
 
 }

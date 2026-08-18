@@ -9,6 +9,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -314,4 +315,56 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(RowPolicy)
+{
+    factory.registerStatement("CREATE ROW POLICY", "CREATE",
+    {
+        .description = R"(
+Creates a row policy, i.e. a filter which determines which rows a user can read from a table. Row policies only make
+sense for users with read-only access: a user who can modify a table or copy partitions between tables can defeat the
+restrictions of a row policy.
+)",
+        .syntax = R"(
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* } [, ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+)",
+        .examples = {{"Restrict the visible rows of a table", R"(
+CREATE ROW POLICY pol1 ON table1
+    FOR SELECT USING id = 1
+    TO accountant;
+)", ""}},
+        .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER ROW POLICY", "ALTER",
+    {
+        .description = R"(
+Changes a row policy: renames it and changes its condition, its kind (permissive or restrictive) and the roles and
+users it applies to.
+)",
+        .syntax = R"(
+ALTER [ROW] POLICY [IF EXISTS] name [, ...]
+    ON { [database.]table | database.* } [, ...]
+    [RENAME TO new_name]
+    [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)",
+        .examples = {{"Rename a row policy", "ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;", ""}},
+        .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
+    });
+}
+
 }

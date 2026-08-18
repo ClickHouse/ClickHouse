@@ -11,6 +11,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -383,6 +384,31 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         return true;
     }
     return false;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(CreateFunction)
+{
+    factory.registerStatement("CREATE FUNCTION", "CREATE",
+    {
+        .description = R"(
+Creates a user defined function (UDF) from a lambda expression. The expression must consist of the parameters of the
+function, constants, operators, or calls of other functions. Recursion and window functions are not allowed, and the
+names of the parameters must be unique and must not collide with the name of an existing function.
+)",
+        .syntax = R"(
+CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
+)",
+        .examples = {{"Create a user defined function", R"(
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
+)", ""}},
+        .related = {"CREATE", "DROP", "SHOW"},
+    });
 }
 
 }

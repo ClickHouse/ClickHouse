@@ -3,6 +3,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -57,6 +58,34 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     query->children.emplace_back(query->where_expression);
     node = std::move(query);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(KillQuery)
+{
+    factory.registerStatement("KILL", "",
+    {
+        .description = R"(
+Terminates the queries or the mutations which match the filter expression. The queries to terminate are selected from
+`system.processes`, the mutations from `system.mutations`.
+
+`SYNC` waits until the queries are actually terminated, `ASYNC` returns immediately, and `TEST` only checks the access
+rights and shows the list of the queries which would be terminated.
+)",
+        .syntax = R"(
+KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]
+)",
+        .examples = {
+            {"Terminate a query by its identifier", "KILL QUERY WHERE query_id = '2-857d-4a57-9ee0-327da5d60a90';", ""},
+            {"Terminate the mutations of a table", "KILL MUTATION WHERE database = 'default' AND table = 'table';", ""},
+        },
+        .related = {"SYSTEM", "SHOW", "ALTER"},
+    });
 }
 
 }

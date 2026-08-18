@@ -13,6 +13,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
 #include <Common/typeid_cast.h>
 
 
@@ -1251,6 +1252,321 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(query->table);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Alter)
+{
+    factory.registerStatement("ALTER", "",
+    {
+        .description = R"(
+Changes the structure, the settings or the data of a table, of a database, of a view, or of an access entity.
+
+Most `ALTER TABLE` queries which change the data are implemented as mutations: they are asynchronous background
+processes which rewrite the affected data parts. Most `ALTER TABLE` queries are supported only for tables of the
+`*MergeTree`, `Merge` and `Distributed` families.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]name [ON CLUSTER cluster] action [, action ...]
+ALTER DATABASE [db.]name [ON CLUSTER cluster] action
+ALTER NAMED COLLECTION ...
+ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
+)",
+        .examples = {{"Add a column", "ALTER TABLE test ADD COLUMN x UInt64;", ""}},
+        .related = {
+            "ALTER TABLE ... COLUMN", "ALTER TABLE ... PARTITION", "ALTER TABLE ... DELETE", "ALTER TABLE ... UPDATE",
+            "CREATE", "SYSTEM"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... COLUMN", "ALTER",
+    {
+        .description = R"(
+Changes the structure of a table: adds, drops, renames, clears, comments, modifies or materializes columns. A single
+query can contain a list of comma-separated actions.
+
+`ADD`, `DROP`, `COMMENT`, `MODIFY` and `ALTER` of a column are lightweight operations which only change metadata or
+remove files, whereas `CLEAR`, `MATERIALIZE` and a `MODIFY` which changes the type of a column are implemented as
+mutations.
+)",
+        .syntax = R"(
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+DROP COLUMN [IF EXISTS] name
+RENAME COLUMN [IF EXISTS] name TO new_name
+CLEAR COLUMN [IF EXISTS] name [IN PARTITION partition_id]
+COMMENT COLUMN [IF EXISTS] name 'Text comment'
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name REMOVE property
+MATERIALIZE COLUMN name [IN PARTITION partition_id]
+)",
+        .examples = {
+            {"Add a column after another column", "ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;", ""},
+            {"Change the type of a column", "ALTER TABLE alter_test MODIFY COLUMN Added2 UInt64;", ""},
+        },
+        .related = {"ALTER", "CREATE TABLE", "CODEC", "ALTER TABLE ... MODIFY TTL"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... PARTITION", "ALTER",
+    {
+        .description = R"(
+Manipulates partitions and parts of a table: detaches, drops, attaches, replaces, moves, freezes, unfreezes and
+fetches them, and updates the metadata of a partition.
+)",
+        .syntax = R"(
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] FORGET PARTITION partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
+ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
+ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
+ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
+ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION partition_expr] WITH NAME 'backup_name'
+ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr ...
+)",
+        .examples = {
+            {"Detach a partition", "ALTER TABLE mt DETACH PARTITION '2020-11-21';", ""},
+            {"Drop a part", "ALTER TABLE mt DROP PART 'all_4_4_0';", ""},
+        },
+        .related = {"ALTER", "SYSTEM", "OPTIMIZE", "TRUNCATE"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... DELETE", "ALTER",
+    {
+        .description = R"(
+Deletes the rows matching the filter expression. Implemented as a mutation: every data part containing matching rows
+is rewritten, therefore this is a heavyweight operation. For deleting a small amount of rows, prefer the lightweight
+`DELETE` statement.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+)",
+        .examples = {{"Delete rows by a condition", "ALTER TABLE test DELETE WHERE x = 1;", ""}},
+        .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... UPDATE", "ALTER",
+    {
+        .description = R"(
+Updates the columns of the rows matching the filter expression. Implemented as a mutation: every data part containing
+matching rows is rewritten, therefore this is a heavyweight operation. For updating a small amount of rows, prefer the
+lightweight `UPDATE` statement.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+)",
+        .examples = {{"Update a column by a condition", "ALTER TABLE test UPDATE x = 2 WHERE 1;", ""}},
+        .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY", "ALTER",
+    {
+        .description = R"(
+Changes the sorting key of the table. The primary key remains the same. The command is lightweight in the sense that
+it only changes metadata, therefore the new sorting key may only extend the existing one with new columns which are
+not in the primary key.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+)",
+        .examples = {{"Extend the sorting key", "ALTER TABLE test MODIFY ORDER BY (x, y);", ""}},
+        .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... MODIFY SAMPLE BY"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY", "ALTER",
+    {
+        .description = R"(
+Changes or removes the sampling key of the table. The command is lightweight in the sense that it only changes
+metadata; it is the responsibility of the user that the data actually satisfies the new sampling expression.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+)",
+        .examples = {{"Remove the sampling key", "ALTER TABLE test REMOVE SAMPLE BY;", ""}},
+        .related = {"ALTER", "SAMPLE", "ALTER TABLE ... MODIFY ORDER BY"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY TTL", "ALTER",
+    {
+        .description = R"(
+Changes or removes the `TTL` of the table. Removing the `TTL` does not delete the rows which the expired `TTL` rule
+would have removed, it only stops applying the rule.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
+)",
+        .examples = {{"Remove the TTL of a table", "ALTER TABLE table_with_ttl REMOVE TTL;", ""}},
+        .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... COLUMN", "OPTIMIZE"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY SETTING", "ALTER",
+    {
+        .description = R"(
+Changes the settings of a table or resets them to their default values. A single query can change several settings at
+once. Modifying a setting which does not exist raises an exception.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [, ...]
+ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
+)",
+        .examples = {{"Change a table setting", "ALTER TABLE test MODIFY SETTING max_part_loading_threads = 8;", ""}},
+        .related = {"ALTER", "CREATE TABLE", "SET"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... CONSTRAINT", "ALTER",
+    {
+        .description = R"(
+Adds, modifies or drops a constraint of a table. Constraints are only checked for newly inserted rows, the existing
+data is not validated.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name
+)",
+        .examples = {{"Add a constraint", "ALTER TABLE test ADD CONSTRAINT c CHECK x > 0;", ""}},
+        .related = {"ALTER", "CREATE TABLE"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... INDEX", "ALTER",
+    {
+        .description = R"(
+Adds, drops, materializes or clears a data skipping index of a table. `ADD`, `DROP` and `CLEAR` are lightweight
+operations which only change metadata or remove files, whereas `MATERIALIZE` is implemented as a mutation which
+rebuilds the index for the existing data.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]
+)",
+        .examples = {{"Add and materialize a skipping index", R"(
+ALTER TABLE test ADD INDEX idx x TYPE minmax GRANULARITY 1;
+ALTER TABLE test MATERIALIZE INDEX idx;
+)", ""}},
+        .related = {"ALTER", "CREATE TABLE", "HYPOTHETICAL INDEX", "ALTER TABLE ... PROJECTION"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... PROJECTION", "ALTER",
+    {
+        .description = R"(
+Adds, drops, materializes or clears a projection of a table. A projection stores the data of the table in another
+order or pre-aggregated, so that queries which do not match the primary key of the table can still be answered
+efficiently.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] | [GROUP BY] ) [WITH SETTINGS ( setting_name = setting_value, ... )]
+ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
+ALTER TABLE [db.]name [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+)",
+        .examples = {{"Add and materialize a projection", R"(
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (SELECT * ORDER BY user_name);
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection;
+)", ""}},
+        .related = {"ALTER", "CREATE TABLE", "ALTER TABLE ... INDEX"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... STATISTICS", "ALTER",
+    {
+        .description = R"(
+Adds, modifies, drops, materializes or clears the statistics of the columns of a table. Column statistics help the
+query optimizer to estimate the selectivity of predicates.
+)",
+        .syntax = R"(
+ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)
+ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)
+ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)
+ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)
+ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
+)",
+        .examples = {{"Change the statistics of columns", "ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;", ""}},
+        .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY COMMENT", "ALTER",
+    {
+        .description = R"(
+Adds, modifies or removes the comment of a table, regardless of whether it was set before or not. The comment is
+shown in `system.tables` and in the result of `SHOW CREATE TABLE`.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+)",
+        .examples = {{"Change the comment of a table", "ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';", ""}},
+        .related = {"ALTER", "ALTER DATABASE ... MODIFY COMMENT", "CREATE TABLE", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT", "ALTER",
+    {
+        .description = R"(
+Adds, modifies or removes the comment of a database, regardless of whether it was set before or not. The comment is
+shown in `system.databases` and in the result of `SHOW CREATE DATABASE`.
+)",
+        .syntax = R"(
+ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+)",
+        .examples = {{"Change the comment of a database", "ALTER DATABASE database_with_comment MODIFY COMMENT 'new comment on a database';", ""}},
+        .related = {"ALTER", "ALTER TABLE ... MODIFY COMMENT", "CREATE DATABASE", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... MODIFY QUERY", "ALTER",
+    {
+        .description = R"(
+Changes the `SELECT` query of a materialized view without interrupting the ingestion process. The query was specified
+when the materialized view was created. This statement is intended for a materialized view created with the
+`TO [db.]name` clause; it does not change the structure of the target table of the view.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
+)",
+        .examples = {{"Change the query of a materialized view", R"(
+ALTER TABLE mv MODIFY QUERY
+    SELECT toStartOfDay(ts) ts, event_type, count() events_cnt
+    FROM events
+    GROUP BY ts, event_type;
+)", ""}},
+        .related = {"ALTER", "CREATE VIEW"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK", "ALTER",
+    {
+        .description = R"(
+Applies the mask created by lightweight deletes and forcefully removes the rows marked as deleted from disk. The
+command is a heavyweight mutation; it is semantically equal to `ALTER TABLE [db.]name DELETE WHERE _row_exists = 0`.
+)",
+        .syntax = R"(
+ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
+)",
+        .examples = {{"Materialize lightweight deletes", "ALTER TABLE my_table APPLY DELETED MASK;", ""}},
+        .related = {"ALTER", "DELETE", "ALTER TABLE ... DELETE"},
+    });
+
+    factory.registerStatement("ALTER TABLE ... APPLY PATCHES", "ALTER",
+    {
+        .description = R"(
+Manually triggers the materialization of the patch parts created by lightweight `UPDATE` statements. It forcefully
+applies the pending patches to the data parts by rewriting only the affected columns.
+)",
+        .syntax = R"(
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+)",
+        .examples = {{"Materialize lightweight updates", "ALTER TABLE my_table APPLY PATCHES;", ""}},
+        .related = {"ALTER", "UPDATE", "ALTER TABLE ... UPDATE"},
+    });
 }
 
 }

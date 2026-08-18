@@ -17,6 +17,7 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
 
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -763,4 +764,54 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(User)
+{
+    factory.registerStatement("CREATE USER", "CREATE",
+    {
+        .description = R"(
+Creates user accounts. A user can be identified by a password, by a certificate, by an SSH key, or by an external
+authentication server, and can be restricted to a set of hosts, roles, settings and grantees.
+)",
+        .syntax = R"(
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash | bcrypt_password | bcrypt_hash | ldap | kerberos | ssl_certificate | ssh_key | http | jwt | scram_sha256_password | scram_sha256_hash}] BY {'password' | 'hash'}} [,...]]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
+    [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+)",
+        .examples = {{"Create a user with a password", "CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';", ""}},
+        .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
+    });
+
+    factory.registerStatement("ALTER USER", "ALTER",
+    {
+        .description = R"(
+Changes user accounts: renames them, changes their authentication methods, allowed hosts, default roles, default
+database, grantees and settings.
+)",
+        .syntax = R"(
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {...} [,...]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] ... | PROFILE 'profile_name'] [,...]
+)",
+        .examples = {{"Change the default roles of a user", "ALTER USER user DEFAULT ROLE role1, role2;", ""}},
+        .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
+    });
+}
+
 }

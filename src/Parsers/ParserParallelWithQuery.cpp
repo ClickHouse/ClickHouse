@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -41,6 +42,31 @@ bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     node = res;
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(ParallelWith)
+{
+    factory.registerStatement("PARALLEL WITH", "",
+    {
+        .description = R"(
+Executes several statements in parallel. It can be useful for statements which take a long time and do not depend on
+each other, for example the creation of many tables.
+)",
+        .syntax = R"(
+statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
+)",
+        .examples = {{"Create two tables in parallel", R"(
+CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
+)", ""}},
+        .related = {"CREATE", "DROP", "SELECT"},
+    });
 }
 
 }

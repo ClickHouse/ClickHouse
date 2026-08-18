@@ -5,6 +5,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -129,5 +130,30 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Optimize)
+{
+    factory.registerStatement("OPTIMIZE", "",
+    {
+        .description = R"(
+Tries to initiate an unscheduled merge of the data parts of a table. `FINAL` merges the data even if there is only one
+part, `DEDUPLICATE` removes the duplicate rows, and `DRY RUN` only reports which parts would be merged.
+
+`OPTIMIZE TABLE ... FINAL` is meant for administration rather than for daily operations, and it cannot fix a
+`Too many parts` error.
+)",
+        .syntax = R"(
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+)",
+        .examples = {{"Merge the parts of a table", "OPTIMIZE TABLE test FINAL;", ""}},
+        .related = {"SYSTEM", "ALTER TABLE ... PARTITION", "CHECK TABLE"},
+    });
+}
 
 }

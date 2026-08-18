@@ -2,6 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/StatementFactory.h>
 
 #include <Common/typeid_cast.h>
 
@@ -141,5 +142,26 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Exists)
+{
+    factory.registerStatement("EXISTS", "",
+    {
+        .description = R"(
+Returns a single column of type `UInt8` with a single value: `1` if the table, the dictionary or the database exists,
+and `0` otherwise.
+)",
+        .syntax = R"(
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+)",
+        .examples = {{"Check whether a table exists", "EXISTS TABLE test;", "1"}},
+        .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
+    });
+}
 
 }

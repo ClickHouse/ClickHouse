@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/StatementFactory.h>
 #include <base/insertAtEnd.h>
 
 
@@ -160,4 +161,47 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Role)
+{
+    factory.registerStatement("CREATE ROLE", "CREATE",
+    {
+        .description = R"(
+Creates new roles. A role is a set of privileges; a user assigned a role gets all the privileges of this role.
+)",
+        .syntax = R"(
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+)",
+        .examples = {{"Create a role and grant privileges to it", R"(
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+)", ""}},
+        .related = {"ALTER ROLE", "CREATE USER", "GRANT", "SET ROLE", "DROP"},
+    });
+
+    factory.registerStatement("ALTER ROLE", "ALTER",
+    {
+        .description = R"(
+Changes roles: renames them and changes their settings and settings profiles.
+)",
+        .syntax = R"(
+ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP SETTINGS variable [,...] ]
+    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+)",
+        .examples = {{"Change a setting of a role", "ALTER ROLE accountant SETTINGS max_memory_usage = 100000000;", ""}},
+        .related = {"CREATE ROLE", "ALTER", "SET ROLE", "GRANT"},
+    });
+}
+
 }

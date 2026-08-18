@@ -65,6 +65,7 @@
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
+#include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -211,6 +212,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemDocumentation>(context, system_database, "documentation", "Collects the embedded documentation of the components of the system (functions, table engines, data types, settings, profile events, metrics, system tables, etc.) into a single table, with the reference documentation rendered as Markdown and the path to the source file where it is defined.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
+    attach<StorageSystemStatements>(context, system_database, "statements", "Contains a list of all SQL statements of ClickHouse along with their embedded documentation.");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
     attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
     attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");

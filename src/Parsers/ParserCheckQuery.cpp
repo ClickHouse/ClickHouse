@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/StatementFactory.h>
 
 
 namespace DB
@@ -89,6 +90,41 @@ bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & e
 
     node = query;
     return true;
+}
+
+}
+
+namespace DB
+{
+
+REGISTER_STATEMENTS(Check)
+{
+    factory.registerStatement("CHECK TABLE", "",
+    {
+        .description = R"(
+Performs a validation check on a table or on its partitions or parts. It verifies the checksums and the other internal
+data structures, in particular it compares the actual file sizes with the expected values stored on the server.
+)",
+        .syntax = R"(
+CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
+)",
+        .examples = {{"Check a table", "CHECK TABLE test_table;", ""}},
+        .related = {"CHECK DATABASE", "SYSTEM", "OPTIMIZE"},
+    });
+
+    factory.registerStatement("CHECK DATABASE", "",
+    {
+        .description = R"(
+Verifies the health of a database. Its primary use is with the `DataLakeCatalog` database engine, where it checks that
+the external catalog backing the database is reachable and that its list of tables can be retrieved. This is a
+lightweight probe: it confirms connectivity and authentication without reading any table data.
+)",
+        .syntax = R"(
+CHECK DATABASE database_name
+)",
+        .examples = {{"Check a database", "CHECK DATABASE datalake;", ""}},
+        .related = {"CHECK TABLE", "CREATE DATABASE"},
+    });
 }
 
 }
