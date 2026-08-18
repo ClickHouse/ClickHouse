@@ -1,34 +1,29 @@
 #pragma once
 
-#include <Poco/Exception.h>
-#include <Poco/Net/Socket.h>
+#include <IO/SocketPeerClosed.h>
+
+#include <Poco/Net/StreamSocket.h>
 
 #include <functional>
 
 namespace DB
 {
 
-/// Check if a Poco::Net::Socket peer is still connected via MSG_DONTWAIT | MSG_PEEK.
+/// Check whether a Poco stream-socket peer is still connected. This is TLS-aware, so a TLS
+/// `close_notify` is not mistaken for unread application data.
 /// The lambda captures `socket_` by reference; the caller must ensure the socket outlives it.
-inline std::function<bool()> makeSocketAliveCheckCallback(Poco::Net::Socket & socket_)
+inline std::function<bool()> makeSocketAliveCheckCallback(Poco::Net::StreamSocket & socket_)
 {
     return [&socket_]() -> bool
     {
         try
         {
-            char b = 0;
-            if (!socket_.impl()->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-                return false;
-        }
-        catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
-        {
-            /// EAGAIN / EWOULDBLOCK — no data available but connection is alive.
+            return !isSocketPeerClosed(socket_);
         }
         catch (...) // Ok: any non-timeout exception means the peer is gone
         {
             return false;
         }
-        return true;
     };
 }
 
