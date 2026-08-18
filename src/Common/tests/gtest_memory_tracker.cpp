@@ -149,6 +149,26 @@ TEST(MemoryTracker, SpeculativeReservationRanksQueryForGlobalOvercommit)
     EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
 }
 
+TEST(MemoryTracker, SpeculativeReservationDoesNotAffectUserOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.setSoftLimit(soft_limit);
+    second.setSoftLimit(soft_limit);
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    first.addSpeculativeReservation(reservation);
+
+    /// Speculative reservations are charged only to the total tracker, and must not
+    /// change the victim selected when a user-level limit is exceeded.
+    EXPECT_LT(first.getOvercommitRatio(), second.getOvercommitRatio());
+}
+
 TEST(MemoryTracker, GlobalReservationUsesOutermostProcessTracker)
 {
     MemoryTracker outer_process(&total_memory_tracker, VariableContext::Process, false);

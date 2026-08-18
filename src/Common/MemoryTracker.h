@@ -127,13 +127,10 @@ private:
 
         /// Sum of live speculative reservations (see `additional_memory_tracking_per_thread`)
         /// taken by threads of this query (only used on Process-level trackers). The
-        /// reservations are charged on the total tracker, not on `amount`, so query-level
-        /// accounting and its byte-threshold heuristics stay exact; but the overcommit
-        /// victim selection ranks queries by their tracked usage, and a real allocation
-        /// enters `amount` before that ranking runs. Adding this counter to the ranked
-        /// value (`getOvercommitRatio`) keeps the selection equivalent to a real
-        /// allocation: a query whose reservation trips the server limit is ranked
-        /// inclusive of that reservation instead of shifting the kill to another query.
+        /// Reservations are charged on the total tracker, not on `amount`, so query-level
+        /// accounting and its byte-threshold heuristics stay exact. Global overcommit uses
+        /// this counter together with `amount` to select the reserving query, while user
+        /// overcommit deliberately uses only the user-accounted `amount`.
         std::atomic<Int64> speculative_reservations {0};
         UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
 
@@ -315,7 +312,7 @@ public:
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
     /// Credit/uncredit a live speculative reservation to this (Process-level) tracker
-    /// so it participates in the overcommit victim ranking; see `speculative_reservations`.
+    /// so it participates in global overcommit victim ranking; see `speculative_reservations`.
     void addSpeculativeReservation(Int64 size) noexcept
     {
         speculative_reservations.fetch_add(size, std::memory_order_relaxed);
