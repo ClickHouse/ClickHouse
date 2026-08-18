@@ -2435,9 +2435,10 @@ bool StorageMergeTree::optimize(
             /// pool from the configured limit could make waiting helpers hold those resources
             /// even when the executor is already busy. If no slot is free, wait for exactly one:
             /// this keeps the sequential fallback within the same capacity limit.
-            const size_t requested_merge_slots = std::min(
+            const size_t requested_merge_slots = std::min({
                 partition_ids.size(),
-                std::min(merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()));
+                merge_mutate_executor->getMaxThreads(),
+                merge_mutate_executor->getMaxTasksCount()});
             size_t reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(requested_merge_slots);
             if (reserved_merge_slots == 0)
             {
