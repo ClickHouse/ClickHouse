@@ -237,3 +237,35 @@ def test_shutdown_cancel_backup():
             f"RESTORE TABLE tbl FROM {get_backup_name(backup_id)}"
         ),
     )
+
+
+# Test that a backup which cannot observe its own cancellation does not keep the server from
+# terminating on a single SIGTERM.
+def test_shutdown_cancel_wedged_backup():
+    node.query("CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple()")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(100)")
+
+    backup_id = uuid.uuid4().hex
+    try:
+        # The paused thread holds the failpoint's own mutex while waiting, so it cannot observe a
+        # cancellation request at all.
+        node.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        node.query(
+            f"BACKUP TABLE tbl TO {get_backup_name(backup_id)}"
+            f" SETTINGS id='{backup_id}' ASYNC"
+        )
+        node.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+
+        assert (
+            node.query(f"SELECT status FROM system.backups WHERE id='{backup_id}'")
+            == "CREATING_BACKUP\n"
+        )
+
+        # True means the process exited on its own; None means this had to escalate to SIGKILL.
+        assert node.stop_clickhouse(stop_wait_sec=30, kill=False) is True
+    finally:
+        node.start_clickhouse()
+        node.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        assert (
+            node.query("SELECT count() FROM system.fail_points WHERE enabled") == "0\n"
+        )

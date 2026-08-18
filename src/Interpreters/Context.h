@@ -1265,8 +1265,9 @@ public:
     /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
     void stopAcceptingNewBackupsAndRestores() const;
 
-    /// Both return false if `deadline` was reached while some operation was still running.
-    bool waitAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+    void waitAllBackupsAndRestores() const;
+
+    /// Returns false if `deadline` was reached while some operation was still running.
     bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
 
     /// Returns true if some backup or restore has not reached a final status yet. Never waits.

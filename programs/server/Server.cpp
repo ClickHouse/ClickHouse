@@ -3739,15 +3739,18 @@ try
             /// Wait for unfinished backups and restores.
             /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
-            /// New operations are refused first, so that the wait below cannot miss one which starts
-            /// after it has taken its snapshot (a distributed DDL query can still deliver one).
-            global_context->stopAcceptingNewBackupsAndRestores();
-            auto backups_deadline
-                = std::chrono::steady_clock::now() + std::chrono::seconds(server_settings[ServerSetting::shutdown_wait_unfinished]);
+            bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
-                global_context->waitAllBackupsAndRestores(backups_deadline);
+                global_context->waitAllBackupsAndRestores();
             else
-                global_context->cancelAllBackupsAndRestores(backups_deadline);
+            {
+                /// Refused first so that the wait cannot miss an operation started after it took
+                /// its snapshot; a distributed DDL query can still deliver one here.
+                global_context->stopAcceptingNewBackupsAndRestores();
+                backups_finished = global_context->cancelAllBackupsAndRestores(
+                    std::chrono::steady_clock::now()
+                    + std::chrono::seconds(server_settings[ServerSetting::shutdown_wait_unfinished]));
+            }
 
             stop_oom_canary();
 
@@ -3771,13 +3774,13 @@ try
 
             dns_cache_updater.reset();
 
-            /// Re-read instead of reusing the result above: killAllQueries() and the waits since then
-            /// can have driven a cancelled backup to a final status, in which case the normal teardown
-            /// (which joins the backup thread pools without a deadline) is able to complete.
-            /// Sound because new operations are already refused: this set can only shrink.
-            bool unfinished_backups = global_context->hasUnfinishedBackupsAndRestores();
+            /// killAllQueries() and the waits above can have driven a cancelled backup to a final
+            /// status, and then the normal teardown is able to complete. Sound because this is false
+            /// only where new operations are already refused, so the unfinished set cannot grow.
+            if (!backups_finished)
+                backups_finished = !global_context->hasUnfinishedBackupsAndRestores();
 
-            if (current_connections || !joined_refresh_tasks || unfinished_backups)
+            if (current_connections || !joined_refresh_tasks || !backups_finished)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live

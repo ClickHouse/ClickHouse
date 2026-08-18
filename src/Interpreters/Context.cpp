@@ -4234,16 +4234,15 @@ BackupsWorker & Context::getBackupsWorker() const
 
 void Context::stopAcceptingNewBackupsAndRestores() const
 {
-    /// Goes through getBackupsWorker() rather than testing `shared->backups_worker`: the worker is
-    /// created on first use, so the flag has to land on the instance any later caller will get.
+    /// Not `if (shared->backups_worker)`: the worker is created on first use, and the flag has to
+    /// land on the instance any later caller will get.
     getBackupsWorker().stopAcceptingNewOperations();
 }
 
-bool Context::waitAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
+void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
-        return shared->backups_worker->waitAll(deadline);
-    return true;
+        shared->backups_worker->waitAll();
 }
 
 bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const

@@ -57,8 +57,7 @@ public:
     /// Waits until all tasks have been completed.
     void shutdown();
 
-    /// Makes start() refuse new operations from now on. Never reset: the flag is only set while the
-    /// server is terminating.
+    /// Makes start() refuse new operations from now on. Never reset.
     void stopAcceptingNewOperations();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
@@ -71,8 +70,7 @@ public:
     BackupStatus wait(const BackupOperationID & backup_or_restore_id, bool rethrow_exception = true);
 
     /// Waits until all running backup and restore operations finish or stop.
-    /// Returns false if `deadline` was reached while some of them were still running.
-    bool waitAll(std::optional<TimePoint> deadline = {});
+    void waitAll();
 
     /// Cancels the specified backup or restore operation.
     /// The function does nothing if this operation has already finished.
@@ -151,12 +149,11 @@ private:
     std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
                                           bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
 
-    /// Waits for one operation, giving up at `deadline` if it is set.
-    /// `reached_final_status` is set to false if the deadline was reached first.
+    /// Waits for one operation. `reached_final_status` is set to false if `deadline` was reached first.
     BackupStatus waitImpl(const BackupOperationID & backup_or_restore_id, bool rethrow_exception,
                           std::optional<TimePoint> deadline, bool & reached_final_status);
 
-    /// Collects the operations which have not reached a final status yet. `infos_mutex` must be locked.
+    /// `infos_mutex` must be locked.
     std::vector<BackupOperationID> getUnfinishedOperations() const;
 
     /// Waits for each of `operations`. Returns false and logs the stragglers if `deadline` was reached.
@@ -195,8 +192,8 @@ private:
 
     std::unordered_map<BackupOperationID, ExtendedOperationInfo> infos;
 
-    /// Guarded by `infos_mutex` so that it is read in the same critical section as the `infos`
-    /// mutation it gates: once it is set, no operation can be added to `infos` afterwards.
+    /// Guarded by `infos_mutex`, so that it is read in the same critical section as the `infos`
+    /// insertion it gates: once set, nothing can be added to `infos` afterwards.
     bool refuse_new_operations = false;
 
     std::condition_variable status_changed;

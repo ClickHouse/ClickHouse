@@ -1377,13 +1377,12 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
             isBackupStatus(current_status) ? "backup" : "restore");
     }
 
-    /// Checked after the deduplication above, so that a replayed internal operation still gets the
-    /// status of the operation this host already knows about instead of being refused.
+    /// After the deduplication above, so that a replayed internal operation still gets the status of
+    /// the operation this host already knows about instead of being refused.
     if (refuse_new_operations)
     {
         /// UNFINISHED is retriable in DDLWorker, so an ON CLUSTER operation is retried on another
-        /// host instead of being recorded as permanently failed because this host was terminating.
-        /// A direct query has nothing to retry: its connection goes away with the server.
+        /// host rather than recorded as permanently failed. A direct query has nothing to retry.
         throw Exception(internal ? ErrorCodes::UNFINISHED : ErrorCodes::QUERY_WAS_CANCELLED,
             "Cannot start {} {} because the server is shutting down",
             isBackupStatus(status) ? "backup" : "restore",
@@ -1575,7 +1574,7 @@ bool BackupsWorker::waitForOperations(const std::vector<OperationID> & operation
     return false;
 }
 
-bool BackupsWorker::waitAll(std::optional<TimePoint> deadline)
+void BackupsWorker::waitAll()
 {
     std::vector<OperationID> current_operations;
     {
@@ -1584,15 +1583,14 @@ bool BackupsWorker::waitAll(std::optional<TimePoint> deadline)
     }
 
     if (current_operations.empty())
-        return true;
+        return;
 
     LOG_INFO(log, "Waiting for running backups and restores to finish");
 
-    if (!waitForOperations(current_operations, deadline))
-        return false;
+    for (const auto & id : current_operations)
+        wait(id, /* rethrow_exception= */ false);
 
     LOG_INFO(log, "Backups and restores finished");
-    return true;
 }
 
 BackupStatus BackupsWorker::cancel(const BackupOperationID & backup_or_restore_id, bool wait_)
