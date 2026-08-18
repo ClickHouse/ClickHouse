@@ -1860,7 +1860,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             if (data_path.is_relative())
                 data_path = (fs::path(user_files_path).lexically_normal() / data_path).lexically_normal();
 
-            if (!weaklyCanonicalPathStartsWith(data_path.string(), user_files_path))
+            if (!getContext()->isUserFilesPath(data_path.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
 
@@ -1870,7 +1870,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!weaklyCanonicalPathStartsWith(data_path.string(), user_files_path))
+            if (!getContext()->isUserFilesPath(data_path.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
         }

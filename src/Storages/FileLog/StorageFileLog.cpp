@@ -214,7 +214,7 @@ StorageFileLog::StorageFileLog(
         }
     }
 
-    if (!weaklyCanonicalPathStartsWith(path, getContext()->getUserFilesPath()))
+    if (!getContext()->isUserFilesPath(path))
     {
         if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {

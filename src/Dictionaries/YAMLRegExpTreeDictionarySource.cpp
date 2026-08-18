@@ -322,7 +322,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
             }
         }
 
-        if (!weaklyCanonicalPathStartsWith(filepath_, context->getUserFilesPath()))
+        if (!context->isUserFilesPath(filepath_))
         {
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
         }

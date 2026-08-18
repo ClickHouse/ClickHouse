@@ -85,7 +85,7 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     else
         path = fs::absolute(path).lexically_normal();
 
-    if (!is_local && !weaklyCanonicalPathStartsWith(path, user_files_path))
+    if (!is_local && !getContext()->isUserFilesPath(path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path");
@@ -132,7 +132,7 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
         }
     }
-    else if (check_path && !weaklyCanonicalPathStartsWith(table_path, user_files_path))
+    else if (check_path && !context_->isUserFilesPath(table_path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");

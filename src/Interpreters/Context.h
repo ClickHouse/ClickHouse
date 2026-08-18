@@ -786,6 +786,11 @@ public:
     /// directory, so such callers would read or write ciphertext / backing files instead of
     /// the logical disk contents.
     VolumePtr getUserFilesVolume() const;
+
+    /// Check whether a local path is permitted as a `user_files` path. Legacy
+    /// `user_files_path` keeps its established lexical symlink policy, while
+    /// `user_files_policy` resolves symlinks to prevent escaping its disk root.
+    bool isUserFilesPath(const String & path) const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;

@@ -64,7 +64,7 @@ FileDictionarySource::FileDictionarySource(
             }
         }
 
-        if (!weaklyCanonicalPathStartsWith(filepath, context->getUserFilesPath()))
+        if (!context->isUserFilesPath(filepath))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
     }
 }

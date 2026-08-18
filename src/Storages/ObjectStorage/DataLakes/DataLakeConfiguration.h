@@ -462,7 +462,7 @@ private:
 
             auto user_files_path = local_context->getUserFilesPath();
             const auto & table_path = this->getPathForRead().path;
-            if (!weaklyCanonicalPathStartsWith(table_path, user_files_path))
+            if (!local_context->isUserFilesPath(table_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
         }

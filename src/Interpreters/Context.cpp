@@ -21,6 +21,7 @@
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Throttler.h>
 #include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
@@ -1502,6 +1503,14 @@ VolumePtr Context::getUserFilesVolume() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->user_files_volume;
+}
+
+bool Context::isUserFilesPath(const String & path) const
+{
+    const auto user_files_path = getUserFilesPath();
+    if (getUserFilesVolume())
+        return weaklyCanonicalPathStartsWith(path, user_files_path);
+    return fileOrSymlinkPathStartsWith(path, user_files_path);
 }
 
 String Context::getUserScriptsPath() const
