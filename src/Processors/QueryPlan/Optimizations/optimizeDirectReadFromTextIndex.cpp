@@ -31,6 +31,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
+#include <string_view>
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -449,6 +451,37 @@ private:
             || function_name == "hasPhrase";
     }
 
+    const ActionsDAG::Node * appendUnaryDAG(const ActionsDAG & source_dag, const ActionsDAG::Node * input, std::string_view description)
+    {
+        const auto & inputs = source_dag.getInputs();
+        const auto & outputs = source_dag.getOutputs();
+        if (inputs.size() != 1 || outputs.size() != 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Text index {} DAG must have exactly one input and one output, got {} inputs and {} outputs",
+                description,
+                inputs.size(),
+                outputs.size());
+
+        if (!input->result_type->equals(*inputs.front()->result_type))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot bind text index {} DAG input of type '{}' to type '{}'",
+                description,
+                inputs.front()->result_type->getName(),
+                input->result_type->getName());
+
+        ActionsDAG::NodeMapping source_to_target{{inputs.front(), input}};
+        auto cloned_dag = ActionsDAG::cloneSubDAG(outputs, source_to_target, false);
+        const auto * output = source_to_target.at(outputs.front());
+
+        /// The cloned output is an internal argument of the rewritten predicate. `unite` splices
+        /// the node lists, so pointers obtained from `cloned_dag` remain valid afterwards.
+        cloned_dag.getOutputs().clear();
+        actions_dag.unite(std::move(cloned_dag));
+        return output;
+    }
+
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
@@ -587,38 +620,28 @@ private:
             }
             else if (condition.search_query->matchesJSONAllValuesSubcolumn())
             {
-                /// `JSONAllValues(json)` can serve `json.dynamic_path::String`, while the original
-                /// preprocessor DAG is bound to `JSONAllValues(json)`. Rebind its scalar template to
-                /// this path only when index analysis explicitly identified that relationship.
-                const auto & scalar_dag = preprocessor->getScalarPreprocessorDAG();
-                const auto & scalar_inputs = scalar_dag.getInputs();
-                const auto & scalar_outputs = scalar_dag.getOutputs();
-                if (scalar_inputs.size() > 1 || scalar_outputs.size() != 1)
+                /// `JSONAllValues(json)` is an `Array(String)`. Normalize a scalar JSON path to a
+                /// single-element array and reuse the same preprocessor DAG that processes the ready
+                /// index column, including its element-wise `arrayMap` transformation.
+                if (!isString(arg_haystack->result_type))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Scalar text index preprocessor DAG must have at most one input and exactly one output, got {} inputs and {} "
-                        "outputs",
-                        scalar_inputs.size(),
-                        scalar_outputs.size());
+                        "Cannot apply a JSONAllValues text index preprocessor to a subcolumn of type '{}'",
+                        arg_haystack->result_type->getName());
 
-                if (scalar_inputs.empty() || arg_haystack->result_type->equals(*scalar_inputs.front()->result_type))
-                {
-                    ActionsDAG::NodeMapping source_to_target;
-                    if (!scalar_inputs.empty())
-                        source_to_target.emplace(scalar_inputs.front(), arg_haystack);
+                auto array_function = FunctionFactory::instance().get("array", context);
+                const auto & subcolumn_array = actions_dag.addFunction(array_function, {arg_haystack}, "");
+                const auto * preprocessed_array
+                    = appendUnaryDAG(preprocessor->getIndexColumnPreprocessorDAG(), &subcolumn_array, "preprocessor");
 
-                    auto cloned_dag = ActionsDAG::cloneSubDAG(scalar_outputs, source_to_target, false);
-                    const auto * scalar_output = source_to_target.at(scalar_outputs.front());
+                auto index_type = std::make_shared<DataTypeUInt64>();
+                auto index_column = index_type->createColumnConst(0, Field(UInt64(1)));
+                const auto & index = actions_dag.addColumn(std::move(index_column), index_type, "1");
 
-                    /// The cloned node is an internal argument of the rewritten predicate, not a
-                    /// query output. Clearing outputs before `unite` keeps the surrounding DAG shape;
-                    /// `unite` splices the nodes, so `scalar_output` remains valid.
-                    cloned_dag.getOutputs().clear();
-                    actions_dag.unite(std::move(cloned_dag));
+                auto array_element_function = FunctionFactory::instance().get("arrayElement", context);
+                new_children[0] = &actions_dag.addFunction(array_element_function, {preprocessed_array, &index}, "");
 
-                    new_children[0] = scalar_output;
-                    preprocessor_applied = true;
-                }
+                preprocessor_applied = true;
             }
 
             if (preprocessor_applied)
@@ -667,12 +690,9 @@ private:
         if (needApplyPostprocessor(function_name) && has_postprocessor)
         {
             auto haystack_name = getNameWithoutAliases(new_children[0]);
-            ActionsDAG::NodeRawConstPtrs merged_outputs;
-            actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
-                &merged_outputs);
-            chassert(merged_outputs.size() == 1);
-            new_children[0] = merged_outputs.front();
+            auto postprocessor_dag
+                = postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription());
+            new_children[0] = appendUnaryDAG(postprocessor_dag, new_children[0], "postprocessor");
 
             /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
             /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,

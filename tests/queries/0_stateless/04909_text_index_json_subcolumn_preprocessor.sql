@@ -140,3 +140,108 @@ FROM
 );
 
 DROP TABLE test_json_subcolumn_preprocessor;
+
+DROP TABLE IF EXISTS test_json_subcolumn_prepostprocessor;
+
+CREATE TABLE test_json_subcolumn_prepostprocessor
+(
+    id UInt32,
+    data JSON(max_dynamic_paths = 16),
+    INDEX idx_json JSONAllValues(data) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = lower(JSONAllValues(data)),
+        postprocessor = replaceRegexpAll(JSONAllValues(data), '[aeiou]', ''))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_json_subcolumn_prepostprocessor VALUES
+    (1, '{"first":"Hello","second":"World","array_text":["MiXeD"]}'),
+    (2, '{"first":"Other","second":"Value","array_text":["other"]}'),
+    (3, '{}');
+
+SELECT 'combined preprocessor and postprocessor';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.first::String, 'HELLO')
+    ORDER BY id
+);
+
+SELECT 'combined preprocessor and postprocessor without hint direct read';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.first::String, 'HELLO')
+    ORDER BY id
+)
+SETTINGS query_plan_direct_read_from_text_index = 0,
+         query_plan_text_index_add_hint = 0;
+
+SELECT 'combined preprocessor and postprocessor with hasToken';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasToken(data.first::String, 'HELLO')
+    ORDER BY id
+);
+
+SELECT 'combined preprocessor and postprocessor with hasPhrase';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasPhrase(data.first::String, 'HELLO')
+    ORDER BY id
+);
+
+SELECT 'combined preprocessor and postprocessor on multiple paths';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.first::String, 'HELLO')
+      AND hasAnyTokens(data.second::String, 'WORLD')
+    ORDER BY id
+);
+
+SELECT 'array subcolumn keeps default semantics';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.array_text::Array(String), 'mixed')
+    ORDER BY id
+);
+
+SELECT 'array subcolumn does not select JSONAllValues index';
+SELECT countIf(position(explain, 'Name: idx_json') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.array_text::Array(String), 'mixed')
+);
+
+SELECT 'array subcolumn does not create text-index virtual column';
+SELECT countIf(position(explain, '__text_index_idx_json_hasAnyTokens_') > 0) > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM test_json_subcolumn_prepostprocessor
+    WHERE hasAnyTokens(data.array_text::Array(String), 'mixed')
+);
+
+DROP TABLE test_json_subcolumn_prepostprocessor;

@@ -22,3 +22,19 @@ unmatched expression does not select JSONAllValues index
 0
 unmatched expression does not create text-index virtual column
 0
+combined preprocessor and postprocessor
+[1]
+combined preprocessor and postprocessor without hint direct read
+[1]
+combined preprocessor and postprocessor with hasToken
+[1]
+combined preprocessor and postprocessor with hasPhrase
+[1]
+combined preprocessor and postprocessor on multiple paths
+[1]
+array subcolumn keeps default semantics
+[]
+array subcolumn does not select JSONAllValues index
+0
+array subcolumn does not create text-index virtual column
+0

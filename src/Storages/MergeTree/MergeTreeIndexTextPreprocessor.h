@@ -24,9 +24,8 @@ public:
     String processConstant(const String & input) const;
 
     bool hasActions() const { return !original_actions.getActions().empty(); }
-    /// Scalar `String` preprocessor DAG shared by constant-needle evaluation and JSON subcolumn rebinding.
-    /// It has no input when the expression ignores the indexed value; otherwise its sole input is the reserved placeholder.
-    const ActionsDAG & getScalarPreprocessorDAG() const { return actions_for_constant.getActionsDAG(); }
+    /// Applies the preprocessor to an already calculated index column.
+    const ActionsDAG & getIndexColumnPreprocessorDAG() const { return actions_for_index_column.getActionsDAG(); }
     const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
     bool isLowerOrUpper() const { return is_lower_or_upper; }

@@ -914,6 +914,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
+        /// A preprocessed `JSONAllValues` index can be rebound only to a path whose value is
+        /// represented by the same `String`. Explicit conversions such as `FixedString` and
+        /// container paths can change the value and therefore cannot use this index safely.
+        if (has_preprocessor)
+        {
+            const auto * dag_node = index_column_node.getDAGNode();
+            if (!dag_node || !isString(dag_node->result_type))
+                return false;
+        }
+
         matches_json_all_values_subcolumn = true;
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
