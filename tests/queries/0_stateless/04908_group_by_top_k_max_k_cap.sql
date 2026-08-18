@@ -4,6 +4,8 @@
 SET serialize_query_plan = 0;
 SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 0;
+-- The CI users profile sets `max_rows_to_group_by`, which gates the optimization off.
+SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_top_k_cap;
 CREATE TABLE t_top_k_cap (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
