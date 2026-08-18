@@ -337,13 +337,6 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 {
     auto in_second_argument_type = in_second_argument->getNodeType();
     auto in_first_argument_result_type = in_first_argument->getResultType();
-    /// A `NULL` literal is resolved as `Nullable(Nothing)`. It has no concrete key shape to
-    /// validate, and its `IN` result is determined by null semantics rather than a set-key cast.
-    /// In particular, probing a cast to a tuple would reject otherwise valid expressions such as
-    /// `NULL IN (SELECT (NULL, '-1'))` during analysis.
-    if (in_first_argument_result_type && in_first_argument_result_type->isNullable() && isNothing(removeNullable(in_first_argument_result_type)))
-        return;
-
     if ((in_second_argument_type == QueryTreeNodeType::QUERY
             || in_second_argument_type == QueryTreeNodeType::UNION
             || in_second_argument_type == QueryTreeNodeType::TABLE)
@@ -412,7 +405,8 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
         /// this shape, so the ordinary column-count check below cannot detect it. The
         /// set builder also rejects this conversion, but it must be reported here before
         /// constant folding can remove the `IN` expression from an unreachable predicate.
-        if (right_columns_count == 1 && !left_tuple_type)
+        if (right_columns_count == 1 && !left_tuple_type
+            && !isNothing(removeNullable(in_first_argument_result_type)))
         {
             const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
             if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get()))
