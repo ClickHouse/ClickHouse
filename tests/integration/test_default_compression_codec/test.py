@@ -4,6 +4,7 @@ import string
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -31,6 +32,11 @@ node5 = cluster.add_instance(
     main_configs=[
         "configs/force_zstd3.xml",
     ],
+)
+node6 = cluster.add_instance(
+    "node6",
+    main_configs=["configs/force_zstd3.xml"],
+    user_configs=["configs/small_projection_rebuild_blocks.xml"],
 )
 
 
@@ -1150,3 +1156,60 @@ def test_projection_codec_is_not_inherited_from_approximate_guess(start_cluster)
     )
 
     node5.query("DROP TABLE codec_provenance_projection SYNC")
+
+
+def test_projection_rebuild_with_multiple_temporary_parts_keeps_recompression_codec(start_cluster):
+    # Projection rebuilding first writes temporary projection parts, then merges those parts into the
+    # projection attached to the parent part. The threshold is set in node6's startup profile: the
+    # background merge context does not use a client-side `SET`. This creates 37 temporary parts,
+    # which exercises the `MergeProjectionPartsTask` sub-merge path rather than the single-part path.
+    node6.query(
+        """
+    CREATE TABLE projection_rebuild_multiple_parts (
+        ts DateTime,
+        x UInt64,
+        PROJECTION p (SELECT x ORDER BY x)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    TTL ts + INTERVAL 1 SECOND RECOMPRESS CODEC(NONE)
+    SETTINGS
+        materialize_projections_on_insert = 0,
+        materialize_projections_on_merge = 1,
+        allow_experimental_adaptive_codec_selection = 1,
+        min_bytes_for_wide_part = 0,
+        min_rows_for_wide_part = 0,
+        merge_with_recompression_ttl_timeout = 0
+    """
+    )
+
+    node6.query("SYSTEM STOP TTL MERGES projection_rebuild_multiple_parts")
+    node6.query(
+        "INSERT INTO projection_rebuild_multiple_parts "
+        "SELECT now() - INTERVAL 1 DAY, number FROM numbers(3700)"
+    )
+
+    # Do not use `OPTIMIZE FINAL`: its second merge takes the single-part path and masks this bug.
+    node6.query("SYSTEM START TTL MERGES projection_rebuild_multiple_parts")
+    assert_eq_with_retry(
+        node6,
+        "SELECT default_compression_codec FROM system.parts "
+        "WHERE database = 'default' AND table = 'projection_rebuild_multiple_parts' "
+        "AND active AND rows > 0",
+        "NONE\n",
+        retry_count=60,
+    )
+
+    # `NONE` must be used for the projection bytes too. If the projection sub-merge loses the
+    # explicit recompression codec, adaptive selection compresses monotonic `x` with `T64`.
+    assert (
+        node6.query(
+            "SELECT min(data_compressed_bytes >= data_uncompressed_bytes) "
+            "FROM system.projection_parts_columns "
+            "WHERE database = 'default' AND table = 'projection_rebuild_multiple_parts' "
+            "AND active AND column = 'x'"
+        ).strip()
+        == "1"
+    )
+
+    node6.query("DROP TABLE projection_rebuild_multiple_parts SYNC")
