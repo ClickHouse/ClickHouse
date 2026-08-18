@@ -1668,15 +1668,18 @@ static void finalizeMutatedPart(
     /// current table or `RECOMPRESS` policy chose an exact codec for the columns that this mutation
     /// rewrote. Writing any value out would launder partial information into authoritative metadata:
     /// the next load could let it suppress a due `RECOMPRESS` TTL for the untouched columns.
-    /// Leave the file out instead - its absence is how "this part's default codec is not recorded" is
-    /// already spelled on disk, and it is tolerated wherever the file is read or transferred
-    /// (`getFileNamesWithoutChecksums`, `DataPartsExchange`) - so the recovery, and the approximate flag
-    /// with it, runs again on every load of every descendant.
+    /// Record an explicit unknown marker instead of omitting the file. A descendant of a legacy part
+    /// whose columns all have explicit codecs has no column that can recover its default; its freshly
+    /// written `checksums.txt` is modern and therefore cannot prove the old part's default either.
+    /// The marker preserves the approximate provenance across reloads without laundering a guessed
+    /// codec into authoritative metadata.
     const bool codec_is_approximate = source_part->default_codec_is_approximate;
-    if (!codec_is_approximate)
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
+        if (codec_is_approximate)
+            DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
+        else
+            DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 

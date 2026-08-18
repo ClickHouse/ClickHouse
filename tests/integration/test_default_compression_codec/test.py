@@ -490,6 +490,40 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     with pytest.raises(Exception, match="Cannot recover the default compression codec"):
         node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
 
+    # A mutation descendant of an old all-explicit-codec part has no data column that can recover
+    # the old default. `UNKNOWN` is the durable provenance marker emitted for that state. It must
+    # keep the descendant attachable even though its new `checksums.txt` is a modern ZSTD frame.
+    node4.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf UNKNOWN > {data_path}detached/{part_name}/default_compression_codec.txt",
+        ]
+    )
+    node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
+    node4.query(
+        "ALTER TABLE no_codec_file UPDATE data = concat(data, '!') WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+
+    mutated_part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='no_codec_file' AND active"
+    ).strip()
+    assert (
+        node4.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat {data_path}{mutated_part_name}/default_compression_codec.txt",
+            ]
+        ).strip()
+        == "UNKNOWN"
+    )
+
+    node4.query("DETACH TABLE no_codec_file")
+    node4.query("ATTACH TABLE no_codec_file")
+    assert node4.query("SELECT data FROM no_codec_file ORDER BY key") == "Hello world!\nGoodbye world!\n"
+
     node4.query("DROP TABLE no_codec_file SYNC")
 
 
@@ -1011,15 +1045,17 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     # The writer must choose the due `RECOMPRESS` TTL codec instead of reusing the recovered
     # `ZSTD(1)` estimate merely because it happens to match it. It cannot persist that codec as
     # authoritative metadata, because the untouched columns are still hardlinked with `ZSTD(3)`.
+    # It writes the explicit unknown marker instead. In particular, this avoids treating a fresh
+    # modern `checksums.txt` as legacy provenance when every hardlinked column has an explicit codec.
     assert (
         node5.exec_in_container(
             [
                 "bash",
                 "-c",
-                f"test -e {data_path}{mutated_part_name}/default_compression_codec.txt && echo present || echo absent",
+                f"cat {data_path}{mutated_part_name}/default_compression_codec.txt",
             ]
         ).strip()
-        == "absent"
+        == "UNKNOWN"
     )
 
     # A projection rebuilt by the column-only mutation must use the writer's exact recompression

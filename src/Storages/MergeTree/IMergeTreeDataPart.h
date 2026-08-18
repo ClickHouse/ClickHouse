@@ -656,6 +656,9 @@ public:
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
     static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+    /// Stored in `default_compression_codec.txt` when the part has no authoritative default codec.
+    /// It is deliberately not a `CODEC` expression, so it cannot be mistaken for a concrete codec.
+    static constexpr auto UNKNOWN_DEFAULT_COMPRESSION_CODEC = "UNKNOWN";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
     static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";

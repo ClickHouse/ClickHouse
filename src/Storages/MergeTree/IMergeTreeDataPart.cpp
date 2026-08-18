@@ -1942,6 +1942,18 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         String codec_line;
         readEscapedStringUntilEOL(codec_line, *file_buf);
 
+        /// A column-only mutation can hardlink all data columns from a part whose default codec was
+        /// only recovered approximately. In particular, a legacy part with explicitly coded columns
+        /// has no column that can prove its default on the next load. Keep an explicit durable marker
+        /// for that unknown state instead of trying to recover it from the new `checksums.txt`, whose
+        /// compression describes this version of ClickHouse rather than the old part's data.
+        if (codec_line == UNKNOWN_DEFAULT_COMPRESSION_CODEC)
+        {
+            default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+            default_codec_is_approximate = true;
+            return;
+        }
+
         ReadBufferFromString buf(codec_line);
 
         if (!checkString("CODEC", buf))
