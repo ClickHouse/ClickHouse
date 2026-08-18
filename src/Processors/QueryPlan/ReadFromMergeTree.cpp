@@ -2581,6 +2581,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 
@@ -2609,6 +2610,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         /*allow_query_condition_cache_=*/false,
+        /*allow_top_k_prewhere_query_condition_cache_=*/false,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 }
@@ -2633,6 +2635,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false);
 }
@@ -3176,6 +3179,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
+    bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
     bool check_row_limits)
 {
@@ -3373,7 +3377,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 query_info_,
                 vector_search_parameters,
                 top_k_filter_info,
-                allow_top_k_prewhere_query_condition_cache,
+                allow_top_k_prewhere_query_condition_cache_,
                 mutations_snapshot,
                 *indexes,
                 context_,
