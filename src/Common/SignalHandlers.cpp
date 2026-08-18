@@ -420,6 +420,9 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
+    /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
+    /// performs no allocations on the signal path. This also initializes ELF or Mach-O parsing at daemon
+    /// startup rather than lazily during the first stack trace.
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (daemon)
         SymbolIndex::instance().warmUp();
