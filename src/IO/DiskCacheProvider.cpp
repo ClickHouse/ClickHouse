@@ -9,10 +9,16 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <algorithm>
 #include <cstring>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorReadThroughDetachedSegments;
+}
 
 namespace DB
 {
@@ -660,6 +666,22 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         out.push_back(std::move(miss));
     };
 
+    /// `getOrSet` (via `getImpl`) hands back a born-DETACHED copy for a segment that is being
+    /// evicted or removed: it carries no data and cannot take a downloader. Serve such a segment
+    /// read-through - a writer-less miss clamped to the ask, exactly as the bypass path above does -
+    /// because building a writer and claiming the downloader role would abort on the detached state.
+    auto emit_readthrough_miss = [&](size_t lo_obj, size_t hi_obj)
+    {
+        const size_t lo = std::max(lo_obj, ask_lo_obj);
+        const size_t hi = std::min(hi_obj, ask_hi_obj);
+        if (hi <= lo)
+            return;
+        ICacheProvider::CacheResolution miss;
+        miss.kind = ICacheProvider::CacheResolution::Kind::Miss;
+        miss.range = ByteRange{lo + object_file_offset, hi - lo};
+        out.push_back(std::move(miss));
+    };
+
     while (!got_holder->empty())
     {
         /// One holder per segment; a partial segment's hit reader and miss writer SHARE it, so the
@@ -669,8 +691,15 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         const auto & seg_range = segment.range();
         const size_t seg_left = seg_range.left;
         const size_t seg_end = seg_range.right + 1;
-        const size_t committed_end = segmentCommittedEnd(segment);
 
+        if (segment.isDetached())
+        {
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorReadThroughDetachedSegments);
+            emit_readthrough_miss(seg_left, seg_end);
+            continue;
+        }
+
+        const size_t committed_end = segmentCommittedEnd(segment);
         if (committed_end > seg_left)
             emit_hit(seg_holder, seg_left, committed_end);
         if (committed_end < seg_end)
