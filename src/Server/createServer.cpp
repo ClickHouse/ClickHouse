@@ -38,9 +38,11 @@ bool createServer(
     }
 
     auto port = config.getInt(port_name);
+    bool binds_on_start = false;
     try
     {
         servers.push_back(func(static_cast<UInt16>(port)));
+        binds_on_start = servers.back().bindsOnStart();
         try
         {
             if (start_server)
@@ -64,6 +66,13 @@ bool createServer(
     }
     catch (const Poco::Exception &)
     {
+        /// Delayed-bind protocols can fail their `start` operation before attempting a bind,
+        /// for example while loading TLS credentials. `listen_try` applies only to unavailable
+        /// listen addresses, so preserve these configuration errors for callers such as
+        /// `SYSTEM START LISTEN`.
+        if (start_server && binds_on_start && getCurrentExceptionCode() != ErrorCodes::NETWORK_ERROR)
+            throw;
+
         if (listen_try)
         {
             LOG_WARNING(log, "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "

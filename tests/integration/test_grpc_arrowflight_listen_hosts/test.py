@@ -86,3 +86,27 @@ def test_all_unavailable_listen_hosts_prevent_startup():
         assert not all_unavailable_node.contains_in_log("Ready for connections")
     finally:
         failed_cluster.shutdown()
+
+
+def test_runtime_restart_reports_arrowflight_configuration_error():
+    """`listen_try` only ignores unavailable listen addresses. A runtime listener restart must
+    still report an Arrow Flight configuration error that happens before binding a socket."""
+    wildcard_node.query("SYSTEM STOP LISTEN ARROW_FLIGHT")
+    wildcard_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/invalid_arrowflight_tls.xml <<'EOF'
+<clickhouse>
+    <arrowflight>
+        <enable_ssl>1</enable_ssl>
+        <ssl_cert_file>/nonexistent/certificate.pem</ssl_cert_file>
+        <ssl_key_file>/nonexistent/key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+EOF""",
+        ]
+    )
+
+    assert wildcard_node.query_and_get_error("SYSTEM RELOAD CONFIG")
+    assert wildcard_node.query("SELECT 1") == "1\n"
