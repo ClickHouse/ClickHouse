@@ -72,8 +72,9 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
     DECLARE(Bool, use_lsmt_storage, true, "Use LSM tree storage for nodes. Has about the same performance but lower memory usage.", 0) \
-    DECLARE(Bool, storage_memory_only, true, "LSMT: keep all data in memory, don't write to files", 0) \
-    DECLARE(UInt64, block_cache_size, 2ul * 1024 * 1024 * 1024, "LSMT: size of the in-memory cache of blocks read from files, in bytes.", 0) \
+    DECLARE(Bool, storage_memory_only, false, "LSMT: keep all data in memory, don't write to files", 0) \
+    DECLARE(UInt64, block_cache_size, 0, "LSMT: size of the in-memory cache of blocks read from files, in bytes. 0 means the size is block_cache_size_ratio of the amount of physical memory.", 0) \
+    DECLARE(Float, block_cache_size_ratio, 0.7f, "LSMT: size of the in-memory cache of blocks read from files, as a fraction of the amount of physical memory. Used only when block_cache_size is 0.", 0) \
     DECLARE(UInt64, committed_memtable_size, 64 * 1024 * 1024, "LSMT: rotate the memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, memtable_block_size, 32 * 1024, "LSMT: target size of memtable blocks, in bytes.", HOT_RELOAD) \

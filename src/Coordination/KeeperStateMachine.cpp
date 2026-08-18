@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -284,6 +285,8 @@ union XidHelper
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();

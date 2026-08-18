@@ -4,6 +4,7 @@
 #include <Coordination/Storage/Node.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
+#include <base/getMemoryAmount.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -34,6 +35,7 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 block_cache_size;
+    extern const CoordinationSettingsFloat block_cache_size_ratio;
     extern const CoordinationSettingsUInt64 committed_memtable_size;
     extern const CoordinationSettingsUInt64 memtable_block_size;
     extern const CoordinationSettingsUInt64 uncommitted_memtable_size;
@@ -83,7 +85,14 @@ StorageState::StorageState(DB::KeeperContextPtr keeper_context_, DB::SharedMutex
     read_settings.remote_fs_settings.method = DB::RemoteFSReadMethod::read;
 
     if (!memory_only)
-        block_cache = std::make_unique<BlockCache>(settings[DB::CoordinationSetting::block_cache_size]);
+    {
+        size_t block_cache_size = settings[DB::CoordinationSetting::block_cache_size];
+        if (block_cache_size == 0)
+            block_cache_size = static_cast<size_t>(
+                static_cast<double>(getMemoryAmount())
+                * static_cast<double>(settings[DB::CoordinationSetting::block_cache_size_ratio]));
+        block_cache = std::make_unique<BlockCache>(block_cache_size);
+    }
 }
 
 StorageState::~StorageState()

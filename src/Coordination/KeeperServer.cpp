@@ -877,6 +877,13 @@ KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
+    /// server crashes if this throws. So we suppress MEMORY_LIMIT_EXCEEDED and take the risk of OOM.
+    /// The soft limit check in KeeperRequestDispatcher should mostly keep memory in check.
+    /// (Although that check is not always applied on the correct node - a request we're applying
+    ///  here could come from the dispatcher on another node.)
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     if (is_recovering)
     {
         const auto finish_recovering = [&]

@@ -229,10 +229,9 @@ def _coord_settings_xml(lsmt_backend, overrides_xml=None):
         lsmt_backend: If True, enable the on-disk (LSMT) node storage
         overrides_xml: Optional XML fragment or full <coordination_settings> block to merge
     """
-    # `storage_memory_only` defaults to true, so it has to be turned off explicitly: otherwise this
-    # backend would exercise only the in-memory LSMT, not the file flush/merge/recovery path.
     lsmt = (
-        "<use_lsmt_storage>1</use_lsmt_storage><storage_memory_only>0</storage_memory_only>"
+        "<use_lsmt_storage>1</use_lsmt_storage>"
+        "<storage_memory_only>0</storage_memory_only>"
         if lsmt_backend
         else ""
     )
@@ -374,6 +373,7 @@ def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_x
     path_block = (
         "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
         "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+        "<data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>"
     )
     keeper_server = _keeper_server_xml(
         server_id, peers_xml, path_block, _http_control_xml(), coord_settings, feature_flags_xml
