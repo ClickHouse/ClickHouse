@@ -103,6 +103,9 @@ SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
+-- restores the preamble's stat hints after case 9-11 overrode them with `t_push_dims_multi`-only
+-- hints (no `t_push_dims` entry); NOT a no-op despite being byte-identical to the preamble value -
+-- dropping it changes the active hints for cases 12+ and flips their pinned plan shapes
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 
 SELECT '-- 12. push-right: RIGHT JOIN with a huge right side';
@@ -129,16 +132,25 @@ EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT ANY JOIN t_push_dims AS t2 O
 SELECT '-- 19. variant A for LEFT SEMI: the join key is not a GROUP BY key';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT SEMI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.value;
 
-SELECT '-- 20. negative: INNER ANY emits at most one row per key, never pushed';
+SELECT '-- 20. variant A for LEFT ANTI: a GROUP BY key from the other side falls back to variant A';
+EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT ANTI JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name;
+
+SELECT '-- 21. variant A for RIGHT SEMI, push-right: a GROUP BY key from the other side falls back to variant A';
+EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT SEMI JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key, t1.name;
+
+SELECT '-- 22. variant A for RIGHT ANTI, push-right: a GROUP BY key from the other side falls back to variant A';
+EXPLAIN SELECT count() FROM t_push_dims AS t1 RIGHT ANTI JOIN t_push_facts AS t2 ON t1.key = t2.key GROUP BY t2.key, t1.name;
+
+SELECT '-- 23. negative: INNER ANY emits at most one row per key, never pushed';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 INNER ANY JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 
-SELECT '-- 21. negative: FULL JOIN never pushes';
+SELECT '-- 24. negative: FULL JOIN never pushes';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 FULL JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 
-SELECT '-- 22. negative: ASOF JOIN never pushes';
+SELECT '-- 25. negative: ASOF JOIN never pushes';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 ASOF JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value >= t2.threshold GROUP BY t1.key;
 
-SELECT '-- 23. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
+SELECT '-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
 -- shape-insensitive (the join order is randomized); asserts only that the cascades planner
 -- produced a distributed plan without a budget exception
 SELECT countIf(explain LIKE '%Exchange%') >= 1, countIf(trimLeft(explain) LIKE 'Aggregating%') >= 1 FROM (

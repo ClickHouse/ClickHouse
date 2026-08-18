@@ -263,7 +263,40 @@ Expression ((Project names + Projection))
         Aggregating
           Expression
             ReadFromMergeTree (ParallelRead default.t_push_facts)
--- 20. negative: INNER ANY emits at most one row per key, never pushed
+-- 20. variant A for LEFT ANTI: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  MergingAggregated
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 21. variant A for RIGHT SEMI, push-right: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  MergingAggregated
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table1.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 22. variant A for RIGHT ANTI, push-right: a GROUP BY key from the other side falls back to variant A
+Expression ((Project names + Projection))
+  MergingAggregated
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table1.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 23. negative: INNER ANY emits at most one row per key, never pushed
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -275,7 +308,7 @@ Expression ((Project names + Projection))
             BuildRuntimeFilter (Build runtime join filter on __table2.key)
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (ReplicatedRead default.t_push_dims)
--- 21. negative: FULL JOIN never pushes
+-- 24. negative: FULL JOIN never pushes
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -288,7 +321,7 @@ Expression ((Project names + Projection))
             Expression (Change column names to column identifiers)
               ShuffleExchange
                 ReadFromMergeTree (ParallelRead default.t_push_dims)
--- 22. negative: ASOF JOIN never pushes
+-- 25. negative: ASOF JOIN never pushes
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -299,5 +332,5 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ParallelRead default.t_push_facts)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.t_push_dims_multi)
--- 23. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit
+-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit
 1	1

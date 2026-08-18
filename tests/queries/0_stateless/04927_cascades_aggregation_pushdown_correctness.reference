@@ -280,6 +280,19 @@
 7	10
 8	10
 9	10
--- 20. global aggregation over a join on an empty left table keeps the single-row result
+-- 20. RIGHT SEMI, variant B, push-right (last enabled matrix cell without an executed scenario)
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+-- 21. global aggregation over a join on an empty left table keeps the single-row result
 0
 0

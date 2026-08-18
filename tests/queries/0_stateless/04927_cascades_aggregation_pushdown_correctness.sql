@@ -130,6 +130,10 @@ SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY J
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
+-- deliberate never-pushed negative and semantics tripwire: `Inner` + `Any` is excluded from the
+-- matrix (see `isPushdownAllowed`) because `setUsedOnce` claims the join key for the first
+-- matching probe row, so the classic plan emits one row per KEY, not per pushed row; if this
+-- combination were ever wrongly enabled, the pushed/classic pair below would mismatch.
 SELECT '-- 14. INNER ANY is never pushed (at most one row per key, not per pushed row)';
 SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
 SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
@@ -160,7 +164,12 @@ SELECT t2.k AS k, count() AS c FROM t_corr_right_multi AS t1 RIGHT ANTI JOIN t_c
 SELECT t2.k AS k, count() AS c FROM t_corr_right_multi AS t1 RIGHT ANTI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
-SELECT '-- 20. global aggregation over a join on an empty left table keeps the single-row result';
+SELECT '-- 20. RIGHT SEMI, variant B, push-right (last enabled matrix cell without an executed scenario)';
+SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT SEMI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k;
+SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT SEMI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+SELECT '-- 21. global aggregation over a join on an empty left table keeps the single-row result';
 SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k;
 SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
