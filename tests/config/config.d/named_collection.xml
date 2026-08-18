@@ -1,9 +1,11 @@
 <clickhouse>
+    <macros>
+        <empty></empty>
+    </macros>
     <!-- Global NATS credentials are a legacy fallback for tables whose destination is defined in SQL. -->
     <nats>
         <user>global_user</user>
         <password>global_password</password>
-        <token>global_token</token>
     </nats>
     <named_collections>
         <remote1>
@@ -93,7 +95,6 @@
             <nats_reconnect_wait>1</nats_reconnect_wait>
             <nats_username>operator</nats_username>
             <nats_password>secret</nats_password>
-            <nats_token>token</nats_token>
         </nats_config_basic_credentials>
         <!-- Basic credentials locked by the operator reject query-side replacement and clearing. -->
         <nats_config_locked_basic_credentials>
@@ -104,7 +105,6 @@
             <nats_reconnect_wait>1</nats_reconnect_wait>
             <nats_username overridable="false">operator</nats_username>
             <nats_password overridable="false">secret</nats_password>
-            <nats_token overridable="false">token</nats_token>
         </nats_config_locked_basic_credentials>
     </named_collections>
 </clickhouse>

@@ -964,10 +964,11 @@ void resolveCredentialSource(
     /// A credentials file and inline credentials are the two representations of one family; their
     /// query-side replacement is handled below.
     const bool has_inline_credentials = !nats_settings[NATSSetting::nats_credential_file].value.empty() || credentials_set;
-    const bool has_basic_credentials = !nats_settings[NATSSetting::nats_username].value.empty()
-        || !nats_settings[NATSSetting::nats_password].value.empty() || !nats_settings[NATSSetting::nats_token].value.empty();
+    const bool has_user_info = !nats_settings[NATSSetting::nats_username].value.empty()
+        || !nats_settings[NATSSetting::nats_password].value.empty();
+    const bool has_token = !nats_settings[NATSSetting::nats_token].value.empty();
 
-    if (has_inline_credentials && has_basic_credentials)
+    if ((has_inline_credentials && (has_user_info || has_token)) || (has_user_info && has_token))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Credentials from different authentication methods cannot be combined");
 
     /// Credentials read from a named collection in the server configuration are secrets selected
@@ -1144,6 +1145,17 @@ void registerStorageNATS(StorageFactory & factory)
 
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
+
+        /// Credential validation makes decisions from the effective settings, so it must see the
+        /// same macro-expanded values that `StorageNATS` passes to `libnats`. In particular, an
+        /// empty macro must not turn a non-empty query credential into an empty replacement after
+        /// the check that prevents dropping credentials from a named collection.
+        auto macros = args.getContext()->getMacros();
+        (*nats_settings)[NATSSetting::nats_username] = macros->expand((*nats_settings)[NATSSetting::nats_username]);
+        (*nats_settings)[NATSSetting::nats_password] = macros->expand((*nats_settings)[NATSSetting::nats_password]);
+        (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
+        (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
+        (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
 
         resolveCredentialSource(
             *nats_settings,

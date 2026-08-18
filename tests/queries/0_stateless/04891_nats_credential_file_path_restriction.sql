@@ -83,7 +83,7 @@ ATTACH TABLE nats_file_from_existing_sql_collection;
 DROP TABLE nats_file_from_existing_sql_collection;
 DROP NAMED COLLECTION 04891_nats_existing_sql_collection;
 
--- Basic authentication and token credentials configured in a named collection have the same
+-- Basic authentication configured in a named collection has the same
 -- destination-binding rule as a `.creds` file.
 CREATE TABLE nats_basic_credentials_in_config_collection (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials); -- { serverError CANNOT_CONNECT_NATS }
@@ -107,9 +107,23 @@ CREATE TABLE nats_locked_basic_password_in_settings (key UInt64)
 ENGINE = NATS(nats_config_locked_basic_credentials)
 SETTINGS nats_password = 'other'; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE nats_locked_basic_token_cleared_in_settings (key UInt64)
+CREATE TABLE nats_locked_basic_password_cleared_in_settings (key UInt64)
 ENGINE = NATS(nats_config_locked_basic_credentials)
-SETTINGS nats_token = ''; -- { serverError BAD_ARGUMENTS }
+SETTINGS nats_password = ''; -- { serverError BAD_ARGUMENTS }
+
+-- User/password authentication and token authentication are separate methods. They cannot be
+-- combined in direct settings or in a named collection.
+CREATE TABLE nats_user_password_and_token (key UInt64) ENGINE = NATS
+SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_username = 'user', nats_password = 'password', nats_token = 'token'; -- { serverError BAD_ARGUMENTS }
+
+DROP NAMED COLLECTION IF EXISTS 04891_nats_mixed_basic_auth;
+CREATE NAMED COLLECTION 04891_nats_mixed_basic_auth AS
+    nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_username = 'user', nats_password = 'password', nats_token = 'token';
+CREATE TABLE nats_mixed_basic_auth_in_collection (key UInt64)
+ENGINE = NATS(04891_nats_mixed_basic_auth); -- { serverError BAD_ARGUMENTS }
+DROP NAMED COLLECTION 04891_nats_mixed_basic_auth;
 
 -- Authentication methods cannot be layered: a query cannot add inline credentials to a collection
 -- that defines basic credentials, or add basic credentials to one that defines a credentials file.
@@ -149,6 +163,11 @@ ENGINE = NATS(nats_config_credentials, nats_credentials = ''); -- { serverError 
 
 CREATE TABLE nats_empty_credentials_in_settings_over_config_collection (key UInt64) ENGINE = NATS(nats_config_credentials)
 SETTINGS nats_credentials = ''; -- { serverError BAD_ARGUMENTS }
+
+-- Macro expansion happens before validation. An empty macro therefore cannot silently drop a
+-- credentials file from a configuration-defined collection.
+CREATE TABLE nats_empty_macro_credentials_over_config_collection (key UInt64)
+ENGINE = NATS(nats_config_credentials, nats_credentials = '{empty}'); -- { serverError BAD_ARGUMENTS }
 
 -- When the collection carries no credentials at all there is nothing to drop, so an empty assignment
 -- stays the no-op it is for a table which uses no named collection.
