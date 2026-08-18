@@ -756,11 +756,16 @@ void SocketImpl::setOption(int level, int option, const IPAddress& value)
 
 void SocketImpl::setOption(int level, int option, const Poco::Timespan& value)
 {
+#if defined(_WIN32)
+	DWORD timeout = static_cast<DWORD>(value.totalMilliseconds());
+	setRawOption(level, option, &timeout, sizeof(timeout));
+#else
 	struct timeval tv;
 	tv.tv_sec  = (long) value.totalSeconds();
 	tv.tv_usec = (long) value.useconds();
 
 	setRawOption(level, option, &tv, sizeof(tv));
+#endif
 }
 
 
@@ -796,10 +801,17 @@ void SocketImpl::getOption(int level, int option, unsigned char& value)
 
 void SocketImpl::getOption(int level, int option, Poco::Timespan& value)
 {
+#if defined(_WIN32)
+	DWORD timeout;
+	poco_socklen_t len = sizeof(timeout);
+	getRawOption(level, option, &timeout, len);
+	value = Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout) * 1000);
+#else
 	struct timeval tv;
 	poco_socklen_t len = sizeof(tv);
 	getRawOption(level, option, &tv, len);
 	value.assign(tv.tv_sec, tv.tv_usec);
+#endif
 }
 
 

@@ -108,8 +108,7 @@ int FileStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
 	{
 		LARGE_INTEGER li;
 		li.QuadPart = 0;
-		li.LowPart  = SetFilePointer(_handle, li.LowPart, &li.HighPart, FILE_END);
-		if (li.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
+		if (SetFilePointerEx(_handle, li, &li, FILE_END) == 0)
 			File::handleLastError(_path);
 		_pos = li.QuadPart;
 	}
@@ -175,9 +174,7 @@ std::streampos FileStreamBuf::seekoff(std::streamoff off, std::ios::seekdir dir,
 	
 	LARGE_INTEGER li;
 	li.QuadPart = off;
-	li.LowPart  = SetFilePointer(_handle, li.LowPart, &li.HighPart, offset);
-
-	if (li.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
+	if (SetFilePointerEx(_handle, li, &li, offset) == 0)
 		File::handleLastError(_path);
 	_pos = li.QuadPart;
 	return std::streampos(static_cast<std::streamoff>(_pos));
@@ -196,9 +193,7 @@ std::streampos FileStreamBuf::seekpos(std::streampos pos, std::ios::openmode mod
 
 	LARGE_INTEGER li;
 	li.QuadPart = pos;
-	li.LowPart  = SetFilePointer(_handle, li.LowPart, &li.HighPart, FILE_BEGIN);
-
-	if (li.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR)
+	if (SetFilePointerEx(_handle, li, &li, FILE_BEGIN) == 0)
 		File::handleLastError(_path);
 	_pos = li.QuadPart;
 	return std::streampos(static_cast<std::streamoff>(_pos));

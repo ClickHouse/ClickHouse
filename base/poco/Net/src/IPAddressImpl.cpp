@@ -650,6 +650,7 @@ IPv6AddressImpl IPv6AddressImpl::parse(const std::string& addr)
 	struct addrinfo hints;
 	std::memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_NUMERICHOST;
+	hints.ai_family = AF_INET6;
 	int rc = getaddrinfo(addr.c_str(), NULL, &hints, &pAI);
 	if (rc == 0)
 	{
