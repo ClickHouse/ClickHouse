@@ -27,7 +27,7 @@ from .settings import Settings
 from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
-# `timeout` treats a non-positive duration as no timeout at all.
+# A zero duration makes `timeout` enforce no deadline at all.
 assert Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC > 0
 
 
@@ -262,7 +262,6 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             print(f"Submodule cache miss, creating: {s3_path}")
             Shell.check("git submodule sync", verbose=True, strict=True)
             Shell.check("git submodule init", verbose=True, strict=True)
-            # An overrun must land in the handler below, not in the job's own timeout.
             Shell.check(
                 f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
                 "git submodule update --depth=1 --single-branch --jobs 64",
@@ -284,10 +283,12 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
         workflow_config.dump()
         status = Result.Status.OK
     except Exception as e:
-        print(f"WARNING: Submodule cache failed: {e}")
+        print(f"ERROR: Submodule cache failed: {e}")
         traceback.print_exc()
         info = f"{e}\n{traceback.format_exc()}"
-        status = Result.Status.OK  # non-fatal, jobs fall back to GitHub clone
+        # A dependant's own clone is unauthenticated, so it cannot stand in for this
+        # one whenever a submodule is private.
+        status = Result.Status.FAIL
 
     return Result.create_from(
         name="Submodule Cache",

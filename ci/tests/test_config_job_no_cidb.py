@@ -351,7 +351,7 @@ def test_config_job_outlives_the_submodule_cache_bound():
 
     The outer watchdog covers the whole job command and starts before any configuration
     work, while the clone's bound starts only when the clone does; if the two are equal the
-    job is killed instead of degrading to a GitHub clone.
+    job is killed with no result instead of reporting which step ran out of time.
     """
     from ci.praktika.native_jobs import _workflow_config_job
     from ci.praktika.settings import Settings
@@ -368,7 +368,7 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     """The cache-population clone must run under `timeout` exactly once.
 
     An unbounded or retried clone can outlast the job cap, which kills the job that
-    computes the matrix instead of degrading to a GitHub clone.
+    computes the matrix and leaves no result naming the cause.
     """
     import ci.praktika.native_jobs as nj
     from ci.praktika.settings import Settings
@@ -423,11 +423,13 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     assert kwargs.get("retries", 1) == 1, kwargs
 
 
-def test_submodule_cache_overrun_degrades_to_a_github_clone():
-    """An overrun must leave the cache hash unset rather than publishing a partial one.
+def test_submodule_cache_overrun_fails_closed():
+    """A population that does not complete must fail, not report OK.
 
-    Dependent jobs restore the cache only when the hash is set, so an unset hash is what
-    makes them clone from GitHub instead of unpacking a truncated archive.
+    Dependants clone from GitHub unauthenticated, which cannot reach a private submodule,
+    so accepting the miss schedules a wave of checkout failures whose cause is no longer
+    visible. It must also not publish a hash, which would make dependants unpack a
+    truncated archive.
     """
     import ci.praktika.native_jobs as nj
 
@@ -468,7 +470,7 @@ def test_submodule_cache_overrun_degrades_to_a_github_clone():
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
 
-    assert result.status == "OK", result.status
+    assert result.status == "FAIL", result.status
     assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
     assert uploads == [], uploads
 
