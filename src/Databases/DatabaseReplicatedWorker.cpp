@@ -165,14 +165,30 @@ std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens
     if (!name || definition_pos == tokens.size())
         return {};
 
-    /// Full-definition `ATTACH` accepts an optional UUID between the name and
+    /// Full-definition `ATTACH` accepts optional clauses between the name and
     /// the table definition.
-    if (isKeyword(tokens[definition_pos], "UUID"))
+    while (definition_pos < tokens.size())
     {
-        ++definition_pos;
-        if (definition_pos == tokens.size())
-            return {};
-        ++definition_pos;
+        if (isKeyword(tokens[definition_pos], "UUID") || isKeyword(tokens[definition_pos], "FROM"))
+        {
+            ++definition_pos;
+            if (definition_pos == tokens.size())
+                return {};
+            ++definition_pos;
+            continue;
+        }
+
+        if (isKeyword(tokens[definition_pos], "TO"))
+        {
+            if (definition_pos + 3 >= tokens.size()
+                || !isKeyword(tokens[definition_pos + 1], "INNER")
+                || !isKeyword(tokens[definition_pos + 2], "UUID"))
+                return {};
+            definition_pos += 4;
+            continue;
+        }
+
+        break;
     }
 
     if (definition_pos == tokens.size()
