@@ -1956,15 +1956,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
+    TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
+
     /// The definition persisted below must not depend on the session setting, because reloads and
-    /// replicas re-derive the key type from the stored text. A replayed definition (short attach,
-    /// metadata load, backup restore) already records the spelling it was created with.
+    /// replicas re-derive the key type from the stored text. This must happen after normalization:
+    /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
+    /// definition (short attach, metadata load, backup restore) already records its spelling.
     if (!create.attach_short_syntax && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         replaceLegacyToTimeInCreateQuery(query_ptr);
-
-    /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
-    TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();

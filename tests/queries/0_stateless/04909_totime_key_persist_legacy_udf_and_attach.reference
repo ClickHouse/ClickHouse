@@ -1,5 +1,6 @@
 udf	toTimeWithFixedDate(c0)
 qualified	toTimeWithFixedDate(c0)
+as	toTimeWithFixedDate(c0)
 attach	toTimeWithFixedDate(c0)
 stored_key_type
 part_name	String
