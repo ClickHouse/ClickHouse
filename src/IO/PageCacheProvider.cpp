@@ -178,28 +178,22 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
 
 CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
 {
-    /// The page cache has no downloader role, so the base default trivially holds one. But a concurrent
-    /// query may have populated this block between `resolve` (a read-only `get` probe) and now. Re-probe
-    /// read-only: adopt any resident contiguous prefix and report it as `available` (already committed),
-    /// so the executor serves it from cache instead of re-reading it from the source. Hold the role only
-    /// if an uncommitted tail remains for us to fill.
+    /// Re-probe read-only: adopt any prefix a concurrent query cached since `resolve` and report it as
+    /// `available`; hold the role only for an uncommitted tail.
     Lead lead;
     lead.available = ByteRange{range.offset, 0};
 
-    if (!bypass_if_missing)
+    SipHash base_hash = file.baseHash();
+    std::lock_guard lock(state_mutex);
+    for (size_t off = range.offset; off < range.end(); off += block_size)
     {
-        SipHash base_hash = file.baseHash();
-        std::lock_guard lock(state_mutex);
-        for (size_t off = range.offset; off < range.end(); off += block_size)
-        {
-            const size_t sz = std::min(block_size, file_size_in_bytes - off);
-            auto cell = cache->get(PageCacheByteRange{off, sz}.hash(base_hash), inject_eviction);
-            if (!cell)
-                break;  /// `available` is a contiguous committed prefix; stop at the first gap.
-            blocks.push_back(std::move(cell));
-            committed_ranges.add(ByteRange{off, sz});
-            lead.available = ByteRange{range.offset, std::min(off + sz, range.end()) - range.offset};
-        }
+        const size_t sz = std::min(block_size, file_size_in_bytes - off);
+        auto cell = cache->get(PageCacheByteRange{off, sz}.hash(base_hash), inject_eviction);
+        if (!cell)
+            break;
+        blocks.push_back(std::move(cell));
+        committed_ranges.add(ByteRange{off, sz});
+        lead.available = ByteRange{range.offset, std::min(off + sz, range.end()) - range.offset};
     }
 
     lead.claim = makeClaim(/*held=*/lead.available.end() < range.end(), /*release=*/nullptr);

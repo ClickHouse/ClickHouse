@@ -405,8 +405,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     /// Every tier missed. Claim the lead role of each writing tier BEFORE the fetch. A held claim keeps
     /// the downloader role open across the fetch+write, so concurrent executors dedup to one download.
-    /// `claimLeadRole` also reports any prefix that became committed since `resolve` (a concurrent query
-    /// populated it) as `available`; we serve that from cache below instead of re-reading it.
+    /// `claimLeadRole` also reports any prefix cached since `resolve` as `available` (served below).
     bool any_writer = false;
     for (auto & miss_tier : miss_tiers)
     {
@@ -418,11 +417,9 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         any_writer = true;
     }
 
-    /// A tier's block(s) may have become resident between `resolve` and the claim above (a concurrent
-    /// query populated them). `claimLeadRole` reports that committed prefix as `available`; serve it
-    /// straight from that writer's cells - no source read - from the fastest tier that covers
-    /// `window_offset`. Tiers using the trivial default report an empty `available`, so this is a no-op
-    /// for them. Held claims on the other tiers release when `miss_tiers` is destroyed on return.
+    /// A prefix cached since `resolve` is reported as `available`; serve it from that writer's cells,
+    /// no source read, taking the fastest tier that covers `window_offset`. Empty `available` (the
+    /// default) is a no-op. Held claims on other tiers release when `miss_tiers` is destroyed on return.
     for (const auto & miss_tier : miss_tiers)
     {
         const ByteRange avail = miss_tier.available;
