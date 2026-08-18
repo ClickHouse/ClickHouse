@@ -25,7 +25,8 @@ gate refused: 0
 reloaded	URL
 gate refused: 0
 --- E: INSERT INTO FUNCTION reaches a writable storage
-gate refused: 0
+insert ok: 1
+insert ok: 1
 gate refused: 0
 --- F: a scheme handled by a delegate is untouched
 created	File

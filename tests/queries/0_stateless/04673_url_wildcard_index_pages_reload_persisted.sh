@@ -27,6 +27,16 @@ run_local() {
     echo "$out" | grep -c 'SUPPORT_IS_DISABLED' || true
 }
 
+# Reports whether the query itself succeeded, so an arm can assert a positive outcome rather than
+# the absence of one error. `insert ok: 0` covers both a gate refusal and a read-only storage.
+run_local_status() {
+    if ${CLICKHOUSE_LOCAL} --path="$1" --query "${NO_RETRY} $2" \
+        -- --max_server_memory_usage=10G --memory_worker_use_cgroup=0 >/dev/null 2>&1
+    then echo 'insert ok: 1'
+    else echo 'insert ok: 0'
+    fi
+}
+
 show_table() {
     echo "SELECT 'reloaded', engine FROM system.tables WHERE database = 'd' AND name = '$1';"
 }
@@ -87,10 +97,14 @@ run_local "$D" "
 run_local "$D" "$(show_table t)"
 
 echo '--- E: INSERT INTO FUNCTION reaches a writable storage'
+# A zero-row insert builds the write storage and commits without opening a connection, so a clean
+# exit says the writable storage was selected: the read-only branch refuses a glob path outright.
 D="${WORKING_FOLDER}/e"; mkdir -p "$D"
-run_local "$D" "
+run_local_status "$D" "
     SET allow_experimental_url_wildcard_from_index_pages = 1;
-    INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') VALUES (1);"
+    INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') SELECT * FROM numbers(0);"
+run_local_status "$D" "INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') SELECT * FROM numbers(0);"
+# One row still has to reach the host, which proves the arm above is not passing by short-circuit.
 run_local "$D" "INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') VALUES (1);"
 
 echo '--- F: a scheme handled by a delegate is untouched'
