@@ -66,6 +66,12 @@ SELECT _part FROM merge(currentDatabase(), '^mt$'), (SELECT '' AS _part) AS rhs;
 -- collide with `item`'s identically-named virtuals). Nothing else collides, so the query is allowed.
 SELECT count() FROM merge(currentDatabase(), '^mt$'), item;
 
+-- `_table` and `_database` are also subject to scope-alias and enclosing `ARRAY JOIN` shadowing.
+WITH '' AS _table
+SELECT _table FROM merge(currentDatabase(), '^mt$'), numbers(1); -- { serverError ALIAS_REQUIRED }
+
+SELECT _table FROM merge(currentDatabase(), '^mt$'), numbers(1) ARRAY JOIN [1] AS _table; -- { serverError ALIAS_REQUIRED }
+
 -- A table function such as `merge` forwards the ALIAS columns of its source tables, and a bare identifier
 -- can bind to them, so an unaliased subquery whose output collides with such a forwarded ALIAS column is
 -- ambiguous and requires an alias. The collision check therefore uses the full bindable column set (as the
@@ -175,9 +181,7 @@ SELECT arr1 FROM arr_t, (SELECT 1 AS other) AS rhs ARRAY JOIN COLUMNS('^arr');
 SELECT arr1 FROM arr_t, (SELECT 1 AS other) ARRAY JOIN COLUMNS('^arr') SETTINGS joined_subquery_requires_alias = 0;
 
 -- An unaliased `ARRAY JOIN` expression that is a compound identifier exposes the name of the column it
--- resolves to, without the table qualifier: `ARRAY JOIN t.arr1` binds the bare name `arr1`. The prepass
--- records every suffix of the identifier, so the collision is seen no matter which leading parts turn out
--- to be the qualifier.
+-- resolves to, without the table qualifier: `ARRAY JOIN t.arr1` binds the bare name `arr1`.
 SELECT arr1 FROM arr_t AS t, (SELECT 1 AS arr1) ARRAY JOIN t.arr1; -- { serverError ALIAS_REQUIRED }
 
 -- With the subquery aliased its column stays reachable, so the query is accepted.

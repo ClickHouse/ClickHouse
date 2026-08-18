@@ -1121,7 +1121,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             {
                 if (table_expression_columns.contains(column_name))
                     continue;
-                if (sibling_non_virtual_columns.contains(column_name))
+                if (sibling_non_virtual_columns.contains(column_name)
+                    || (check_scope_aliases && scope_alias_shadows_column(column_name))
+                    || collides_with_enclosing_array_join_alias(column_name))
                 {
                     has_name_collision = true;
                     break;
@@ -5240,27 +5242,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             array_join_alias_names.names.insert(alias);
             array_join_alias_names.name_to_expression.emplace(alias, array_join_expression);
         }
-        else if (const auto * identifier_node = array_join_expression->as<IdentifierNode>())
-        {
-            /// The name an unaliased identifier expression exposes is the name of the column it resolves to,
-            /// which drops the table qualifier: `ARRAY JOIN t.arr1` exposes `arr1`, and `ARRAY JOIN t.n.x` of a
-            /// `Nested` column exposes `n.x`. How many leading parts form the qualifier is only known after
-            /// resolution, so record every suffix of the identifier. The exposed name is guaranteed to be among
-            /// them, and the extra names can only make the check stricter, never let a collision slip through.
-            const auto & parts = identifier_node->getIdentifier().getParts();
-            for (size_t i = 0; i < parts.size(); ++i)
-            {
-                String suffix = parts[i];
-                for (size_t j = i + 1; j < parts.size(); ++j)
-                {
-                    suffix += '.';
-                    suffix += parts[j];
-                }
-                array_join_alias_names.name_to_expression.emplace(suffix, array_join_expression);
-                array_join_alias_names.names.insert(std::move(suffix));
-            }
-        }
-        else
+        else if (!array_join_expression->as<IdentifierNode>())
             /// An expression that is neither aliased nor a plain identifier (e.g. a `COLUMNS('arr.*')` matcher) exposes
             /// names that are only known after resolution.
             array_join_alias_names.all_names_known = false;
