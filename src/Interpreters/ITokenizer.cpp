@@ -39,8 +39,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
-#else
-    extern const int SUPPORT_IS_DISABLED;
 #endif
 }
 
@@ -816,6 +814,66 @@ void AsciiCJKTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+#if USE_JIEBA
+bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    /// All hot-path tokenization for `ChineseTokenizer` goes through `stringToTokens` /
+    /// `stringToBloomFilter` (and the substring variants which delegate to them), each of
+    /// which calls the segmenter directly with per-call local state. There is no
+    /// streaming, stateful entry point for this tokenizer.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInString is not supported");
+}
+
+bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    /// LIKE/ILIKE tokenization is intentionally unsupported for the `chinese` tokenizer
+    /// (`supportsStringLike()` returns `false`). `nextInStringLike` is the streaming entry
+    /// point that extracts index tokens from a LIKE pattern, splitting it on the `%`/`_`
+    /// wildcards and emitting the literal fragments between them. That model assumes a
+    /// tokenizer whose tokens are delimited by characters in the text (splitByNonAlpha,
+    /// ngrams, ...). Chinese word segmentation has no such delimiters: words are inferred
+    /// from a dictionary/HMM over a whole sentence, and a LIKE fragment cut at an arbitrary
+    /// wildcard boundary is generally not a word boundary, so the fragments would not match
+    /// the indexed tokens. We therefore reject it instead of producing wrong tokens; use
+    /// `tokens(value, 'chinese')` with `hasAnyTokens`/`hasAllTokens` instead of LIKE.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
+}
+
+void ChineseTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    const auto tokens = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    for (const auto & token : tokens)
+        bloom_filter.add(token.data(), token.size());
+}
+
+void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    const auto words = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    tokens.reserve(tokens.size() + words.size());
+    for (const auto & word : words)
+        tokens.emplace_back(word);
+}
+
+void ChineseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    /// Substring/prefix/suffix paths are gated by `supportsStringLike()` everywhere
+    /// they are called from (`startsWith`, `endsWith`, `like`, `match`,
+    /// `multiSearchAny`, `multiMatchAny` in `MergeTreeIndexConditionText`), and
+    /// `ChineseTokenizer::supportsStringLike()` returns `false`. Reaching this
+    /// method indicates a bug in the index-condition machinery, not a user error,
+    /// so fail loud rather than silently returning an empty filter that would
+    /// over-prune granules.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToBloomFilter is not supported");
+}
+
+void ChineseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    /// See the comment on `substringToBloomFilter`.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::substringToTokens is not supported");
+}
+#endif
+
+
 #if USE_ICU
 namespace
 {
@@ -870,19 +928,19 @@ struct IcuTextBinding
 }
 #endif
 
+#if USE_ICU
 String IcuTokenizer::getDescription() const
 {
     return fmt::format("icu({})", quoteString(locale));
 }
 
 bool IcuTokenizer::nextInString(
-    [[maybe_unused]] const char * data,
-    [[maybe_unused]] size_t length,
-    [[maybe_unused]] size_t & __restrict pos,
-    [[maybe_unused]] size_t & __restrict token_start,
-    [[maybe_unused]] size_t & __restrict token_length) const
+    const char * data,
+    size_t length,
+    size_t & __restrict pos,
+    size_t & __restrict token_start,
+    size_t & __restrict token_length) const
 {
-#if USE_ICU
     /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
     /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
     if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
@@ -929,11 +987,6 @@ bool IcuTokenizer::nextInString(
 
     pos = length;
     return false;
-#else
-    throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED,
-        "The 'icu' tokenizer requires ClickHouse to be built with ICU support");
-#endif
 }
 
 bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
@@ -952,6 +1005,7 @@ void IcuTokenizer::substringToTokens(
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
+#endif
 
 }
 

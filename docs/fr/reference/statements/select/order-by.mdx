@@ -12,8 +12,8 @@ La clause `ORDER BY` contient :
 * une liste de nombres faisant référence aux colonnes de la clause `SELECT`, par exemple `ORDER BY 2, 1`, ou
 * `ALL`, qui désigne toutes les colonnes de la clause `SELECT`, par exemple `ORDER BY ALL`.
 
-Pour désactiver le tri par numéros de colonnes, définissez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings#enable_positional_arguments) = 0.
-Pour désactiver le tri par `ALL`, définissez le paramètre [enable&#95;order&#95;by&#95;all](/fr/reference/settings/session-settings#enable_order_by_all) = 0.
+Pour désactiver le tri par numéros de colonnes, définissez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) = 0.
+Pour désactiver le tri par `ALL`, définissez le paramètre [enable&#95;order&#95;by&#95;all](/fr/reference/settings/session-settings/enable#enable_order_by_all) = 0.
 
 La clause `ORDER BY` peut être accompagnée du modificateur `DESC` (décroissant) ou `ASC` (croissant), qui détermine le sens du tri.
 Sauf si un ordre de tri explicite est indiqué, `ASC` est utilisé par défaut.
@@ -256,7 +256,7 @@ Le tri externe est beaucoup moins efficace que le tri en RAM.
   ## Optimisation de la lecture des données
 </div>
 
-Si l&#39;expression `ORDER BY` a un préfixe qui correspond à la clé de tri de la table, vous pouvez optimiser la requête à l&#39;aide du paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/settings/session-settings#optimize_read_in_order).
+Si l&#39;expression `ORDER BY` a un préfixe qui correspond à la clé de tri de la table, vous pouvez optimiser la requête à l&#39;aide du paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/settings/session-settings/optimize#optimize_read_in_order).
 
 Lorsque le paramètre `optimize_read_in_order` est activé, le serveur ClickHouse utilise l&#39;index de la table et lit les données dans l&#39;ordre de la clé `ORDER BY`. Cela permet d&#39;éviter de lire toutes les données lorsqu&#39;une clause [LIMIT](/fr/reference/statements/select/limit) est spécifiée. Les requêtes sur de gros volumes de données avec une petite limite sont donc traitées plus rapidement.
 
