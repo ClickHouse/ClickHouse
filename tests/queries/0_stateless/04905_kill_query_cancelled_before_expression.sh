@@ -14,6 +14,10 @@ trap '
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_before_expression_pause" 2>/dev/null
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_pause" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT expression_transform_before_expression_pause" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT expression_transform_pause" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT converting_transform_before_expression_pause" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT converting_transform_pause" 2>/dev/null
 ' EXIT
 
 run_cancelled_query()
@@ -74,5 +78,22 @@ run_cancelled_query \
     totals_having_transform_pause \
     "kill_query_having_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
     "SELECT number % 10 AS k, count() FROM numbers(1000000) GROUP BY k WITH TOTALS HAVING sipHash64(count()) % 2 >= 0 FORMAT Null SETTINGS max_threads = 1"
+
+run_cancelled_query \
+    expression_transform_before_expression_pause \
+    expression_transform_pause \
+    "kill_query_expression_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
+    "SELECT sipHash64(number) FROM numbers(1000000) FORMAT Null SETTINGS max_threads = 1"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS kill_query_converting_before_expression"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE kill_query_converting_before_expression (x UInt64, y UInt64 DEFAULT sipHash64(x)) ENGINE = Memory"
+
+run_cancelled_query \
+    converting_transform_before_expression_pause \
+    converting_transform_pause \
+    "kill_query_converting_before_expression_${CLICKHOUSE_DATABASE}_$RANDOM" \
+    "INSERT INTO kill_query_converting_before_expression (x) SELECT number FROM numbers(1000000) SETTINGS max_threads = 1"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE kill_query_converting_before_expression"
 
 echo "OK"

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Core/Block.h>
 #include <Functions/IFunction.h>
@@ -28,11 +29,20 @@ void ExpressionTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
 
+    FailPointInjection::pauseFailPoint(FailPoints::expression_transform_before_expression_pause);
+
+    if (isCancelled())
+    {
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), num_rows);
+        return;
+    }
+
     /// The statistics updater needs the full output Block, so fall back to the block-based path when it is set.
     if (updater)
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
         expression->execute(block, num_rows, false, false, &getCancellationFlag());
+        FailPointInjection::pauseFailPoint(FailPoints::expression_transform_pause);
         if (isCancelled())
             block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
         chunk.setColumns(block.getColumns(), num_rows);
@@ -43,6 +53,8 @@ void ExpressionTransform::transform(Chunk & chunk)
     /// Fast path: run positionally against the fixed input header, avoiding per-chunk Block name-index work.
     auto columns = expression->executeOnColumns(
         chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, &getCancellationFlag());
+
+    FailPointInjection::pauseFailPoint(FailPoints::expression_transform_pause);
 
     if (isCancelled())
         columns = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns()).getColumns();
@@ -80,9 +92,21 @@ void ConvertingTransform::onCancel() noexcept
 void ConvertingTransform::onConsume(Chunk chunk)
 {
     size_t num_rows = chunk.getNumRows();
+
+    FailPointInjection::pauseFailPoint(FailPoints::converting_transform_before_expression_pause);
+
+    if (isCancelled())
+    {
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), num_rows);
+        cur_chunk = std::move(chunk);
+        return;
+    }
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     expression->execute(block, num_rows, false, false, &getCancellationFlag());
+
+    FailPointInjection::pauseFailPoint(FailPoints::converting_transform_pause);
 
     if (isCancelled())
         block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
