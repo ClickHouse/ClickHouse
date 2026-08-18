@@ -24,4 +24,12 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_hypo_reason WHERE b = 42;
 " 2>&1 | grep -E '^  (empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
+# a query fully pruned by the primary key leaves an empty baseline, which is another path that
+# skips the empirical tier and so must also say why
+echo "--- an empty baseline also says why ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_reason (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_reason WHERE a = 999999999 AND b = 42;
+" 2>&1 | grep -E '^  (empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_reason;"

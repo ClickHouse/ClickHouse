@@ -281,7 +281,10 @@ bool tryEstimateEmpirical(
     }
 
     if (total_data_granules == 0)
+    {
+        result.empirical_unsupported_reason = "The baseline selected no granules, so there was nothing to aggregate";
         return false;
+    }
 
     result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
     result.estimated_marks = total_data_granules - skipped_data_granules;

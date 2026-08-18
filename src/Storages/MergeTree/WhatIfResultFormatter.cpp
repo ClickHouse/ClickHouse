@@ -66,8 +66,13 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         }
         writeString(fmt::format("  empirical_status: {}\n", empirical_status_str), out);
 
-        if (idx.empirical_status == IndexResult::Unsupported && !idx.empirical_unsupported_reason.empty())
-            writeString(fmt::format("  empirical_reason: {}\n", idx.empirical_unsupported_reason), out);
+        if (idx.empirical_status == IndexResult::Unsupported)
+        {
+            String reason = idx.empirical_unsupported_reason;
+            if (reason.empty())
+                reason = "The empirical estimate could not be produced for this candidate";
+            writeString(fmt::format("  empirical_reason: {}\n", reason), out);
+        }
 
         if (idx.empirical_status == IndexResult::Ok)
         {
