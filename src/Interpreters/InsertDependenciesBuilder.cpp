@@ -1069,6 +1069,8 @@ bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
     if (depth > max_insert_forwarding_depth)
         return true;
 
+    const auto & settings = context->getSettingsRef();
+
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
@@ -1079,9 +1081,21 @@ bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
         if (!materialized_view)
             return true;
-        auto target = materialized_view->tryGetTargetTable();
-        if (!target)
+
+        /// Resolve the target through the current INSERT context. The view's creation context can
+        /// retain its dropped target, while the executable graph skips the view when requested.
+        auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+        auto target_lock = target
+            ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+            : nullptr;
+        if (!target_lock)
+        {
+            if (settings[Setting::ignore_materialized_views_with_dropped_target_table])
+                continue;
+
             return true;
+        }
+
         /// The view target itself (or a forwarding chain it starts) switches to a separate context ...
         if (storageForwardsInsertToSeparateContext(target, depth + 1))
             return true;
