@@ -320,6 +320,10 @@ class ChangedQuery:
     # Per-query bar CI used to flag this query; None on shards predating the
     # column, where CHANGED_THRESHOLD_FLOOR applies.
     changed_threshold: Optional[float] = None
+    # CI flagged this query and then demoted it in its own confirmation rerun.
+    # Its numbers come from report.html, since compare.sh retracts demoted
+    # queries from all-query-metrics.tsv.
+    ci_unconfirmed: bool = False
     # Filled in later, after we've collected all changes across arches:
     # which arches CI flagged this same (test, query_index) on. Useful so
     # the report can say "flagged on ARM only" vs "flagged on both".
@@ -375,19 +379,61 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
         }
 
 
-def parse_changes_in_performance(html: str) -> set[tuple[str, int]]:
-    """Extract (test, query_index) for every row CI categorized as a
-    "Change in Performance". The HTML wraps each row with an id like
-    ``changes-in-performance.<test>.<query_index>``."""
-    m = re.search(r"id=changes-in-performance.*?</table>", html, re.DOTALL)
+def parse_report_table(html: str, table_id: str) -> set[tuple[str, int]]:
+    """Extract (test, query_index) for every row of one report table. The HTML
+    wraps each row with an id like ``<table_id>.<test>.<query_index>``."""
+    m = re.search(rf"id={re.escape(table_id)}.*?</table>", html, re.DOTALL)
     if not m:
         return set()
     out: set[tuple[str, int]] = set()
     for test, qi in re.findall(
-        r"<tr id=changes-in-performance\.([^>.]+?)\.(\d+)>", m.group(0)
+        rf"<tr id={re.escape(table_id)}\.([^>.]+?)\.(\d+)>", m.group(0)
     ):
         out.add((test, int(qi)))
     return out
+
+
+def parse_changes_in_performance(html: str) -> set[tuple[str, int]]:
+    return parse_report_table(html, "changes-in-performance")
+
+
+def parse_changed_rows_from_html(html: str) -> dict[tuple[str, int], dict]:
+    """Timings for the "Changes in Performance" rows, read out of the report.
+
+    compare.sh retracts a query from ``all-query-metrics.tsv`` entirely when
+    its confirmation rerun demoted it, while ``report.html`` still lists it
+    under both "Changes in Performance" and "Unconfirmed Changes". Those rows
+    carry their own numbers, so they do not have to be dropped for want of a
+    TSV row. Columns, per the table header: old, new, ratio, diff,
+    stat_threshold, test, index, query."""
+    m = re.search(r"id=changes-in-performance.*?</table>", html, re.DOTALL)
+    if not m:
+        return {}
+    rows: dict[tuple[str, int], dict] = {}
+    for row_m in re.finditer(
+        r"<tr id=changes-in-performance\.([^>.]+?)\.(\d+)>(.*?)</tr>",
+        m.group(0),
+        re.DOTALL,
+    ):
+        test, qi = row_m.group(1), int(row_m.group(2))
+        cells = [
+            re.sub("<[^>]+>", "", c).strip()
+            for c in re.findall(r"<td[^>]*>(.*?)</td>", row_m.group(3), re.DOTALL)
+        ]
+        if len(cells) < 8:
+            continue
+        try:
+            rows[(test, qi)] = {
+                "left": float(cells[0]),
+                "right": float(cells[1]),
+                "diff": float(cells[3]),
+                "stat_threshold": float(cells[4]),
+                "query_display_name": cells[7],
+                "changed_threshold": None,
+            }
+        except ValueError:
+            continue
+    return rows
 
 
 def find_changed_queries(
@@ -404,12 +450,15 @@ def find_changed_queries(
     timing numbers for those tuples from ``all-query-metrics.tsv``. This is
     exactly the set the user sees in the report.
 
-    Also returns how many shard reports were actually readable: a shard whose
+    Also returns how many shard reports were actually readable, and any row CI
+    flagged whose numbers could be read from neither source -- those must never
+    be silently dropped, or a non-empty CI report turns into an all-clear: a shard whose
     report cannot be fetched contributes no changed queries, exactly like a
     shard that had none, and the caller must not read the second as the first.
     """
     changed: list[ChangedQuery] = []
     read_ok = 0
+    unresolved: list[tuple[str, int, str, int]] = []
     for s in shards:
         try:
             html = http_get(f"{s.base_dir_url}/report.html")
@@ -420,12 +469,15 @@ def find_changed_queries(
         flagged = parse_changes_in_performance(html)
         if not flagged:
             continue
+        html_rows = parse_changed_rows_from_html(html)
+        demoted = parse_report_table(html, "unconfirmed-changes")
 
         try:
             tsv = http_get(s.tsv_url)
         except RuntimeError as e:
-            log(f"skipping shard {s.arch}/{s.shard_num} TSV: {e}")
-            continue
+            log(f"shard {s.arch}/{s.shard_num} TSV unreadable ({e}); "
+                "using the numbers in report.html")
+            tsv = ""
         # Index TSV rows so we can fetch timing numbers for each flagged
         # (test, query_index) tuple. There's one row per metric, we only
         # want client_time.
@@ -435,12 +487,27 @@ def find_changed_queries(
 
         for test, qi in sorted(flagged):
             row = timings.get((test, qi))
+            unconfirmed = False
             if row is None:
+                # compare.sh retracts a demoted query from the TSV. Its numbers
+                # are still in the report, and it is precisely the kind of
+                # ambiguous result a local rerun should adjudicate, so take
+                # them rather than dropping the query.
+                row = html_rows.get((test, qi))
+                unconfirmed = (test, qi) in demoted
+                if row is None:
+                    log(
+                        f"  WARNING: report.html flagged {test} #{qi} but "
+                        f"neither the TSV nor the report row could be read in "
+                        f"shard {s.arch}/{s.shard_num}"
+                    )
+                    unresolved.append((s.arch, s.shard_num, test, qi))
+                    continue
                 log(
-                    f"  WARNING: report.html flagged {test} #{qi} but no "
-                    f"client_time row in shard {s.arch}/{s.shard_num} TSV"
+                    f"  {test} #{qi}: no TSV row"
+                    + (" (CI demoted it in its confirmation rerun)" if unconfirmed else "")
+                    + " — using the numbers from report.html"
                 )
-                continue
             direction = "slower" if row["diff"] > 0 else "faster"
             changed.append(
                 ChangedQuery(
@@ -455,9 +522,10 @@ def find_changed_queries(
                     direction=direction,
                     query_display_name=row["query_display_name"],
                     changed_threshold=row.get("changed_threshold"),
+                    ci_unconfirmed=unconfirmed,
                 )
             )
-    return changed, read_ok
+    return changed, read_ok, unresolved
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +557,75 @@ EXTERNAL_DATASETS = {
     "tpcds.web_sales": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
     "tpcds.item": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
 }
+
+
+def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
+                          work_dir: Path) -> Path:
+    """Extract the test tree of the commit under test into the work dir.
+
+    The commit decides which report and binaries we fetch, but the queries, the
+    XMLs, perf.py and the perf config drop-ins were being taken from whatever
+    the working tree happens to hold. Query numbering is positional and
+    substitutions expand it, so an XML that gained or lost a query since --
+    or a `refs/pull/<n>/merge` checkout, which is not the commit CI measured --
+    silently shifts every index, and the rerun then validates a different query
+    than the one CI flagged, judged by a different perf.py. CI has no such gap:
+    its checkout *is* the commit. Pin the same way."""
+    dst = work_dir / "perf-tree" / sha[:12]
+    marker = dst / ".extracted"
+    if marker.is_file():
+        return dst
+    have = subprocess.run(
+        ["git", "-C", str(repo_root), "cat-file", "-e", f"{sha}^{{commit}}"],
+        capture_output=True,
+    )
+    if have.returncode != 0:
+        log(f"commit {sha[:12]} not in the local clone, fetching it")
+        for ref in (f"refs/pull/{pr_number}/head", sha):
+            fetched = subprocess.run(
+                ["git", "-C", str(repo_root), "fetch", "--quiet", "origin", ref],
+                capture_output=True,
+            )
+            if fetched.returncode == 0 and subprocess.run(
+                ["git", "-C", str(repo_root), "cat-file", "-e", f"{sha}^{{commit}}"],
+                capture_output=True,
+            ).returncode == 0:
+                break
+        else:
+            die(
+                f"commit {sha} is not available locally and could not be "
+                f"fetched from origin (tried refs/pull/{pr_number}/head and the "
+                "SHA itself). Fetch it, or pass --use-working-tree-tests to "
+                "accept this checkout's tests instead."
+            )
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir(parents=True)
+    # Everything the rerun reads from the repo: the XMLs and perf.py, the perf
+    # config drop-ins, the base server config, and the TLD files.
+    paths = [
+        "tests/performance",
+        "programs/server",
+        "tests/config/top_level_domains",
+    ]
+    archive = subprocess.run(
+        ["git", "-C", str(repo_root), "archive", sha, *paths],
+        capture_output=True,
+    )
+    if archive.returncode != 0:
+        die(
+            f"git archive failed for {sha[:12]}: "
+            f"{archive.stderr.decode(errors='replace').strip()}"
+        )
+    extract = subprocess.run(
+        ["tar", "-x", "-C", str(dst)], input=archive.stdout, capture_output=True
+    )
+    if extract.returncode != 0:
+        die(f"could not extract the test tree: "
+            f"{extract.stderr.decode(errors='replace').strip()}")
+    marker.write_text(sha + "\n")
+    log(f"using tests/performance and configs from {sha[:12]} ({dst})")
+    return dst
 
 
 def selected_query_text(repo_root: Path, xml_path: Path,
@@ -1647,6 +1784,8 @@ def print_report(
             ci_at = local_arch
         elif local_arch in archs:
             ci_at = "+".join(archs)
+        if cq.ci_unconfirmed:
+            ci_at += "*"
         else:
             # local arch did NOT flag this; CI saw it elsewhere
             ci_at = "/".join(archs) + "-only"
@@ -1726,6 +1865,13 @@ def print_report(
             "WARNING: perf.py failed for "
             + ", ".join(f"{t} (exit {rc})" for t, rc in sorted(failed_tests.items()))
             + " — those queries were not validated, they did not 'fail to reproduce'."
+        )
+    if any(c.ci_unconfirmed for c in changed):
+        print(
+            "'*' in the CI@ column: CI flagged the query and then demoted it in "
+            "its own confirmation rerun ('Unconfirmed Changes' in the report), "
+            "so its numbers come from report.html and its CI verdict was "
+            "already in doubt before this local rerun."
         )
     print(
         f"CI@ column: which arch(es) CI flagged the query on. "
@@ -1817,6 +1963,14 @@ def main() -> int:
         "minutes) and gives up the hardlink disk saving for them.",
     )
     parser.add_argument(
+        "--use-working-tree-tests",
+        action="store_true",
+        help="run this checkout's tests/performance and configs instead of the "
+        "ones from the commit under test. Only for iterating on a local change "
+        "to a test: query indices are positional, so a checkout that differs "
+        "from the measured commit can silently rerun a different query",
+    )
+    parser.add_argument(
         "--no-cpu-pinning",
         action="store_true",
         help="do not pin the servers with taskset and do not cap max_threads "
@@ -1893,11 +2047,14 @@ def main() -> int:
     #     can't reproduce the ARM regression" is a meaningful result)
     # When the same (test, query_index) is flagged on more than one arch,
     # we keep one row per query and remember every arch it was flagged on.
-    local_changed, local_read = find_changed_queries(arch_shards)
+    local_changed, local_read, local_unresolved = find_changed_queries(arch_shards)
     if other_arch_shards:
-        other_changed, other_read = find_changed_queries(other_arch_shards)
+        other_changed, other_read, other_unresolved = find_changed_queries(
+            other_arch_shards
+        )
     else:
-        other_changed, other_read = [], 0
+        other_changed, other_read, other_unresolved = [], 0, []
+    unresolved = local_unresolved + other_unresolved
     if local_read + other_read == 0:
         die(
             f"none of the {len(shards)} Performance Comparison shard(s) for "
@@ -1934,6 +2091,18 @@ def main() -> int:
         cq.flagged_on = sorted(flagged_on[key])
 
     changed = list(by_key.values())
+    if unresolved:
+        log(
+            f"WARNING: {len(unresolved)} query(ies) flagged by CI could not be "
+            "read from either the TSV or report.html: "
+            + ", ".join(f"{t} #{q} ({a}/{n})" for a, n, t, q in unresolved)
+        )
+    if not changed and unresolved:
+        die(
+            f"CI flagged {len(unresolved)} query(ies) but none of them could be "
+            "read, so there is nothing to rerun and no basis for calling the "
+            "comparison clean."
+        )
     if not changed:
         log(
             f"CI flagged no 'Changes in Performance' in the "
@@ -1953,6 +2122,19 @@ def main() -> int:
     for test, qs in sorted(by_test.items()):
         log(f"  {test}: q#{sorted(qs)}")
 
+    # Set up working directory
+    work_dir = args.work_dir or (repo_root / "tmp/double_check_perf")
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Everything below reads tests and configs from the commit under test, not
+    # from the working tree.
+    if args.use_working_tree_tests:
+        log("WARNING: using this checkout's tests/performance, which may not "
+            "match the commit CI measured — query numbering is positional")
+        perf_root = repo_root
+    else:
+        perf_root = materialize_perf_tree(repo_root, pr_number, pr_sha, work_dir)
+
     # Inspect XMLs to figure out which external datasets are actually needed.
     # Self-contained tests (tables created via <create_query> / <fill_query>
     # filled from numbers/generateRandom) need none. Reporting this up-front
@@ -1960,10 +2142,10 @@ def main() -> int:
     # or only a single tarball.
     test_texts = {
         t: relevant_test_text(
-            repo_root, repo_root / "tests/performance" / f"{t}.xml", sorted(qs)
+            perf_root, perf_root / "tests/performance" / f"{t}.xml", sorted(qs)
         )
         for t, qs in by_test.items()
-        if (repo_root / "tests/performance" / f"{t}.xml").is_file()
+        if (perf_root / "tests/performance" / f"{t}.xml").is_file()
     }
     needed_datasets = scan_external_datasets(test_texts)
     if needed_datasets:
@@ -2043,17 +2225,13 @@ def main() -> int:
     # Locate test XML files (translate stem -> xml)
     test_files: dict[str, str] = {}
     for test in by_test:
-        xml_path = repo_root / "tests/performance" / f"{test}.xml"
+        xml_path = perf_root / "tests/performance" / f"{test}.xml"
         if not xml_path.is_file():
             log(f"WARNING: {xml_path} not found — skipping test {test}")
             continue
         test_files[test] = f"{test}.xml"
 
     exit_code = 0
-
-    # Set up working directory
-    work_dir = args.work_dir or (repo_root / "tmp/double_check_perf")
-    work_dir.mkdir(parents=True, exist_ok=True)
 
     # Download binaries
     left_bin, right_bin = download_binaries(
@@ -2063,7 +2241,7 @@ def main() -> int:
     log(f"right binary: {right_bin}")
 
     # Prepare top-level domains
-    tld_src = repo_root / "tests/config/top_level_domains"
+    tld_src = perf_root / "tests/config/top_level_domains"
     tld_dst = work_dir / "top_level_domains"
     if tld_dst.exists():
         shutil.rmtree(tld_dst)
@@ -2079,7 +2257,7 @@ def main() -> int:
         side_dir = work_dir / side
         side_dir.mkdir(parents=True, exist_ok=True)
         link_clickhouse_tools(side_dir)
-        prepare_configs(repo_root, side_dir)
+        prepare_configs(perf_root, side_dir)
 
     prepare_dataset(db_source, left_bin, work_dir / "left" / "config",
                     tld_dst, work_dir, create_test_hits=not args.populate)
@@ -2088,7 +2266,7 @@ def main() -> int:
         side_dir = work_dir / side
         hardlink_db(db_source, side_dir / "db")
         # After the hardlink copy: hardlink_db wipes the destination.
-        seed_user_files(repo_root, side_dir / "db")
+        seed_user_files(perf_root, side_dir / "db")
 
     # Mirror CI's CPU pinning: both servers on one hyperthread per physical
     # core, with max_threads capped to that set. Skipped by --no-cpu-pinning
@@ -2148,7 +2326,7 @@ def main() -> int:
             if test not in test_files:
                 continue
             _, rc = run_perf_test(
-                repo_root, work_dir, test_files[test], sorted(qs), args.runs
+                perf_root, work_dir, test_files[test], sorted(qs), args.runs
             )
             if rc != 0:
                 failed_tests[test] = rc
@@ -2157,7 +2335,7 @@ def main() -> int:
         # Collect results. stat_threshold is recomputed from the per-run
         # samples with perf.py's own function, the way compare.sh recomputes it
         # for its confirmation rerun.
-        stat_threshold_fn = load_stat_threshold(repo_root)
+        stat_threshold_fn = load_stat_threshold(perf_root)
         local_results: dict[tuple[str, int], dict] = {}
         for test in by_test:
             raw = work_dir / "raw" / f"{test}-raw.tsv"

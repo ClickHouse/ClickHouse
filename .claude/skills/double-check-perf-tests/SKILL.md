@@ -71,6 +71,9 @@ skill:
 - `--no-cpu-pinning`: don't pin the servers with `taskset` and don't cap
   `max_threads`. Only for a machine where pinning is undesirable — it
   measures under noisier conditions than the report being checked.
+- `--use-working-tree-tests`: run this checkout's `tests/performance` and
+  configs instead of the ones from the commit under test. Only for iterating
+  on a local change to a test — see the note on pinning below.
 - `--dry-run`: stop after resolving PR / SHAs / changed queries; do not
   download or run.
 
@@ -155,6 +158,15 @@ A query counts as `CONFIRMED` when the local rerun passes the same gate
 rerun itself (non-strict, as in `compare.sh`). Anything else is
 `NOT REPRODUCED`, and the verdict says which of the three conditions failed.
 
+A query CI flagged and then demoted in its own confirmation rerun is kept and
+marked `*` in the CI@ column. `compare.sh` retracts such queries from
+`all-query-metrics.tsv` while still listing them in the report, so their
+numbers are read from `report.html` instead — dropping them would turn a
+non-empty CI report into an all-clear, and they are exactly the ambiguous
+results a local rerun should settle. A flagged query readable from neither
+source is reported as unresolved, and if that leaves nothing to rerun the
+skill fails rather than calling the comparison clean.
+
 `stat_threshold` is the q99 of the balanced-split null — the measurement
 precision this rerun actually reached. It is recomputed from the rerun's own
 per-run samples (the `query` rows of the raw TSV, the same lines `compare.sh`
@@ -185,6 +197,18 @@ treated as CI noise.
   in CI, so the run is as close to CI as possible without Praktika. The
   ports and shared dataset directory match `CHServer` in
   `ci/jobs/performance_tests.py`.
+- **The tests come from the commit under test, not from your checkout.**
+  `tests/performance` (the XMLs, `perf.py`, the perf config drop-ins),
+  `programs/server` and `tests/config/top_level_domains` are extracted from
+  the commit CI measured into `tmp/double_check_perf/perf-tree/<sha>` and
+  everything runs from there, fetching the commit if the clone lacks it. This
+  is not a nicety: query indices are positional and substitutions expand
+  them, so an XML that gained or lost a query means index *n* is a different
+  query — on a checkout of this repo one commit behind,
+  `and_compare_chain_derived.xml` has no query #2 at all while CI flagged
+  exactly that. A `refs/pull/<n>/merge` checkout has the same problem, since
+  it is not the commit CI measured. `perf.py` and the thresholds it computes
+  are pinned for the same reason.
 - **CPU pinning.** On Linux x86_64, CI pins both servers with `taskset` to
   one hyperthread per physical core and caps `max_threads` at the size of
   that set, so query threads never share a hyperthread sibling depending on
