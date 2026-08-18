@@ -78,3 +78,86 @@ SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST
 SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))'))) SETTINGS use_primary_key = 0;
 
 DROP TABLE test_nullable_null_set;
+
+-- A NULL set element against a String key must be dropped from the set like it is for any other key
+-- type, not rejected. A Nullable source cannot be safely cast to a non-Nullable target, so the set
+-- columns take the accurate-or-null conversion that filters unrepresentable elements out.
+DROP TABLE IF EXISTS test_string_null_set;
+CREATE TABLE test_string_null_set (k String) ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_string_null_set VALUES ('a'), ('b');
+
+SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_string_null_set WHERE NOT has([CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE notHas([CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_string_null_set WHERE has(['z', CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k);
+SELECT count() FROM test_string_null_set WHERE has([CAST('a', 'Nullable(String)')], k);
+SELECT count() FROM test_string_null_set WHERE has(['a'], k);
+
+-- Dropping the NULL leaves the surviving element usable for pruning, so the mixed set still selects
+-- one granule instead of falling back to a full scan.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_string_null_set;
+
+-- Array and Map elements reach the same rule by recursion on their nested types.
+DROP TABLE IF EXISTS test_array_null_set;
+CREATE TABLE test_array_null_set (a Array(String)) ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_array_null_set VALUES (['x']);
+
+SELECT count() FROM test_array_null_set WHERE has([CAST([NULL], 'Array(Nullable(String))')], a);
+SELECT count() FROM test_array_null_set WHERE has([['x', NULL]], a);
+SELECT count() FROM test_array_null_set WHERE has([['x']], a);
+
+DROP TABLE test_array_null_set;
+
+DROP TABLE IF EXISTS test_map_null_set;
+CREATE TABLE test_map_null_set (m Map(String, String)) ENGINE = MergeTree
+ORDER BY m
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_map_null_set VALUES (map('k', 'v'));
+
+SELECT count() FROM test_map_null_set WHERE has([map('k', NULL)], m);
+SELECT count() FROM test_map_null_set WHERE has([map('k', 'v')], m);
+
+DROP TABLE test_map_null_set;
+
+-- A key built from a monotonic function chain resolves the set against the chain's result type,
+-- which reaches the same rule.
+DROP TABLE IF EXISTS test_chain_null_set;
+CREATE TABLE test_chain_null_set (k String) ENGINE = MergeTree
+ORDER BY lower(k)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_chain_null_set VALUES ('A'), ('B');
+
+SELECT count() FROM test_chain_null_set WHERE has([CAST(NULL, 'Nullable(String)')], lower(k));
+SELECT count() FROM test_chain_null_set WHERE has([CAST('a', 'Nullable(String)')], lower(k));
+
+DROP TABLE test_chain_null_set;
+
+-- A Nullable String key keeps the NULL element, because the target can represent it: the element
+-- matches the NULL row instead of being filtered out.
+DROP TABLE IF EXISTS test_nullable_string_key;
+CREATE TABLE test_nullable_string_key (k Nullable(String)) ENGINE = MergeTree
+ORDER BY k
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_nullable_string_key VALUES (NULL), ('a');
+
+SELECT count() FROM test_nullable_string_key WHERE has([CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_nullable_string_key WHERE has([CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_nullable_string_key WHERE notHas([CAST(NULL, 'Nullable(String)')], k);
+SELECT count() FROM test_nullable_string_key WHERE has([CAST('a', 'Nullable(String)')], k);
+
+DROP TABLE test_nullable_string_key;
