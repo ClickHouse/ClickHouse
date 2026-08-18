@@ -2227,6 +2227,21 @@ static BlockIO executeQueryImpl(
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
+    bool check_external_data_after_deferred_continue = false;
+    auto check_external_data_after_deferred_continue_callback = [&]
+    {
+        if (!check_external_data_after_deferred_continue)
+            return;
+
+        check_external_data_after_deferred_continue = false;
+        if (!istr->eof())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Processing an INSERT query in a foreign SQL dialect together with external data "
+                "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                "must carry all its data inline");
+    };
+
     /// Parse the query from string.
     try
     {
@@ -2497,9 +2512,6 @@ static BlockIO executeQueryImpl(
 #endif
         }
 
-        const char * query_begin = begin;
-        const char * query_end = end;
-
         /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
         /// whole statement at once, so the inline data belongs to the transpiled buffer and is
         /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
@@ -2510,20 +2522,8 @@ static BlockIO executeQueryImpl(
         /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
         /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
         /// guarded as well.
-        bool check_external_data_after_deferred_continue = false;
-        auto checkExternalDataAfterDeferredContinue = [&]
-        {
-            if (!check_external_data_after_deferred_continue)
-                return;
-
-            check_external_data_after_deferred_continue = false;
-            if (!istr->eof())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Processing an INSERT query in a foreign SQL dialect together with external data "
-                    "(the HTTP request body) is not supported: the query is transpiled as a whole and "
-                    "must carry all its data inline");
-        };
+        const char * query_begin = begin;
+        const char * query_end = end;
 
         if (out_ast)
         {
@@ -2906,7 +2906,7 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
             {
                 http_continue_callback();
-                checkExternalDataAfterDeferredContinue();
+                check_external_data_after_deferred_continue_callback();
             }
 
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
@@ -2955,7 +2955,7 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
             {
                 http_continue_callback();
-                checkExternalDataAfterDeferredContinue();
+                check_external_data_after_deferred_continue_callback();
             }
         }
 
@@ -3098,7 +3098,7 @@ static BlockIO executeQueryImpl(
                 if (http_continue_callback && !internal)
                 {
                     http_continue_callback();
-                    checkExternalDataAfterDeferredContinue();
+                    check_external_data_after_deferred_continue_callback();
                 }
 
                 if (interpreter)
