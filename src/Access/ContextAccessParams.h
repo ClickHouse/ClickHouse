@@ -36,6 +36,10 @@ public:
     /// This is used for the global context.
     const bool full_access;
 
+    /// A server-generated TimeSeries target read keeps the original user for row-policy evaluation
+    /// but does not require a direct SELECT grant on the hidden implementation table.
+    const bool allow_time_series_target_select;
+
     const bool use_default_roles;
     const std::shared_ptr<const std::vector<UUID>> current_roles;
     const std::shared_ptr<const std::vector<UUID>> external_roles;

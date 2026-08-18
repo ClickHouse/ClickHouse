@@ -20,6 +20,20 @@
                 <ip>::/0</ip>
             </networks>
         </metadata_external_reader>
+        <metadata_external_selector_reader>
+            <password></password>
+            <profile>metadata_external_selector_reader</profile>
+            <grants>
+                <query>GRANT SELECT ON default.external_selector_prometheus</query>
+                <query2>GRANT SELECT ON default.external_selector_distributed_prometheus</query2>
+                <query3>GRANT SELECT ON default.external_selector_alias_prometheus</query3>
+                <query4>GRANT SELECT ON default.external_selector_view_prometheus</query4>
+                <query5>GRANT SELECT ON default.external_selector_alias_view_prometheus</query5>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </metadata_external_selector_reader>
         <metadata_temp_table_only>
             <password></password>
             <profile>metadata_temp_table_only</profile>
@@ -60,6 +74,9 @@
         <metadata_external_reader>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
         </metadata_external_reader>
+        <metadata_external_selector_reader>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </metadata_external_selector_reader>
         <metadata_temp_table_only>
             <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
         </metadata_temp_table_only>

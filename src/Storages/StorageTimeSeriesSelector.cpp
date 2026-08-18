@@ -802,13 +802,24 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+    auto target_context = getTimeSeriesTargetContext(context);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, target_context));
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, context);
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
+    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, target_context);
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, target_context);
+    auto samples_table_id = samples_table->getStorageID();
+    auto tags_table_id = tags_table->getStorageID();
+
+    checkTimeSeriesTargetSelectAccess(context, config.time_series_storage_id, samples_table);
+    checkTimeSeriesTargetSelectAccess(context, config.time_series_storage_id, tags_table);
+    /// Every generated target query uses the internal context. Ordinary Distributed targets keep
+    /// the original user in ClientInfo for the shard, where active-role row policies are still
+    /// evaluated, while their hidden target SELECT grant is bypassed by the authenticated marker.
+    checkTimeSeriesTargetSelectRowPolicy(context, config.time_series_storage_id, samples_table);
+    checkTimeSeriesTargetSelectRowPolicy(context, config.time_series_storage_id, tags_table);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
@@ -824,8 +835,8 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
-    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
-    auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(target_context, false);
+    auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(target_context, false);
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
         matchers,
@@ -840,10 +851,10 @@ void StorageTimeSeriesSelector::readImpl(
         config.timestamp_data_type,
         min_time_to_filter_ids,
         max_time_to_filter_ids,
-        context,
+        target_context,
         log);
 
-    ContextPtr interpreter_context = context;
+    ContextPtr interpreter_context = target_context;
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
@@ -854,7 +865,7 @@ void StorageTimeSeriesSelector::readImpl(
         /// the same granules through the cheap continuous-range path. Setting
         /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
         /// analysis without affecting the row-level filter.
-        auto modified_context = Context::createCopy(context);
+        auto modified_context = Context::createCopy(target_context);
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
         interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
@@ -883,6 +894,7 @@ void StorageTimeSeriesSelector::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    query_plan.addInterpreterContext(interpreter_context);
 }
 
 }

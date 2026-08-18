@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageTimeSeries.h>
@@ -29,7 +30,7 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    checkTimeSeriesTableSelectAccess(context, config.time_series_storage_id);
+    context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.id_data_type},
         {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
@@ -44,6 +45,7 @@ StoragePtr TableFunctionTimeSeriesSelector::executeImpl(
         ColumnsDescription /* cached_columns */,
         bool is_insert_query) const
 {
+    checkTimeSeriesTableSelectAccess(context, config.time_series_storage_id);
     auto columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageTimeSeriesSelector>(StorageID(getDatabaseName(), table_name), columns, config);
     res->startup();

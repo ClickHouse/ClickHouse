@@ -1141,6 +1141,8 @@ void Connection::sendQuery(
                 buffer.finalize();
                 data += current_roles_str;
             }
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ)
+                data += client_info->is_time_series_target_read ? "1" : "0";
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

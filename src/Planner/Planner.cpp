@@ -2459,10 +2459,13 @@ void Planner::buildPlanForQueryNode()
         for (const auto & it : table_expression_nodes)
         {
             auto * table_node = it->as<TableNode>();
-            if (!table_node)
+            auto * table_function_node = it->as<TableFunctionNode>();
+            if (!table_node && !table_function_node)
                 continue;
 
-            const auto & modifiers = table_node->getTableExpressionModifiers();
+            const auto & modifiers = table_node
+                ? table_node->getTableExpressionModifiers()
+                : table_function_node->getTableExpressionModifiers();
             /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
             if (modifiers.has_value()
                 && (modifiers->hasFinal()

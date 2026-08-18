@@ -207,6 +207,7 @@ void StoragePrometheusQuery::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    query_plan.addInterpreterContext(query_context);
 }
 
 }

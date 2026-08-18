@@ -3,7 +3,11 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Core/Field.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -51,6 +55,72 @@ void setFinal(ASTPtr & query_ast)
     table.table_expression->as<ASTTableExpression &>().final = true;
 }
 
+String makeFinalProbeQuery(const StorageID & time_series_table_id, const String & metric_param)
+{
+    PrometheusQueryToSQL::SelectQueryBuilder query_builder;
+    query_builder.select_list = {make_intrusive<ASTLiteral>(UInt64{1})};
+    query_builder.from_table_function = makeASTFunction(
+        "timeSeriesMetrics",
+        make_intrusive<ASTLiteral>(time_series_table_id.getDatabaseName()),
+        make_intrusive<ASTLiteral>(time_series_table_id.getTableName()));
+
+    if (!metric_param.empty())
+    {
+        query_builder.where = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTLiteral>(metric_param));
+    }
+
+    query_builder.limit = 1;
+
+    auto query_ast = query_builder.getSelectQuery();
+    setFinal(query_ast);
+    return query_ast->formatWithSecretsOneLine();
+}
+
+void executeFinalProbe(const String & query, const ContextPtr & context)
+{
+    /// The probe reads the physical Metrics target directly. Use the same target context as the
+    /// generated metadata query so a logical-table grant is sufficient for Distributed targets.
+    auto query_context = getTimeSeriesTargetContext(context);
+    query_context->setCurrentQueryId({});
+    query_context->setSetting("log_queries", Field{false});
+    /// The capability probe is an implementation detail and must not recursively trigger AST fuzzing
+    /// inherited from the caller's settings.
+    query_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
+
+    /// The probe is a separate query, so run it in the copied context's thread group while preserving
+    /// the surrounding HTTP request's group. This keeps its resource accounting isolated from the
+    /// request's query context.
+    ThreadGroupSwitcher thread_group_switcher(
+        ThreadGroup::createForQuery(query_context), ThreadName::PROMETHEUS_HANDLER, /*allow_existing_group=*/ true);
+
+    auto [ast, io] = executeQuery(
+        query,
+        query_context,
+        QueryFlags{.internal = true, .ignore_quota = true},
+        QueryProcessingStage::Complete);
+
+    try
+    {
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+        }
+
+        io.pipeline.finalizeWriteInQueryResultCache();
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    finishExecutedQuery(io, {});
+}
+
 }
 
 void PrometheusHTTPProtocolAPI::getMetadata(
@@ -62,6 +132,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto metrics_table = time_series_storage->getTargetTable(ViewTarget::Metrics, getContext());
     const bool use_final = metrics_table->supportsFinal();
+    const bool remote_metrics_target = metrics_table->isRemote();
     const auto time_series_table_id = time_series_storage->getStorageID();
 
     checkTimeSeriesTableSelectAccess(getContext(), time_series_table_id);
@@ -120,10 +191,51 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
     LOG_TRACE(log, "Prometheus metric metadata query: {}", query);
 
+    bool execute_with_final = use_final;
+    if (use_final && remote_metrics_target)
+    {
+        /// A zero-limit response does not read any rows, so it has no reason to probe or execute FINAL.
+        if (limit == 0)
+        {
+            execute_with_final = false;
+        }
+        else if (const auto cached_support = time_series_storage->getCachedMetricsTargetFinalSupport())
+        {
+            execute_with_final = *cached_support;
+        }
+        else
+        {
+            /// StorageDistributed advertises FINAL support before the remote target is known to support it.
+            /// Probe with a bounded, metric-aware internal query in a copied target context. The
+            /// logical-table access check above remains in the caller context, while the physical
+            /// target stays an implementation detail. The probe also avoids creating its own
+            /// query-log or query-metric-log record or a top-level query span. Cache the capability
+            /// briefly because Prometheus polls this endpoint frequently.
+            try
+            {
+                executeFinalProbe(makeFinalProbeQuery(time_series_table_id, metric_param), getContext());
+                time_series_storage->setCachedMetricsTargetFinalSupport(true);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::ILLEGAL_FINAL)
+                    throw;
+
+                time_series_storage->setCachedMetricsTargetFinalSupport(false);
+                execute_with_final = false;
+                LOG_TRACE(log, "Remote Metrics target rejected FINAL; executing metadata query without FINAL");
+            }
+        }
+    }
+
     bool response_started = false;
     auto execute_metadata_query = [&](const String & query_to_execute)
     {
-        auto [ast, io] = executeQuery(query_to_execute, getContext(), {}, QueryProcessingStage::Complete);
+        auto [ast, io] = executeQuery(
+            query_to_execute,
+            getContext(),
+            QueryFlags{},
+            QueryProcessingStage::Complete);
 
         try
         {
@@ -205,16 +317,17 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
     try
     {
-        execute_metadata_query(query);
+        execute_metadata_query(execute_with_final ? query : query_without_final);
     }
     catch (const Exception & e)
     {
-        /// StorageDistributed advertises FINAL support at the initiator, but a remote target may reject it.
-        /// Retry only before any response bytes are written, preserving FINAL for compatible targets.
-        if (!use_final || response_started || !e.isRemoteException() || e.code() != ErrorCodes::ILLEGAL_FINAL)
+        /// A cached capability can become stale if the remote target changes. Retry only before any
+        /// response bytes are written, and invalidate the cache for the next request.
+        if (!remote_metrics_target || !execute_with_final || response_started || !e.isRemoteException() || e.code() != ErrorCodes::ILLEGAL_FINAL)
             throw;
 
-        LOG_TRACE(log, "Remote Metrics target rejected FINAL; retrying metadata query without FINAL");
+        time_series_storage->setCachedMetricsTargetFinalSupport(false);
+        LOG_TRACE(log, "Remote Metrics target rejected cached FINAL capability; retrying metadata query without FINAL");
         execute_metadata_query(query_without_final);
     }
 }

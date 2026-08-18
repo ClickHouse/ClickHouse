@@ -174,6 +174,11 @@ public:
     /// Server-internal query (not user-issued), propagated to remote queries.
     /// Independent of `query_kind == SECONDARY_QUERY`: either can hold without the other.
     bool is_internal = false;
+    /// Read of a physical table hidden behind a logical TimeSeries table. The interserver
+    /// authentication still uses the original user, but the receiving shard must not require a
+    /// direct SELECT grant on the implementation table. Row policies and active roles remain
+    /// attached to the original user.
+    bool is_time_series_target_read = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
@@ -186,11 +191,13 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_trailing_fields` controls whether the fields added after the async `Distributed` insert header layout
-    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and `http_request_url` —
-    /// are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
-    /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
-    /// that older binaries draining newer queue files can read the header without misinterpreting it.
+    /// `with_trailing_fields` controls whether fields added after the async `Distributed` insert header layout
+    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and
+    /// `http_request_url` — are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded
+    /// `ClientInfo` of the persisted async `Distributed` insert header, where the fields that are supported by
+    /// that format are stored as trailing header fields instead, so older binaries draining newer queue files
+    /// can read the header without misinterpreting it. The server-generated TimeSeries target marker is
+    /// intentionally omitted from persisted async-insert headers.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
     void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 

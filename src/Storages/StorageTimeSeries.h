@@ -5,6 +5,9 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <array>
+#include <chrono>
+#include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -107,6 +110,12 @@ public:
     std::vector<StorageID> getInnerStorageIDs() const override;
 #endif
 
+    /// Returns the recently probed capability of a remote Metrics target to execute queries with
+    /// FINAL, or nullopt when there is no fresh probe result. The Prometheus metadata endpoint is
+    /// polled frequently, so the probe result is cached briefly to avoid a probe query per request.
+    std::optional<bool> getCachedMetricsTargetFinalSupport() const;
+    void setCachedMetricsTargetFinalSupport(bool supports_final) const;
+
 private:
     /// Represents one of the three target tables (Samples, Tags, Metrics).
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
@@ -134,6 +143,11 @@ private:
 
     const std::vector<Target> targets;
     const bool has_inner_tables;
+
+    /// The result of the last FINAL-support probe of a remote Metrics target and its expiration.
+    mutable std::mutex metrics_target_final_support_mutex;
+    mutable std::optional<bool> metrics_target_final_support;
+    mutable std::chrono::steady_clock::time_point metrics_target_final_support_expires_at;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
@@ -141,6 +155,29 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 
 /// Checks SELECT access to a TimeSeries table and rejects effective outer-table row policies.
 /// Target-based reads cannot preserve a policy defined on the logical TimeSeries table.
-void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageID & time_series_table_id);
+void checkTimeSeriesTableSelectAccess(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    bool check_row_policy = true);
+
+/// Validates that a target can be read through the internal TimeSeries target context. The logical
+/// TimeSeries table is the access surface, so hidden implementation-table SELECT grants are not
+/// checked here.
+void checkTimeSeriesTargetSelectAccess(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table);
+
+/// Rejects target-based reads when a target or one of its forwarding wrappers has an effective
+/// SELECT row policy. View-like targets are also rejected because their arbitrary inner queries
+/// cannot be safely checked before they run in the internal target context.
+void checkTimeSeriesTargetSelectRowPolicy(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table);
+
+/// Builds the internal context used by TimeSeries table functions to read their target tables.
+/// The caller must check the logical TimeSeries table first.
+ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context);
 
 }

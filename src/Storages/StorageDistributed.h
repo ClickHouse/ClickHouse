@@ -136,6 +136,8 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
+    /// Remote/RemoteSecure storage uses its stored credentials instead of the caller's identity.
+    bool isRemoteFunction() const { return is_remote_function; }
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery

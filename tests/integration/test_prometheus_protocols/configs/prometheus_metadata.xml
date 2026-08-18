@@ -22,6 +22,27 @@
                     <table>default.external_prometheus</table>
                 </handler>
             </external_metadata>
+            <external_selector_query>
+                <url>/external-selector/api/v1/query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.external_selector_prometheus</table>
+                </handler>
+            </external_selector_query>
+            <external_selector_api_v1>
+                <url_prefix>/external-selector/combined/api/v1</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.external_selector_prometheus</table>
+                </handler>
+            </external_selector_api_v1>
+            <external_selector_read>
+                <url>/external-selector/read</url>
+                <handler>
+                    <type>read</type>
+                    <table>default.external_selector_prometheus</table>
+                </handler>
+            </external_selector_read>
             <nullable_metadata>
                 <url>/nullable/api/v1/metadata</url>
                 <handler>
@@ -43,6 +64,13 @@
                     <table>default.distributed_plain_prometheus</table>
                 </handler>
             </distributed_plain_metadata>
+            <quota_metadata>
+                <url>/quota/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.quota_prometheus</table>
+                </handler>
+            </quota_metadata>
             <high_card_metadata>
                 <url>/high-card/api/v1/metadata</url>
                 <handler>

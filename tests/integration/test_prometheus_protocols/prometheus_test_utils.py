@@ -178,12 +178,12 @@ def convert_read_request_to_protobuf(
 
 
 # Reads a protobuf message of type from specified host and port via the RemoteRead protocol.
-def receive_protobuf_from_remote_read(host, port, path, read_request_proto):
-    response = get_response_to_remote_read(host, port, path, read_request_proto)
+def receive_protobuf_from_remote_read(host, port, path, read_request_proto, auth=None):
+    response = get_response_to_remote_read(host, port, path, read_request_proto, auth=auth)
     return extract_protobuf_from_remote_read_response(response)
 
 
-def get_response_to_remote_read(host, port, path, read_request_proto):
+def get_response_to_remote_read(host, port, path, read_request_proto, auth=None):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(f"Posting {url}")
     response = requests.get(
@@ -196,6 +196,7 @@ def get_response_to_remote_read(host, port, path, read_request_proto):
             "User-Agent": requests.utils.default_user_agent(),
             "X-Prometheus-Remote-Read-Version": "0.1.0",
         },
+        auth=auth,
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"

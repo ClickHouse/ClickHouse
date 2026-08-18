@@ -690,6 +690,13 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     if (params.full_access)
         return true;
 
+    /// TimeSeries target reads authenticate the original user so row policies and active roles
+    /// still apply on a shard, but the physical target is an implementation detail and must not
+    /// require a separate SELECT grant. Only SELECT itself is bypassed; source and write grants
+    /// remain enforced.
+    if (params.allow_time_series_target_select && flags == AccessFlags(AccessType::SELECT))
+        return true;
+
     auto access_granted = [&]
     {
         /// Record every granted access, regardless of whether the caller is the throwing entry point

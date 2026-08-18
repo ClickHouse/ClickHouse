@@ -130,7 +130,8 @@ TEST(DistributedAsyncInsertHeader, FillsZeroVersionForCurrentLayout)
 }
 
 /// The embedded `ClientInfo` layout of the queue-file header is frozen: fields added after the freeze
-/// (`client_agent`, `is_internal`, `current_roles`, `http_handler_name`, `http_request_url`) must not be
+/// (`client_agent`, `is_internal`, `current_roles`, `http_handler_name`, `http_request_url`, and the
+/// TimeSeries target-read marker) must not be
 /// serialized with `with_trailing_fields = false`, or an older binary draining the file would misinterpret
 /// the fields that follow the embedded `ClientInfo` - starting with `rows` and `bytes`.
 TEST(DistributedAsyncInsertHeader, HTTPHandlerFieldsDoNotShiftEmbeddedLayout)

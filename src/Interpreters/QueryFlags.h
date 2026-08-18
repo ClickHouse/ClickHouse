@@ -9,6 +9,7 @@ struct QueryFlags
     bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
     bool parse_query_from_initial_buffer = false; /// If true, do not read more data while parsing the query. The remaining input can be streaming insert data.
     bool background = false; /// If true, this query is the background run scheduled by executeQueryInBackground.
+    bool ignore_quota = false; /// If true, do not account this trusted server-side query against the caller's quota.
 };
 
 }

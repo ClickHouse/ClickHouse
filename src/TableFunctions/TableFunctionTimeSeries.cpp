@@ -6,6 +6,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -21,6 +23,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace
+{
+
+/// A table function normally returns its nested storage directly, which makes the outer query
+/// read it with the caller's context. TimeSeries targets are implementation tables, so keep the
+/// target context with the proxy and use it for both local and Distributed reads.
+class StorageTimeSeriesTargetProxy final : public StorageProxy
+{
+public:
+    StorageTimeSeriesTargetProxy(const StorageID & table_id_, StoragePtr nested_, ContextPtr target_context_)
+        : StorageProxy(table_id_)
+        , nested(std::move(nested_))
+        , target_context(std::move(target_context_))
+    {
+        auto nested_metadata = nested->getInMemoryMetadataPtr(target_context, false);
+        setInMemoryMetadata(*nested_metadata);
+    }
+
+    StoragePtr getNested() const override { return nested; }
+
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr /* context */,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr & /* storage_snapshot */,
+        SelectQueryInfo & info) const override
+    {
+        auto nested_metadata = nested->getInMemoryMetadataPtr(target_context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, target_context);
+        return nested->getQueryProcessingStage(target_context, to_stage, nested_snapshot, info);
+    }
+
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & /* storage_snapshot */,
+        SelectQueryInfo & query_info,
+        ContextPtr /* context */,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override
+    {
+        auto nested_metadata = nested->getInMemoryMetadataPtr(target_context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, target_context);
+        nested->read(
+            query_plan,
+            column_names,
+            nested_snapshot,
+            query_info,
+            target_context,
+            processed_stage,
+            max_block_size,
+            num_streams);
+    }
+
+private:
+    const StoragePtr nested;
+    const ContextPtr target_context;
+};
+
 }
 
 
@@ -86,21 +149,32 @@ template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         const ASTPtr & /* ast_function */,
         ContextPtr context,
-        const String & /* table_name */,
+        const String & table_name,
         ColumnsDescription /* cached_columns */,
         bool is_insert_query) const
 {
     if (is_insert_query)
+    {
         context->checkAccess(AccessType::INSERT, time_series_storage_id);
-    else
-        checkTimeSeriesTableSelectAccess(context, time_series_storage_id);
-    return getTargetTable(context);
+        return getTargetTable(context);
+    }
+
+    checkTimeSeriesTableSelectAccess(
+        context,
+        time_series_storage_id,
+        !context->isTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed());
+    auto target_context = getTimeSeriesTargetContext(context);
+    auto target_table = getTargetTable(target_context);
+    checkTimeSeriesTargetSelectAccess(context, time_series_storage_id, target_table);
+    checkTimeSeriesTargetSelectRowPolicy(context, time_series_storage_id, target_table);
+    return std::make_shared<StorageTimeSeriesTargetProxy>(
+        StorageID(getDatabaseName(), table_name), std::move(target_table), std::move(target_context));
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    checkTimeSeriesTableSelectAccess(context, time_series_storage_id);
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }

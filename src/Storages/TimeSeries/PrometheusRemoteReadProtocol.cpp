@@ -228,6 +228,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     out_time_series.Clear();
 
     auto time_series_storage_id = time_series_storage->getStorageID();
+    checkTimeSeriesTableSelectAccess(getContext(), time_series_storage_id);
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
         time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);

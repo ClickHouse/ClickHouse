@@ -214,6 +214,11 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 
 /// Push the initiator's current roles to other nodes for consistent role-scoped access.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
 
+/// Mark server-generated TimeSeries target reads on interserver queries. The marker lets the
+/// receiving shard skip the hidden target SELECT grant while still authenticating the original
+/// user and applying that user's active row-policy roles.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ = 54492;
+
 static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490;
 
 /// Serialize the skip degree of a `quantileDeterministic` state, so that merging states thinned out

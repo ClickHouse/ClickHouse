@@ -53,12 +53,26 @@ def get_nullable_metadata(params=None, auth=None):
     return get_metadata(params=params, auth=auth, path="/nullable/api/v1/metadata")
 
 
-def get_wrapped_metadata(params=None, auth=None):
-    return get_metadata(params=params, auth=auth, path="/wrapped/api/v1/metadata")
+def get_wrapped_metadata(params=None, headers=None, auth=None):
+    return get_metadata(
+        params=params,
+        headers=headers,
+        auth=auth,
+        path="/wrapped/api/v1/metadata",
+    )
 
 
-def get_distributed_plain_metadata(params=None, auth=None):
-    return get_metadata(params=params, auth=auth, path="/distributed-plain/api/v1/metadata")
+def get_distributed_plain_metadata(params=None, headers=None, auth=None):
+    return get_metadata(
+        params=params,
+        headers=headers,
+        auth=auth,
+        path="/distributed-plain/api/v1/metadata",
+    )
+
+
+def get_quota_metadata(params=None, auth=None):
+    return get_metadata(params=params, auth=auth, path="/quota/api/v1/metadata")
 
 
 def get_high_card_metadata(params=None, headers=None, auth=None):
@@ -79,11 +93,12 @@ def get_pruning_metadata(params=None, headers=None, auth=None):
     )
 
 
-def execute_sql(query, auth):
+def execute_sql(query, auth, params=None):
     return requests.post(
         f"http://{node.ip_address}:{MAIN_HTTP_PORT}",
         data=query,
         auth=auth,
+        params=params or {},
     )
 
 
@@ -95,6 +110,14 @@ def assert_metadata_subset(data, metric, expected_entries, limit):
         == len(entries)
     )
     assert all(entry in expected_entries for entry in entries)
+
+
+def optimize_table_final(table_name):
+    node.query("SYSTEM START MERGES")
+    try:
+        node.query(f"OPTIMIZE TABLE {table_name} FINAL")
+    finally:
+        node.query("SYSTEM STOP MERGES")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -135,6 +158,72 @@ def setup():
             "('a_metric', 'm_type', '', 'm_help', 2, 'a_group_2'), "
             "('a_metric', 'a_type', '', 'a_help', 3, 'a_group_3'), "
             "('b_metric', 'gauge', '', 'B metric', 1, 'b_group')"
+        )
+
+        node.query(
+            "CREATE TABLE external_selector_samples "
+            "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+            "ENGINE=MergeTree ORDER BY (id, timestamp)"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags "
+            "(id Tuple(UInt64, UUID), metric_name LowCardinality(String), "
+            "tags Map(LowCardinality(String), String), "
+            "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+            "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+            "ENGINE=AggregatingMergeTree PRIMARY KEY metric_name "
+            "ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key=1"
+        )
+        node.query(
+            "CREATE TABLE external_selector_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags_alias "
+            "ENGINE=Alias('default', 'external_selector_tags')"
+        )
+        node.query(
+            "CREATE TABLE external_selector_alias_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags_alias"
+        )
+        node.query(
+            "CREATE VIEW external_selector_tags_view AS "
+            "SELECT * FROM external_selector_tags"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags_view_alias "
+            "ENGINE=Alias('default', 'external_selector_tags_view')"
+        )
+        node.query(
+            "CREATE TABLE external_selector_view_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags_view"
+        )
+        node.query(
+            "CREATE TABLE external_selector_alias_view_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags_view_alias"
+        )
+        node.query(
+            "INSERT INTO external_selector_tags VALUES "
+            "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+            "'protected_metric', {'__name__': 'protected_metric'}, "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        )
+        node.query(
+            "INSERT INTO external_selector_samples VALUES "
+            "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+            "toDateTime64(1000, 3), 42)"
+        )
+        node.query(
+            "CREATE TABLE external_selector_samples_distributed AS external_selector_samples "
+            "ENGINE=Distributed('test_cluster', 'default', 'external_selector_samples', rand())"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags_distributed AS external_selector_tags "
+            "ENGINE=Distributed('test_cluster', 'default', 'external_selector_tags', rand())"
+        )
+        node.query(
+            "CREATE TABLE external_selector_distributed_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples_distributed TAGS external_selector_tags_distributed"
         )
 
         node.query(
@@ -210,7 +299,24 @@ def setup():
             "('distributed_plain_metric', 'gauge', '', 'plain help')"
         )
 
-        assert node.query("SELECT count() FROM timeSeriesMetrics(prometheus)") == "5\n"
+        node.query(
+            "CREATE TABLE quota_metrics_source "
+            "(metric_family_name String, type String, unit String, help String, version UInt64) "
+            "ENGINE=ReplacingMergeTree(version) ORDER BY metric_family_name"
+        )
+        node.query(
+            "CREATE TABLE quota_metrics_distributed AS quota_metrics_source "
+            "ENGINE=Distributed('test_cluster', 'default', 'quota_metrics_source', rand())"
+        )
+        node.query(
+            "CREATE TABLE quota_prometheus ENGINE=TimeSeries METRICS quota_metrics_distributed"
+        )
+        node.query(
+            "INSERT INTO quota_metrics_source VALUES "
+            "('quota_metric', 'gauge', '', 'quota help', 1)"
+        )
+
+        assert node.query("SELECT count() FROM timeSeriesMetrics(prometheus)") == "4\n"
         yield cluster
     finally:
         try:
@@ -294,6 +400,7 @@ def test_metadata_metric_filter_uses_primary_key_condition():
         f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
         "ORDER BY event_time DESC LIMIT 1"
     )
+    query = query.replace("\\'", "'")
     read_rows = node.query(
         "SELECT read_rows FROM system.query_log "
         f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
@@ -435,9 +542,201 @@ def test_prometheus_reads_reject_outer_time_series_row_policy():
         node.query(f"DROP ROW POLICY {policy_name} ON default.prometheus")
 
 
+def test_selector_rejects_external_target_row_policy():
+    queries = [
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "SELECT count() FROM prometheusQuery('default', 'external_selector_prometheus', 'protected_metric', 1000)",
+        "SELECT count() FROM prometheusQueryRange("
+        "'default', 'external_selector_prometheus', 'protected_metric', 1000, 1000, 1)",
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_alias_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "SELECT count() FROM prometheusQuery('default', 'external_selector_alias_prometheus', 'protected_metric', 1000)",
+        "SELECT count() FROM prometheusQueryRange("
+        "'default', 'external_selector_alias_prometheus', 'protected_metric', 1000, 1000, 1)",
+    ]
+    auth = ("metadata_external_selector_reader", "")
+
+    for query in queries:
+        response = execute_sql(query, auth=auth)
+        assert response.status_code == 200, response.text
+
+    policy_name = f"external_selector_tags_policy_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE ROW POLICY {policy_name} ON default.external_selector_tags "
+        "FOR SELECT USING 0 TO metadata_external_selector_reader"
+    )
+    try:
+        for query in queries:
+            response = execute_sql(query, auth=auth)
+            assert response.status_code != 200, response.text
+            assert "row policies" in response.text, response.text
+    finally:
+        node.query(f"DROP ROW POLICY {policy_name} ON default.external_selector_tags")
+
+
+def test_selector_rejects_view_target_row_policy():
+    queries = [
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_view_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "SELECT count() FROM prometheusQuery('default', 'external_selector_view_prometheus', 'protected_metric', 1000)",
+        "SELECT count() FROM prometheusQueryRange("
+        "'default', 'external_selector_view_prometheus', 'protected_metric', 1000, 1000, 1)",
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_alias_view_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "SELECT count() FROM prometheusQuery('default', 'external_selector_alias_view_prometheus', 'protected_metric', 1000)",
+        "SELECT count() FROM prometheusQueryRange("
+        "'default', 'external_selector_alias_view_prometheus', 'protected_metric', 1000, 1000, 1)",
+    ]
+    auth = ("metadata_external_selector_reader", "")
+    policy_name = f"external_selector_view_tags_policy_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE ROW POLICY {policy_name} ON default.external_selector_tags "
+        "FOR SELECT USING 0 TO metadata_external_selector_reader"
+    )
+    try:
+        for query in queries:
+            response = execute_sql(query, auth=auth)
+            assert response.status_code != 200, response.text
+            assert "view targets" in response.text.lower(), response.text
+    finally:
+        node.query(f"DROP ROW POLICY {policy_name} ON default.external_selector_tags")
+
+
+def test_metadata_final_probe_does_not_consume_query_quota():
+    user_name = f"metadata_probe_quota_reader_{uuid.uuid4().hex}"
+    quota_name = f"metadata_probe_quota_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+
+    try:
+        node.query(
+            f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+        )
+        node.query(f"GRANT SELECT ON default.quota_prometheus TO {user_name}")
+        node.query(
+            f"CREATE QUOTA {quota_name} FOR INTERVAL 1 HOUR MAX QUERIES 1 TO {user_name}"
+        )
+        assert get_quota_metadata(
+            {"metric": "quota_metric"}, auth=auth
+        ) == {
+            "quota_metric": [
+                {"type": "gauge", "help": "quota help", "unit": ""},
+            ]
+        }
+    finally:
+        node.query(f"DROP QUOTA IF EXISTS {quota_name}")
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_selector_preserves_active_roles_for_distributed_targets():
+    user_name = f"metadata_external_selector_sql_reader_{uuid.uuid4().hex}"
+    role_name = f"metadata_external_selector_role_{uuid.uuid4().hex}"
+    policy_name = f"external_selector_distributed_tags_policy_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    queries = [
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_distributed_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "SELECT count() FROM prometheusQuery('default', 'external_selector_distributed_prometheus', 'protected_metric', 1000)",
+        "SELECT count() FROM prometheusQueryRange("
+        "'default', 'external_selector_distributed_prometheus', 'protected_metric', 1000, 1000, 1)",
+    ]
+
+    node.query(
+        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        for table_name in [
+            "external_selector_prometheus",
+            "external_selector_distributed_prometheus",
+        ]:
+            node.query(f"GRANT SELECT ON default.{table_name} TO {user_name}")
+        node.query(f"CREATE ROLE {role_name}")
+        node.query(f"GRANT {role_name} TO {user_name}")
+        node.query(
+            f"CREATE ROW POLICY {policy_name} ON default.external_selector_tags "
+            f"FOR SELECT USING 0 TO {role_name}"
+        )
+
+        for query in queries:
+            response = execute_sql(query, auth=auth)
+            assert response.status_code == 200, response.text
+            assert response.text.strip() == "1", response.text
+
+            response = execute_sql(query, auth=auth, params={"role": role_name})
+            assert response.status_code == 200, response.text
+            assert response.text.strip() == "0", response.text
+    finally:
+        node.query(f"DROP ROW POLICY IF EXISTS {policy_name} ON default.external_selector_tags")
+        node.query(f"REVOKE {role_name} FROM {user_name}")
+        node.query(f"DROP ROLE IF EXISTS {role_name}")
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_distributed_targets_use_logical_table_grants():
+    user_name = f"metadata_external_selector_outer_only_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    queries = [
+        ("SELECT count() > 0 FROM timeSeriesSamples('default', 'external_selector_distributed_prometheus')", "1"),
+        ("SELECT count() > 0 FROM timeSeriesTags('default', 'external_selector_distributed_prometheus')", "1"),
+        ("SELECT count() > 0 FROM timeSeriesMetrics('default', 'wrapped_prometheus')", "1"),
+        (
+            "SELECT count() FROM timeSeriesSelector("
+            "'default', 'external_selector_distributed_prometheus', 'protected_metric', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))",
+            "1",
+        ),
+        (
+            "SELECT count() FROM prometheusQuery('default', 'external_selector_distributed_prometheus', 'protected_metric', 1000)",
+            "1",
+        ),
+        (
+            "SELECT count() FROM prometheusQueryRange("
+            "'default', 'external_selector_distributed_prometheus', 'protected_metric', 1000, 1000, 1)",
+            "1",
+        ),
+    ]
+
+    node.query(
+        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(
+            f"GRANT SELECT ON default.external_selector_distributed_prometheus TO {user_name}"
+        )
+        node.query(f"GRANT SELECT ON default.wrapped_prometheus TO {user_name}")
+
+        for query, expected in queries:
+            response = execute_sql(query, auth=auth)
+            assert response.status_code == 200, response.text
+            assert response.text.strip() == expected, response.text
+
+        assert get_wrapped_metadata({"metric": "wrapped_metric"}, auth=auth) == {
+            "wrapped_metric": [
+                {"type": "gauge", "help": "new help", "unit": ""},
+            ]
+        }
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
 def test_metadata_is_stable_after_metrics_merge():
     before_merge = get_metadata({"metric": "http_requests_total"})
-    node.query("OPTIMIZE TABLE prometheus FINAL")
+    optimize_table_final("prometheus")
     assert get_metadata({"metric": "http_requests_total"}) == before_merge
 
 
@@ -599,7 +898,7 @@ def test_external_metadata_limit_per_metric_remains_bounded_after_optimize():
     params = {"metric": "a_metric", "limit_per_metric": "2"}
     expected = get_external_metadata({"metric": "a_metric"})["a_metric"]
     assert_metadata_subset(get_external_metadata(params), "a_metric", expected, 2)
-    node.query("OPTIMIZE TABLE external_metrics FINAL")
+    optimize_table_final("external_metrics")
     assert_metadata_subset(get_external_metadata(params), "a_metric", expected, 2)
 
 
@@ -649,7 +948,7 @@ def test_high_cardinality_metadata_limit_returns_bounded_entries():
         )
 
     assert_bounded_result(get_high_card_metadata(params))
-    node.query("OPTIMIZE TABLE high_card_metrics FINAL")
+    optimize_table_final("high_card_metrics")
     assert_bounded_result(get_high_card_metadata(params))
 
 
@@ -690,12 +989,85 @@ def test_wrapped_replacing_metrics_target_uses_final():
     }
 
 
+def test_distributed_final_success_is_logged_as_user_query():
+    query_id = f"prometheus-distributed-final-success-test-{uuid.uuid4()}"
+    assert get_wrapped_metadata(
+        {"metric": "wrapped_metric"},
+        headers={"X-ClickHouse-Query-Id": query_id},
+    ) == {
+        "wrapped_metric": [
+            {"type": "gauge", "help": "new help", "unit": ""},
+        ]
+    }
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
 def test_distributed_non_final_metrics_target_falls_back_without_final():
     assert get_distributed_plain_metadata({"metric": "distributed_plain_metric"}) == {
         "distributed_plain_metric": [
             {"type": "gauge", "help": "plain help", "unit": ""},
         ]
     }
+
+
+def test_distributed_final_fallback_does_not_log_the_swallowed_exception():
+    query_id = f"prometheus-distributed-final-fallback-test-{uuid.uuid4()}"
+    assert get_distributed_plain_metadata(
+        {"metric": "distributed_plain_metric"},
+        headers={"X-ClickHouse-Query-Id": query_id},
+    ) == {
+        "distributed_plain_metric": [
+            {"type": "gauge", "help": "plain help", "unit": ""},
+        ]
+    }
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+    assert node.query(
+        "SELECT count() FROM system.query_log "
+        f"WHERE type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') "
+        f"AND query_id = '{query_id}'"
+    ) == "0\n"
+
+
+def test_distributed_zero_limit_does_not_use_final():
+    query_id = f"prometheus-distributed-zero-limit-test-{uuid.uuid4()}"
+    assert get_distributed_plain_metadata(
+        {"limit": "0"},
+        headers={"X-ClickHouse-Query-Id": query_id},
+    ) == {}
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+    query = node.query(
+        "SELECT query FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
+        "ORDER BY event_time DESC LIMIT 1"
+    )
+    assert "FINAL" not in query.upper(), query
 
 
 def test_external_metadata_allows_select_on_outer_time_series_table_only():
@@ -708,6 +1080,35 @@ def test_external_metadata_allows_select_on_outer_time_series_table_only():
             {"type": "z_type", "help": "z_help", "unit": ""},
         ]
     }
+
+
+def test_external_metadata_rejects_target_row_policy():
+    policy_name = f"external_metrics_policy_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE ROW POLICY {policy_name} ON default.external_metrics "
+        "FOR SELECT USING metric_family_name = 'a_metric' TO metadata_external_reader"
+    )
+    try:
+        response = execute_sql(
+            "SELECT count() FROM timeSeriesMetrics('default', 'external_prometheus')",
+            auth=("metadata_external_reader", ""),
+        )
+        assert response.status_code != 200, response.text
+        assert "row policies" in response.text, response.text
+        assert "external_metrics" not in response.text, response.text
+
+        response = requests.get(
+            f"http://{node.ip_address}:9093/external/api/v1/metadata",
+            auth=("metadata_external_reader", ""),
+        )
+        assert response.status_code == 400, response.text
+        result = response.json()
+        assert result["status"] == "error", result
+        assert result["errorType"] == "bad_data", result
+        assert "row policies" in result["error"], result
+        assert "external_metrics" not in response.text, response.text
+    finally:
+        node.query(f"DROP ROW POLICY {policy_name} ON default.external_metrics")
 
 
 @pytest.mark.parametrize("name", ["limit", "limit_per_metric"])
@@ -1066,6 +1467,54 @@ def test_time_series_table_function_schema_allows_select_only_user():
     assert response.status_code == 200, response.text
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "DESCRIBE TABLE timeSeriesSamples('default', 'prometheus')",
+        "DESCRIBE TABLE timeSeriesData('default', 'prometheus')",
+        "DESCRIBE TABLE timeSeriesTags('default', 'prometheus')",
+        "DESCRIBE TABLE timeSeriesMetrics('default', 'prometheus')",
+        (
+            "DESCRIBE TABLE timeSeriesSelector("
+            "'default', 'prometheus', 'http_requests_total', "
+            "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+        ),
+        "DESCRIBE TABLE prometheusQuery('default', 'prometheus', 'http_requests_total', 1000)",
+        "DESCRIBE TABLE prometheusQueryRange("
+        "'default', 'prometheus', 'http_requests_total', 1000, 1000, 1)",
+    ],
+)
+def test_time_series_table_function_schema_allows_select_with_outer_row_policy(query):
+    policy_name = f"prometheus_schema_policy_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE ROW POLICY {policy_name} ON default.prometheus "
+        "FOR SELECT USING metric_family = 'cpu_usage' TO metadata_select_temp_table_only"
+    )
+    try:
+        response = execute_sql(query, auth=("metadata_select_temp_table_only", ""))
+        assert response.status_code == 200, response.text
+    finally:
+        node.query(f"DROP ROW POLICY {policy_name} ON default.prometheus")
+
+
+def test_time_series_table_function_schema_inference_allows_select_with_outer_row_policy():
+    policy_name = f"prometheus_schema_inference_policy_{uuid.uuid4().hex}"
+    temporary_table_name = f"inferred_metadata_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE ROW POLICY {policy_name} ON default.prometheus "
+        "FOR SELECT USING metric_family = 'cpu_usage' TO metadata_select_temp_table_only"
+    )
+    try:
+        response = execute_sql(
+            f"CREATE TEMPORARY TABLE {temporary_table_name} AS "
+            "SELECT * FROM timeSeriesMetrics('default', 'prometheus')",
+            auth=("metadata_select_temp_table_only", ""),
+        )
+        assert response.status_code == 200, response.text
+    finally:
+        node.query(f"DROP ROW POLICY {policy_name} ON default.prometheus")
+
+
 def test_time_series_table_function_insert_requires_insert_access():
     response = execute_sql(
         "INSERT INTO TABLE FUNCTION timeSeriesSamples('default', 'prometheus') "
@@ -1081,7 +1530,8 @@ def test_time_series_table_function_insert_requires_insert_access():
 def test_time_series_table_function_insert_allows_insert_only_user():
     response = execute_sql(
         "INSERT INTO TABLE FUNCTION timeSeriesSamples('default', 'prometheus') "
-        "SELECT toUUID('00000000-0000-0000-0000-000000000001'), toDateTime64(2000, 3), 1.0",
+        "SELECT tuple(toUInt64(0), toUUID('00000000-0000-0000-0000-000000000001')), "
+        "toDateTime64(2000, 3), 1.0",
         auth=("metadata_insert_temp_table_only", ""),
     )
     assert response.status_code == 200, response.text

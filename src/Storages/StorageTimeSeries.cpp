@@ -1,6 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -19,13 +20,17 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <unordered_set>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -69,6 +74,37 @@ namespace
         if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
+    }
+
+    /// Resolve every forwarding storage which can receive a target read. Checking only the first
+    /// storage is not enough: an Alias or lazy proxy may forward the read to a table with its own
+    /// row policy.
+    std::vector<StoragePtr> getTimeSeriesTargetStorageChain(const StoragePtr & target_table)
+    {
+        std::vector<StoragePtr> result;
+        std::unordered_set<const IStorage *> visited;
+
+        for (auto current_target = target_table;
+             current_target && visited.insert(current_target.get()).second;)
+        {
+            result.emplace_back(current_target);
+
+            if (const auto * alias = dynamic_cast<const StorageAlias *>(current_target.get()))
+            {
+                current_target = alias->tryGetTargetTable();
+                continue;
+            }
+
+            if (const auto * proxy = dynamic_cast<const StorageProxy *>(current_target.get()))
+            {
+                current_target = proxy->getNested();
+                continue;
+            }
+
+            break;
+        }
+
+        return result;
     }
 }
 
@@ -410,6 +446,29 @@ Strings StorageTimeSeries::getDataPaths() const
 }
 
 
+namespace
+{
+    /// How long a probed FINAL capability of a remote Metrics target stays valid.
+    constexpr auto METRICS_TARGET_FINAL_SUPPORT_CACHE_TTL = std::chrono::seconds{60};
+}
+
+std::optional<bool> StorageTimeSeries::getCachedMetricsTargetFinalSupport() const
+{
+    std::lock_guard lock{metrics_target_final_support_mutex};
+    if (metrics_target_final_support && (std::chrono::steady_clock::now() < metrics_target_final_support_expires_at))
+        return metrics_target_final_support;
+    return std::nullopt;
+}
+
+
+void StorageTimeSeries::setCachedMetricsTargetFinalSupport(bool supports_final) const
+{
+    std::lock_guard lock{metrics_target_final_support_mutex};
+    metrics_target_final_support = supports_final;
+    metrics_target_final_support_expires_at = std::chrono::steady_clock::now() + METRICS_TARGET_FINAL_SUPPORT_CACHE_TTL;
+}
+
+
 bool StorageTimeSeries::optimize(
     const ASTPtr & query,
     const StorageMetadataPtr &,
@@ -652,9 +711,15 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         storage->getStorageID().getNameForLogs());
 }
 
-void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageID & time_series_table_id)
+void checkTimeSeriesTableSelectAccess(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    bool check_row_policy)
 {
     context->checkAccess(AccessType::SELECT, time_series_table_id);
+
+    if (!check_row_policy)
+        return;
 
     const auto row_policy_filter = context->getRowPolicyFilter(
         time_series_table_id.getDatabaseName(),
@@ -667,6 +732,122 @@ void checkTimeSeriesTableSelectAccess(const ContextPtr & context, const StorageI
             "Cannot read TimeSeries targets because SELECT row policies are applied on TimeSeries table {}",
             time_series_table_id.getNameForLogs());
     }
+}
+
+void checkTimeSeriesTargetSelectAccess(
+    const ContextPtr & /* context */,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table)
+{
+    for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table))
+    {
+        /// A View can hide arbitrary tables with their own policies. Reject it before selecting
+        /// the caller or internal context, including when another target is Distributed.
+        if (current_target->isView())
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot read TimeSeries targets because view targets are not supported for TimeSeries table {}",
+                time_series_table_id.getNameForLogs());
+        }
+
+        const auto * distributed = dynamic_cast<const StorageDistributed *>(current_target.get());
+        if (distributed && !distributed->isRemoteFunction() && distributed->getRemoteTableName().empty())
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot read distributed target {} of TimeSeries table {} because its remote target is not a named table",
+                current_target->getStorageID().getNameForLogs(),
+                time_series_table_id.getNameForLogs());
+        }
+    }
+}
+
+void checkTimeSeriesTargetSelectRowPolicy(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table)
+{
+    for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table))
+    {
+        /// A View can hide arbitrary tables with their own policies. Reject it instead of
+        /// attempting to guess which inner tables its query will read.
+        if (current_target->isView())
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot read TimeSeries targets because view targets are not supported for TimeSeries table {}",
+                time_series_table_id.getNameForLogs());
+        }
+
+        const auto target_table_id = current_target->getStorageID();
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            target_table_id.getDatabaseName(),
+            target_table_id.getTableName(),
+            RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot read TimeSeries targets because SELECT row policies are applied on a target of TimeSeries table {}",
+                time_series_table_id.getNameForLogs());
+        }
+    }
+}
+
+ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context)
+{
+    /// Target tables are implementation details of the logical TimeSeries table. The logical
+    /// table's access and row-policy checks are performed before this context is created, so the
+    /// target query can use the same security model as SQL SECURITY NONE views without exposing
+    /// the inner table names to the caller.
+    auto target_context = Context::createCopy(context->getGlobalContext());
+    target_context->setClientInfo(context->getClientInfo());
+    target_context->getClientInfo().is_time_series_target_read = true;
+    /// A full-access target context has no ContextAccess role state. Carry the invoker's current
+    /// roles in ClientInfo so Distributed targets can forward them to the remote shard.
+    if (context->getUserID())
+        target_context->getClientInfo().current_roles = context->getRolesInfo()->getCurrentRolesNames();
+    target_context->makeQueryContext();
+    if (context->hasQueryContext())
+        target_context->setQueryContext(context->getQueryContext());
+
+    const auto database = context->getCurrentDatabase();
+    if (!database.empty() && database != target_context->getCurrentDatabase())
+        target_context->setCurrentDatabase(database);
+
+    target_context->applySettingsChanges(context->getSettingsRef().changes());
+    target_context->setInsertionTable(
+        context->getInsertionTable(),
+        context->getInsertionTableColumnNames(),
+        context->getInsertionTableColumnsDescription());
+    target_context->setProgressCallback(context->getProgressCallback());
+    target_context->setProcessListElement(context->getProcessListElement());
+    target_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    target_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+
+    if (context->getCurrentTransaction())
+        target_context->setCurrentTransaction(context->getCurrentTransaction());
+
+    if (context->getZooKeeperMetadataTransaction())
+        target_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
+
+    /// Preserve the callbacks used by parallel-replica and cluster-function reads. This mirrors
+    /// the context setup for SQL SECURITY DEFINER/NONE views.
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        target_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        target_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        target_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
+    if (context->hasClusterFunctionReadTaskCallback())
+        target_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
+
+    if (context->hasQueryContext())
+        target_context->setQueryAccessInfo(context->getQueryContext()->getQueryAccessInfoPtr());
+
+    return target_context;
 }
 
 

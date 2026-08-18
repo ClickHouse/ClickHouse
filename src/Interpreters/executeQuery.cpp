@@ -3041,7 +3041,11 @@ static BlockIO executeQueryImpl(
                 }
 
                 if (out_ast)
-                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+                {
+                    auto query_options = SelectQueryOptions(stage).setInternal(internal);
+                    query_options.ignore_quota = flags.ignore_quota;
+                    interpreter = InterpreterFactory::instance().get(out_ast, context, query_options);
+                }
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])

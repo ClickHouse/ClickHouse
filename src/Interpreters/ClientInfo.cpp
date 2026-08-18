@@ -338,6 +338,9 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
         else
             writeBinary(static_cast<UInt8>(0), out);
     }
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ)
+        writeBinary(is_time_series_target_read, out);
 }
 
 
@@ -483,6 +486,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         else
             current_roles.reset();
     }
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ)
+        readBinary(is_time_series_target_read, in);
+    else
+        is_time_series_target_read = false;
 }
 
 

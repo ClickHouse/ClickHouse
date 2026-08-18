@@ -81,6 +81,7 @@ String makeFullClientInfoWire(
     writeBinary(String(""), buf);                              /// client_agent (>= 54485)
     writeBinary(false, buf);                                   /// is_internal (>= 54486)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_current_roles = no (>= 54488)
+    writeBinary(false, buf);                                   /// is_time_series_target_read (>= 54492)
     buf.finalize();
     return buf.str();
 }
@@ -382,6 +383,35 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
     auto some = round_trip(std::vector<String>{"role_a", "role_b"});
     ASSERT_TRUE(some.has_value());
     EXPECT_EQ(*some, (std::vector<String>{"role_a", "role_b"}));
+}
+
+TEST(ClientInfoRead, TimeSeriesTargetReadMarkerRoundTrips)
+{
+    ClientInfo out;
+    out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    out.initial_user = "default";
+    out.initial_query_id = "query-id";
+    out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
+    out.interface = ClientInfo::Interface::TCP;
+    out.is_time_series_target_read = true;
+
+    WriteBufferFromOwnString buf;
+    out.write(buf, DBMS_TCP_PROTOCOL_VERSION);
+    buf.finalize();
+
+    ClientInfo in_info;
+    ReadBufferFromString in(buf.str());
+    in_info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_TRUE(in_info.is_time_series_target_read);
+
+    WriteBufferFromOwnString old_buf;
+    out.write(old_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ - 1);
+    old_buf.finalize();
+
+    ClientInfo old_info;
+    ReadBufferFromString old_in(old_buf.str());
+    old_info.read(old_in, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ - 1);
+    EXPECT_FALSE(old_info.is_time_series_target_read);
 }
 
 /// An older peer can forward a server-initiated query whose context was never filled with a
