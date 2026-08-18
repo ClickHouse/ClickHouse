@@ -132,6 +132,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
@@ -354,6 +360,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
+    # WebAssembly (wasm64, through Emscripten). Experimental: the multicall `clickhouse`
+    # binary builds, and `clickhouse local` runs under Node.js >= 24 and in browsers.
+    # The CI job pins the binary target (see build_clickhouse.py).
+    WASM64 = "wasm64"
     ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
 
@@ -428,8 +438,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-21"
-    COMPILER_CPP = "clang++-21"
+    COMPILER_C = "clang-22"
+    COMPILER_CPP = "clang++-22"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -469,6 +479,7 @@ class ArtifactNames:
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
+    CH_WASM64 = "CH_WASM64_BIN"
 
     FAST_TEST = "FAST_TEST"
 
@@ -477,16 +488,10 @@ class ArtifactNames:
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
+    # Packages are built for the release builds only - they are what gets published, and
+    # everything else in CI runs from the `CH_*` binary.
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
-    DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
-    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
-    DEB_ARM_TSAN = "DEB_ARM_TSAN"
-    DEB_ARM_MSAN = "DEB_ARM_MSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -501,7 +506,6 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
-    DEB_AMD_CFI = "DEB_AMD_CFI"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -637,16 +641,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
-            ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN_UBSAN,
-            ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_DEBUG,
-            ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ArtifactNames.DEB_ARM_TSAN,
-            ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_AMD_CFI,
         ]
     )
     clickhouse_rpms = Artifact.Config(
@@ -681,6 +676,16 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
+    )
+    # `emcc` emits a pair: the WebAssembly module and the JavaScript that instantiates it
+    # (memory setup, syscalls, the Web Workers backing pthreads).
+    clickhouse_wasm = Artifact.Config(
+        name=ArtifactNames.CH_WASM64,
+        type=Artifact.Type.S3,
+        path=[
+            f"{TEMP_DIR}/build/programs/clickhouse.js",
+            f"{TEMP_DIR}/build/programs/clickhouse.wasm",
+        ],
     )
     fuzzers = Artifact.Config(
         name=ArtifactNames.ARM_FUZZERS,
