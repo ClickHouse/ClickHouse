@@ -374,11 +374,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            const bool soft_time_limit_reached = isQueryTimeLimitReached();
-            if (soft_time_limit_reached && cancellation)
+            const bool retry_soft_time_limit_reached = isQueryTimeLimitReached();
+            if (retry_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
-            if (soft_time_limit_reached || isReadCancelled())
+            if (retry_soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
         }
 
@@ -449,11 +449,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// cancellation error could mask the failure that tore the pipeline down. Marking the
             /// error lets that reader tell it from a failure the cancellation has nothing to do
             /// with, which it must not discard.
-            const bool soft_time_limit_reached = isQueryTimeLimitReached();
-            if (soft_time_limit_reached && cancellation)
+            const bool final_attempt_soft_time_limit_reached = isQueryTimeLimitReached();
+            if (final_attempt_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
-            if (soft_time_limit_reached || isReadCancelled())
+            if (final_attempt_soft_time_limit_reached || isReadCancelled())
                 throw ReadInterruptedException(exception);
 
             std::rethrow_exception(exception);
@@ -479,11 +479,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
             /// instead of the network error we happen to have at hand, the same way as it is done for S3.
-            const bool soft_time_limit_reached = isQueryTimeLimitReached();
-            if (soft_time_limit_reached && cancellation)
+            const bool retry_wait_soft_time_limit_reached = isQueryTimeLimitReached();
+            if (retry_wait_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
-            if (cancelled || soft_time_limit_reached)
+            if (cancelled || retry_wait_soft_time_limit_reached)
             {
                 /// The read was cancelled for another reason: the pipeline is being torn down because
                 /// something else in the query has already failed, the client has disconnected, or the
