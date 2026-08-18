@@ -81,6 +81,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_timeout) \
     ONCE(azure_inject_poco_timeout_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
