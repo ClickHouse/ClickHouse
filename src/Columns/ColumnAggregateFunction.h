@@ -224,7 +224,8 @@ public:
     /// the block. All three figures describe the repeated payload. Identical copies compress far better
     /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
     /// compressed figure is measured on a repeated sample rather than scaled from one copy.
-    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize, size_t repetitions = 1) const;
+    /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
+    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize, size_t repetitions = 1, size_t skip_rows = 0) const;
 
     size_t byteSizeAt(size_t n) const override;
 

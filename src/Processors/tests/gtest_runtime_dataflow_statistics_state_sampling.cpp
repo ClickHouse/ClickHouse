@@ -6,6 +6,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -16,6 +18,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -301,6 +304,268 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithStateAlternativeSamplesN
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}
+
+/// A state alternative can be absent from a sampled `Variant` block. Its aggregate-state leaf then has
+/// zero rows, even though the outer block is non-empty. This must not establish a zero-byte sample for
+/// later blocks: the Native stream contains no state values in the first block, while following blocks can
+/// contain large state payloads. Keep sampling until at least one state value was serialized.
+TEST(RuntimeDataflowStatisticsStateSampling, VariantWithoutSampledStateValuesDoesNotExtrapolateFromZero)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t string_rows = 100;
+    constexpr size_t state_rows = 200;
+    constexpr size_t state_blocks = 4;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+    ASSERT_EQ(variant_type->getVariants()[0]->getName(), state_type->getName());
+
+    const auto make_string_variant = [&]
+    {
+        auto empty_states = ColumnAggregateFunction::create(function);
+        auto strings = ColumnString::create();
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < string_rows; ++row)
+        {
+            strings->insertData("sample", 6);
+            discriminators->insertValue(1);
+            offsets->insertValue(row);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(empty_states));
+        alternatives.emplace_back(std::move(strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives);
+    };
+    const auto make_state_variant = [&]
+    {
+        auto states = ColumnAggregateFunction::create(function);
+        auto empty_strings = ColumnString::create();
+        auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        for (size_t row = 0; row < state_rows; ++row)
+        {
+            states->insertFrom(*source_state, 0);
+            discriminators->insertValue(0);
+            offsets->insertValue(row);
+        }
+        Columns alternatives;
+        alternatives.emplace_back(std::move(states));
+        alternatives.emplace_back(std::move(empty_strings));
+        return ColumnVariant::create(std::move(discriminators), std::move(offsets), alternatives);
+    };
+
+    const size_t cache_key = 0x111985 + 8;
+    size_t exact_compressed_bytes = 0;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, string_rows + state_rows * state_blocks);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state_or_string"});
+
+        auto sample = make_string_variant();
+        exact_compressed_bytes += compressedColumnSize({sample, variant_type, "variant_state_or_string"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sample)}, string_rows), header);
+
+        for (size_t block = 0; block < state_blocks; ++block)
+        {
+            auto states = make_state_variant();
+            exact_compressed_bytes += compressedColumnSize({states, variant_type, "variant_state_or_string"});
+            updater.recordOutputChunk(Chunk(Columns{std::move(states)}, state_rows), header);
+        }
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// `ColumnSparse` keeps its default value in row zero of its values column, but the sparse serialization
+/// writes only the following non-default values. An all-default sample must therefore not establish a
+/// one-value aggregate-state sample: later sparse blocks with actual states have to serialize their own
+/// sample instead of extrapolating from that non-wire default.
+TEST(RuntimeDataflowStatisticsStateSampling, SparseDefaultStateDoesNotEstablishSample)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t default_rows = 100;
+    constexpr size_t state_rows = 200;
+    constexpr size_t state_blocks = 4;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    const auto make_sparse = [&](size_t rows, bool with_states) -> ColumnPtr
+    {
+        MutableColumnPtr values = ColumnAggregateFunction::create(function);
+        values->insertDefault();
+        MutableColumnPtr offsets = ColumnUInt64::create();
+        if (with_states)
+        {
+            for (size_t row = 0; row < rows; ++row)
+            {
+                values->insertFrom(*source_state, 0);
+                offsets->insert(UInt64(row));
+            }
+        }
+        return ColumnSparse::create(std::move(values), std::move(offsets), rows);
+    };
+
+    const size_t cache_key = 0x111985 + 9;
+    size_t exact_compressed_bytes = 0;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, default_rows + state_rows * state_blocks);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "sparse_state"});
+
+        auto defaults = make_sparse(default_rows, /*with_states=*/false);
+        exact_compressed_bytes += compressedColumnSize({defaults, state_type, "sparse_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(defaults)}, default_rows), header);
+
+        for (size_t block = 0; block < state_blocks; ++block)
+        {
+            auto states = make_sparse(state_rows, /*with_states=*/true);
+            exact_compressed_bytes += compressedColumnSize({states, state_type, "sparse_state"});
+            updater.recordOutputChunk(Chunk(Columns{std::move(states)}, state_rows), header);
+        }
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// Materializing a constant sparse state column repeats its non-default values, not the implicit default
+/// that `ColumnSparse` retains at `values[0]`. The repeated aggregate-state sample must use the same
+/// skipped-row offset as the one-copy sample, or it measures the default state instead of the payload.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedPayload)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 200;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    MutableColumnPtr values = ColumnAggregateFunction::create(function);
+    values->insertDefault();
+    values->insertFrom(*source_state, 0);
+    auto offsets = ColumnUInt64::create();
+    offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*size_=*/1);
+    ColumnPtr constant = ColumnConst::create(std::move(sparse), rows);
+
+    const size_t cache_key = 0x111985 + 10;
+    const auto exact_compressed_bytes = compressedColumnSize({constant, state_type, "constant_sparse_state"});
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_sparse_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+/// The implicit default at `ColumnSparse::values[0]` is one outer `Array` row, but that row contains no
+/// nested aggregate states. The state leaf in the following real row must therefore not be skipped while
+/// sampling. This is the same row-expanding layout `Map` uses for its nested key/value arrays.
+TEST(RuntimeDataflowStatisticsStateSampling, SparseArrayStateDoesNotSkipFirstNestedValue)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t elements_in_state = 100000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto array_type = std::make_shared<DataTypeArray>(state_type);
+
+    auto nested_states = ColumnAggregateFunction::create(function);
+    nested_states->insertFrom(*source_state, 0);
+    auto array_offsets = ColumnArray::ColumnOffsets::create();
+    array_offsets->insert(0); /// The sparse default array row has no nested elements.
+    array_offsets->insert(1);
+    auto values = ColumnArray::create(std::move(nested_states), std::move(array_offsets));
+
+    auto sparse_offsets = ColumnUInt64::create();
+    sparse_offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
+
+    const auto exact_compressed_bytes
+        = compressedColumnSize({sparse->convertToFullColumnIfSparse(), array_type, "sparse_array_state"});
+    ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 11;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, array_type, "sparse_array_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+TEST(RuntimeDataflowStatisticsStateSampling, SparseMapStateDoesNotSkipFirstNestedValue)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t elements_in_state = 100000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto map_type = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), state_type);
+
+    auto keys = ColumnString::create();
+    keys->insertData("key", 3);
+    auto nested_states = ColumnAggregateFunction::create(function);
+    nested_states->insertFrom(*source_state, 0);
+    Columns tuple_elements;
+    tuple_elements.emplace_back(std::move(keys));
+    tuple_elements.emplace_back(std::move(nested_states));
+    auto array_offsets = ColumnArray::ColumnOffsets::create();
+    array_offsets->insert(0); /// The sparse default map row has no nested entries.
+    array_offsets->insert(1);
+    auto values = ColumnMap::create(ColumnArray::create(ColumnTuple::create(std::move(tuple_elements)), std::move(array_offsets)));
+
+    auto sparse_offsets = ColumnUInt64::create();
+    sparse_offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(sparse_offsets), /*size_=*/1);
+
+    const auto exact_compressed_bytes
+        = compressedColumnSize({sparse->convertToFullColumnIfSparse(), map_type, "sparse_map_state"});
+    ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 12;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, map_type, "sparse_map_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
 /// A state leaf can also sit inside a `ColumnDynamic` - `Dynamic` accepts `AggregateFunction` values, so

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -54,7 +55,9 @@ Aggregator::Params makeMergeParams(const Names & keys, const AggregateDescriptio
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false,
         /*enable_parallel_single_level_merge_=*/false,
-        /*enable_packed_string_keys_=*/false);
+        /*enable_packed_string_keys_=*/false,
+        /*enable_adaptive_aggregator_=*/false,
+        /*adaptive_aggregator_freeze_threshold_=*/0);
     return params;
 }
 
@@ -195,6 +198,29 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     ASSERT_NE(version_0_size, default_version_size);
     const Field serialized_result = result_column[0];
     EXPECT_EQ(serialized_result.safeGet<AggregateFunctionStateData>().data.size(), version_0_size);
+}
+
+TEST(AggregatorStateSizeEstimate, BitmapBuildPreservesDefaultStateVersion)
+{
+    tryRegisterAggregateFunctions();
+    tryRegisterFunctions();
+
+    auto values = ColumnUInt8::create();
+    values->insert(1);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insert(1);
+    ColumnPtr array = ColumnArray::create(std::move(values), std::move(offsets));
+    auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+
+    ColumnsWithTypeAndName arguments;
+    arguments.emplace_back(array, array_type, "array");
+    auto function = FunctionFactory::instance().get("bitmapBuild", getContext().context)->build(arguments);
+    const auto result_type = function->getResultType();
+    const auto result = function->execute(arguments, result_type, /*input_rows_count=*/1, /*dry_run=*/false);
+
+    const auto & result_column = assert_cast<const ColumnAggregateFunction &>(*result);
+    const Field state = result_column[0];
+    EXPECT_NO_THROW(result_type->createColumn()->insert(state));
 }
 
 TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
