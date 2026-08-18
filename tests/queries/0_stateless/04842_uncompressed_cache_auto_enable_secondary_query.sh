@@ -22,9 +22,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 AUTO_RUN_1="04842_auto_run_1_${CLICKHOUSE_DATABASE}"
 AUTO_RUN_2="04842_auto_run_2_${CLICKHOUSE_DATABASE}"
 OPT_OUT_RUN="04842_opt_out_run_${CLICKHOUSE_DATABASE}"
+LEAF_PROFILE="profile_04842_leaf_${CLICKHOUSE_DATABASE}"
+LEAF_USER="user_04842_leaf_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_uncompressed_cache_secondary;
+DROP USER IF EXISTS ${LEAF_USER};
+DROP SETTINGS PROFILE IF EXISTS ${LEAF_PROFILE};
+CREATE SETTINGS PROFILE ${LEAF_PROFILE} SETTINGS enable_automatic_use_uncompressed_cache = 1;
+CREATE USER ${LEAF_USER} SETTINGS PROFILE '${LEAF_PROFILE}';
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${LEAF_USER};
 
 CREATE TABLE t_uncompressed_cache_secondary
 (
@@ -38,22 +45,22 @@ SETTINGS index_granularity = 8192;
 INSERT INTO t_uncompressed_cache_secondary SELECT number, repeat('x', 128) FROM numbers(32768);
 
 SET log_queries = 1;
-SET enable_automatic_use_uncompressed_cache = 1;
 
--- Control: without an opt-out the shard auto-enables the cache, and the second run finds it warm.
+-- The initiator keeps automatic mode disabled. The leaf user enables it from its profile, and the second
+-- control run finds the leaf cache warm.
 SELECT sum(length(payload)) = 32768 * 128
-FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary)
+FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary, '${LEAF_USER}', '')
 SETTINGS max_threads = 1, log_comment = '${AUTO_RUN_1}';
 
 SELECT sum(length(payload)) = 32768 * 128
-FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary)
+FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary, '${LEAF_USER}', '')
 SETTINGS max_threads = 1, log_comment = '${AUTO_RUN_2}';
 
 -- The session-level opt-out must reach the shard, even though the cache is already warm there.
 SET use_uncompressed_cache = 0;
 
 SELECT sum(length(payload)) = 32768 * 128
-FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary)
+FROM remote('127.0.0.2', currentDatabase(), t_uncompressed_cache_secondary, '${LEAF_USER}', '')
 SETTINGS max_threads = 1, log_comment = '${OPT_OUT_RUN}';
 
 SYSTEM FLUSH LOGS query_log;
@@ -65,9 +72,7 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
   AND log_comment = '${AUTO_RUN_2}'
-  AND query LIKE '%sum(length(%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -78,13 +83,13 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
   AND log_comment = '${OPT_OUT_RUN}'
-  AND query LIKE '%sum(length(%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 DROP TABLE t_uncompressed_cache_secondary;
+DROP USER ${LEAF_USER};
+DROP SETTINGS PROFILE ${LEAF_PROFILE};
 "
 
 # Parallel replicas forward the settings on their own path, so check it separately.
