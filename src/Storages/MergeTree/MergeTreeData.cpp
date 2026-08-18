@@ -6332,11 +6332,13 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             /// Rename via part storage so the FLAT projection siblings move with the part (sweeps a stale destination, commits the part dir last).
             auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
                 std::make_shared<SingleDiskVolume>("volume_" + old_dir, disk, 0), full_path, old_dir);
-            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
             part_storage->setFlatProjectionStorageInUse(
                 storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+            /// The setting seeds the scan for fresh parts. The discovered layout of an existing part must win, because this operation can
+            /// rename a FLAT part after the table was switched back to `legacy_nested`.
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->rename(full_path, new_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)
@@ -6377,11 +6379,12 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         {
             auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(
                 std::make_shared<SingleDiskVolume>("volume_" + new_dir, disk, 0), full_path, new_dir);
-            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->setZeroCopyReplicationEnabled(
                 (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
             part_storage->setFlatProjectionStorageInUse(
                 storage.getProjectionStorageFormat() == IDataPartStorage::ProjectionStorageFormat::FLAT);
+            /// Preserve the existing part's detected FLAT layout rather than overwriting it with the current table setting.
+            part_storage->setProjections(part_storage->detectProjections({.root_listing = get_root_entries(disk)}));
             part_storage->rename(full_path, old_dir, storage.log.load(), /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ false);
         }
         catch (...)

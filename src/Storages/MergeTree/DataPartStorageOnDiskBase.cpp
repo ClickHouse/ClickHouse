@@ -393,12 +393,12 @@ UInt64 DataPartStorageOnDiskBase::calculateTotalSizeOnDisk() const
 {
     auto disk = volume->getDisk();
     UInt64 res = calculateTotalSizeOnDiskImpl(disk, fs::path(root_path) / part_dir);
-    /// FLAT projections are siblings of the part dir, so the walk above misses them (NESTED ones live inside it). Skip the parts-root
-    /// discovery scan for a legacy_nested table, which never writes flat siblings.
-    if (flat_projection_storage_in_use)
-        for (const auto & [projection_dir, projection] : detectProjections())
-            if (projection.format == ProjectionStorageFormat::FLAT)
-                res += calculateTotalSizeOnDiskImpl(disk, projection.relativePath());
+    /// FLAT projections are siblings of the part dir, so the walk above misses them (NESTED ones live inside it). This is also used while
+    /// loading a broken part, before its projections can be seeded from checksums. Always discover siblings from disk so a table switched
+    /// from `flat` to `legacy_nested` still accounts for old parts correctly.
+    for (const auto & [projection_dir, projection] : detectProjections())
+        if (projection.format == ProjectionStorageFormat::FLAT)
+            res += calculateTotalSizeOnDiskImpl(disk, projection.relativePath());
     return res;
 }
 
