@@ -111,8 +111,6 @@ DiskObjectStorage::DiskObjectStorage(
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsActive,
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsScheduled,
         getCopyObjectThreadPoolSize(config, config_prefix)))
-    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
-    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
@@ -769,18 +767,12 @@ String DiskObjectStorage::getWriteResourceName() const
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
 {
-    if (read_resource_name_from_config.empty())
-        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
-    else
-        return read_resource_name_from_config;
+    return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
 }
 
 String DiskObjectStorage::getWriteResourceNameNoLock() const
 {
-    if (write_resource_name_from_config.empty())
-        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
-    else
-        return write_resource_name_from_config;
+    return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
 }
 
 void DiskObjectStorage::prepareRead(
@@ -960,10 +952,6 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
 
     {
         std::unique_lock lock(resource_mutex);
-        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
-            read_resource_name_from_config = new_read_resource_name;
-        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
-            write_resource_name_from_config = new_write_resource_name;
         enable_distributed_cache = config.getBool(config_prefix + ".enable_distributed_cache", true);
     }
 
