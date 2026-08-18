@@ -127,6 +127,7 @@ class RemoteQueryExecutorReadContext
 public:
     void cancel() {}
     void setTimer() {}
+    void skipDrainOnCancel() {}
 };
 
 }
