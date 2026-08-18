@@ -212,7 +212,7 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
         return std::ranges::all_of(tuple_type->getElements(), hasOnlyIntegerLeaves);
     }
 
-    return isInteger(type);
+    return isInteger(removeNullable(type));
 }
 
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)

@@ -70,6 +70,20 @@ SELECT * FROM (SELECT tuple(CAST(18446744073709551615, 'UInt64')) AS t) AS a
 INNER JOIN (SELECT tuple(CAST(-1, 'Int64')) AS t) AS b ON a.t = b.t;
 SELECT t, toTypeName(t) FROM (SELECT tuple(CAST(1, 'UInt64')) AS t) AS a
 INNER JOIN (SELECT tuple(CAST(1, 'Int64')) AS t) AS b USING (t);
+SELECT 'A Tuple with nullable integer elements is supported: NULL and out-of-range elements do not match';
+SELECT * FROM
+(
+    SELECT tuple(CAST(1, 'Nullable(UInt64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(UInt64)'))
+    UNION ALL SELECT tuple(CAST(18446744073709551615, 'Nullable(UInt64)'))
+) AS a
+INNER JOIN
+(
+    SELECT tuple(CAST(1, 'Nullable(Int64)')) AS t
+    UNION ALL SELECT tuple(CAST(NULL, 'Nullable(Int64)'))
+    UNION ALL SELECT tuple(CAST(-1, 'Nullable(Int64)'))
+) AS b ON a.t = b.t
+ORDER BY ALL;
 
 SELECT 'A Tuple with an element that accurateCastOrNull cannot represent, such as an Array or a Map, is rejected';
 SELECT * FROM (SELECT tuple([CAST(1, 'UInt64')]) AS t) AS a
