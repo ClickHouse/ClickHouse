@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+zero_oid=0000000000000000000000000000000000000000
+
+while read -r _local_ref local_oid remote_ref remote_oid; do
+    if [[ "$local_oid" == "$zero_oid" ]]; then
+        echo "continue-all-prs: refusing to delete remote ref $remote_ref" >&2
+        exit 1
+    fi
+
+    # A new branch is needed when the workflow legitimately supersedes a PR.
+    [[ "$remote_oid" == "$zero_oid" ]] && continue
+
+    if ! git cat-file -e "${remote_oid}^{commit}" 2>/dev/null; then
+        echo "continue-all-prs: cannot verify remote commit $remote_oid; refusing push" >&2
+        exit 1
+    fi
+
+    if ! git merge-base --is-ancestor "$remote_oid" "$local_oid"; then
+        echo "continue-all-prs: refusing non-fast-forward update of $remote_ref" >&2
+        echo "remote $remote_oid must remain an ancestor of local $local_oid" >&2
+        exit 1
+    fi
+done

@@ -4298,8 +4298,8 @@ Possible values:
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
+    DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
 When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
@@ -8840,9 +8840,11 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
@@ -8861,6 +8863,7 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
@@ -8876,6 +8879,10 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_cascades_optimizer, false, R"(
+Enable the Cascades cost-based optimizer for distributed query plans.
+Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
