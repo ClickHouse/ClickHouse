@@ -86,6 +86,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
+    void checkInsertIsAllowed(ContextPtr context) const override;
+
     /** Perform the next step in combining the parts.
       */
     bool optimize(

@@ -784,6 +784,14 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context, admission_epoch);
 }
 
+void StorageMergeTree::checkInsertIsAllowed(ContextPtr /*context*/) const
+{
+    /// `async_insert` queues the query before `write` creates a sink. Perform the
+    /// same leader/read-only admission check here so a follower cannot acknowledge
+    /// a buffered insert which might later be flushed after it becomes leader.
+    assertNotReadonly();
+}
+
 void StorageMergeTree::drop()
 {
     /// `DROP TABLE` is allowed even when the table is read-only — only the local metadata

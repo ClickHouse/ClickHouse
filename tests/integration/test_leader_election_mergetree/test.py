@@ -170,6 +170,47 @@ def test_leader_elected(started_cluster):
     node2.query("DROP TABLE IF EXISTS test_le SYNC")
 
 
+def test_async_insert_rejected_before_queueing_on_follower(started_cluster):
+    """A follower must reject `async_insert` before the query enters its queue."""
+    table = "test_le_async_insert"
+    uuid = "12345678-abcd-abcd-abcd-123456789ad0"
+    stopped_leader = None
+
+    try:
+        create_table_on_first_node(node1, table, uuid)
+        attach_table_on_second_node(node2, table, uuid)
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        for value, wait_for_async_insert in [(101, 0), (102, 1)]:
+            error = ""
+            try:
+                follower.query(
+                    f"INSERT INTO {table} SETTINGS async_insert = 1, "
+                    f"wait_for_async_insert = {wait_for_async_insert} VALUES ({value})"
+                )
+            except Exception as e:
+                error = str(e)
+            assert "TABLE_IS_READ_ONLY" in error, (
+                "Expected follower async insert to be rejected before queueing, "
+                f"got: {error}"
+            )
+
+        leader.stop_clickhouse()
+        stopped_leader = leader
+
+        new_leader, _ = wait_for_leader([follower], table_name=table)
+        new_leader.query(f"INSERT INTO {table} VALUES (1)")
+        assert new_leader.query(
+            f"SELECT count() FROM {table} WHERE x IN (101, 102)"
+        ).strip() == "0", "A follower-side async insert was flushed after takeover"
+    finally:
+        if stopped_leader:
+            stopped_leader.start_clickhouse()
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_system_unfreeze_requires_current_leader(started_cluster):
     """`SYSTEM UNFREEZE` must not let a follower delete a shared `shadow/` snapshot."""
     table = "test_system_unfreeze_fenced"
