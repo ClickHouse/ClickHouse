@@ -20,12 +20,9 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (default.table_basic)
     Indexes:
       PrimaryKey
-        Keys:
-          CAST(d, \'String\')
-        Condition: (CAST(d, \'String\') in 1-element set)
+        Condition: true
         Parts: 1/1
         Granules: 2/2
-        Search Algorithm: binary search
       Ranges: 1
 EXPLAIN indexes = 1
 SELECT
@@ -54,13 +51,10 @@ Expression ((Project names + Projection))
     ReadFromMergeTree (default.table_basic)
     Indexes:
       PrimaryKey
-        Keys:
-          CAST(d, \'String\')
-        Condition: (CAST(d, \'String\') in 1-element set)
-        Parts: 0/1
-        Granules: 0/2
-        Search Algorithm: binary search
-      Ranges: 0
+        Condition: true
+        Parts: 1/1
+        Granules: 2/2
+      Ranges: 1
 EXPLAIN indexes = 1
 SELECT
     toUnixTimestamp(d)
@@ -99,13 +93,10 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.table_intdiv_string)
         Indexes:
           PrimaryKey
-            Keys:
-              toString(intDiv(x, 10))
-            Condition: (toString(intDiv(x, 10)) in 5-element set)
+            Condition: true
             Parts: 1/1
-            Granules: 14/17
-            Search Algorithm: generic exclusion search
-          Ranges: 3
+            Granules: 17/17
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT arraySort(groupArray(x))
 FROM table_intdiv_string
@@ -135,12 +126,9 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.table_intdiv_string)
         Indexes:
           PrimaryKey
-            Keys:
-              toString(intDiv(x, 10))
-            Condition: (toString(intDiv(x, 10)) notIn 5-element set)
+            Condition: true
             Parts: 1/1
             Granules: 17/17
-            Search Algorithm: generic exclusion search
           Ranges: 1
 EXPLAIN indexes = 1
 SELECT arraySort(groupArray(x))
@@ -310,11 +298,10 @@ Expression (Project names)
           PrimaryKey
             Keys:
               json.a
-              CAST(json.b, \'UInt64\')
-            Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
+            Condition: (json.a in [0, 0])
             Parts: 1/1
-            Granules: 3/8
-            Search Algorithm: generic exclusion search
+            Granules: 4/8
+            Search Algorithm: binary search
           Ranges: 1
 -- Not supported yet
 DROP TABLE IF EXISTS table_json_nested_cast;

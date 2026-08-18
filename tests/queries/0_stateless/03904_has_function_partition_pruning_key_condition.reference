@@ -34,9 +34,7 @@ Expression ((Project names + Projection))
             Parts: 1/40
             Granules: 24/960
           Partition
-            Keys:
-              toDate(dt)
-            Condition: (toDate(dt) in 1-element set)
+            Condition: true
             Parts: 1/1
             Granules: 24/24
           Ranges: 1
@@ -61,9 +59,7 @@ Expression ((Project names + Projection))
             Parts: 40/40
             Granules: 960/960
           Partition
-            Keys:
-              toDate(dt)
-            Condition: (toDate(dt) notIn 1-element set)
+            Condition: true
             Parts: 40/40
             Granules: 960/960
           Ranges: 40
