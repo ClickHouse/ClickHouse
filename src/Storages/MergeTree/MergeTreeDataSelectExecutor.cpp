@@ -1553,6 +1553,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_top_k_prewhere_query_condition_cache,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
@@ -1785,8 +1786,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 /// The threshold is derived from rows passing the post-PREWHERE filter. It cannot
                 /// be reused when that filter is non-deterministic, even if its structural hash is
                 /// unchanged between executions.
-                if (apply_top_k_salt && select_query_info.filter_actions_dag
+                if (apply_top_k_salt && (!allow_top_k_prewhere_query_condition_cache
+                    || (select_query_info.filter_actions_dag
                     && !VirtualColumnUtils::isDeterministicAllowingTopKFilter(select_query_info.filter_actions_dag->getOutputs().front()))
+                    ))
                     break;
                 /// The dynamic `TopK` threshold is computed after row policies are applied, but these
                 /// `PREWHERE` cache entries are shared across users. The write path already avoids

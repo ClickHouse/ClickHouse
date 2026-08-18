@@ -546,6 +546,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// by `setTopKColumn` - and copy `allow_query_condition_cache`, which is what actually gates both
     /// index analysis and the reader.
     parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
+    parallel_replicas_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     parallel_replicas_step->top_k_filter_info = top_k_filter_info;
     /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
@@ -3367,7 +3368,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         /// read neither consults nor populates the cache, so it must also not skip granules based on
         /// entries written by other queries.
         if (!table_has_unique_key && allow_query_condition_cache_)
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+                res_parts,
+                query_info_,
+                vector_search_parameters,
+                top_k_filter_info,
+                allow_top_k_prewhere_query_condition_cache,
+                mutations_snapshot,
+                *indexes,
+                context_,
+                log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -4198,6 +4208,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
@@ -4748,7 +4759,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` for the consult).
     /// `allow_query_condition_cache` is already false here when `use_query_condition_cache_for_top_k`
     /// is off (see `setTopKColumn`), so reaching this point with the cache on means the salt applies.
-    if (top_k_filter_info && reader_settings.use_query_condition_cache
+    if (top_k_filter_info && allow_top_k_prewhere_query_condition_cache && reader_settings.use_query_condition_cache
         && (!query_info.filter_actions_dag
             || isDeterministicAllowingTopKFilter(query_info.filter_actions_dag->getOutputs().front())))
     {

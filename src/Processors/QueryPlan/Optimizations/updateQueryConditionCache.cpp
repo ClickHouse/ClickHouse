@@ -58,6 +58,26 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
+    /// Runtime filters are added after the TopK optimization and may remain as a separate
+    /// `FilterStep` above the read. They affect the running TopK threshold, but their per-query
+    /// contents are not part of the PREWHERE cache key. Do not let those cache entries be reused.
+    /// `__topKFilter` itself is deliberately allowed: its plan salt is part of that key.
+    if (read_from_merge_tree->isSelectedForTopKFilterOptimization())
+    {
+        for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+        {
+            if (const auto * filter_step = typeid_cast<const FilterStep *>(iter->node->step.get()))
+            {
+                const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+                if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+                {
+                    read_from_merge_tree->disableTopKPrewhereQueryConditionCache();
+                    break;
+                }
+            }
+        }
+    }
+
     /// Issues #81506 and #84508.
     for (const auto * output : outputs)
     {

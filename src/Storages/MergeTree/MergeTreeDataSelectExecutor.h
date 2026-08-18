@@ -254,6 +254,7 @@ public:
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
+        bool allow_top_k_prewhere_query_condition_cache,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
