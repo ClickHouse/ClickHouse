@@ -3,14 +3,12 @@
 Unknown option specified: no_such_server_setting
 Option must not be given more than once: max_thread_pool_size
 50
-OK: --config resolves
-OK: --log resolves
+OK: --co resolves
+OK: --lo resolves
 1
-7
-2500
+1
 information
 OK: logger.level is applied
-9
-2500
+1
 777
 1

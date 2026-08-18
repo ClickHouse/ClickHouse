@@ -94,38 +94,34 @@ kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
 
-# Test 5: The built-in `--config` option (an abbreviation of `--config-file`, used by the systemd
-# unit and by `clickhouse restart`) must keep resolving after server settings are registered as CLI
-# options. Registering settings whose name shares the `config` prefix (`config_file`,
-# `config_reload_interval_ms`) previously made `--config` ambiguous and prevented the server from
-# starting. Pass a non-existent config file so the server fails fast, and check that the failure is
-# "config file not found" rather than "ambiguous option".
+# Test 5: Every previously-unique built-in abbreviation must keep resolving after server settings are
+# registered as CLI options. `--co` is an abbreviation of `--config-file`; registering
+# `compiled_expression_cache_*` and `concurrent_threads_*` must not make it ambiguous. Pass a
+# non-existent config file so the server fails fast, and check that the failure is not ambiguous.
 srv_dir5="${CLICKHOUSE_TMP}/srv5"
 mkdir -p "$srv_dir5"
 $CLICKHOUSE_BINARY server \
-    --max_connections 10 --config="$srv_dir5/no_such_config.xml" \
+    --max_connections 10 --co="$srv_dir5/no_such_config.xml" \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir5/" > "${CLICKHOUSE_TMP}/server5.log" 2>&1
 
 if grep -q 'Ambiguous option' "${CLICKHOUSE_TMP}/server5.log"; then
-    echo "FAIL: --config is ambiguous"
+    echo "FAIL: --co is ambiguous"
 else
-    echo "OK: --config resolves"
+    echo "OK: --co resolves"
 fi
 
-# Test 6: The built-in `--log` option (an abbreviation of `--log-file`) must likewise keep resolving.
-# Registering the `logger_*` server settings (which all share the `log` prefix) previously made `--log`
-# ambiguous with `logger_level`, `logger_log`, ... Pass a non-existent config file so the server fails
-# fast, and check that the failure is not "ambiguous option" for `--log`.
+# Test 6: `--lo` is an abbreviation of `--log-file`; registering `load_marks_*` must not make it
+# ambiguous either.
 srv_dir6="${CLICKHOUSE_TMP}/srv6"
 mkdir -p "$srv_dir6"
 $CLICKHOUSE_BINARY server \
-    --log="$srv_dir6/server.log" --config="$srv_dir6/no_such_config.xml" \
+    --lo="$srv_dir6/server.log" --co="$srv_dir6/no_such_config.xml" \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir6/" > "${CLICKHOUSE_TMP}/server6.log" 2>&1
 
 if grep -q 'Ambiguous option' "${CLICKHOUSE_TMP}/server6.log"; then
-    echo "FAIL: --log is ambiguous"
+    echo "FAIL: --lo is ambiguous"
 else
-    echo "OK: --log resolves"
+    echo "OK: --lo resolves"
 fi
 
 # Test 7: Bool server settings are registered as CLI options too. Pass one with an explicit value and
@@ -155,8 +151,8 @@ kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
 
-# Test 8: Settings backed by a dotted config path (e.g. `distributed_ddl_pool_size` ->
-# `distributed_ddl.pool_size`) work as direct CLI options, and the value after the `--` separator
+# Test 8: Settings backed by a dotted config path (e.g. `openssl_server_cache_sessions` ->
+# `openSSL.server.cacheSessions`) work as direct CLI options, and the value after the `--` separator
 # still takes precedence for them: the command-line arguments are stored under the flat setting
 # name, which `loadSettingsFromConfig` reads before the dotted path. (The settings are chosen not
 # to shadow a user-level setting name - a user-level setting at the top level of the configuration
@@ -164,8 +160,8 @@ trap '' EXIT
 srv_dir8="${CLICKHOUSE_TMP}/srv8"
 mkdir -p "$srv_dir8"
 $CLICKHOUSE_BINARY server \
-    --distributed_ddl_pool_size 7 --distributed_ddl_max_tasks_in_queue 1500 \
-    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir8/" --distributed_ddl_max_tasks_in_queue 2500 > "${CLICKHOUSE_TMP}/server8.log" 2>&1 &
+    --openssl_server_cache_sessions 0 \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir8/" --openssl_server_cache_sessions 1 > "${CLICKHOUSE_TMP}/server8.log" 2>&1 &
 PID=$!
 
 trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
@@ -179,9 +175,8 @@ for i in {1..30}; do
     fi
 done
 
-# Path-backed settings are displayed in `system.server_settings` under their dotted path
-$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.pool_size'"
-$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.max_tasks_in_queue'"
+# Path-backed settings are displayed in `system.server_settings` under their dotted path.
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'openSSL.server.cacheSessions'"
 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
@@ -232,10 +227,9 @@ fi
 srv_dir10="${CLICKHOUSE_TMP}/srv10"
 mkdir -p "$srv_dir10"
 $CLICKHOUSE_BINARY server \
-    --distributed_ddl_pool_size 7 \
+    --openssl_server_cache_sessions 0 \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir10/" \
-    --distributed_ddl.pool_size 9 \
-    --distributed_ddl.max_tasks_in_queue 1500 --distributed_ddl_max_tasks_in_queue 2500 > "${CLICKHOUSE_TMP}/server10.log" 2>&1 &
+    --openSSL.server.cacheSessions 1 > "${CLICKHOUSE_TMP}/server10.log" 2>&1 &
 PID=$!
 
 trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
@@ -249,8 +243,7 @@ for i in {1..30}; do
     fi
 done
 
-$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.pool_size'"
-$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.max_tasks_in_queue'"
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'openSSL.server.cacheSessions'"
 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null

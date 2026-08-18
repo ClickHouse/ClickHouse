@@ -2027,11 +2027,6 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 
 void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
 {
-    auto first_component = [](std::string_view full) -> std::string_view
-    {
-        return full.substr(0, full.find_first_of("-_"));
-    };
-
     /// Snapshot the options already defined by the daemon and the server (e.g. `config-file`, `pid-file`)
     /// before we start adding new ones - `addOption` may reallocate the underlying storage and invalidate
     /// iterators and references into the set.
@@ -2039,30 +2034,33 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
     for (const auto & option : options)
         builtin_options.push_back(option.fullName());
 
+    /// `Poco::Util::OptionSet` resolves a long option by any unique prefix. Preserve every such prefix
+    /// that was accepted before the server settings were registered: otherwise adding, for example,
+    /// `compiled_expression_cache_*` would turn the existing `--co` abbreviation of `--config-file`
+    /// into an ambiguous option. A colliding server setting remains available in the configuration file
+    /// and after the `--` separator.
+    std::vector<std::string> builtin_prefixes;
+    for (const auto & builtin : builtin_options)
+    {
+        for (size_t length = 1; length < builtin.size(); ++length)
+        {
+            std::string_view prefix(builtin.data(), length);
+            const size_t matches = std::count_if(
+                builtin_options.begin(),
+                builtin_options.end(),
+                [&](const std::string & other) { return other.starts_with(prefix); });
+            if (matches == 1)
+                builtin_prefixes.emplace_back(prefix);
+        }
+    }
+
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         const String & name = accessor.getName(i);
 
-        /// `Poco::Util::OptionSet` resolves a long option by any unique prefix, so a compound built-in
-        /// option such as `config-file` can be abbreviated down to its first name component: `--config`
-        /// (used by the systemd unit and by `clickhouse restart`), `--log` for `log-file`, and so on.
-        /// Registering a server setting whose name begins with that component makes the abbreviation
-        /// ambiguous and prevents the server from starting (`AmbiguousOptionException`): `config_file` and
-        /// `config_reload_interval_ms` would break `--config`, and every `logger_*` setting would break
-        /// `--log`. Reserve the first component of each compound built-in option for that option and skip
-        /// the colliding settings - they can still be set through the config file or after the `--`
-        /// separator.
-        const bool clashes_with_builtin = std::any_of(
-            builtin_options.begin(),
-            builtin_options.end(),
-            [&](const std::string & builtin)
-            {
-                if (builtin == name)
-                    return true;
-                std::string_view builtin_component = first_component(builtin);
-                return builtin_component.size() != builtin.size() && name.starts_with(builtin_component);
-            });
+        const bool clashes_with_builtin = std::ranges::contains(builtin_options, name)
+            || std::ranges::any_of(builtin_prefixes, [&](const std::string & prefix) { return name.starts_with(prefix); });
         if (clashes_with_builtin)
             continue;
 
