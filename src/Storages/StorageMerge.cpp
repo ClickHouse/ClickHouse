@@ -381,6 +381,28 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
+std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() const
+{
+    std::optional<SerializationInfoByName> result;
+    traverseTablesUntil([&result](const auto & table)
+    {
+        if (auto hints = table->tryGetSerializationHints())
+        {
+            if (result)
+                result->add(*hints);
+            else
+                result.emplace(std::move(*hints));
+        }
+        return false;
+    });
+    return result;
+}
+
+bool StorageMerge::hasAutomaticLowCardinalitySerialization() const
+{
+    return traverseTablesUntil([](const auto & table) { return table->hasAutomaticLowCardinalitySerialization(); }) != nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying

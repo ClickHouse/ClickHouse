@@ -37,6 +37,8 @@ public:
     /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override { return getNested()->tryGetSerializationHints(); }
+    bool hasAutomaticLowCardinalitySerialization() const override { return getNested()->hasAutomaticLowCardinalitySerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
     /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
