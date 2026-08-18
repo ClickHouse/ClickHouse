@@ -67,13 +67,14 @@ WHERE explain LIKE '%Sort description: sqrt(_distance)%';
 
 -- With FINAL, this non-consuming policy is deferred and its retained `vec` passthrough is
 -- replayed by `FilterTransform`. The no-rescoring rewrite must remain disabled on the local
--- distributed-plan path too.
-SELECT count(id) FROM
+-- distributed-plan path too, so the plan keeps the rescoring sort over `_distance`.
+SELECT count() FROM
 (
-    SELECT id FROM tab_vec_row_policy FINAL
+    EXPLAIN SELECT id FROM tab_vec_row_policy FINAL
     ORDER BY L2Distance(vec, [0., 2.]) ASC
     LIMIT 3
 )
+WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS
     vector_search_with_rescoring = 0,
     query_plan_optimize_lazy_materialization = 0,
