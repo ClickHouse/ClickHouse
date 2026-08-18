@@ -275,7 +275,14 @@ ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS validate_mutation_query = 0; -
 ALTER TABLE tab DROP STATISTICS b;
 DROP TABLE tab;
 
--- MATERIALIZE STATISTICS ALL materializes the physical column and skips the alias one.
+-- Naming a non-physical column with no statistics description is still rejected, not silently
+-- skipped, at the point the statement is issued.
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1) Engine = MergeTree() ORDER BY tuple()
+    SETTINGS auto_statistics_types = '';
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
+DROP TABLE tab;
+
+-- MATERIALIZE STATISTICS ALL materializes the physical column.
 CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO tab SETTINGS materialize_statistics_on_insert = 0 VALUES (1);
@@ -284,13 +291,14 @@ SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE databa
 DROP TABLE tab;
 
 -- A mutation that named the column while it was still physical must drain, not retry forever.
--- The trailing synchronous mutation cannot complete until the queued one does.
-CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple()
+-- Here the column carries only the implicit statistics that auto_statistics_types supplies, which
+-- the same ALTER drops. The trailing synchronous mutation cannot complete until the queued one does.
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64) Engine = MergeTree() ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO tab VALUES (1, 1);
 SYSTEM STOP MERGES tab;
 ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0;
-ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest) SETTINGS mutations_sync = 0;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0;
 SYSTEM START MERGES tab;
 ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;

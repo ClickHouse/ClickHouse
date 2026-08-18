@@ -1323,17 +1323,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
             for (const auto & stat_column_name: command.statistics_columns)
             {
-                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
-
-                /// A command queued before the column became non-physical must drain rather than
-                /// retry forever. A newly issued statement is rejected in
-                /// MergeTreeData::checkMutationIsPossible.
-                if (!columns_desc.get(stat_column_name).isPhysical())
+                /// Skipped only while executing, so an already-queued mutation drains instead of
+                /// retrying forever. Validation still reaches the throw below, which is the only
+                /// diagnostic such a column has once it also carries no statistics.
+                if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.get(stat_column_name).isPhysical())
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
                     continue;
                 }
+
+                if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
 
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
