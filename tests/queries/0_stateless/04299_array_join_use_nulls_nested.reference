@@ -31,7 +31,7 @@ UInt8
 UInt8
 subquery settings inner unaligned 1 outer 0
 1
-\\N
+\N
 array_join_use_nulls = 0
 0	UInt8
 1	UInt8
