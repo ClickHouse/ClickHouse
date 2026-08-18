@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import re
 import shutil
@@ -634,6 +635,87 @@ def download_binaries(
 # ---------------------------------------------------------------------------
 
 
+# CPU pinning, ported from ci/jobs/performance_tests.py. On x86_64 CI pins both
+# servers to one hyperthread per physical core and caps max_threads to that
+# set, so query threads never share a hyperthread sibling depending on
+# scheduler mood -- its top suspect for the amd-vs-arm A/A noise gap (0.51% vs
+# 0.42%). A local rerun that skips this measures under noisier conditions than
+# the report it is adjudicating, which is exactly how a real change ends up
+# looking NOT REPRODUCED. arm (real cores only) is unchanged.
+MAX_THREADS_OVERRIDE_FILE = "zzz-cpu-pinning-max-threads.xml"
+MAX_THREADS_OVERRIDE_XML = """\
+<!--
+    Written by the double-check-perf-tests skill, x86_64 only, mirroring
+    MAX_THREADS_OVERRIDE_XML in ci/jobs/performance_tests.py (arm keeps
+    max_threads from perf-comparison-tweaks-users.xml).
+-->
+<clickhouse>
+    <profiles>
+        <default>
+            <max_threads>{max_threads}</max_threads>
+        </default>
+    </profiles>
+</clickhouse>
+"""
+
+
+def cpu_pinning_enabled(perf_arch: str) -> bool:
+    """Pinning needs Linux (taskset, sysfs topology, sched_getaffinity), not
+    just the CPU family: an x86_64 macOS run must not get a taskset prefix it
+    cannot execute."""
+    return perf_arch == "amd" and os.uname().sysname == "Linux"
+
+
+def get_physical_core_cpu_list() -> str:
+    """Return a `taskset -c` CPU list with one hyperthread per physical core.
+
+    Parses /sys/devices/system/cpu/cpu*/topology/thread_siblings_list, keeps
+    the first *allowed* sibling of each unique pair (intersected with the
+    process affinity mask, since sysfs exposes the host topology and taskset
+    fails on a disallowed CPU), and falls back to every allowed CPU when the
+    topology cannot be read."""
+    getaffinity = getattr(os, "sched_getaffinity", None)
+    try:
+        allowed = getaffinity(0) if getaffinity else None
+    except OSError:
+        allowed = None
+    cores: dict[int, int] = {}
+    for path in Path("/sys/devices/system/cpu").glob(
+        "cpu[0-9]*/topology/thread_siblings_list"
+    ):
+        # Formats seen in the wild: "0,8", "0-1", "0" (no SMT). One unreadable
+        # file must not discard the rest of the topology.
+        try:
+            siblings = [
+                int(x) for x in re.split(r"[,-]", path.read_text().strip()) if x
+            ]
+        except (OSError, ValueError):
+            continue
+        usable = [c for c in siblings if allowed is None or c in allowed]
+        if usable:
+            cores[min(siblings)] = min(usable)
+    cpus = set(cores.values())
+    if not cpus:
+        # Halving without topology would be a guess that drops real cores on
+        # non-SMT hosts. Keep every allowed CPU: hyperthread sharing is then
+        # possible, but no measurement is skewed by idling half the cores.
+        log(
+            "WARNING: could not parse cpu topology from sysfs; using all "
+            "allowed cpus (sibling pairs unknown, hyperthread sharing possible)"
+        )
+        cpus = set(allowed) if allowed else set(range(os.cpu_count() or 2))
+    return ",".join(str(cpu) for cpu in sorted(cpus))
+
+
+def write_max_threads_override(side_dir: Path, max_threads: int) -> None:
+    """Cap max_threads at the number of pinned CPUs, one query thread per
+    pinned CPU. The zzz- prefix makes it sort after the static users.d files
+    copied from tests/performance/scripts/config."""
+    target = side_dir / "config" / "users.d" / MAX_THREADS_OVERRIDE_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(MAX_THREADS_OVERRIDE_XML.format(max_threads=max_threads))
+
+
 def link_clickhouse_tools(side_dir: Path) -> None:
     """Create the clickhouse-{server,client,local,keeper} symlinks next to the
     main binary, the way CHServer expects."""
@@ -875,10 +957,15 @@ def start_server(
     raft_port: int,
     interserver_port: int,
     top_level_domains: Path,
+    cpu_list: Optional[str] = None,
 ) -> ServerHandle:
     log_path = side_dir / "server.log"
     log_fh = open(log_path, "w")
+    # Both servers get the *same* pinned CPU list: they are measured
+    # alternately, not concurrently.
+    taskset_prefix = ["taskset", "-c", cpu_list] if cpu_list else []
     cmd = [
+        *taskset_prefix,
         str(side_dir / "clickhouse-server"),
         "--config-file=" + str(side_dir / "config" / "config.xml"),
         "--",
@@ -895,6 +982,9 @@ def start_server(
         "--keeper_server.storage_path", str(side_dir / "coordination"),
         "--zookeeper.node.port", str(keeper_port),
         "--interserver_http_port", str(interserver_port),
+        # Denser than the default: perf profiles single queries in isolation.
+        # Same value as CHServer in ci/jobs/performance_tests.py.
+        "--jemalloc_profiler_sampling_rate", "16",
     ]
     log(f"starting {name} server on TCP {port}: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT)
@@ -1414,6 +1504,14 @@ def main() -> int:
         "minutes) and gives up the hardlink disk saving for them.",
     )
     parser.add_argument(
+        "--no-cpu-pinning",
+        action="store_true",
+        help="do not pin the servers with taskset and do not cap max_threads "
+        "(CI pins both servers to one hyperthread per physical core on x86_64; "
+        "unpinning measures under noisier conditions than the report being "
+        "checked)",
+    )
+    parser.add_argument(
         "--skip-wait-for-merges",
         action="store_true",
         help="don't wait for background merges to quiesce before running "
@@ -1638,6 +1736,21 @@ def main() -> int:
         # After the hardlink copy: hardlink_db wipes the destination.
         seed_user_files(repo_root, side_dir / "db")
 
+    # Mirror CI's CPU pinning: both servers on one hyperthread per physical
+    # core, with max_threads capped to that set. Skipped by --no-cpu-pinning
+    # and on anything but Linux x86_64 (CI does not pin there either).
+    cpu_list: Optional[str] = None
+    if args.no_cpu_pinning:
+        log("CPU pinning disabled by --no-cpu-pinning")
+    elif cpu_pinning_enabled(perf_arch):
+        cpu_list = get_physical_core_cpu_list()
+        max_threads = len(cpu_list.split(","))
+        for side in ("left", "right"):
+            write_max_threads_override(work_dir / side, max_threads)
+        log(f"pinning both servers to cpus {cpu_list} (max_threads={max_threads})")
+    else:
+        log(f"CPU pinning not applicable on {perf_arch}/{os.uname().sysname}")
+
     # Start servers
     ensure_ports_free({
         LEFT_TCP: "left TCP", LEFT_HTTP: "left HTTP",
@@ -1650,12 +1763,12 @@ def main() -> int:
     left_h = start_server(
         work_dir / "left", "left",
         LEFT_TCP, LEFT_HTTP, LEFT_KEEPER_TCP, LEFT_KEEPER_RAFT, LEFT_INTERSERVER,
-        tld_dst,
+        tld_dst, cpu_list,
     )
     right_h = start_server(
         work_dir / "right", "right",
         RIGHT_TCP, RIGHT_HTTP, RIGHT_KEEPER_TCP, RIGHT_KEEPER_RAFT,
-        RIGHT_INTERSERVER, tld_dst,
+        RIGHT_INTERSERVER, tld_dst, cpu_list,
     )
 
     try:

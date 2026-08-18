@@ -57,6 +57,9 @@ skill:
 - `--populate`: rebuild the affected `hits` tables on each server
   separately, the way CI's `populate_data_both` does, instead of sharing
   one hardlinked copy. See "Hardlinked data vs. `--populate`" below.
+- `--no-cpu-pinning`: don't pin the servers with `taskset` and don't cap
+  `max_threads`. Only for a machine where pinning is undesirable — it
+  measures under noisier conditions than the report being checked.
 - `--dry-run`: stop after resolving PR / SHAs / changed queries; do not
   download or run.
 
@@ -144,6 +147,15 @@ treated as CI noise.
   in CI, so the run is as close to CI as possible without Praktika. The
   ports and shared dataset directory match `CHServer` in
   `ci/jobs/performance_tests.py`.
+- **CPU pinning.** On Linux x86_64, CI pins both servers with `taskset` to
+  one hyperthread per physical core and caps `max_threads` at the size of
+  that set, so query threads never share a hyperthread sibling depending on
+  scheduler mood — CI's top suspect for the amd-vs-arm A/A noise gap (0.51%
+  vs 0.42%). The script does the same, including the same
+  `--jemalloc_profiler_sampling_rate`. This matters for the verdicts: an
+  unpinned rerun is noisier than the report it is adjudicating, which is how
+  a real change ends up looking `NOT REPRODUCED`. `arm` runs on real cores
+  and is not pinned, in CI or here.
 - The reference (left) binary's git hash is resolved via
   `play.clickhouse.com` (anonymous `explorer` user, no credentials needed),
   using the `query_metrics_v2.old_sha` column for the matching `new_sha`
