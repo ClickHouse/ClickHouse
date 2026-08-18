@@ -154,3 +154,47 @@
 1
 -- replicated left, right eligible: the local join is kept
 0
+-- materialized view left, right eligible: the JOIN is still offloaded
+1
+-- materialized view left, right eligible: the local join is kept
+0
+-- materialized view left with materialized views disallowed: left is materialized
+1
+-- materialized view left, right eligible: results are correct
+0	1
+1	1
+2	1
+3	1
+4	1
+5	0
+6	0
+7	0
+8	0
+9	0
+-- materialized view left, right eligible: the wrapper contributes matched rows
+4
+-- view left, right eligible: the JOIN is still offloaded
+1
+-- view left, right eligible: the local join is kept
+0
+-- view left with views over mergetree disallowed: left is materialized
+1
+-- view left, right eligible: results are correct
+0	1
+1	1
+2	1
+3	1
+4	1
+5	0
+6	0
+7	0
+8	0
+9	0
+-- view left, right eligible: the wrapper contributes matched rows
+4
+-- nested join in the offloaded right subtree: the outer JOIN is offloaded
+1
+-- nested join in the offloaded right subtree: the inner side reaches a temporary table
+0
+-- nested join in the offloaded right subtree: results are correct
+10

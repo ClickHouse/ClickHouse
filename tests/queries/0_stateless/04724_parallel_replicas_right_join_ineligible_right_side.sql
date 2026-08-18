@@ -258,6 +258,140 @@ SELECT count() FROM (
              parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
 ) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%';
 
+-- A MaterializedView left side is eligible through the table it resolves to, so it keeps the local
+-- join too. Two arms keep the rest honest: the setting that admits the wrapper must also be able to
+-- reject it, and the match counter must see rows coming from the wrapper, since a RIGHT JOIN
+-- returns the whole right side even when the left one is empty. Matched-ness is reported through
+-- ifNull because join_use_nulls decides whether an unmatched left column reads as 0 or NULL.
+
+-- POPULATE, not a second INSERT into the source: an INSERT repeating a block already written is
+-- dropped when insert deduplication is on, which the compatibility setting decides. It has to
+-- precede AS, where it is a keyword; after AS it parses as an alias of the selected table.
+CREATE MATERIALIZED VIEW mv_left (key UInt64)
+ENGINE = ReplicatedMergeTree('/parallel_replicas/{database}/mv_left', 'r1') ORDER BY key
+POPULATE AS SELECT key FROM t_replicated_right;
+
+SELECT '-- materialized view left, right eligible: the JOIN is still offloaded';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM mv_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_materialized_views = 1
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%RIGHT JOIN%';
+
+SELECT '-- materialized view left, right eligible: the local join is kept';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM mv_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_materialized_views = 1
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%';
+
+SELECT '-- materialized view left with materialized views disallowed: left is materialized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM mv_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_materialized_views = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- materialized view left, right eligible: results are correct';
+SELECT r.key, ifNull(l.key = r.key, 0) AS matched FROM (SELECT key FROM mv_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_materialized_views = 1;
+
+SELECT '-- materialized view left, right eligible: the wrapper contributes matched rows';
+SELECT countIf(ifNull(l.key = r.key, 0) AND r.key > 0) FROM (SELECT key FROM mv_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_materialized_views = 1;
+
+-- A plain View is resolved by a separate branch, gated by its own setting, so it needs its own
+-- arms. Here the third arm is the setting's default, which is what makes the first two meaningful.
+
+CREATE VIEW v_left AS SELECT key FROM t_replicated_right;
+
+SELECT '-- view left, right eligible: the JOIN is still offloaded';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM v_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_view_over_mergetree = 1
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%RIGHT JOIN%';
+
+SELECT '-- view left, right eligible: the local join is kept';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM v_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_view_over_mergetree = 1
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%';
+
+SELECT '-- view left with views over mergetree disallowed: left is materialized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM v_left) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_view_over_mergetree = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- view left, right eligible: results are correct';
+SELECT r.key, ifNull(l.key = r.key, 0) AS matched FROM (SELECT key FROM v_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_view_over_mergetree = 1;
+
+SELECT '-- view left, right eligible: the wrapper contributes matched rows';
+SELECT countIf(ifNull(l.key = r.key, 0) AND r.key > 0) FROM (SELECT key FROM v_left WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_view_over_mergetree = 1;
+
+-- The side read with replicas can itself hold a join whose own materialized side no replica may
+-- read alone. That nested join is marked global too, so it must reach a temporary table: the
+-- collector decides which child to descend and has to skip the same side that is materialized,
+-- otherwise the nested global join keeps naming the raw table and every replica reads its own copy.
+-- Paired again: the absence of a raw nested global join is also what a query that was never
+-- offloaded would report, so one arm requires the outer JOIN to reach the replicas.
+
+SELECT '-- nested join in the offloaded right subtree: the outer JOIN is offloaded';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM (SELECT number AS key FROM numbers(10)) AS o
+    RIGHT JOIN (
+        SELECT a.key AS key FROM t_replicated_right AS a LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS i ON o.key = i.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%RIGHT JOIN%';
+
+SELECT '-- nested join in the offloaded right subtree: the inner side reaches a temporary table';
+SELECT count() FROM (
+    EXPLAIN SELECT count() FROM (SELECT number AS key FROM numbers(10)) AS o
+    RIGHT JOIN (
+        SELECT a.key AS key FROM t_replicated_right AS a LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS i ON o.key = i.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL LEFT JOIN%' AND explain NOT ILIKE '%GLOBAL ALL LEFT JOIN `_data_%';
+
+SELECT '-- nested join in the offloaded right subtree: results are correct';
+SELECT count() FROM (SELECT number AS key FROM numbers(10)) AS o
+RIGHT JOIN (
+    SELECT a.key AS key FROM t_replicated_right AS a LEFT JOIN t_merge_left AS b ON a.key = b.key
+) AS i ON o.key = i.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1;
+
+DROP VIEW v_left;
+DROP TABLE mv_left SYNC;
 DROP TABLE t_replicated_right SYNC;
 DROP TABLE t_plain_left;
 DROP TABLE t_merge_left;
