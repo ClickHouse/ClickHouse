@@ -69,7 +69,10 @@ TransactionLog::TransactionLog()
     auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
-    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionLog::runUpdatingThread, this);
+    updating_thread = std::make_unique<ThreadFromGlobalPool>(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        &TransactionLog::runUpdatingThread,
+        this);
 }
 
 TransactionLog::~TransactionLog()
